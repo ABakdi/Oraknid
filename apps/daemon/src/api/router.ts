@@ -4,6 +4,7 @@ import {
   DoctorCheck,
   EmailSettings,
   Event,
+  InboxFilter,
   InboxItem,
   JobView,
   LegView,
@@ -636,9 +637,9 @@ export const router = {
   inbox: {
     // Routing, notifications and the full inbox come in M1.7.
     list: base
-      .input(z.object({ state: z.enum(["open", "answered", "expired", "withdrawn"]).optional() }))
+      .input(InboxFilter)
       .output(z.array(InboxItem))
-      .handler(({ context: c, input }) => c.inbox.list(input.state)),
+      .handler(({ context: c, input }) => c.inbox.list(input)),
     answer: base
       .input(z.object({ id: z.string(), answer: z.string().min(1) }))
       .handler(({ context: c, input }) => guard(() => c.inbox.answer(input.id, input.answer))),

@@ -251,8 +251,23 @@ export const InboxItem = z.object({
   answeredAt: Timestamp.nullable(),
   answeredByDeviceId: Id.nullable(),
   createdAt: Timestamp,
+  /** Where it comes from, so items of several projects can be told apart (Checkpoint 1 → F1-2). */
+  jobTitle: z.string().optional(),
+  projectId: Id.optional(),
+  projectName: z.string().optional(),
+  taskTitle: z.string().nullable().optional(),
 });
 export type InboxItem = z.infer<typeof InboxItem>;
+
+export const InboxFilter = z.object({
+  state: z.enum(["open", "answered", "expired", "withdrawn"]).optional(),
+  kind: z.enum(["approval", "question"]).optional(),
+  projectId: Id.optional(),
+  jobId: Id.optional(),
+  /** Words to find in the title, the detail, the job or the project. */
+  q: z.string().max(200).optional(),
+});
+export type InboxFilter = z.infer<typeof InboxFilter>;
 
 // ── Side effects (BR-6) ─────────────────────────────────────────────
 

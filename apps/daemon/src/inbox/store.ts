@@ -1,7 +1,7 @@
-import type { Actor, InboxItem } from "@oraknid/contracts";
-import { desc, eq } from "drizzle-orm";
+import type { Actor, InboxFilter, InboxItem } from "@oraknid/contracts";
+import { and, desc, eq, type SQL } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
-import { inboxItems } from "../db/schema.ts";
+import { inboxItems, jobs, projects, tasks } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 
@@ -56,12 +56,50 @@ export class InboxStore {
     return id;
   }
 
-  /** Open first, approvals before questions (they block work), newest first (Approvals → The inbox). */
-  list(state?: string): InboxItem[] {
-    const q = this.db.select().from(inboxItems);
-    const rows = (state ? q.where(eq(inboxItems.state, state)) : q)
+  /**
+   * Open first, approvals before questions (they block work), newest first
+   * (Approvals → The inbox). Each item names its job and project, and can
+   * be filtered by them, by kind and state, and searched (Checkpoint 1 → F1-2).
+   */
+  list(filter: string | InboxFilter = {}): InboxItem[] {
+    const f: InboxFilter =
+      typeof filter === "string" ? { state: filter as InboxFilter["state"] } : filter;
+    const where: SQL[] = [];
+    if (f.state) where.push(eq(inboxItems.state, f.state));
+    if (f.kind) where.push(eq(inboxItems.kind, f.kind));
+    if (f.jobId) where.push(eq(inboxItems.jobId, f.jobId));
+    if (f.projectId) where.push(eq(jobs.projectId, f.projectId));
+    let rows = this.db
+      .select({
+        item: inboxItems,
+        jobTitle: jobs.title,
+        projectId: jobs.projectId,
+        projectName: projects.name,
+        taskTitle: tasks.title,
+      })
+      .from(inboxItems)
+      .innerJoin(jobs, eq(jobs.id, inboxItems.jobId))
+      .innerJoin(projects, eq(projects.id, jobs.projectId))
+      .leftJoin(tasks, eq(tasks.id, inboxItems.taskId))
+      .where(where.length ? and(...where) : undefined)
       .orderBy(desc(inboxItems.id))
-      .all() as InboxItem[];
+      .all()
+      .map((r) => ({
+        ...(r.item as InboxItem),
+        jobTitle: r.jobTitle,
+        projectId: r.projectId,
+        projectName: r.projectName,
+        taskTitle: r.taskTitle,
+      }));
+    const words = (f.q ?? "").toLowerCase().split(/\s+/).filter(Boolean);
+    if (words.length) {
+      rows = rows.filter((i) => {
+        const hay = [i.title, i.detail, i.jobTitle, i.projectName, i.taskTitle, i.answer]
+          .join("\n")
+          .toLowerCase();
+        return words.every((w) => hay.includes(w));
+      });
+    }
     const rank = (i: InboxItem) => (i.state === "open" ? 0 : 2) + (i.kind === "approval" ? 0 : 1);
     return rows.sort((a, b) => rank(a) - rank(b));
   }

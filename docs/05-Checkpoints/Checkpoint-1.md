@@ -39,7 +39,7 @@ ask. Dangerous ones still do.
 
 - [x] B1-01 — shell lexer and auto approval
 - [x] F1-1 — auto approval
-- [ ] F1-2 — inbox filters
+- [x] F1-2 — inbox filters
 - [ ] F1-3 — agent output
 - [ ] F1-4 — talking to The Eye
 - [ ] F1-5 — the result and merging it

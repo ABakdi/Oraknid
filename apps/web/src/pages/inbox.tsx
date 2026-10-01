@@ -6,6 +6,14 @@ import { Empty, ErrorNote, Loading, Markdown, PageHeader } from "@/components/co
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { api, message } from "@/lib/api";
 import { ago } from "@/lib/format";
@@ -13,30 +21,133 @@ import { t } from "@/lib/i18n";
 import { useLive } from "@/lib/live";
 import { cn } from "@/lib/utils";
 
-/** One list for every approval and question, open and blocking ones first (Approvals → The inbox). */
+const ALL = "all";
+
+/**
+ * One list for every approval and question, open and blocking ones first
+ * (Approvals → The inbox). Filters by project, job and kind, and a search,
+ * for when several projects run at once (Checkpoint 1 → F1-2).
+ */
 export function InboxPage({ focus }: { focus?: string }) {
   const items = useLive(() => api.inbox.list({}), { topics: ["inbox"] });
   const [showDone, setShowDone] = useState(false);
+  const [project, setProject] = useState(ALL);
+  const [job, setJob] = useState(ALL);
+  const [kind, setKind] = useState(ALL);
+  const [q, setQ] = useState("");
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll again once the items have arrived
   useEffect(() => {
     if (focus) document.getElementById(`item-${focus}`)?.scrollIntoView({ block: "center" });
   }, [focus, items.data]);
   if (items.error) return <ErrorNote error={items.error} />;
   if (items.loading) return <Loading />;
-  const open = (items.data ?? []).filter((i) => i.state === "open");
-  const rest = (items.data ?? []).filter((i) => i.state !== "open");
+  const data = items.data ?? [];
+  const projects = unique(data.map((i) => [i.projectId ?? "", i.projectName ?? ""]));
+  const jobs = unique(
+    data
+      .filter((i) => project === ALL || i.projectId === project)
+      .map((i) => [i.jobId, i.jobTitle ?? i.jobId]),
+  );
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = data.filter(
+    (i) =>
+      i.id === focus ||
+      ((project === ALL || i.projectId === project) &&
+        (job === ALL || i.jobId === job) &&
+        (kind === ALL || i.kind === kind) &&
+        words.every((w) =>
+          [i.title, i.detail, i.jobTitle, i.projectName, i.taskTitle, i.answer]
+            .join("\n")
+            .toLowerCase()
+            .includes(w),
+        )),
+  );
+  const filtered = shown.length !== data.length;
+  const open = shown.filter((i) => i.state === "open");
+  const rest = shown.filter((i) => i.state !== "open");
+  const waiting = data.filter((i) => i.state === "open").length;
   return (
     <div className="mx-auto max-w-3xl space-y-3">
       <PageHeader
         title={t("Inbox")}
-        sub={
-          open.length ? t("{n} waiting for you", { n: open.length }) : t("Nothing waits for you.")
-        }
+        sub={waiting ? t("{n} waiting for you", { n: waiting }) : t("Nothing waits for you.")}
       />
+      {data.length ? (
+        <div className="flex flex-wrap gap-2">
+          <Input
+            className="min-w-48 flex-1"
+            placeholder={t("Search the inbox…")}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            aria-label={t("Search the inbox")}
+          />
+          <Select
+            value={project}
+            onValueChange={(v) => {
+              setProject(v);
+              setJob(ALL);
+            }}
+          >
+            <SelectTrigger className="w-40" aria-label={t("Project")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>{t("Every project")}</SelectItem>
+              {projects.map(([id, name]) => (
+                <SelectItem key={id} value={id}>
+                  {name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={job} onValueChange={setJob}>
+            <SelectTrigger className="w-44" aria-label={t("Job")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>{t("Every job")}</SelectItem>
+              {jobs.map(([id, title]) => (
+                <SelectItem key={id} value={id}>
+                  {title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={kind} onValueChange={setKind}>
+            <SelectTrigger className="w-36" aria-label={t("Kind")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>{t("Everything")}</SelectItem>
+              <SelectItem value="approval">{t("Approvals")}</SelectItem>
+              <SelectItem value="question">{t("Questions")}</SelectItem>
+            </SelectContent>
+          </Select>
+          {filtered ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="self-center"
+              onClick={() => {
+                setProject(ALL);
+                setJob(ALL);
+                setKind(ALL);
+                setQ("");
+              }}
+            >
+              {t("Clear")}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       {open.length === 0 ? (
-        <Empty title={t("All clear")}>
-          {t("Approvals and questions from every job appear here, and as notifications.")}
-        </Empty>
+        filtered ? (
+          <Empty title={t("Nothing matches")}>{t("No open item matches these filters.")}</Empty>
+        ) : (
+          <Empty title={t("All clear")}>
+            {t("Approvals and questions from every job appear here, and as notifications.")}
+          </Empty>
+        )
       ) : null}
       {open.map((i) => (
         <InboxItemCard key={i.id} item={i} highlight={i.id === focus} />
@@ -49,6 +160,12 @@ export function InboxPage({ focus }: { focus?: string }) {
       {showDone ? rest.map((i) => <InboxItemCard key={i.id} item={i} />) : null}
     </div>
   );
+}
+
+function unique(pairs: string[][]): [string, string][] {
+  const m = new Map<string, string>();
+  for (const [id, name] of pairs) if (id && !m.has(id)) m.set(id, name ?? id);
+  return [...m].sort((a, b) => a[1].localeCompare(b[1]));
 }
 
 export function InboxItemCard({ item, highlight }: { item: InboxItem; highlight?: boolean }) {
@@ -80,9 +197,12 @@ export function InboxItemCard({ item, highlight }: { item: InboxItem; highlight?
           <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{item.title}</span>
           <Link
             href={`/jobs/${item.jobId}`}
-            className="text-xs font-normal text-muted-foreground underline-offset-2 hover:underline"
+            className="max-w-full truncate text-xs font-normal text-muted-foreground underline-offset-2 hover:underline"
           >
-            {t("the job")}
+            {item.projectName && item.jobTitle
+              ? `${item.projectName} · ${item.jobTitle}`
+              : t("the job")}
+            {item.taskTitle ? ` · ${item.taskTitle}` : ""}
           </Link>
           <span className="text-xs font-normal text-muted-foreground">{ago(item.createdAt)}</span>
         </CardTitle>
