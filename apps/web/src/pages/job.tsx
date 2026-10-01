@@ -1025,10 +1025,10 @@ function BudgetDialog({ job }: { job: JobView }) {
                   value={tok}
                   onChange={(e) => setTok(digits(e.target.value))}
                 />
-                <label className="flex shrink-0 items-center gap-1 text-sm">
-                  <Switch checked={tokHard} onCheckedChange={setTokHard} />
-                  {t("hard")}
-                </label>
+                <div className="flex shrink-0 items-center gap-1 text-sm">
+                  <Switch id="b-tok-hard" checked={tokHard} onCheckedChange={setTokHard} />
+                  <Label htmlFor="b-tok-hard">{t("hard")}</Label>
+                </div>
               </div>
             </div>
             <div className="space-y-1.5">
@@ -1051,10 +1051,10 @@ function BudgetDialog({ job }: { job: JobView }) {
                   value={hours}
                   onChange={(e) => setHours(digits(e.target.value))}
                 />
-                <label className="flex shrink-0 items-center gap-1 text-sm">
-                  <Switch checked={hoursHard} onCheckedChange={setHoursHard} />
-                  {t("hard")}
-                </label>
+                <div className="flex shrink-0 items-center gap-1 text-sm">
+                  <Switch id="b-hours-hard" checked={hoursHard} onCheckedChange={setHoursHard} />
+                  <Label htmlFor="b-hours-hard">{t("hard")}</Label>
+                </div>
               </div>
             </div>
           </div>
