@@ -2,9 +2,12 @@ import {
   ChannelTestResult,
   DoctorCheck,
   EmailSettings,
+  LegView,
   MetricsSample,
+  NewLeg,
   NotificationChannel,
   NotificationSettings,
+  ProfileOverrides,
   PushSubscriptionInput,
   SystemStatus,
 } from "@oraknid/contracts";
@@ -20,6 +23,7 @@ import { runDoctor } from "../doctor.ts";
 import type { JobStore } from "../engine/jobs.ts";
 import type { JobRunner } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
+import type { LegRegistry } from "../legs/registry.ts";
 import type { Notifications } from "../notify/notifications.ts";
 import type { Secrets } from "../os/secrets.ts";
 import type { Paths } from "../paths.ts";
@@ -38,6 +42,8 @@ export interface ApiContext {
   recentMetrics: (since: number) => MetricsSample[];
   jobs: JobStore;
   runner: JobRunner;
+  registry: LegRegistry;
+  health: { check(id: string): Promise<void> };
 }
 
 const base = os.$context<ApiContext>();
@@ -101,6 +107,75 @@ export const router = {
       .input(z.object({ id: z.string(), reason: z.string().optional() }))
       .handler(({ context: c, input }) =>
         guard(() => c.runner.cancel(input.id, input.reason ?? "Cancelled by me.")),
+      ),
+  },
+  legs: {
+    list: base
+      .output(z.array(LegView))
+      .handler(({ context: c }) => c.registry.all().map((l) => c.registry.view(l))),
+    get: base
+      .input(z.object({ id: z.string() }))
+      .output(LegView)
+      .handler(({ context: c, input }) =>
+        guard(() => c.registry.view(c.registry.require(input.id))),
+      ),
+    /** Adds a Leg and tests it straight away (Legs spec → Adding a Leg). */
+    create: base
+      .input(NewLeg)
+      .output(LegView)
+      .handler(({ context: c, input }) =>
+        guard(async () => {
+          const leg = await c.registry.create(input);
+          await c.health.check(leg.id);
+          return c.registry.view(c.registry.require(leg.id));
+        }),
+      ),
+    test: base
+      .input(z.object({ id: z.string() }))
+      .output(LegView)
+      .handler(({ context: c, input }) =>
+        guard(async () => {
+          await c.health.check(input.id);
+          return c.registry.view(c.registry.require(input.id));
+        }),
+      ),
+    update: base
+      .input(
+        z.object({
+          id: z.string(),
+          name: z.string().min(1).optional(),
+          enabled: z.boolean().optional(),
+        }),
+      )
+      .handler(({ context: c, input }) =>
+        guard(async () => {
+          const { id, ...patch } = input;
+          c.registry.update(id, patch);
+          await c.health.check(id);
+        }),
+      ),
+    pause: base
+      .input(z.object({ id: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.registry.update(input.id, { paused: true })),
+      ),
+    resume: base
+      .input(z.object({ id: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.registry.update(input.id, { paused: false })),
+      ),
+    remove: base
+      .input(z.object({ id: z.string() }))
+      .handler(({ context: c, input }) => guard(() => c.registry.remove(input.id))),
+    setModelHidden: base
+      .input(z.object({ modelId: z.string(), hidden: z.boolean() }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.registry.setModelHidden(input.modelId, input.hidden)),
+      ),
+    setProfile: base
+      .input(z.object({ modelId: z.string(), overrides: ProfileOverrides }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.registry.setOverrides(input.modelId, input.overrides)),
       ),
   },
   metrics: {

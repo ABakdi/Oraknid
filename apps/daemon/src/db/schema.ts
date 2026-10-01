@@ -114,7 +114,14 @@ export const legs = sqliteTable("legs", {
   config: json<Record<string, unknown>>("config").notNull(),
   secretRef: text("secret_ref"),
   enabled: integer("enabled", { mode: "boolean" }).notNull(),
+  /** Paused by me: no new assignments, running work paused (Jobs-and-Projects → Controls). */
+  paused: integer("paused", { mode: "boolean" }).notNull().default(false),
   health: text("health").notNull(),
+  /** The last health check's finding, in plain words. */
+  healthDetail: text("health_detail"),
+  /** Not eligible before this time (a rejected quota window). */
+  limitedUntil: integer("limited_until"),
+  createdAt: integer("created_at").notNull().default(0),
   quota: json<unknown[]>("quota").notNull(),
 });
 
@@ -174,6 +181,57 @@ export const inboxItems = sqliteTable(
     createdAt: integer("created_at").notNull(),
   },
   (t) => [index("inbox_state").on(t.state)],
+);
+
+/** One Leg's try at one task (Core-Entities → Attempt). */
+export const attempts = sqliteTable(
+  "attempts",
+  {
+    id: text("id").primaryKey(),
+    taskId: text("task_id").notNull(),
+    jobId: text("job_id").notNull(),
+    legId: text("leg_id").notNull(),
+    legModelId: text("leg_model_id").notNull(),
+    effort: text("effort"),
+    startedAt: integer("started_at").notNull(),
+    endedAt: integer("ended_at"),
+    outcome: text("outcome", { enum: ["succeeded", "failed", "reassigned", "abandoned"] }),
+    escalations: json<string[]>("escalations").notNull(),
+  },
+  (t) => [index("attempts_task").on(t.taskId)],
+);
+
+/** One process or conversation of a Leg (Core-Entities → Session). */
+export const sessions = sqliteTable(
+  "sessions",
+  {
+    id: text("id").primaryKey(),
+    attemptId: text("attempt_id"),
+    jobId: text("job_id"),
+    taskId: text("task_id"),
+    legId: text("leg_id").notNull(),
+    legModelId: text("leg_model_id").notNull(),
+    effort: text("effort"),
+    nativeSessionId: text("native_session_id"),
+    /** With its start time, so recovery never kills a reused pid. */
+    pid: integer("pid"),
+    pidStartTime: integer("pid_start_time"),
+    logFile: text("log_file").notNull(),
+    startedAt: integer("started_at").notNull(),
+    endedAt: integer("ended_at"),
+    endReason: text("end_reason"),
+    endError: text("end_error"),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
+    cacheWriteTokens: integer("cache_write_tokens").notNull().default(0),
+    contextTokens: integer("context_tokens"),
+    usageEstimated: integer("usage_estimated", { mode: "boolean" }).notNull().default(false),
+  },
+  (t) => [
+    index("sessions_leg_started").on(t.legId, t.startedAt),
+    index("sessions_open").on(t.endedAt),
+  ],
 );
 
 /** The durable step journal (ADR-003). */

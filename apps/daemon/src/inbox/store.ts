@@ -1,9 +1,9 @@
 import type { Actor } from "@oraknid/contracts";
 import { eq } from "drizzle-orm";
-import { ulid } from "ulid";
 import type { Db } from "../db/open.ts";
 import { inboxItems } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
+import { newId } from "../ids.ts";
 
 export interface NewInboxItem {
   kind: "approval" | "question";
@@ -28,7 +28,7 @@ export class InboxStore {
   ) {}
 
   open(item: NewInboxItem): string {
-    const id = ulid(this.now());
+    const id = newId(this.now());
     this.bus.atomically(() => {
       this.db
         .insert(inboxItems)

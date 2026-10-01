@@ -1,9 +1,9 @@
 import type { SideEffectState } from "@oraknid/contracts";
 import { eq, inArray } from "drizzle-orm";
-import { ulid } from "ulid";
 import type { Db } from "../db/open.ts";
 import { sideEffects } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
+import { newId } from "../ids.ts";
 import type { InboxStore } from "../inbox/store.ts";
 
 export type EffectRow = typeof sideEffects.$inferSelect;
@@ -85,7 +85,7 @@ export class SideEffects {
       this.db
         .insert(sideEffects)
         .values({
-          id: ulid(t),
+          id: newId(t),
           jobId,
           taskId: spec.taskId ?? null,
           idempotencyKey: key,

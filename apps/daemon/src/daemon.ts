@@ -1,6 +1,11 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { join } from "node:path";
+import type { LegKind } from "@oraknid/contracts";
+import { createClaudeCodeAdapter } from "@oraknid/leg-claude-code";
+import { createOpenAICompatibleAdapter } from "@oraknid/leg-openai-compatible";
+import type { LegAdapter } from "@oraknid/leg-sdk";
 import { RPCHandler } from "@orpc/server/node";
 import express from "express";
 import { router } from "./api/router.ts";
@@ -13,6 +18,9 @@ import { type JobProgram, JobRunner } from "./engine/runner.ts";
 import { EventBus } from "./events/bus.ts";
 import { isLocalRequest } from "./http/guard.ts";
 import { InboxStore } from "./inbox/store.ts";
+import { startHealthChecks } from "./legs/health.ts";
+import { LegRegistry } from "./legs/registry.ts";
+import { LegSupervisor } from "./legs/supervisor.ts";
 import { attachLive } from "./live/server.ts";
 import { Notifications } from "./notify/notifications.ts";
 import { linuxOs, type OsDeps } from "./os/context.ts";
@@ -38,6 +46,9 @@ export interface DaemonOptions {
   metricsIntervalMs?: number;
   /** What runs a job. The Eye takes this over in M1.6. */
   program?: JobProgram;
+  /** Leg adapters by kind (tests replace them). */
+  adapters?: Partial<Record<LegKind, LegAdapter>>;
+  healthIntervalMs?: number;
 }
 
 /** Until The Eye exists (M1.6), a started job stops with an honest reason. */
@@ -63,6 +74,24 @@ export async function startDaemon(options: DaemonOptions) {
   const db = await openDatabase({ file: options.dbFile ?? paths.db, backupsDir: paths.backups });
   const bus = new EventBus(db, now);
 
+  const secrets = new Secrets(paths.dataDir, os.keychain);
+  await secrets.init();
+  const adapters: Partial<Record<LegKind, LegAdapter>> = options.adapters ?? {
+    "claude-code": createClaudeCodeAdapter(),
+    "openai-compatible": createOpenAICompatibleAdapter(),
+  };
+  const registry = new LegRegistry(db, bus, secrets, paths.legs, now);
+  const supervisor = new LegSupervisor({
+    db,
+    bus,
+    registry,
+    adapters,
+    sandbox: os.sandbox,
+    legsDir: paths.legs,
+    logsDir: join(paths.logs, "jobs"),
+    now,
+  });
+
   // Recovery comes first, before the API answers anyone (Durability spec).
   const jobsStore = new JobStore(db, bus, now);
   const journal = new StepJournal(db, now);
@@ -76,10 +105,15 @@ export async function startDaemon(options: DaemonOptions) {
     bus,
     program: options.program ?? notYet,
   });
-  const recovery = await recover({ db, bus, jobs: jobsStore, journal, effects, runner });
-
-  const secrets = new Secrets(paths.dataDir, os.keychain);
-  await secrets.init();
+  const recovery = await recover({
+    db,
+    bus,
+    jobs: jobsStore,
+    journal,
+    effects,
+    runner,
+    hooks: [() => void supervisor.recoverOrphans()],
+  });
   const sandboxStatus = os.sandbox.status();
 
   const app = express();
@@ -110,7 +144,10 @@ export async function startDaemon(options: DaemonOptions) {
 
   const metricsLoop = startMetricsLoop({
     metrics: os.metrics,
-    watched: () => [{ id: "daemon", label: "Oraknid daemon", pid: process.pid }],
+    watched: () => [
+      { id: "daemon", label: "Oraknid daemon", pid: process.pid },
+      ...supervisor.watched(),
+    ],
     onSample: (sample) => live.broadcastMetrics(sample),
     ...(options.metricsIntervalMs ? { intervalMs: options.metricsIntervalMs } : {}),
   });
@@ -125,6 +162,15 @@ export async function startDaemon(options: DaemonOptions) {
   // Any job state change may start or end the need to stay awake.
   bus.subscribe((e) => {
     if (e.type === "job.state") void inhibit.reconcile();
+  });
+
+  const health = startHealthChecks({
+    registry,
+    adapters,
+    sandbox: os.sandbox,
+    legsDir: paths.legs,
+    now,
+    ...(options.healthIntervalMs ? { intervalMs: options.healthIntervalMs } : {}),
   });
 
   const rpc = new RPCHandler(router);
@@ -144,6 +190,8 @@ export async function startDaemon(options: DaemonOptions) {
         recentMetrics: metricsLoop.recent,
         jobs: jobsStore,
         runner,
+        registry,
+        health,
       },
     });
     if (!matched) next();
@@ -174,6 +222,7 @@ export async function startDaemon(options: DaemonOptions) {
   });
   // Recovery may have left jobs active: take the lock straight away if so.
   await inhibit.reconcile();
+  void health.checkAll();
   os.serviceNotifier.ready();
   const stopWatchdog = os.serviceNotifier.startWatchdog();
 
@@ -186,6 +235,8 @@ export async function startDaemon(options: DaemonOptions) {
       metricsLoop.stop();
       // Jobs reach a safe point and keep their state for the next start.
       await runner.shutdown();
+      health.stop();
+      await supervisor.killAll();
       await inhibit.stop();
       await live.close();
       await new Promise<void>((resolve) => {
@@ -212,6 +263,9 @@ export async function startDaemon(options: DaemonOptions) {
     metricsLoop,
     jobs: jobsStore,
     runner,
+    registry,
+    supervisor,
+    health,
     inbox,
     effects,
     recovery,

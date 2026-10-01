@@ -14,9 +14,13 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.286",
     "@napi-rs/keyring": "2.1.0",
     "@oraknid/contracts": "workspace:*",
     "@oraknid/core": "workspace:^",
+    "@oraknid/leg-claude-code": "workspace:^",
+    "@oraknid/leg-openai-compatible": "workspace:^",
+    "@oraknid/leg-sdk": "workspace:^",
     "@oraknid/os": "workspace:^",
     "@orpc/client": "1.15.4",
     "@orpc/server": "1.15.4",
