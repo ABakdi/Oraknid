@@ -1,0 +1,72 @@
+# Oraknid
+
+*Always watching, many legs. A local background orchestrator that runs
+AI coding agents and local models from goal to verified completion.*
+
+**Where it stands (2026-10-01):** canon written; [[Phase-1-MVP]] is next.
+Nothing is built yet.
+
+## 00 — Overview
+- [[Vision]] — why Oraknid exists, what it must feel like, pillars, MVP scope
+- [[Product-Requirements]] — entities, modules, rules in one paragraph, foundation
+- [[Glossary]] — every term (The Eye, Legs, The Web, Silk, The Nest…) with one meaning
+
+## 01 — Specification
+- [[Core-Entities]] — the data model and life cycles
+- [[Business-Rules]] — the constitution, BR-1 to BR-21
+- [[Jobs-and-Projects]] — creating, following, controlling and ending jobs
+- [[The-Eye]] — planning, routing, self-prompting, verification, evaluation
+- [[Legs-and-Capability-Profiles]] — the pool, health, profiles and learning
+- [[Silk]] — job memory, handoffs, context packs, the markdown mirror
+- [[Drift-Control]] — detectors D1–D8, the escalation ladder, rollback
+- [[Budgets-and-Quotas]] — tokens, quota windows, context, time, money
+- [[Approvals-and-Autonomy]] — autonomy levels, gated actions, the inbox
+- [[Skills]] — the skill format, the library, the interview stage
+- [[Durability]] — service, sleep inhibition, crash recovery, lossless pause, watchdog
+- [[Notifications]] — desktop, web push, email, routing
+- [[Security]] — secrets, scope, command filter, prompt injection, pairing, audit
+- [[Web-UI]] — every screen, live, mobile
+- [[The-Nest]] — the remote relay *(draft, Phase 4)*
+
+## 02 — Architecture
+- [[Architecture-Overview]] — packages, layers, data flow, paths
+- [[Leg-Adapters]] — the adapter interface; Claude Code, OpenAI-compatible, OpenCode, Antigravity, checked 2026-10-01
+- [[Persistence-and-Recovery]] — tables, write discipline, recovery, backups
+- [[Realtime-Transport]] — topics, frames, reconnect
+- [[OS-Integration]] — service, inhibitor, keychain, metrics, notifier, sandbox per OS
+- [[Sandboxing]] — worktrees, checkpoints, the bwrap wrapper
+- [[API-Contract]] — every procedure
+- [[Data-Map]] — where data lives, who reads it, what leaves the machine
+
+## 03 — Planning
+- [[Roadmap]] — phases, exit criteria, changes of order
+- [[Phase-1-MVP]] ← **next**
+- [[Phase-2-OpenCode]]
+- [[Phase-3-Parallelism]]
+- [[Phase-4-The-Nest]]
+- [[Phase-5-Antigravity]]
+- [[Phase-6-Non-Coding-Skills]]
+
+## 04 — Decisions
+- [[ADR-001-Monorepo]] — one pnpm + Turborepo monorepo with the canon inside
+- [[ADR-002-Persistence]] — SQLite (better-sqlite3, WAL, FULL) + Drizzle
+- [[ADR-003-Job-Execution-Engine]] — a custom durable step engine on SQLite
+- [[ADR-004-Realtime-Transport]] — plain `ws`, sequenced replayable events
+- [[ADR-005-Charts-and-Graph-Visualization]] — Recharts via shadcn; React Flow + ELK + Motion
+- [[ADR-006-Sandbox]] — git worktree + bubblewrap per Leg
+- [[ADR-007-Silk-Storage]] — database + markdown mirror
+- [[ADR-008-Eye-Brain]] — borrow a pool Leg behind `EyeBrain`; Jev/Kev later
+- [[ADR-009-Multiple-Accounts-Per-Provider]] — supported, no quota hopping by default *(Proposed — my decision needed)*
+- [[ADR-010-API-Contracts]] — Zod 4 + oRPC in Express
+- [[ADR-011-Claude-Code-Adapter]] — the Agent SDK, `canUseTool`, one config dir per account
+- [[ADR-012-Sleep-Inhibition]] — a `systemd-inhibit` holder process
+- [[ADR-013-Model-Aware-Routing]] — route to Leg + model + effort; smallest sufficient model; reserve scarce windows
+
+## 05 — Checkpoints
+- [[Checkpoints-Home]] — none yet
+
+## 06 — Audit
+- [[Audit-Home]] — none yet; the first runs before `v0.1.0`
+
+## Methodology
+- [[skill]] — Canon-Driven Development, the method this canon follows and Oraknid's first built-in skill
