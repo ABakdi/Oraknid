@@ -98,6 +98,8 @@ import {
 } from "./stats.ts";
 
 export interface ApiContext {
+  /** The paired device making this call; null for the CLI. */
+  device: string | null;
   startedAt: number;
   paths: Paths;
   bus: EventBus;
@@ -733,7 +735,9 @@ export const router = {
       .handler(({ context: c, input }) => c.inbox.list(input)),
     answer: base
       .input(z.object({ id: z.string(), answer: z.string().min(1) }))
-      .handler(({ context: c, input }) => guard(() => c.inbox.answer(input.id, input.answer))),
+      .handler(({ context: c, input }) =>
+        guard(() => c.inbox.answer(input.id, input.answer, c.device)),
+      ),
   },
   /** Storage use and pruning (Persistence-and-Recovery → Backups and pruning, M1.9). */
   storage: {

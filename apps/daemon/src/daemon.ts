@@ -219,7 +219,11 @@ export async function startDaemon(options: DaemonOptions) {
   app.use("/api", (req, res, next) => {
     if (req.path === "/devices/pairComplete") return next();
     // A token in the address only for the live socket, which cannot send headers (Audit 1 → S1-14).
-    if (devices.identify(tokenOf(req.headers))) return next();
+    const who = devices.identify(tokenOf(req.headers));
+    if (who) {
+      res.locals.device = who === "cli" ? null : who;
+      return next();
+    }
     res.status(401).json({
       message: "Pair this device first: run `oraknid pair` on the machine running Oraknid.",
     });
@@ -308,6 +312,7 @@ export async function startDaemon(options: DaemonOptions) {
     const { matched } = await rpc.handle(req, res, {
       prefix: "/api",
       context: {
+        device: (res.locals.device as string | null | undefined) ?? null,
         startedAt,
         paths,
         bus,

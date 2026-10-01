@@ -1,5 +1,5 @@
 import { Capability, Difficulty, TaskKind } from "@oraknid/contracts";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "../db/open.ts";
 import { jobs, projects, taskEdges, tasks } from "../db/schema.ts";
@@ -134,6 +134,8 @@ export type WebEdit = z.infer<typeof WebEdit>;
 export function editWeb(d: ControlDeps, jobId: string, edits: WebEdit[]) {
   const job = d.db.select().from(jobs).where(eq(jobs.id, jobId)).get();
   if (!job) throw new Error(`No job ${jobId}.`);
+  if (job.state === "completed" || job.state === "cancelled")
+    throw new Error("The job has ended; its plan can't change.");
   const all = d.db
     .select()
     .from(tasks)
@@ -188,6 +190,24 @@ export function editWeb(d: ControlDeps, jobId: string, edits: WebEdit[]) {
         d.db.delete(tasks).where(eq(tasks.id, e.taskId)).run();
       }
     }
+    // The edited Web obeys the same rules as a planned one (Audit 1 → Q1-10): applied, checked, undone if wrong.
+    const after = d.db.select().from(tasks).where(eq(tasks.jobId, jobId)).all();
+    const ids = new Set(after.map((t) => t.id));
+    const deps = d.db
+      .select()
+      .from(taskEdges)
+      .where(inArray(taskEdges.taskId, [...ids]))
+      .all();
+    const outside = deps.find((e) => !ids.has(e.dependsOn));
+    if (outside) throw new Error("A task can only depend on tasks of the same job.");
+    const problems = webProblems(
+      after.map((t) => ({
+        key: t.id,
+        title: t.title,
+        dependsOn: deps.filter((e) => e.taskId === t.id).map((e) => e.dependsOn),
+      })),
+    );
+    if (problems.length) throw new Error(problems.join(" "));
     d.db
       .update(jobs)
       .set({ webVersion: job.webVersion + 1 })
@@ -211,4 +231,39 @@ export function redirect(d: ControlDeps, jobId: string, instruction: string) {
     authoredBy: "owner",
   });
   emit(d, jobId, "job.redirected", { instruction });
+}
+
+/** Self-dependencies and circles, named by task title. */
+function webProblems(nodes: { key: string; title: string; dependsOn: string[] }[]): string[] {
+  const title = new Map(nodes.map((n) => [n.key, n.title]));
+  const problems = nodes
+    .filter((n) => n.dependsOn.includes(n.key))
+    .map((n) => `"${n.title}" can't depend on itself.`);
+  const deps = new Map(nodes.map((n) => [n.key, n.dependsOn]));
+  const state = new Map<string, "visiting" | "done">();
+  const path: string[] = [];
+  const visit = (k: string): string[] | null => {
+    if (state.get(k) === "done") return null;
+    if (state.get(k) === "visiting") return [...path.slice(path.indexOf(k)), k];
+    state.set(k, "visiting");
+    path.push(k);
+    for (const dep of deps.get(k) ?? []) {
+      if (dep === k) continue;
+      const c = visit(dep);
+      if (c) return c;
+    }
+    path.pop();
+    state.set(k, "done");
+    return null;
+  };
+  for (const n of nodes) {
+    const c = visit(n.key);
+    if (c) {
+      problems.push(
+        `The tasks would depend on each other in a circle: ${c.map((k) => title.get(k)).join(" → ")}.`,
+      );
+      break;
+    }
+  }
+  return problems;
 }

@@ -75,4 +75,30 @@ describe("the inbox across projects (Checkpoint 1 → F1-2)", () => {
     expect(d.inbox.list({ q: "checkout" })).toHaveLength(1);
     expect(d.inbox.list({ q: "nothing-like-this" })).toEqual([]);
   });
+
+  it("takes only an approval's own options, records the device, and says when a question was withdrawn (Audit 1 → Q1-11)", async () => {
+    const d = await start();
+    const jobId = seedJob(d.db, "running");
+    const ask = d.inbox.open({
+      jobId,
+      kind: "approval",
+      title: "Run nmap?",
+      detail: "",
+      options: ["Approve", "Deny"],
+      raisedBy: "eye",
+    });
+    expect(() => d.inbox.answer(ask, "sure")).toThrow("Answer with one of: Approve, Deny.");
+    d.inbox.answer(ask, "Approve", "01J9Z3K8W2Q4V6X8Y0A1B2C3DV");
+    expect(d.inbox.get(ask)?.answeredByDeviceId).toBe("01J9Z3K8W2Q4V6X8Y0A1B2C3DV");
+    const gone = d.inbox.open({
+      jobId,
+      kind: "question",
+      title: "Which?",
+      detail: "",
+      options: [],
+      raisedBy: "eye",
+    });
+    d.inbox.withdraw(gone);
+    expect(() => d.inbox.answer(gone, "this")).toThrow(/withdrawn/);
+  });
 });

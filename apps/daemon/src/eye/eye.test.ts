@@ -930,6 +930,39 @@ describe("my controls (M1.8 API)", () => {
     expect(after.tasks.map((t) => t.title)).toEqual(["Write hello.sh (edited)"]);
   });
 
+  it("refuses an edit that would make a circle, and changes nothing (Audit 1 → Q1-10)", async () => {
+    const { api, id } = await eye(good, { autonomy: "supervised" });
+    await openItem(api, "Approve the plan");
+    const [t1, t2] = (await api.jobs.get({ id })).tasks;
+    await expect(
+      api.web.edit({
+        jobId: id,
+        edits: [
+          {
+            op: "update",
+            taskId: t1?.id as string,
+            title: "Renamed",
+            dependsOn: [t2?.id as string],
+          },
+        ],
+      }),
+    ).rejects.toThrow(/circle: Renamed → Test hello.sh → Renamed/);
+    expect((await api.jobs.get({ id })).tasks.map((t) => t.title)).toEqual([
+      "Write hello.sh",
+      "Test hello.sh",
+    ]);
+    await expect(
+      api.web.edit({
+        jobId: id,
+        edits: [{ op: "update", taskId: t1?.id as string, dependsOn: [t1?.id as string] }],
+      }),
+    ).rejects.toThrow(/can't depend on itself/);
+    await api.jobs.cancel({ id });
+    await expect(
+      api.web.edit({ jobId: id, edits: [{ op: "update", taskId: t1?.id as string, title: "x" }] }),
+    ).rejects.toThrow(/has ended/);
+  });
+
   it("refuses to edit a task that is running, saying why", async () => {
     const { api, id } = await eye((t) =>
       task(t) === "Write hello.sh" ? [{ hang: true }] : good(t),

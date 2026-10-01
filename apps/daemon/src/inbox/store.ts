@@ -127,7 +127,12 @@ export class InboxStore {
     this.bus.atomically(() => {
       const item = this.get(id);
       if (!item) throw new Error(`No inbox item ${id}.`);
+      if (item.state === "withdrawn")
+        throw new Error("That question was withdrawn: nothing waits for it any more.");
       if (item.state !== "open") throw new Error("That item was already answered.");
+      // An approval is answered with one of its options, never free text read as a denial (Audit 1 → Q1-11).
+      if (item.kind === "approval" && !item.options.includes(answer))
+        throw new Error(`Answer with one of: ${item.options.join(", ")}.`);
       this.db
         .update(inboxItems)
         .set({ state: "answered", answer, answeredAt: this.now(), answeredByDeviceId: deviceId })
