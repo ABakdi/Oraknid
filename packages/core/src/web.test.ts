@@ -1,0 +1,81 @@
+import type { PlannedTask, WebPlan } from "@oraknid/contracts";
+import { describe, expect, it } from "vitest";
+import { inScope, readyTasks, validateWeb } from "./web.ts";
+
+const t = (over: Partial<PlannedTask>): PlannedTask => ({
+  key: "t1",
+  title: "x",
+  instructions: "x",
+  kind: "implement",
+  dependsOn: [],
+  scope: ["src/**"],
+  verify: ["pnpm test"],
+  requiredCapabilities: ["implementation"],
+  difficulty: "low",
+  ...over,
+});
+const plan = (tasks: PlannedTask[]): WebPlan => ({ summary: "s", tasks, jobVerify: [] });
+
+describe("validateWeb", () => {
+  it("accepts a sound plan", () => {
+    expect(validateWeb(plan([t({}), t({ key: "t2", dependsOn: ["t1"] })]))).toEqual([]);
+  });
+
+  it("names every problem in words", () => {
+    const problems = validateWeb(
+      plan([
+        t({ key: "a", dependsOn: ["b"] }),
+        t({ key: "b", dependsOn: ["a"] }),
+        t({ key: "c", verify: [], dependsOn: ["zz"] }),
+        t({ key: "d", scope: [] }),
+        t({ key: "e", scope: ["../secrets"] }),
+        t({ key: "a" }),
+      ]),
+    );
+    expect(problems).toEqual(
+      expect.arrayContaining([
+        'Task key "a" is used twice.',
+        'Task "c" depends on "zz", which is not in the plan.',
+        'Task "c" (implement) has no verify command; every task that changes things must.',
+        'Task "d" (implement) has no scope: say which paths it may change.',
+        'Task "e" has a scope outside the workspace; scopes are relative paths.',
+      ]),
+    );
+    expect(
+      problems.some((p) => p.startsWith("The tasks depend on each other in a circle: a → b → a")),
+    ).toBe(true);
+  });
+
+  it("lets research and planning tasks go without a verify command", () => {
+    expect(validateWeb(plan([t({ kind: "research", verify: [], scope: [] })]))).toEqual([]);
+  });
+});
+
+describe("readyTasks", () => {
+  it("returns tasks whose dependencies are done or skipped", () => {
+    const tasks = [
+      { id: "1", state: "done", dependsOn: [] },
+      { id: "2", state: "pending", dependsOn: ["1"] },
+      { id: "3", state: "pending", dependsOn: ["2"] },
+      { id: "4", state: "pending", dependsOn: ["5"] },
+      { id: "5", state: "skipped", dependsOn: [] },
+    ];
+    expect(readyTasks(tasks).map((x) => x.id)).toEqual(["2", "4"]);
+  });
+});
+
+describe("inScope", () => {
+  it.each([
+    ["src/auth/login.ts", ["src/auth/**"], true],
+    ["src/auth/deep/x.ts", ["src/auth/**"], true],
+    ["src/billing/x.ts", ["src/auth/**"], false],
+    ["README.md", ["*.md"], true],
+    ["docs/a.md", ["*.md"], false],
+    ["docs/a.md", ["**/*.md"], true],
+    ["src/auth/login.ts", ["src/auth"], true],
+    ["./src/a.ts", ["src/*.ts"], true],
+    ["src/a.tsx", ["src/?.ts"], false],
+  ])("%s in %j → %s", (path, globs, expected) => {
+    expect(inScope(path, globs)).toBe(expected);
+  });
+});

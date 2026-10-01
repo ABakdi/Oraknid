@@ -5,5 +5,6 @@ export * from "./legs.ts";
 export * from "./live.ts";
 export * from "./metrics.ts";
 export * from "./notifications.ts";
+export * from "./plan.ts";
 export * from "./profiles.ts";
 export * from "./system.ts";
