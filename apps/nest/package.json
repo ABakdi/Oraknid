@@ -1,0 +1,27 @@
+{
+  "name": "@oraknid/nest",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "oraknid-nest": "./dist/main.mjs"
+  },
+  "scripts": {
+    "build": "tsdown && vite build --config loader.vite.config.ts",
+    "start": "node dist/main.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "express": "5.2.1",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@oraknid/tunnel": "workspace:^",
+    "@types/express": "5.0.6",
+    "@types/ws": "8.18.2",
+    "tsdown": "0.23.0",
+    "vite": "8.3.1",
+    "vitest": "5.0.3"
+  }
+}
