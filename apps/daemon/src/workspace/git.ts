@@ -233,3 +233,116 @@ export function restorePaths(g: Git, ref: string, paths: string[], trashRoot: st
     if (ok(g, ["rev-parse", "--verify", "HEAD"])) git(g, ["reset", "-q", "--", ...restore]);
   }
 }
+
+// ── A job's result (Jobs-and-Projects → Ending a job, Checkpoint 1 → F1-5) ──
+
+export interface BranchCommit {
+  sha: string;
+  subject: string;
+  at: number;
+}
+
+/** The commits on `branch` that `into` doesn't have yet, newest first. */
+export function commitsAhead(repo: string, into: string, branch: string): BranchCommit[] {
+  const g = { cwd: repo, base: [] };
+  if (!ok(g, ["rev-parse", "--verify", `refs/heads/${branch}`])) return [];
+  const range = ok(g, ["rev-parse", "--verify", `refs/heads/${into}`])
+    ? `${into}..${branch}`
+    : branch;
+  return git(g, ["log", "--no-merges", "--format=%H%x1f%s%x1f%ct", range])
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => {
+      const [sha = "", subject = "", at = "0"] = l.split("\x1f");
+      return { sha, subject, at: Number(at) * 1000 };
+    });
+}
+
+export const isMerged = (repo: string, into: string, branch: string) =>
+  ok({ cwd: repo, base: [] }, [
+    "merge-base",
+    "--is-ancestor",
+    `refs/heads/${branch}`,
+    `refs/heads/${into}`,
+  ]);
+
+/** Where a branch is checked out, if anywhere. */
+function checkedOutAt(repo: string, branch: string): string | null {
+  let path: string | null = null;
+  for (const line of git({ cwd: repo, base: [] }, ["worktree", "list", "--porcelain"]).split(
+    "\n",
+  )) {
+    if (line.startsWith("worktree ")) path = line.slice("worktree ".length);
+    else if (line === `branch refs/heads/${branch}`) return path;
+  }
+  return null;
+}
+
+export type MergeResult =
+  | { ok: true; commit: string }
+  | { ok: false; reason: string; conflicts: string[] };
+
+/**
+ * Merges `branch` into `into` as a merge commit, computed without touching
+ * any work tree (`git merge-tree`). When `into` is checked out somewhere,
+ * that checkout moves forward only if it is clean; a conflict or a dirty
+ * checkout merges nothing.
+ */
+export function mergeBranch(
+  repo: string,
+  into: string,
+  branch: string,
+  message: string,
+): MergeResult {
+  const g = { cwd: repo, base: [] };
+  if (!ok(g, ["rev-parse", "--verify", `refs/heads/${into}`]))
+    return { ok: false, reason: `There is no branch ${into}.`, conflicts: [] };
+  if (isMerged(repo, into, branch))
+    return { ok: false, reason: `${branch} is already in ${into}.`, conflicts: [] };
+  const r = spawnSync(
+    "git",
+    ["merge-tree", "--write-tree", "--name-only", "--no-messages", into, branch],
+    {
+      cwd: repo,
+      encoding: "utf8",
+    },
+  );
+  if (r.status !== 0) {
+    const [, ...files] = r.stdout.split("\n").filter(Boolean);
+    return {
+      ok: false,
+      reason:
+        r.status === 1
+          ? "The branches conflict; nothing was merged."
+          : (r.stderr || r.stdout).trim(),
+      conflicts: files,
+    };
+  }
+  const tree = r.stdout.split("\n")[0]?.trim() as string;
+  const before = git(g, ["rev-parse", `refs/heads/${into}`]).trim();
+  const commit = git(
+    g,
+    ["commit-tree", tree, "-p", before, "-p", `refs/heads/${branch}`, "-m", message],
+    authorEnv(),
+  ).trim();
+  const at = checkedOutAt(repo, into);
+  if (at) {
+    const wt = { cwd: at, base: [] };
+    if (git(wt, ["status", "--porcelain", "--untracked-files=no"]).trim())
+      return {
+        ok: false,
+        reason: `${into} is checked out in ${at} with uncommitted changes; commit or stash them, then merge again.`,
+        conflicts: [],
+      };
+    try {
+      git(wt, ["merge", "--ff-only", "-q", commit]);
+    } catch (error) {
+      return {
+        ok: false,
+        reason: `${into} is checked out in ${at} and could not move forward: ${error instanceof Error ? error.message : String(error)}`,
+        conflicts: [],
+      };
+    }
+  } else git(g, ["update-ref", `refs/heads/${into}`, commit, before]);
+  return { ok: true, commit };
+}

@@ -73,3 +73,18 @@ export const ProjectView = Project.extend({
   shadow: z.boolean(),
 });
 export type ProjectView = z.infer<typeof ProjectView>;
+
+/** Where a job's work is and what it holds (Jobs-and-Projects → Ending a job, Checkpoint 1 → F1-5). */
+export const JobResult = z.object({
+  /** The folder the work is in. */
+  folder: z.string().nullable(),
+  /** The job branch, when the project is a git repo. */
+  branch: z.string().nullable(),
+  /** The branch it merges into: the project's work branch. */
+  into: z.string(),
+  commits: z.array(z.object({ sha: z.string(), subject: z.string(), at: z.number() })),
+  merged: z.boolean(),
+  /** Why it can't be merged, when it can't (not a repo, no branch, already merged). */
+  cannotMerge: z.string().nullable(),
+});
+export type JobResult = z.infer<typeof JobResult>;

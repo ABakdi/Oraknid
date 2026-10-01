@@ -6,6 +6,7 @@ import { Agents } from "@/components/agents";
 import { LegComparison, TokensChart } from "@/components/charts";
 import { ErrorNote, Loading, Markdown, PageHeader, Stat, StateBadge } from "@/components/common";
 import { EyeChat } from "@/components/eye-chat";
+import { JobResult } from "@/components/job-result";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -177,6 +178,7 @@ export function JobPage({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {j.state === "completed" ? <JobResult jobId={id} /> : null}
       <EyeChat jobId={id} />
 
       <WebGraph tasks={j.tasks} legName={legName} onOpen={setOpen} />

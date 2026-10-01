@@ -7,6 +7,7 @@ import {
   EyeMessage,
   InboxFilter,
   InboxItem,
+  JobResult,
   JobView,
   LegView,
   MetricsSample,
@@ -74,6 +75,7 @@ import type { SilkStore } from "../silk/store.ts";
 import type { SkillStore } from "../skills/store.ts";
 import { VERSION } from "../version.ts";
 import type { Projects } from "../workspace/projects.ts";
+import { jobResult, mergeJob } from "../workspace/result.ts";
 import {
   Activity,
   activity,
@@ -105,6 +107,8 @@ export interface ApiContext {
   skills: SkillStore;
   devices: Devices;
   brain: EyeBrain;
+  /** Opens a folder on this machine (xdg-open). */
+  openPath: (path: string) => void;
   tmpDir: string;
 }
 
@@ -448,6 +452,27 @@ export const router = {
         .orderBy(asc(jobsTable.id))
         .all()
         .map((j) => jobView(c, j.id)),
+    ),
+    /** Where the work is and what it holds (Checkpoint 1 → F1-5). */
+    result: base
+      .input(z.object({ id: z.string() }))
+      .output(JobResult)
+      .handler(({ context: c, input }) => guard(() => jobResult(c.jobs.db, input.id))),
+    merge: base
+      .input(z.object({ id: z.string() }))
+      .output(
+        z.union([
+          z.object({ ok: z.literal(true), commit: z.string() }),
+          z.object({ ok: z.literal(false), reason: z.string(), conflicts: z.array(z.string()) }),
+        ]),
+      )
+      .handler(({ context: c, input }) => guard(() => mergeJob(c.jobs.db, c.bus, input.id))),
+    openFolder: base.input(z.object({ id: z.string() })).handler(({ context: c, input }) =>
+      guard(() => {
+        const folder = jobResult(c.jobs.db, input.id).folder;
+        if (!folder) throw new Error("The job has no folder yet.");
+        c.openPath(folder);
+      }),
     ),
     /** Talking to The Eye (Checkpoint 1 → F1-4): its reply arrives as `eye.replied`. */
     talk: base

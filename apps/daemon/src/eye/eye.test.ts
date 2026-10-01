@@ -1100,3 +1100,47 @@ describe("talking to The Eye (Checkpoint 1 → F1-4)", () => {
     ]);
   });
 });
+
+describe("a finished job's result (Checkpoint 1 → F1-5)", () => {
+  it("shows the folder, branch and commits, and merges into the work branch when I press it", async () => {
+    const { api, id, workspace } = await eye(good);
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    const r = await api.jobs.result({ id });
+    expect(r).toMatchObject({ into: "dev", merged: false, cannotMerge: null });
+    expect(r.folder).toContain(".oraknid/worktrees/");
+    expect(r.branch).toMatch(/^oraknid\//);
+    expect(r.commits.map((c) => c.subject)).toEqual(
+      expect.arrayContaining(["feat: write hello.sh"]),
+    );
+    const m = await api.jobs.merge({ id });
+    expect(m.ok).toBe(true);
+    expect(sh(workspace, "show", "dev:hello.sh")).toBe("echo hi");
+    expect(sh(workspace, "log", "-1", "--format=%s", "dev")).toMatch(/^merge: /);
+    // My checkout (master) was never touched.
+    expect(existsSync(join(workspace, "hello.sh"))).toBe(false);
+    expect(await api.jobs.result({ id })).toMatchObject({ merged: true, commits: [] });
+    expect(await api.jobs.merge({ id })).toMatchObject({ ok: false });
+  });
+
+  it("merges nothing on a conflict, or into a checkout with uncommitted changes", async () => {
+    const { api, id, workspace } = await eye(good);
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    sh(workspace, "checkout", "-q", "dev");
+    writeFileSync(join(workspace, "README.md"), "# mine, not committed\n");
+    expect(await api.jobs.merge({ id })).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("uncommitted changes"),
+    });
+    sh(workspace, "checkout", "-q", "--", "README.md");
+    writeFileSync(join(workspace, "hello.sh"), "echo bonjour\n");
+    sh(workspace, "add", "hello.sh");
+    sh(workspace, "commit", "-qm", "mine");
+    const before = sh(workspace, "rev-parse", "dev");
+    expect(await api.jobs.merge({ id })).toMatchObject({ ok: false, conflicts: ["hello.sh"] });
+    expect(sh(workspace, "rev-parse", "dev")).toBe(before);
+    // With a clean checkout and no conflict, the checkout moves forward with the merge.
+    sh(workspace, "reset", "-q", "--hard", "HEAD~1");
+    expect((await api.jobs.merge({ id })).ok).toBe(true);
+    expect(readFileSync(join(workspace, "hello.sh"), "utf8")).toBe("echo hi\n");
+  });
+});

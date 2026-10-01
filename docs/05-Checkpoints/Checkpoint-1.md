@@ -42,6 +42,6 @@ ask. Dangerous ones still do.
 - [x] F1-2 — inbox filters
 - [x] F1-3 — agent output
 - [x] F1-4 — talking to The Eye
-- [ ] F1-5 — the result and merging it
+- [x] F1-5 — the result and merging it
 
 Related: [[Checkpoints-Home]] · [[Phase-1-MVP]] · [[ADR-014-Auto-Approval]]

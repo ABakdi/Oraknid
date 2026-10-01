@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -63,6 +64,8 @@ export interface DaemonOptions {
   program?: JobProgram;
   /** The Eye's reasoning (tests replace it). */
   brain?: EyeBrain;
+  /** Opens a folder on this machine; tests replace it. */
+  openPath?: (path: string) => void;
   stallCheckMs?: number;
   budgetIntervalMs?: number;
   emailDelayMs?: number;
@@ -313,6 +316,9 @@ export async function startDaemon(options: DaemonOptions) {
         skills,
         devices,
         brain,
+        openPath:
+          options.openPath ??
+          ((path) => spawn("xdg-open", [path], { detached: true, stdio: "ignore" }).unref()),
         tmpDir: join(paths.dataDir, "tmp"),
       },
     });
