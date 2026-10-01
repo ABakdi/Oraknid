@@ -1,6 +1,7 @@
 export * from "./common.ts";
 export * from "./entities.ts";
 export * from "./events.ts";
+export * from "./jobs.ts";
 export * from "./legs.ts";
 export * from "./live.ts";
 export * from "./metrics.ts";
