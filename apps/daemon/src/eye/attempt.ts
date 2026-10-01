@@ -635,6 +635,34 @@ export async function runAttempt(
         }
       }
 
+      // No verify command (research, plan): a second reasoning look decides (The-Eye → Planning).
+      if (!task.verify.length && d.brain) {
+        event("task.evaluating", {});
+        try {
+          const review = await d.brain.evaluate({
+            jobId: job.id,
+            cwd: ws.cwd,
+            task: { title: task.title, instructions: task.instructions, kind: task.kind },
+            report: end.text,
+            changes: diffStatSince(ws.g, ckpt, ws.tmpDir),
+          });
+          verified = review.accepted;
+          event("task.evaluated", { accepted: review.accepted, reason: review.reason });
+          if (!review.accepted) {
+            failure = `The Eye reviewed the work: ${review.reason}${review.missing.length ? `\nStill missing:\n${review.missing.map((m) => `- ${m}`).join("\n")}` : ""}`;
+            observed.verifyFailures.push(`evaluate:${review.missing.join("|") || review.reason}`);
+            if (claimsDone(end.text))
+              observed.falseClaim = "said it was done, but the review found work missing";
+          }
+        } catch (error) {
+          // No Leg could review it: accepted as before, and said so.
+          event("task.evaluated", {
+            accepted: true,
+            reason: `not reviewed: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        }
+      }
+
       const drifts = detect(observed, now(), DEFAULT_THRESHOLDS);
       if (verified && !drifts.some((x) => x.code === "D1")) {
         await closeSession();

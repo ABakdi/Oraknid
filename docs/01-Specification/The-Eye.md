@@ -56,7 +56,11 @@ skill, the Silk summary and a workspace digest (tree, key files,
 existing tests). The plan has to give every task `scope`, `verify[]`
 and `requiredCapabilities`. A task without a verify command is only
 accepted for `research` or `plan` kinds, and those are reviewed by a
-second reasoning call.
+second reasoning call (`evaluate`) at each turn end: it reads the
+Leg's report, what changed and the workspace, and either accepts the
+task or sends it back with exactly what is missing, like a failed
+check. If no Leg can review it, the task is accepted and the event says
+it was not reviewed.
 
 Plans are versioned. A replan never discards done tasks. It adds,
 removes or rewrites pending ones, and the change is shown in the UI.

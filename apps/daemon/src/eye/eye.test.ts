@@ -91,6 +91,7 @@ async function eye(
     sameProviderFallback?: boolean;
     classify?: (command: string) => { decision: "allow" | "ask"; reason: string };
     triage?: (message: string) => EyeTriage | Promise<EyeTriage>;
+    evaluate?: (report: string) => { accepted: boolean; reason: string; missing: string[] };
     files?: Record<string, string>;
   } = {},
 ) {
@@ -108,6 +109,8 @@ async function eye(
       return o.replan;
     },
     summarize: async () => ({ title: "s", body: "s" }),
+    evaluate: async ({ report }) =>
+      o.evaluate?.(report) ?? { accepted: true, reason: "it is there", missing: [] },
     triage: async ({ message }) => {
       if (!o.triage) throw new Error("no triage scripted");
       return o.triage(message);
@@ -1247,5 +1250,54 @@ describe("storage (M1.9)", () => {
       /is running/,
     );
     await api.jobs.cancel({ id });
+  });
+});
+
+describe("a second look at tasks without checks (M1.9)", () => {
+  const RESEARCH: WebPlan = {
+    summary: "Find out which shell to target.",
+    tasks: [
+      {
+        key: "r",
+        title: "Research the shells",
+        instructions: "Write NOTES.md: which shells must hello.sh support?",
+        kind: "research",
+        dependsOn: [],
+        scope: ["NOTES.md"],
+        verify: [],
+        requiredCapabilities: ["planning"],
+        difficulty: "low",
+      },
+    ],
+    jobVerify: [],
+  };
+
+  it("sends a research task back with what the review found missing, then accepts it", async () => {
+    const reviews: string[] = [];
+    const { api, id, leg } = await eye(
+      (t) =>
+        t.message.includes("Still missing")
+          ? [
+              { write: "NOTES.md", content: "POSIX sh and bash.\n" },
+              { say: "DONE: NOTES.md written" },
+            ]
+          : [{ say: "DONE, I looked around." }],
+      {
+        plan: RESEARCH,
+        evaluate: (report) => {
+          reviews.push(report);
+          return report.includes("NOTES.md written")
+            ? { accepted: true, reason: "NOTES.md answers the question.", missing: [] }
+            : {
+                accepted: false,
+                reason: "There are no findings.",
+                missing: ["NOTES.md with the shells"],
+              };
+        },
+      },
+    );
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    expect(reviews).toHaveLength(2);
+    expect(leg.log.some((t) => t.message.includes("- NOTES.md with the shells"))).toBe(true);
   });
 });

@@ -63,7 +63,7 @@ crashes and reboots.
 - [x] `inbox.list` / `inbox.answer` on the API, early, so the import question can be answered before M1.7
 
 ### M1.6 — The Eye
-- [~] `EyeBrain` interface + `PoolLegBrain` ([[ADR-008-Eye-Brain]]): `plan`, `replan`, `summarize`; a short read-only session, JSON validated by schema **and** by The Web's rules, one retry with the exact problems. The Eye Leg is a setting (`settings.setEyeLeg`); asking for it at first run is the UI's job (M1.8). `evaluate` (a second look at tasks without verify commands) and `interviewRound` arrive with M1.7.
+- [~] `EyeBrain` interface + `PoolLegBrain` ([[ADR-008-Eye-Brain]]): `plan`, `replan`, `summarize`; a short read-only session, JSON validated by schema **and** by The Web's rules, one retry with the exact problems. The Eye Leg is a setting (`settings.setEyeLeg`); asking for it at first run is the UI's job (M1.8). `interviewRound` arrived with M1.7, `evaluate` (a second look at tasks without verify commands) with M1.9.
 - [x] Planning to a validated Web (unique keys, existing dependencies, no cycles, verify commands and relative scopes); replans add tasks and never touch done ones
 - [x] Model-aware routing ([[ADR-013-Model-Aware-Routing]]): difficulty fit, capability, past success, quota cost per window, scarce-window reservation, step-ups (effort, then strength), avoidance of models that failed the task; every exclusion says why; the choice is recorded on the task
 - [x] Fallback to another Leg on a usage limit (with a handoff); `blocked` until the earliest reset when none is left, resumed on its own (checked every 30 s)
@@ -86,7 +86,7 @@ crashes and reboots.
 - [x] Untrusted-content wrapping (BR-15): inputs marked untrusted are wrapped as data in context packs, scanned once for attempts to steer the agent (flagged in Silk and the stream), and make every gated action ask, waivers and Full autonomy or not
 - [x] Audit log + daily JSONL: every event records its actor (me, The Eye, a Leg, Oraknid), is scrubbed of known secrets and secret-shaped strings before it's stored (Leg logs too), is searchable (`audit.search`), and exported once to `logs/audit/<day>.jsonl`
 - [x] From M1.2: notification routing per event (the spec's table, my changes win), quiet hours, grouping ("2 approvals waiting"), email only after 15 minutes unanswered
-- [~] Moved to M1.9 hardening: summarising shortened Silk entries with `brain.summarize` (built in M1.9), and a second reasoning look at tasks without verify commands (accepted after their turn for now)
+- [x] Moved to M1.9 hardening and built there: summarising shortened Silk entries with `brain.summarize`, and `brain.evaluate`, a second reasoning look at tasks without verify commands
 
 ### M1.8 — Web UI
 - [x] Shell: sidebar / bottom tabs ("More" for the rest), ⌘K palette (pages, jobs, pause and resume), live indicator, "awake" badge, inbox count, dark-first theme with light and system

@@ -37,6 +37,14 @@ export interface EyeBrain {
     command: string;
     why: string;
   }): Promise<CommandVerdict>;
+  /** A second look at a task with no verify command (research, plan): is it really done? */
+  evaluate(input: {
+    jobId: string;
+    cwd: string;
+    task: { title: string; instructions: string; kind: string };
+    report: string;
+    changes: string;
+  }): Promise<Evaluation>;
   /** What a message of mine is, and what to do about it (Talking to The Eye). */
   triage(input: {
     jobId: string;
@@ -72,6 +80,15 @@ export const CommandVerdict = z.object({
   reason: z.string().min(1),
 });
 export type CommandVerdict = z.infer<typeof CommandVerdict>;
+
+export const Evaluation = z.object({
+  accepted: z.boolean(),
+  /** One sentence: why it is done, or what is wrong. */
+  reason: z.string().min(1),
+  /** When not accepted: what is still missing, concretely. */
+  missing: z.array(z.string()).default([]),
+});
+export type Evaluation = z.infer<typeof Evaluation>;
 
 export const EyeTriage = z.object({
   intent: EyeIntent,
@@ -191,6 +208,28 @@ ${i.command.slice(0, 4000)}
 Answer "allow" when the command plausibly serves the task and cannot harm anything outside the worktree: fetching documentation or packages, running the project's tools, reading public URLs.
 Answer "ask" when it could send the owner's data out, change things outside the machine (posting, uploading, deploying, logging in), download and run unknown code, or when you cannot tell. Explain in one sentence.`;
     return this.#ask(i.jobId, i.cwd, "low", ["classify"], CommandVerdict, prompt, "classify");
+  }
+
+  evaluate(i: {
+    jobId: string;
+    cwd: string;
+    task: { title: string; instructions: string; kind: string };
+    report: string;
+    changes: string;
+  }) {
+    const prompt = `A coding agent says it finished a ${i.task.kind} task that has no automatic check. Review it before it is accepted. You may read the files in the workspace.
+
+# The task: ${i.task.title}
+${i.task.instructions}
+
+# What the agent reported at the end
+${i.report.slice(-4000) || "(nothing)"}
+
+# What changed in the workspace
+${i.changes.slice(0, 3000) || "No file changes."}
+
+Accept it ("accepted": true) when the work the task asks for is there and sound: the findings or the plan exist where the task says, cover what it asks, and contain nothing invented. Otherwise list in "missing" exactly what is still needed, so the agent can finish. "reason" is one sentence.`;
+    return this.#ask(i.jobId, i.cwd, "medium", ["review"], Evaluation, prompt, "evaluate");
   }
 
   triage(i: {
