@@ -6,29 +6,38 @@ table is the summary and is kept in step with the contracts.
 
 | Area | Procedure | Purpose |
 | :-- | :-- | :-- |
-| System | `system.status` | Version, uptime, pid, data directory, last event `seq`, inhibitor, secret store, sandbox and service status. |
-| | `system.doctor` | Run the checks. |
-| Devices | `devices.pairStart` / `devices.pairComplete` / `devices.list` / `devices.revoke` | Pairing. |
-| Projects | `projects.create` / `list` (since M1.6) · `policy` / `setPolicy` (M1.9) · `get` / `archive` / `delete` / `stats` | Creating a project in a folder that isn't a git repo asks: `initGit: true` or a shadow repo. |
-| Jobs | `jobs.create` / `start` / `get` / `list` / `pause` / `resume` / `cancel` (M1.6) · `setAutonomy` / `setWaivers` / `setRules` (M1.7) · `setBudget` (M1.9) · `redirect` / `stats` / `export` · `talk` / `conversation` · `result` / `merge` / `openFolder` (Checkpoint 1) | A job's view carries its tasks, worktree and branch. `talk` returns at once; The Eye's reply arrives as `eye.replied`. `merge` returns `{ok, commit}` or `{ok: false, reason, conflicts}`. |
-| Policies | `policies.get` / `policies.update` (since M1.7) | My global allow and deny rules. |
-| Web | `web.get` / `web.edit` (add, remove, reorder, rewrite tasks) | Plan editing. |
-| Tasks | `tasks.get` / `tasks.pin` (to a Leg) / `tasks.takeOver` / `tasks.handBack` / `tasks.rollback` / `tasks.diff` | |
-| Legs | `legs.list` / `get` / `create` / `test` / `update` / `pause` / `resume` / `remove` / `setModelHidden` / `setProfile` | Creating tests the Leg at once. A Leg's view carries its models with effective profiles (defaults, learned, my overrides), quota windows, VRAM, and a setup hint (e.g. how to log in). |
-| Silk | `silk.list` / `silk.add` / `silk.edit` / `silk.importMirror` | Editing supersedes. `importMirror` looks for hand edits now. |
-| Inbox | `inbox.list` / `inbox.answer` | Approvals, questions, interview rounds. `list` filters by state, kind, project, job and words (`q`); each item names its project, job and task (Checkpoint 1). |
-| Sessions | `sessions.list({jobId})` / `sessions.log({id, after})` (Checkpoint 1) | Each Leg session of a job (a task's or The Eye's call) and its log as readable lines, from a byte offset, so a live view reads only what is new. |
-| Skills | `skills.list` / `get` / `upload` / `edit` / `remove` (since M1.7) | Built-ins are read-only; an upload says what front matter it ignored. |
-| Logs | `audit.search` (since M1.7) · `logs.tail` / `logs.export` | Filters: job, type or prefix, actor, text. |
+| System | `system.status` · `system.doctor` | Version, uptime, pid, data directory, last event `seq`, inhibitor, secret store, sandbox and service status; the checks. |
+| Devices | `devices.pairStart` / `pairComplete` / `list` / `revoke` | Pairing. Five wrong codes cancel every open one (Audit 1). |
+| Projects | `projects.create` / `list` (M1.6) · `policy` / `setPolicy` (M1.9) | Creating a project in a folder that isn't a git repo asks: `initGit: true` or a shadow repo. |
+| Jobs | `jobs.create` / `start` / `get` / `list` / `pause` / `resume` / `cancel` (M1.6) · `setAutonomy` / `setWaivers` / `setRules` / `redirect` (M1.7) · `setBudget` (M1.9) · `talk` / `conversation` · `result` / `merge` / `openFolder` (Checkpoint 1) | A job's view carries its tasks, worktree and branch. `talk` returns at once; The Eye's reply arrives as `eye.replied`. `merge` returns `{ok, commit}` or `{ok: false, reason, conflicts}`. |
+| Web | `web.edit` (add, update, remove tasks) | Plan editing; an edit that breaks The Web's rules is refused and undone. |
+| Tasks | `tasks.pin` / `takeOver` / `handBack` / `rollback` / `attempts` | |
+| Sessions | `sessions.list({jobId})` / `sessions.log({id, after})` (Checkpoint 1) | Each Leg session of a job and its log as readable lines, from a byte offset. |
+| Legs | `legs.list` / `get` / `create` / `test` / `update` / `pause` / `resume` / `remove` / `setModelHidden` / `setProfile` | Creating tests the Leg at once. A Leg's view carries its models with effective profiles, quota windows, VRAM and a setup hint. |
+| Silk | `silk.list` / `add` / `edit` / `importMirror` | Editing supersedes. `importMirror` looks for hand edits now. |
+| Inbox | `inbox.list` / `inbox.answer` | `list` filters by state, kind, project, job and words (`q`); each item names its project, job and task. An approval takes only one of its options; the answering device is recorded. |
+| Skills | `skills.list` / `get` / `upload` / `edit` / `remove` | Built-ins are read-only; an upload says what front matter it ignored. |
+| Stats | `stats.summary` / `tokens` / `activity` | Totals and charts per job, project or everything. |
+| Logs | `audit.search` | Filters: job, type or prefix, actor, text. |
 | Secrets | `secrets.unlock` | Opens the encrypted-file store when there is no keychain. |
 | Metrics | `metrics.recent` | Samples since a time, up to the last hour. |
 | Notifications | `notifications.get` / `update` / `configureEmail` / `test` / `vapidPublicKey` / `subscribe` / `unsubscribe` | Per-channel switches, SMTP setup (password to the secret store), web push. |
-| Settings | `settings.setEyeLeg` (since M1.6) · `settings.sameProviderFallback` / `setSameProviderFallback` (ADR-009) · `settings.get` / `settings.update` / `policies.get` / `policies.update` | |
-| Storage | `storage.usage` / `storage.prune` | |
+| Settings | `settings.setEyeLeg` · `sameProviderFallback` / `setSameProviderFallback` (ADR-009) · `policies.get` / `update` | |
+| Storage | `storage.usage` / `storage.prune` (M1.9) | |
 
-Every mutating procedure takes a client-generated `requestId`
-(idempotency). Errors carry a code **and** a sentence for the UI
-(BR-17).
+**Not built yet** (Audit 1 → Q1-15), with where they land: `projects.get`
+/ `archive` / `delete`, `jobs.export`, `tasks.diff` and the checkpoint
+list, `logs.tail` / `export` (Phase 2, with the job settings tab and the
+log screens); a general `settings.get` / `update` when a second setting
+needs it.
+
+Mutating procedures are not idempotent by a client `requestId` yet: they
+are safe to repeat by their own state (a second `start`, `pause` or
+`answer` is refused with a sentence). A `requestId` arrives with The Nest
+(Phase 4), where a retried request over a flaky link needs it. Errors
+carry a code (`BAD_REQUEST`, `NOT_FOUND`, `CONFLICT`,
+`INTERNAL_SERVER_ERROR`) **and** a sentence for the UI (BR-17); an
+internal error's details stay in the daemon's log.
 
 Outside `/api`: `GET /health` (liveness, used by the CLI) and the
 `/live` WebSocket ([[Realtime-Transport]]).
