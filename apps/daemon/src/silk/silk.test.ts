@@ -172,7 +172,11 @@ describe("handoff rebuilt from a session log", () => {
       { type: "turn.ended", reason: "interrupted", text: "Redirect still failing.", error: null },
     ];
     writeFileSync(log, lines.map((l) => JSON.stringify(l)).join("\n"));
-    const h = handoffFromLog({ goal: "Add login", logFile: log, cwd: ws, since: "HEAD" });
+    const h = handoffFromLog({
+      goal: "Add login",
+      logFile: log,
+      diffStat: spawnSync("git", ["diff", "--stat", "HEAD"], { cwd: ws, encoding: "utf8" }).stdout,
+    });
     expect(h).toContain("login.ts");
     expect(h).toContain("- `pnpm test auth` (failed)");
     expect(h).toContain("Redirect still failing.");

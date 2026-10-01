@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { reconstructHandoff } from "@oraknid/core";
 import type { LegEvent } from "@oraknid/leg-sdk";
@@ -10,9 +9,8 @@ import type { LegEvent } from "@oraknid/leg-sdk";
 export function handoffFromLog(o: {
   goal: string;
   logFile: string;
-  cwd: string;
-  /** The task's last checkpoint; HEAD until checkpoints exist. */
-  since?: string;
+  /** `git diff --stat` since the task's checkpoint, from Oraknid's own git handle (Audit 1 → S1-01). */
+  diffStat: string;
   verifyOutput?: string | null;
 }): string {
   const events: LegEvent[] = existsSync(o.logFile)
@@ -40,13 +38,9 @@ export function handoffFromLog(o: {
   const lastText = [...events].reverse().find((e) => e.type === "turn.ended") as
     | Extract<LegEvent, { type: "turn.ended" }>
     | undefined;
-  const diff = spawnSync("git", ["diff", "--stat", o.since ?? "HEAD"], {
-    cwd: o.cwd,
-    encoding: "utf8",
-  });
   return reconstructHandoff({
     goal: o.goal,
-    diffStat: diff.status === 0 ? diff.stdout : "",
+    diffStat: o.diffStat,
     commands,
     lastText: lastText?.text ?? "",
     verifyOutput: o.verifyOutput ?? null,

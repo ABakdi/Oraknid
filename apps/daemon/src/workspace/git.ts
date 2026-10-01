@@ -253,6 +253,8 @@ export function checkpoint(g: Git, ref: string, message: string, tmpDir: string)
   return commit;
 }
 
+export const hasRef = (g: Git, ref: string) => ok(g, ["rev-parse", "--verify", "--quiet", ref]);
+
 /** Paths that differ between a checkpoint and the work tree now. */
 export function changedSince(g: Git, ref: string, tmpDir: string): string[] {
   const tree = snapshotTree(g, tmpDir);

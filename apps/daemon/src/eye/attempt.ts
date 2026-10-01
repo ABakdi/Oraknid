@@ -28,7 +28,7 @@ import type {
   UsageSnapshot,
 } from "@oraknid/leg-sdk";
 import type { Sandbox } from "@oraknid/os";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "../db/open.ts";
 import { attempts, jobs, sessions, tasks } from "../db/schema.ts";
@@ -47,6 +47,7 @@ import {
   commitAll,
   diffStatSince,
   type Git,
+  hasRef,
   restorePaths,
   rollback,
 } from "../workspace/git.ts";
@@ -250,8 +251,13 @@ export async function runAttempt(
   });
 
   const ckpt = `refs/oraknid/${job.id}/${taskId}/${attemptNo}`;
+  // The task's scope is measured from before its first attempt, so what a crashed one left
+  // outside it is still seen (Audit 1 → D1-06).
+  const scopeBase = `refs/oraknid/${job.id}/${taskId}/base`;
   try {
     checkpoint(ws.g, ckpt, `oraknid: before ${task.title} (attempt ${attemptNo})`, ws.tmpDir);
+    if (!hasRef(ws.g, scopeBase))
+      checkpoint(ws.g, scopeBase, `oraknid: before ${task.title}`, ws.tmpDir);
   } catch (error) {
     // No attempt or task is left looking alive by a checkpoint that failed (Audit 1 → Q1-13).
     d.db
@@ -261,6 +267,39 @@ export async function runAttempt(
       .run();
     d.db.update(tasks).set({ state: "ready" }).where(eq(tasks.id, taskId)).run();
     throw error;
+  }
+
+  // A crash leaves no handoff behind: built now from its session's log (Durability step 4; Audit 1 → D1-06).
+  const before = d.db
+    .select()
+    .from(attempts)
+    .where(eq(attempts.taskId, taskId))
+    .orderBy(desc(attempts.startedAt))
+    .all()
+    .find((a) => a.id !== attemptId);
+  if (before?.outcome === "abandoned") {
+    const handedOff = d.silk
+      .all(job.id)
+      .some((e) => e.kind === "handoff" && e.taskId === taskId && e.createdAt >= before.startedAt);
+    const log = d.db
+      .select({ logFile: sessions.logFile })
+      .from(sessions)
+      .where(eq(sessions.attemptId, before.id))
+      .orderBy(desc(sessions.startedAt))
+      .get()?.logFile;
+    if (!handedOff && log)
+      d.silk.add({
+        jobId: job.id,
+        taskId,
+        kind: "handoff",
+        title: `Handoff: ${task.title}`,
+        body: handoffFromLog({
+          goal: task.instructions,
+          logFile: log,
+          diffStat: safeDiffStat(ws, `refs/oraknid/${job.id}/${taskId}/${attemptNo - 1}`),
+        }),
+        authoredBy: "eye",
+      });
   }
 
   const escalations: string[] = [];
@@ -431,7 +470,11 @@ export async function runAttempt(
     }
     if (!/## Goal of the task/.test(body)) {
       body = sessionLog
-        ? handoffFromLog({ goal: task.instructions, logFile: sessionLog, cwd: ws.cwd, since: ckpt })
+        ? handoffFromLog({
+            goal: task.instructions,
+            logFile: sessionLog,
+            diffStat: safeDiffStat(ws, ckpt),
+          })
         : "No session ran yet.";
     }
     d.silk.add({
@@ -514,10 +557,10 @@ export async function runAttempt(
     switch (next.step) {
       case "correct": {
         if (drift.code === "D1") {
-          const outside = changedSince(ws.g, ckpt, ws.tmpDir).filter(
+          const outside = changedSince(ws.g, scopeBase, ws.tmpDir).filter(
             (p) => !inTaskScope(p, task.scope),
           );
-          restorePaths(ws.g, ckpt, outside, ws.trash);
+          restorePaths(ws.g, scopeBase, outside, ws.trash);
         }
         await session?.session.send(
           `${correctivePrompt(drift, task.scope, task.verify)}${failure ? `\n\n${failure}` : ""}`,
@@ -665,7 +708,7 @@ export async function runAttempt(
         continue;
       }
 
-      observed.changedPaths = changedSince(ws.g, ckpt, ws.tmpDir);
+      observed.changedPaths = changedSince(ws.g, scopeBase, ws.tmpDir);
       let verified = task.verify.length === 0;
       let failure = "";
       if (task.verify.length) {
@@ -806,6 +849,15 @@ export async function runAttempt(
       });
     });
     throw error;
+  }
+}
+
+/** What changed since a checkpoint, or nothing when git can't tell. */
+function safeDiffStat(ws: { g: Git; tmpDir: string }, since: string): string {
+  try {
+    return diffStatSince(ws.g, since, ws.tmpDir);
+  } catch {
+    return "";
   }
 }
 

@@ -7,11 +7,11 @@ import { decide } from "@oraknid/core";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { RouterClient } from "@orpc/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Router } from "../api/router.ts";
 import { type Daemon, startDaemon } from "../daemon.ts";
-import { eyeMessages, jobs, legs } from "../db/schema.ts";
+import { eyeMessages, jobs, legs, silkEntries } from "../db/schema.ts";
 import { resolvePaths } from "../paths.ts";
 import { fakeOs } from "../testing/fake-os.ts";
 import { type Action, scriptedLeg, type TurnContext } from "../testing/scripted-leg.ts";
@@ -1478,5 +1478,32 @@ describe("a message cut off by a crash (Audit 1 → D1-11)", () => {
     while ((await api.jobs.conversation({ id })).at(-1)?.author !== "eye" && Date.now() < end)
       await new Promise((r) => setTimeout(r, 20));
     expect((await api.jobs.conversation({ id })).at(-1)?.text).toBe("Two tasks.");
+  });
+});
+
+describe("after a crash, the next attempt knows where the last one stopped (Audit 1 → D1-06)", () => {
+  it("builds the missing handoff from the cut-short session's log", async () => {
+    let hang = true;
+    const { api, id, d, leg } = await eye((t) =>
+      task(t) === "Write hello.sh" && hang
+        ? [{ run: "echo trying >/dev/null" }, { hang: true }]
+        : good(t),
+    );
+    const end = Date.now() + 5000;
+    while ((await api.jobs.get({ id })).tasks[0]?.state !== "running" && Date.now() < end)
+      await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => setTimeout(r, 100));
+    await api.jobs.pause({ id });
+    // As after a crash: the attempt was cut short and no handoff was written.
+    d.db
+      .delete(silkEntries)
+      .where(and(eq(silkEntries.jobId, id), eq(silkEntries.kind, "handoff")))
+      .run();
+    hang = false;
+    await api.jobs.resume({ id });
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    const handoff = (await api.silk.list({ jobId: id })).find((e) => e.kind === "handoff");
+    expect(handoff?.body).toContain("echo trying");
+    expect(leg.log.some((t) => t.system.includes("echo trying"))).toBe(true);
   });
 });
