@@ -20,6 +20,7 @@ import {
   SilkEntry,
   SilkKind,
   SystemStatus,
+  type TaskView,
 } from "@oraknid/contracts";
 import {
   type InhibitorState,
@@ -167,6 +168,9 @@ function jobView(c: ApiContext, id: string): JobView {
       effort: t.effort,
       attemptCount: t.attemptCount,
       budget: null,
+      routing: (t.routing as TaskView["routing"]) ?? null,
+      pinnedModelId: t.pinnedModelId,
+      ownerHeld: t.ownerHeld,
     }));
   return JobView.parse({ ...job, tasks, worktree: job.worktree, branch: job.branch });
 }

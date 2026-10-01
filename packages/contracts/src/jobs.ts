@@ -41,12 +41,35 @@ export const NewJob = z.object({
 });
 export type NewJob = z.infer<typeof NewJob>;
 
+export const TaskView = Task.extend({
+  /** Why the router chose its Leg model: score, reasons, what it left out. */
+  routing: z
+    .object({
+      leg: z.string(),
+      model: z.string(),
+      effort: z.string().nullable(),
+      score: z.number(),
+      reasons: z.array(z.string()),
+      excluded: z.array(z.object({ legModelId: z.string(), why: z.string() })),
+    })
+    .nullable(),
+  pinnedModelId: z.string().nullable(),
+  ownerHeld: z.boolean(),
+});
+export type TaskView = z.infer<typeof TaskView>;
+
 export const JobView = Job.extend({
-  tasks: z.array(Task),
+  tasks: z.array(TaskView),
+  /** I chose to run it without the sandbox (ADR-006): shown in red. */
+  unsandboxed: z.boolean(),
   worktree: z.string().nullable(),
   branch: z.string().nullable(),
 });
 export type JobView = z.infer<typeof JobView>;
 
-export const ProjectView = Project.extend({ jobCount: z.number().int().nonnegative() });
+export const ProjectView = Project.extend({
+  jobCount: z.number().int().nonnegative(),
+  /** Not a git repo: checkpoints live in a shadow repo and the folder is left alone. */
+  shadow: z.boolean(),
+});
 export type ProjectView = z.infer<typeof ProjectView>;
