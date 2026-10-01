@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Event } from "./events.ts";
+import { MetricsSample } from "./metrics.ts";
 
 // WebSocket frames on /live (docs/02-Architecture/Realtime-Transport.md).
 
@@ -19,6 +20,8 @@ export type ClientFrame = z.infer<typeof ClientFrame>;
 export const ServerFrame = z.discriminatedUnion("type", [
   z.object({ type: z.literal("hello"), version: z.string(), seq: z.number().int().nonnegative() }),
   z.object({ type: z.literal("event"), event: Event }),
+  /** Ephemeral, to clients subscribed to "metrics"; not in the event log. */
+  z.object({ type: z.literal("metrics"), sample: MetricsSample }),
   /** Sent instead of a replay when too many events were missed. */
   z.object({ type: z.literal("snapshot-needed"), seq: z.number().int().nonnegative() }),
   z.object({ type: z.literal("ping") }),

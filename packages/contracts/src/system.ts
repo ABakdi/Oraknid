@@ -8,6 +8,25 @@ export const SystemStatus = z.object({
   pid: z.number().int().positive(),
   dataDir: z.string(),
   lastSeq: z.number().int().nonnegative(),
+  inhibitor: z.object({
+    held: z.boolean(),
+    mode: z.enum(["block", "delay"]).nullable(),
+    why: z.string().nullable(),
+    problem: z.string().nullable(),
+  }),
+  secrets: z.object({
+    kind: z.enum(["keychain", "encrypted-file", "none"]),
+    available: z.boolean(),
+    detail: z.string(),
+  }),
+  sandbox: z.object({ available: z.boolean(), detail: z.string() }),
+  service: z.object({
+    installed: z.boolean(),
+    enabled: z.boolean(),
+    active: z.boolean(),
+    startsAtBoot: z.boolean(),
+    detail: z.string(),
+  }),
 });
 export type SystemStatus = z.infer<typeof SystemStatus>;
 
