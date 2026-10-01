@@ -9,7 +9,10 @@ export const estimateTokens = (s: string) => Math.ceil(s.length / 4);
 
 /** The latest version of every entry: superseded ones drop out. */
 export function current(entries: SilkEntry[]): SilkEntry[] {
-  const superseded = new Set(entries.map((e) => e.supersedes).filter((x): x is string => !!x));
+  const superseded = new Set([
+    ...entries.map((e) => e.supersedes).filter((x): x is string => !!x),
+    ...entries.flatMap((e) => e.covers ?? []),
+  ]);
   return entries.filter((e) => !superseded.has(e.id));
 }
 

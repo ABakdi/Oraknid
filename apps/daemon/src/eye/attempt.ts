@@ -61,6 +61,7 @@ import { approveAllLikeThis, policyFor } from "./policy.ts";
 /** The third answer to a Leg's permission request (Approvals → The inbox). */
 export const ALL_LIKE_THIS = "Approve all like this for this job";
 
+import { summarizeShortened } from "../silk/summarize.ts";
 import { guidanceMark, takeGuidance } from "./talk.ts";
 import { runVerify } from "./verify.ts";
 
@@ -337,7 +338,7 @@ export async function runAttempt(
 
   const pack = (): string => {
     const window = leg.profile.contextWindow ?? 200_000;
-    return buildContextPack({
+    const built = buildContextPack({
       task: {
         id: task.id,
         title: task.title,
@@ -351,7 +352,10 @@ export async function runAttempt(
       digest: "",
       inputs: job.inputs,
       capTokens: Math.floor(window * 0.15),
-    }).text;
+    });
+    // What had to be shortened is summarised in the background for the next pack.
+    if (built.shortened.length >= 2) void summarizeShortened(d, job.id, ws.cwd, built.shortened);
+    return built.text;
   };
 
   const openSession = async (prompt: string) => {

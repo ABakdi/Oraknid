@@ -62,8 +62,10 @@ The pack has a token cap: by default 15% of the receiving Leg's context
 window. If it goes over, the least important and oldest entries are cut
 to their titles first (entries I wrote stay whole), then the digest is
 trimmed. The task itself is never cut. Shortened entries are then
-summarised by a cheap Leg, and the summary is stored as a new entry that
-supersedes the ones it covers (from M1.6).
+summarised in the background by a cheap Leg, one summary per kind (two
+entries or more), stored as a new entry whose `covers` lists the
+entries it replaces; they leave the current Silk together. My entries,
+handoffs and interview answers are never summarised.
 
 ## Storage and mirror
 

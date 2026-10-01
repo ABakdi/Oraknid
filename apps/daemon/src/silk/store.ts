@@ -18,6 +18,8 @@ export interface NewSilkEntry {
   body: string;
   authoredBy: Actor;
   supersedes?: string | null;
+  /** For a summary: the entries it replaces together. */
+  covers?: string[];
 }
 
 export const IMPORT = "Import my edits";
@@ -49,6 +51,7 @@ export class SilkStore {
       title: e.title.trim(),
       body: e.body,
       supersedes: e.supersedes ?? null,
+      covers: e.covers ?? [],
       authoredBy: e.authoredBy,
       createdAt: this.now(),
     };
@@ -60,6 +63,12 @@ export class SilkStore {
         if (old.authoredBy === "owner" && e.authoredBy !== "owner") {
           throw new Error("Only I can supersede an entry I wrote.");
         }
+      }
+      for (const id of row.covers) {
+        const old = this.get(id);
+        if (!old || old.jobId !== e.jobId) throw new Error("That entry is not in this job's Silk.");
+        if (old.authoredBy === "owner" && e.authoredBy !== "owner")
+          throw new Error("Only I can supersede an entry I wrote.");
       }
       this.db.insert(silkEntries).values(row).run();
       this.bus.publish({

@@ -86,7 +86,7 @@ crashes and reboots.
 - [x] Untrusted-content wrapping (BR-15): inputs marked untrusted are wrapped as data in context packs, scanned once for attempts to steer the agent (flagged in Silk and the stream), and make every gated action ask, waivers and Full autonomy or not
 - [x] Audit log + daily JSONL: every event records its actor (me, The Eye, a Leg, Oraknid), is scrubbed of known secrets and secret-shaped strings before it's stored (Leg logs too), is searchable (`audit.search`), and exported once to `logs/audit/<day>.jsonl`
 - [x] From M1.2: notification routing per event (the spec's table, my changes win), quiet hours, grouping ("2 approvals waiting"), email only after 15 minutes unanswered
-- [~] Moved to M1.9 hardening: summarising shortened Silk entries with `brain.summarize`, and a second reasoning look at tasks without verify commands (accepted after their turn for now)
+- [~] Moved to M1.9 hardening: summarising shortened Silk entries with `brain.summarize` (built in M1.9), and a second reasoning look at tasks without verify commands (accepted after their turn for now)
 
 ### M1.8 — Web UI
 - [x] Shell: sidebar / bottom tabs ("More" for the rest), ⌘K palette (pages, jobs, pause and resume), live indicator, "awake" badge, inbox count, dark-first theme with light and system

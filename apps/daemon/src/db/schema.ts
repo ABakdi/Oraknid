@@ -189,6 +189,7 @@ export const silkEntries = sqliteTable(
     title: text("title").notNull(),
     body: text("body").notNull(),
     supersedes: text("supersedes"),
+    covers: json<string[]>("covers").notNull().default([]),
     authoredBy: json<unknown>("authored_by").notNull(),
     createdAt: integer("created_at").notNull(),
   },

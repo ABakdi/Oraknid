@@ -144,6 +144,7 @@ Its capability profile is described in [[Legs-and-Capability-Profiles]].
 | `kind` | `decision` · `architecture` · `progress` · `issue` · `handoff` · `fact` · `interview-answer` · `later` |
 | `title`, `body` | Markdown, short by design. |
 | `supersedes?` | The entry this one replaces. Old entries are kept but marked. |
+| `covers` | For a summary: the entries it replaces together. |
 | `authoredBy` | `eye`, a Leg ID, or `owner`. |
 
 ## Inbox item

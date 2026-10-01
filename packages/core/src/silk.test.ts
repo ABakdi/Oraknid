@@ -18,6 +18,7 @@ const entry = (over: Partial<SilkEntry>): SilkEntry => ({
   title: "t",
   body: "b",
   supersedes: null,
+  covers: [],
   authoredBy: "eye",
   createdAt: n,
   ...over,
@@ -32,6 +33,13 @@ const task = {
 };
 
 describe("context pack", () => {
+  it("drops what a summary covers from the current entries", () => {
+    const a = entry({ id: "a" });
+    const b = entry({ id: "b" });
+    const sum = entry({ id: "s", covers: ["a", "b"] });
+    expect(current([a, b, sum, entry({ id: "c" })]).map((e) => e.id)).toEqual(["s", "c"]);
+  });
+
   it("puts the task first and follows the spec's order", () => {
     const pack = buildContextPack({
       task,

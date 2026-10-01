@@ -1,0 +1,1 @@
+ALTER TABLE `silk_entries` ADD `covers` text DEFAULT '[]' NOT NULL;

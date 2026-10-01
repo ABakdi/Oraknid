@@ -231,6 +231,8 @@ export const SilkEntry = z.object({
   title: z.string().min(1),
   body: Markdown,
   supersedes: Id.nullable(),
+  /** A summary's entries: superseded by it together (Silk → Context pack). */
+  covers: z.array(Id).default([]),
   authoredBy: Actor,
   createdAt: Timestamp,
 });

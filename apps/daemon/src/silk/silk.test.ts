@@ -13,6 +13,7 @@ import { fakeOs } from "../testing/fake-os.ts";
 import { seedJob } from "../testing/fixtures.ts";
 import { handoffFromLog } from "./handoff.ts";
 import { DISCARD, IMPORT } from "./store.ts";
+import { summarizeShortened } from "./summarize.ts";
 
 let daemon: Daemon | undefined;
 afterEach(async () => {
@@ -168,5 +169,37 @@ describe("handoff rebuilt from a session log", () => {
     expect(h).toContain("- `pnpm test auth` (failed)");
     expect(h).toContain("Redirect still failing.");
     expect(h).toMatch(/## Traps\n\n- `pnpm test auth` failed/);
+  });
+});
+
+describe("summaries of shortened entries (M1.9)", () => {
+  it("replaces what a pack had to shorten with one entry per kind, never my entries", async () => {
+    const { d, jobId, workspace } = await start();
+    const add = (title: string, authoredBy: "eye" | "owner" = "eye") =>
+      d.silk.add({ jobId, kind: "fact", title, body: `${title}.`, authoredBy }).id;
+    const ids = [add("Node 24"), add("pnpm 10"), add("Tests use Vitest"), add("Mine", "owner")];
+    const asked: string[][] = [];
+    const brain = {
+      summarize: async ({ entries }: { entries: { title: string }[] }) => {
+        asked.push(entries.map((e) => e.title));
+        return { title: "The toolchain", body: "Node 24, pnpm 10, Vitest." };
+      },
+    } as never;
+    const [made] = await summarizeShortened({ silk: d.silk, brain }, jobId, workspace, ids);
+    expect(asked).toEqual([["Node 24", "pnpm 10", "Tests use Vitest"]]);
+    expect(made?.covers).toEqual(ids.slice(0, 3));
+    expect(d.silk.current(jobId).map((e) => e.title)).toEqual(["Mine", "The toolchain"]);
+    // Covered entries are no longer current: nothing is summarised twice.
+    expect(await summarizeShortened({ silk: d.silk, brain }, jobId, workspace, ids)).toEqual([]);
+    expect(() =>
+      d.silk.add({
+        jobId,
+        kind: "fact",
+        title: "x",
+        body: "x",
+        authoredBy: "eye",
+        covers: [ids[3] as string],
+      }),
+    ).toThrow("Only I can supersede an entry I wrote.");
   });
 });
