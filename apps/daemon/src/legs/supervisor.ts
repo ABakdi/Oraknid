@@ -75,6 +75,25 @@ export class LegSupervisor {
     return (this.o.now ?? Date.now)();
   }
 
+  /** Task sessions held per Leg (ADR-016: a Leg runs at most its limit at once). */
+  readonly #held = new Map<string, number>();
+
+  /** How many task sessions a Leg holds now. */
+  busy(legId: string): number {
+    return this.#held.get(legId) ?? 0;
+  }
+
+  /** Holds one of a Leg's slots for a task; the returned function gives it back, once. */
+  hold(legId: string): () => void {
+    this.#held.set(legId, this.busy(legId) + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.#held.set(legId, Math.max(0, this.busy(legId) - 1));
+    };
+  }
+
   /** Sessions being closed on purpose, not killed. */
   readonly #closing = new Map<string, string>();
 

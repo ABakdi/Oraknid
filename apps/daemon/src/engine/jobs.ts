@@ -1,6 +1,6 @@
 import type { JobState } from "@oraknid/contracts";
 import { assertJob } from "@oraknid/core";
-import { eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
 import { jobs } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
@@ -58,5 +58,34 @@ export class JobStore {
       });
       return this.require(id);
     });
+  }
+
+  /** Puts a job in the queue for a free slot (ADR-016); its state stays as it is. */
+  queue(id: string) {
+    this.bus.atomically(() => {
+      const job = this.require(id);
+      if (job.queuedAt) return;
+      this.db.update(jobs).set({ queuedAt: this.now() }).where(eq(jobs.id, id)).run();
+      this.bus.publish({
+        type: "job.queued",
+        topic: `job:${id}`,
+        jobId: id,
+        payload: { reason: "Waiting for a free slot under the running-jobs limit." },
+      });
+    });
+  }
+
+  unqueue(id: string) {
+    this.db.update(jobs).set({ queuedAt: null }).where(eq(jobs.id, id)).run();
+  }
+
+  /** The next queued job: highest priority first, then the one waiting longest. */
+  nextQueued(): JobRow | undefined {
+    return this.db
+      .select()
+      .from(jobs)
+      .where(and(isNotNull(jobs.queuedAt)))
+      .orderBy(desc(jobs.priority), asc(jobs.queuedAt))
+      .get();
   }
 }

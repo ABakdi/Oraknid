@@ -43,7 +43,7 @@ import { countActiveJobs, createInhibitController } from "./os/inhibit-controlle
 import { startMetricsLoop } from "./os/metrics-loop.ts";
 import { Secrets } from "./os/secrets.ts";
 import { DEFAULT_HOST, DEFAULT_PORT, type Paths } from "./paths.ts";
-import { readSetting } from "./settings.ts";
+import { MAX_RUNNING_JOBS, readSetting } from "./settings.ts";
 import { SilkStore } from "./silk/store.ts";
 import { SkillStore } from "./skills/store.ts";
 import { startNightlyBackups } from "./storage/storage.ts";
@@ -159,6 +159,8 @@ export async function startDaemon(options: DaemonOptions) {
     }
   });
   const runner = new JobRunner({
+    // How many jobs run at once; the rest queue by priority (ADR-016).
+    maxRunning: () => readSetting(db, MAX_RUNNING_JOBS, z.number().int().min(1), 2),
     jobs: jobsStore,
     journal,
     effects,

@@ -1,6 +1,7 @@
+import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeDatabase, type Db, openDatabase } from "../db/open.ts";
-import { tasks } from "../db/schema.ts";
+import { jobs as jobsTable, tasks } from "../db/schema.ts";
 import { EventBus } from "../events/bus.ts";
 import { InboxStore } from "../inbox/store.ts";
 import { seedJob } from "../testing/fixtures.ts";
@@ -16,7 +17,7 @@ beforeEach(async () => {
 });
 afterEach(() => closeDatabase(db));
 
-function engine(program: JobProgram) {
+function engine(program: JobProgram, maxRunning?: number) {
   const bus = new EventBus(db);
   const jobs = new JobStore(db, bus);
   const journal = new StepJournal(db);
@@ -30,6 +31,7 @@ function engine(program: JobProgram) {
     bus,
     program,
     safePointTimeoutMs: 5000,
+    ...(maxRunning ? { maxRunning: () => maxRunning } : {}),
   });
   return { bus, jobs, journal, inbox, effects, runner };
 }
@@ -117,6 +119,42 @@ describe("steps", () => {
     const other = seedJob(db);
     await e.runner.shutdown();
     expect(() => e.runner.start(other)).toThrow(/stopping/);
+  });
+
+  it("queues jobs past the limit and starts them by priority, then age (ADR-016)", async () => {
+    const gates = new Map<string, ReturnType<typeof gate>>();
+    const order: string[] = [];
+    const e = engine(async (ctx) => {
+      order.push(ctx.jobId);
+      if (ctx.state() === "draft") ctx.setState("planning");
+      const g = gate();
+      gates.set(ctx.jobId, g);
+      await ctx.step("work", null, async () => {
+        await g.opened;
+        return 1;
+      });
+      ctx.setState("running");
+      ctx.setState("verifying");
+      ctx.setState("completed");
+    }, 1);
+    const [a, b, c] = [seedJob(db), seedJob(db), seedJob(db)];
+    e.runner.start(a);
+    e.runner.start(b);
+    e.runner.start(c);
+    await until(() => order.length === 1);
+    expect(e.jobs.require(b).queuedAt).toBeTruthy();
+    expect(e.jobs.require(c).state).toBe("draft");
+    // c goes before b: higher priority.
+    db.update(jobsTable).set({ priority: 5 }).where(eq(jobsTable.id, c)).run();
+    gates.get(a)?.open();
+    await until(() => order.length === 2);
+    expect(order).toEqual([a, c]);
+    gates.get(c)?.open();
+    await until(() => order.length === 3);
+    gates.get(b)?.open();
+    await until(() => e.jobs.require(b).state === "completed");
+    expect(order).toEqual([a, c, b]);
+    expect(e.jobs.require(b).queuedAt).toBeNull();
   });
 
   it("refuses to replay a step with different input", async () => {

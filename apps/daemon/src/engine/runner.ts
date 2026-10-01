@@ -63,6 +63,8 @@ export interface RunnerOptions {
   program: JobProgram;
   /** BR-7: how long a Leg gets to reach a safe point before I'm told it is overdue. */
   safePointTimeoutMs?: number;
+  /** How many job programs may run at once (ADR-016); past it, jobs queue. Unlimited by default. */
+  maxRunning?: () => number;
 }
 
 /**
@@ -90,17 +92,28 @@ export class JobRunner {
     if (job.state === "paused" || job.state === "waiting") {
       throw new Error("That job is parked; resume it instead.");
     }
+    if (this.#full()) {
+      this.o.jobs.queue(jobId);
+      return;
+    }
+    if (job.queuedAt) this.o.jobs.unqueue(jobId);
     const controller = new AbortController();
     const run: Run = { controller, stop: null, reason: null, done: Promise.resolve() };
     this.#runs.set(jobId, run);
-    run.done = this.#loop(jobId, run).finally(() => this.#runs.delete(jobId));
+    run.done = this.#loop(jobId, run).finally(() => {
+      this.#runs.delete(jobId);
+      this.#admit();
+    });
   }
 
   /** Pauses at the next safe point. Resolves once the job is paused. */
   async pause(jobId: string, reason = "Paused by me.") {
     const run = this.#runs.get(jobId);
     if (!run) {
+      // A queued job that I pause leaves the queue; one that never started has nothing to pause.
+      this.o.jobs.unqueue(jobId);
       const job = this.o.jobs.require(jobId);
+      if (job.state === "draft") return;
       if (job.state !== "paused") this.o.jobs.transition(jobId, "paused", reason);
       return;
     }
@@ -117,12 +130,47 @@ export class JobRunner {
       if (!this.#runs.has(jobId)) this.start(jobId);
       return;
     }
+    // Past the limit it waits parked, in the queue, and resumes when a slot frees (ADR-016).
+    if (this.#full()) {
+      this.o.jobs.queue(jobId);
+      return;
+    }
+    if (job.queuedAt) this.o.jobs.unqueue(jobId);
     const to = (job.resumeState as JobState | null) ?? "running";
     this.o.jobs.transition(jobId, to, null);
     this.start(jobId);
   }
 
+  #full() {
+    return this.#runs.size >= (this.o.maxRunning?.() ?? Number.POSITIVE_INFINITY);
+  }
+
+  /** A slot freed: the queued job with the highest priority, then the oldest, goes next. */
+  #admit() {
+    while (!this.#closing && !this.#full()) {
+      const next = this.o.jobs.nextQueued();
+      if (!next) return;
+      this.o.jobs.unqueue(next.id);
+      try {
+        const parked =
+          next.state === "paused" || next.state === "waiting" || next.state === "blocked";
+        if (isTerminalJob(next.state as JobState)) continue;
+        if (parked)
+          void this.resume(next.id).catch((e) => console.error("queued resume failed", e));
+        else this.start(next.id);
+      } catch (error) {
+        console.error("queued start failed", error);
+      }
+    }
+  }
+
+  /** Re-reads the limit (it was changed): queued jobs start if there is room now. */
+  admit() {
+    this.#admit();
+  }
+
   async cancel(jobId: string, reason = "Cancelled by me.") {
+    this.o.jobs.unqueue(jobId);
     const run = this.#runs.get(jobId);
     if (run) await this.#stop(jobId, run, "cancel", reason);
     else this.o.jobs.transition(jobId, "cancelled", reason);

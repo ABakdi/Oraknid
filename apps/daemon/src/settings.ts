@@ -30,3 +30,6 @@ export function writeSetting<T extends z.ZodType>(
     .onConflictDoUpdate({ target: settings.key, set: { value: checked, updatedAt: now } })
     .run();
 }
+
+/** How many jobs run at once (ADR-016). */
+export const MAX_RUNNING_JOBS = "jobs.maxRunning";

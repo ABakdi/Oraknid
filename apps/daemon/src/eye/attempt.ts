@@ -168,19 +168,37 @@ export async function runAttempt(
         | undefined
     )?.quotaShare ?? null;
   const estimatedTokens = 20_000 + Math.ceil(task.instructions.length / 4);
-  const routed = route(
-    {
-      kind: task.kind as TaskKind,
-      difficulty: task.difficulty as Difficulty,
-      requiredCapabilities: task.requiredCapabilities as never,
-      estimatedTokens,
-      stepUp: task.stepUp,
-      pinnedModelId: task.pinnedModelId,
-      avoid: task.avoid,
-    },
-    candidates,
-    { moneyAllowed: job.moneyAllowed, quotaShare },
-  );
+  const routeTask = {
+    kind: task.kind as TaskKind,
+    difficulty: task.difficulty as Difficulty,
+    requiredCapabilities: task.requiredCapabilities as never,
+    estimatedTokens,
+    stepUp: task.stepUp,
+    pinnedModelId: task.pinnedModelId,
+    avoid: task.avoid,
+  };
+  const routeOptions = { moneyAllowed: job.moneyAllowed, quotaShare };
+  // A Leg runs at most its limit of task sessions at once (ADR-016). When only busy Legs could
+  // take the task, it waits for one, without blocking its job.
+  const free = (c: RouteCandidate) => d.supervisor.busy(c.legId) < legLimit(d, c.legId);
+  let routed = route(routeTask, candidates.filter(free), routeOptions);
+  let saidWaiting = false;
+  while (!routed.ranked[0] && route(routeTask, candidates, routeOptions).ranked[0]) {
+    if (!saidWaiting) {
+      saidWaiting = true;
+      d.bus.publish({
+        type: "task.waiting-for-leg",
+        topic: `job:${job.id}`,
+        jobId: job.id,
+        payload: {
+          taskId,
+          reason: "Every Leg that could take it is busy; it starts when one is free.",
+        },
+      });
+    }
+    await pause(1000, signal);
+    routed = route(routeTask, candidates.filter(free), routeOptions);
+  }
   const pick = routed.ranked[0];
   if (!pick) {
     // The earliest reset that frees a Leg: a used-up window, or one past this job's quota share.
@@ -207,6 +225,8 @@ export async function runAttempt(
     };
   }
   const leg = pick.candidate;
+  // Held from now until the attempt ends, whichever way.
+  const release = d.supervisor.hold(leg.legId);
   const routing = {
     leg: leg.legName,
     model: leg.model,
@@ -261,6 +281,7 @@ export async function runAttempt(
     if (!hasRef(ws.g, scopeBase))
       await checkpoint(ws.g, scopeBase, `oraknid: before ${task.title}`, ws.tmpDir);
   } catch (error) {
+    release();
     // No attempt or task is left looking alive by a checkpoint that failed (Audit 1 → Q1-13).
     d.db
       .update(attempts)
@@ -633,6 +654,7 @@ export async function runAttempt(
     outcome: "succeeded" | "failed" | "reassigned" | "abandoned",
     success: boolean,
   ) => {
+    release();
     for (const id of asked) d.inbox.withdraw(id);
     d.db
       .update(attempts)
@@ -856,6 +878,28 @@ export async function runAttempt(
     });
     throw error;
   }
+}
+
+/** A Leg's limit of task sessions at once: its own setting, else one (ADR-016). */
+function legLimit(d: AttemptDeps, legId: string): number {
+  const n = (d.registry.require(legId).config as { maxSessions?: unknown }).maxSessions;
+  return typeof n === "number" && n >= 1 ? n : 1;
+}
+
+/** Waits, or throws as soon as the attempt is stopped. */
+function pause(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) return reject(signal.reason);
+    const t = setTimeout(resolve, ms);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(t);
+        reject(signal.reason);
+      },
+      { once: true },
+    );
+  });
 }
 
 /** What changed since a checkpoint, or nothing when git can't tell. */

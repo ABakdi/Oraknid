@@ -1618,3 +1618,40 @@ describe("an attempt's recorded outcome survives a crash (Audit 1 → D1-12)", (
     expect(leg.log.filter((t) => task(t) === "Write hello.sh").length).toBe(before);
   });
 });
+
+describe("several jobs share a Leg (ADR-016)", () => {
+  it("lets a task wait for a busy Leg without blocking its job, then run", async () => {
+    let hang = true;
+    const { api, id, d } = await eye((t) =>
+      task(t) === "Write hello.sh" && hang && t.session === 1 ? [{ hang: true }] : good(t),
+    );
+    const end = Date.now() + 5000;
+    while ((await api.jobs.get({ id })).tasks[0]?.state !== "running" && Date.now() < end)
+      await new Promise((r) => setTimeout(r, 20));
+    const { projectId } = await api.jobs.get({ id });
+    const second = await api.jobs.create({
+      projectId,
+      goal: "Say hi, again",
+      verify: [],
+      autonomy: "standard",
+      inputs: [],
+      allowedLegIds: [],
+      unsandboxed: false,
+    });
+    await api.jobs.start({ id: second.id });
+    const end2 = Date.now() + 5000;
+    while (
+      !d.bus.since(0, [`job:${second.id}`], 500).some((e) => e.type === "task.waiting-for-leg") &&
+      Date.now() < end2
+    )
+      await new Promise((r) => setTimeout(r, 20));
+    const waiting = await api.jobs.get({ id: second.id });
+    expect(waiting.state).toBe("running");
+    expect(waiting.tasks[0]?.state).not.toBe("running");
+    hang = false;
+    await api.jobs.pause({ id });
+    await api.jobs.resume({ id });
+    expect((await until(api, second.id, ["completed", "blocked"], 15_000)).state).toBe("completed");
+    expect((await until(api, id, ["completed", "blocked"], 15_000)).state).toBe("completed");
+  }, 30_000);
+});

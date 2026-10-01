@@ -50,6 +50,10 @@ export const jobs = sqliteTable(
     projectId: text("project_id")
       .notNull()
       .references(() => projects.id),
+    /** Waiting for a free slot under the running-jobs limit (ADR-016). */
+    queuedAt: integer("queued_at"),
+    /** Higher runs first among queued jobs. */
+    priority: integer("priority").notNull().default(0),
     title: text("title").notNull(),
     goal: text("goal").notNull(),
     inputs: json<unknown[]>("inputs").notNull(),

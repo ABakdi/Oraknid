@@ -81,7 +81,7 @@ import { readSessionLog } from "../legs/session-log.ts";
 import type { Notifications } from "../notify/notifications.ts";
 import type { Secrets } from "../os/secrets.ts";
 import type { Paths } from "../paths.ts";
-import { readSetting, writeSetting } from "../settings.ts";
+import { MAX_RUNNING_JOBS, readSetting, writeSetting } from "../settings.ts";
 import type { SilkStore } from "../silk/store.ts";
 import type { SkillStore } from "../skills/store.ts";
 import { pruneLogs, storageUsage } from "../storage/storage.ts";
@@ -517,6 +517,28 @@ export const router = {
         });
       }),
     /** The Leg model The Eye borrows for reasoning (first-run setup); null lets routing choose. */
+    /** How many jobs run at once (ADR-016). */
+    maxRunningJobs: base
+      .output(z.number().int())
+      .handler(({ context: c }) =>
+        readSetting(c.jobs.db, MAX_RUNNING_JOBS, z.number().int().min(1), 2),
+      ),
+    setMaxRunningJobs: base
+      .input(z.object({ max: z.number().int().min(1).max(20) }))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          writeSetting(c.jobs.db, MAX_RUNNING_JOBS, z.number().int().min(1), input.max);
+          c.bus.publish({
+            type: "settings.updated",
+            topic: "overview",
+            jobId: null,
+            payload: { maxRunningJobs: input.max },
+            actor: "owner",
+          });
+          // Room now? Queued jobs start.
+          c.runner.admit();
+        }),
+      ),
     setEyeLeg: base
       .input(z.object({ legModelId: z.string().nullable() }))
       .handler(({ context: c, input }) =>
@@ -605,6 +627,26 @@ export const router = {
       .output(z.object({ changed: z.array(z.string()) }))
       .handler(({ context: c, input }) =>
         guard(() => setBudget(c.jobs.db, c.bus, input.id, input.budget)),
+      ),
+    /** Higher runs first among queued jobs (ADR-016). */
+    setPriority: base
+      .input(z.object({ id: z.string(), priority: z.number().int().min(-10).max(10) }))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          c.jobs.require(input.id);
+          c.jobs.db
+            .update(jobsTable)
+            .set({ priority: input.priority })
+            .where(eq(jobsTable.id, input.id))
+            .run();
+          c.bus.publish({
+            type: "job.priority",
+            topic: `job:${input.id}`,
+            jobId: input.id,
+            payload: { priority: input.priority },
+            actor: "owner",
+          });
+        }),
       ),
     setAutonomy: base
       .input(z.object({ id: z.string(), autonomy: Autonomy }))

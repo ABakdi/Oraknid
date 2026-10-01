@@ -66,6 +66,9 @@ export const JobView = Job.extend({
   branch: z.string().nullable(),
   /** Gated actions I waived for this job, and the job's own rules (the job's Settings tab). */
   waived: z.array(z.string()).default([]),
+  /** Waiting for a free slot under the running-jobs limit, and its priority (ADR-016). */
+  queuedAt: z.number().nullable().default(null),
+  priority: z.number().int().default(0),
   allowRules: z.array(z.string()).default([]),
   denyRules: z.array(z.string()).default([]),
 });
