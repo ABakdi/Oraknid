@@ -48,6 +48,8 @@ export interface PolicyContext {
    * never-allowed list stays absolute whatever I write here.
    */
   rules?: RuleLevel[];
+  /** The task's context holds untrusted content: gated actions always ask, whatever the autonomy (BR-15). */
+  untrusted?: boolean;
 }
 
 export type PolicyVerdict =
@@ -201,6 +203,13 @@ export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
     if (own?.verdict === "deny") return own;
     for (const g of GATED) {
       if (!g.pattern.test(command)) continue;
+      if (ctx.untrusted) {
+        return {
+          verdict: "ask",
+          reason: `${g.action} needs my approval: this task read untrusted content`,
+          gated: g.action,
+        };
+      }
       if (ctx.waived.has(g.action))
         return { verdict: "allow", reason: `${g.action} waived for this job` };
       // An allow rule of mine is a waiver for exactly what it matches.

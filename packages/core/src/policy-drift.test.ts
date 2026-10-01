@@ -91,6 +91,15 @@ describe("permission policy", () => {
     ).toBe("allow");
   });
 
+  it("asks before every gated action when the task read untrusted content, waivers and Full autonomy or not", () => {
+    const v = decide(
+      bash("git push origin dev"),
+      ctx({ autonomy: "full", waived: new Set(["push"]), untrusted: true }),
+    );
+    expect(v).toMatchObject({ verdict: "ask", gated: "push" });
+    expect(v.reason).toContain("untrusted");
+  });
+
   it("writes an allow rule for exactly a command's programs", () => {
     const rule = allowRuleFor("nmap -p 80 localhost | grep open");
     expect(new RegExp(rule).test("nmap localhost")).toBe(true);

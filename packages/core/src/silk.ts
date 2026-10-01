@@ -21,6 +21,8 @@ export interface PackInput {
   entries: SilkEntry[];
   /** A small digest of the files in scope. */
   digest: string;
+  /** The job's inputs, already rendered (untrusted ones wrapped as data). */
+  inputs?: string;
   /** Default: 15% of the receiving model's context window. */
   capTokens: number;
 }
@@ -73,7 +75,9 @@ export function buildContextPack(p: PackInput): Pack {
   ]
     .filter(Boolean)
     .join("\n\n");
-  const goalPart = `# The job's goal\n${p.goal}${p.skill ? `\n\n# How this job is run\n${p.skill}` : ""}`;
+  const goalPart = `# The job's goal\n${p.goal}${p.skill ? `\n\n# How this job is run\n${p.skill}` : ""}${
+    p.inputs ? `\n\n# Inputs I gave\n${p.inputs}` : ""
+  }`;
 
   // Everything below can shrink, in this order of importance.
   const ranked: SilkEntry[] = [

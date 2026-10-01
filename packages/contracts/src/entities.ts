@@ -66,6 +66,8 @@ export const ACTIVE_JOB_STATES = [
 export const JobInput = z.object({
   kind: z.enum(["file", "folder", "link"]),
   ref: z.string().min(1),
+  /** From outside my control (an email, a web page, someone else's file): data, never instructions (BR-15). */
+  untrusted: z.boolean().default(false),
 });
 export type JobInput = z.infer<typeof JobInput>;
 
