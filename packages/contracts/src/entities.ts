@@ -273,7 +273,7 @@ export const InboxFilter = z.object({
   /** At most this many, open and newest first (Audit 1 → Q1-17). */
   limit: z.number().int().positive().max(2000).default(500),
 });
-export type InboxFilter = z.infer<typeof InboxFilter>;
+export type InboxFilter = z.input<typeof InboxFilter>;
 
 // ── Side effects (BR-6) ─────────────────────────────────────────────
 
