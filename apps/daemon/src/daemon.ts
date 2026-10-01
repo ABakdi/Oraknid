@@ -45,6 +45,7 @@ import { SilkStore } from "./silk/store.ts";
 import { SkillStore } from "./skills/store.ts";
 import { startNightlyBackups } from "./storage/storage.ts";
 import { VERSION } from "./version.ts";
+import { setShadowRoot } from "./workspace/git.ts";
 import { Projects } from "./workspace/projects.ts";
 
 export interface DaemonOptions {
@@ -92,6 +93,7 @@ export async function startDaemon(options: DaemonOptions) {
   const os = linuxOs(options.os);
 
   mkdirSync(paths.dataDir, { recursive: true });
+  setShadowRoot(join(paths.dataDir, "shadow"));
   const db = await openDatabase({ file: options.dbFile ?? paths.db, backupsDir: paths.backups });
   const secrets = new Secrets(paths.dataDir, os.keychain);
   const bus = new EventBus(db, now);

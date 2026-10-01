@@ -63,7 +63,7 @@ export const ALL_LIKE_THIS = "Approve all like this for this job";
 
 import { summarizeShortened } from "../silk/summarize.ts";
 import { guidanceMark, takeGuidance } from "./talk.ts";
-import { runVerify } from "./verify.ts";
+import { runVerify, verifyRefusal } from "./verify.ts";
 
 export type TaskRow = typeof tasks.$inferSelect;
 
@@ -620,7 +620,13 @@ export async function runAttempt(
         const plan = job.unsandboxed
           ? null
           : sandboxPlan(d.registry.require(leg.legId), d.sandbox, d.legsDir);
-        const results = await runVerify(task.verify, ws.cwd, plan, { signal });
+        const results = await runVerify(task.verify, ws.cwd, plan, {
+          signal,
+          refuse: (command) =>
+            verifyRefusal(
+              decide({ tool: "Bash", command, path: null }, policyFor(d.db, job.id, ws.cwd)),
+            ),
+        });
         const failed = results.find((r) => !r.ok);
         verified = !failed;
         event("task.verified", {

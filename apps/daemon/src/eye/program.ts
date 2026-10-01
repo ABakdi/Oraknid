@@ -1,6 +1,6 @@
 import { join, resolve } from "node:path";
 import type { Autonomy, InterviewRound, JobInput, WebPlan } from "@oraknid/contracts";
-import { type GatedAction, readyTasks, skillExcerpt, suspicious } from "@oraknid/core";
+import { decide, type GatedAction, readyTasks, skillExcerpt, suspicious } from "@oraknid/core";
 import type { Sandbox } from "@oraknid/os";
 import { asc, eq } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
@@ -15,11 +15,12 @@ import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor } from "../legs/supervisor.ts";
 import type { SilkStore } from "../silk/store.ts";
 import type { SkillStore } from "../skills/store.ts";
-import { createWorktree, type Git, shadowRepo } from "../workspace/git.ts";
+import { createWorktree, type Git, shadowRepo, worktreeGit } from "../workspace/git.ts";
 import { type AttemptJob, runAttempt } from "./attempt.ts";
 import type { EyeBrain } from "./brain.ts";
 import { readSmall, renderInputs } from "./inputs.ts";
-import { runVerify } from "./verify.ts";
+import { policyFor } from "./policy.ts";
+import { runVerify, verifyRefusal } from "./verify.ts";
 
 export interface EyeDeps {
   db: Db;
@@ -77,7 +78,7 @@ export function eyeProgram(d: EyeDeps): JobProgram {
         .run();
       return { cwd: project.workspacePath, shadow: true };
     });
-    const g: Git = ws.shadow ? shadowRepo(ws.cwd) : { cwd: ws.cwd, base: [] };
+    const g: Git = ws.shadow ? shadowRepo(ws.cwd) : worktreeGit(project.workspacePath, ws.cwd);
     const where = {
       cwd: ws.cwd,
       g,
@@ -177,7 +178,16 @@ export function eyeProgram(d: EyeDeps): JobProgram {
                 job.verify,
                 ws.cwd,
                 job.unsandboxed ? null : sandboxPlan(firstLeg(d), d.sandbox, d.legsDir),
-                { signal },
+                {
+                  signal,
+                  refuse: (command) =>
+                    verifyRefusal(
+                      decide(
+                        { tool: "Bash", command, path: null },
+                        policyFor(d.db, job.id, ws.cwd),
+                      ),
+                    ),
+                },
               )
             : Promise.resolve([]),
       );

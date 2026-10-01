@@ -1,6 +1,15 @@
 import { spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { basename, dirname, join } from "node:path";
 
 // Git for The Eye (Sandboxing → Worktrees, Drift-Control → Checkpoints):
 // worktrees per job, checkpoints on private refs, rollback, diffs.
@@ -14,8 +23,15 @@ export interface Git {
   base: string[];
 }
 
+/**
+ * Settings no repo may change for Oraknid's own git calls (Audit 1 → S1-01):
+ * a work tree is the Leg's, so nothing found in it may run a command on
+ * the host (fsmonitor, hooks).
+ */
+const SAFE = ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null"];
+
 export function git(g: Git, args: string[], env: Record<string, string> = {}): string {
-  const r = spawnSync("git", [...g.base, ...args], {
+  const r = spawnSync("git", [...SAFE, ...g.base, ...args], {
     cwd: g.cwd,
     encoding: "utf8",
     env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...env },
@@ -27,7 +43,7 @@ export function git(g: Git, args: string[], env: Record<string, string> = {}): s
 }
 
 const ok = (g: Git, args: string[]) =>
-  spawnSync("git", [...g.base, ...args], { cwd: g.cwd, encoding: "utf8" }).status === 0;
+  spawnSync("git", [...SAFE, ...g.base, ...args], { cwd: g.cwd, encoding: "utf8" }).status === 0;
 
 export const isGitRepo = (path: string) =>
   ok({ cwd: path, base: [] }, ["rev-parse", "--is-inside-work-tree"]);
@@ -67,9 +83,47 @@ export const gitDirOf = (g: Git) => {
   return d.startsWith("/") ? d : join(g.cwd, d);
 };
 
+let shadowRoot: string | null = null;
+
+/** Where shadow repos live: Oraknid's data folder, out of every Leg's reach (Audit 1 → S1-01). */
+export function setShadowRoot(dir: string) {
+  shadowRoot = dir;
+}
+
+function shadowDirFor(path: string): string {
+  const legacy = join(path, ".oraknid", "shadow.git");
+  if (!shadowRoot) return legacy;
+  const dir = join(
+    shadowRoot,
+    `${createHash("sha256").update(path).digest("hex").slice(0, 16)}.git`,
+  );
+  // One made before the move is carried over once; a Leg could have changed its config, so it is reset.
+  if (!existsSync(dir) && existsSync(legacy)) {
+    mkdirSync(shadowRoot, { recursive: true });
+    renameSync(legacy, dir);
+    rmSync(join(dir, "hooks"), { recursive: true, force: true });
+    writeFileSync(join(dir, "config"), "[core]\n\trepositoryformatversion = 0\n\tbare = false\n");
+  }
+  return dir;
+}
+
+/**
+ * The git handle of a job's worktree, from the main repo's own records and
+ * never from the worktree's `.git` file, which the Leg can rewrite.
+ */
+export function worktreeGit(repoPath: string, worktree: string): Git {
+  const admin = join(gitDirOf({ cwd: repoPath, base: [] }), "worktrees", basename(worktree));
+  const recorded = existsSync(join(admin, "gitdir"))
+    ? readFileSync(join(admin, "gitdir"), "utf8").trim()
+    : "";
+  if (recorded !== join(worktree, ".git"))
+    throw new GitError(`${worktree} is not a worktree of ${repoPath}.`);
+  return { cwd: worktree, base: ["--git-dir", admin, "--work-tree", worktree] };
+}
+
 /** A shadow repo for a folder that is not a git repo: checkpoints only, my folder untouched. */
 export function shadowRepo(path: string): Git {
-  const gitDir = join(path, ".oraknid", "shadow.git");
+  const gitDir = shadowDirFor(path);
   const g = { cwd: path, base: ["--git-dir", gitDir, "--work-tree", path] };
   if (!existsSync(gitDir)) {
     mkdirSync(dirname(gitDir), { recursive: true });

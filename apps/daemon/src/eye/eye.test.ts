@@ -1303,3 +1303,19 @@ describe("a second look at tasks without checks (M1.9)", () => {
     expect(leg.log.some((t) => t.message.includes("- NOTES.md with the shells"))).toBe(true);
   });
 });
+
+describe("checks obey the command policy (Audit 1 → S1-03)", () => {
+  it("never runs a check the policy refuses, and says why", async () => {
+    const plan: WebPlan = {
+      ...HELLO,
+      tasks: [{ ...(HELLO.tasks[0] as WebPlan["tasks"][number]), verify: ["sudo sh hello.sh"] }],
+    };
+    const { api, id, leg } = await eye(good, { plan });
+    const end = Date.now() + 5000;
+    while (!leg.log.some((t) => t.message.includes("did not run this check")) && Date.now() < end)
+      await new Promise((r) => setTimeout(r, 20));
+    const told = leg.log.find((t) => t.message.includes("did not run this check"));
+    expect(told?.message).toContain("runs as root");
+    await api.jobs.cancel({ id });
+  });
+});

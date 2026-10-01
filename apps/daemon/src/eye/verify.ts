@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import type { PolicyVerdict } from "@oraknid/core";
 import type { SandboxPlan } from "@oraknid/leg-sdk";
 
 export interface VerifyResult {
@@ -24,10 +25,27 @@ export async function runVerify(
   commands: string[],
   cwd: string,
   plan: SandboxPlan | null,
-  o: { timeoutMs?: number; signal?: AbortSignal } = {},
+  o: {
+    timeoutMs?: number;
+    signal?: AbortSignal;
+    /** The command policy (Audit 1 → S1-03): a refused command is a failed check, never run. */
+    refuse?: (command: string) => string | null;
+  } = {},
 ): Promise<VerifyResult[]> {
   const results: VerifyResult[] = [];
   for (const command of commands) {
+    const refused = o.refuse?.(command);
+    if (refused) {
+      results.push({
+        command,
+        ok: false,
+        exitCode: null,
+        output: `Oraknid did not run this check: ${refused}.`,
+        signature: signatureOf(command, refused),
+        ms: 0,
+      });
+      break;
+    }
     const r = await runOne(command, cwd, plan, o);
     results.push(r);
     if (!r.ok) break;
@@ -47,7 +65,8 @@ function runOne(
         command: "/bin/sh",
         args: ["-c", command],
         cwd,
-        writable: [cwd, plan.home],
+        // Without the Leg's home (Sandboxing): a check needs only the worktree.
+        writable: [cwd],
         readonly: plan.readonly,
         home: plan.home,
         env: { ...plan.env, CI: "1" },
@@ -104,4 +123,11 @@ export function signatureOf(command: string, output: string): string {
     .update(`${command}\n${lines.join("\n")}`)
     .digest("hex")
     .slice(0, 16);
+}
+
+/** What the policy says about a check: refused when never allowed, or gated (it would need me). */
+export function verifyRefusal(v: PolicyVerdict): string | null {
+  if (v.verdict === "deny") return v.reason;
+  if (v.verdict === "ask" && v.gated) return `${v.reason}; a check never does that`;
+  return null;
 }

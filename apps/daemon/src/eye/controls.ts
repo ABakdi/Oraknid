@@ -7,7 +7,7 @@ import type { JobRunner } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 import type { SilkStore } from "../silk/store.ts";
-import { rollback, shadowRepo } from "../workspace/git.ts";
+import { rollback, shadowRepo, worktreeGit } from "../workspace/git.ts";
 
 // My controls over a job's work (Jobs-and-Projects → Controls, BR-18).
 
@@ -91,7 +91,9 @@ export function rollbackTask(d: ControlDeps, taskId: string, attempt: number) {
     throw new Error("Pause the job before rolling back.");
   }
   const project = d.db.select().from(projects).where(eq(projects.id, job.projectId)).get();
-  const g = project?.shadow ? shadowRepo(job.worktree) : { cwd: job.worktree, base: [] };
+  const g = project?.shadow
+    ? shadowRepo(job.worktree)
+    : worktreeGit(project?.workspacePath ?? job.worktree, job.worktree);
   const result = rollback(
     g,
     `refs/oraknid/${job.id}/${taskId}/${attempt}`,

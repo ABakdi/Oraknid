@@ -11,7 +11,9 @@ import {
   detectBranches,
   git,
   rollback,
+  setShadowRoot,
   shadowRepo,
+  worktreeGit,
 } from "./git.ts";
 
 const sh = (cwd: string, ...a: string[]) =>
@@ -120,5 +122,48 @@ describe("shadow repo for a folder without git", () => {
     expect(readFileSync(join(dir, "notes.md"), "utf8")).toBe("v1\n");
     expect(existsSync(join(dir, ".git"))).toBe(false);
     expect(git(g, ["rev-parse", "--git-dir"]).trim()).toBe(join(dir, ".oraknid", "shadow.git"));
+  });
+});
+
+describe("a work tree is the Leg's (Audit 1 → S1-01)", () => {
+  it("never follows a rewritten .git file, nor runs an fsmonitor found in a repo", () => {
+    const r = repo("master");
+    const wt = createWorktree(r, "01J9Z3K8W2Q4V6X8Y0A1B2C3E1", "x", detectBranches(r));
+    const marker = join(tmpdir(), `oraknid-pwned-${Date.now()}`);
+    // The Leg builds its own repo whose fsmonitor runs a command, and points .git at it.
+    const evil = join(wt.path, ".oraknid", "evil");
+    sh(wt.path, "init", "-q", evil);
+    sh(evil, "config", "core.fsmonitor", `touch ${marker}; false`);
+    writeFileSync(join(wt.path, ".git"), `gitdir: ${join(evil, ".git")}\n`);
+    const g = worktreeGit(r, wt.path);
+    checkpoint(g, "refs/oraknid/j/t/1", "c1", join(r, ".oraknid", "tmp"));
+    expect(existsSync(marker)).toBe(false);
+    expect(git(g, ["rev-parse", "--abbrev-ref", "HEAD"]).trim()).toBe(wt.branch);
+    // Even a repo of my own with an fsmonitor set runs nothing through Oraknid.
+    sh(r, "config", "core.fsmonitor", `touch ${marker}; false`);
+    checkpoint(g, "refs/oraknid/j/t/2", "c2", join(r, ".oraknid", "tmp"));
+    expect(existsSync(marker)).toBe(false);
+    expect(() => worktreeGit(r, join(r, "elsewhere"))).toThrow(/is not a worktree/);
+  });
+
+  it("keeps shadow repos in Oraknid's data folder, and resets one moved from the old place", () => {
+    const data = mkdtempSync(join(tmpdir(), "oraknid-data-"));
+    const dir = mkdtempSync(join(tmpdir(), "oraknid-plain-"));
+    writeFileSync(join(dir, "notes.md"), "v1\n");
+    const old = shadowRepo(dir);
+    const marker = join(tmpdir(), `oraknid-pwned-shadow-${Date.now()}`);
+    git(old, ["config", "core.sshCommand", `touch ${marker}`]);
+    setShadowRoot(data);
+    try {
+      const g = shadowRepo(dir);
+      expect(git(g, ["rev-parse", "--git-dir"]).trim().startsWith(data)).toBe(true);
+      expect(existsSync(join(dir, ".oraknid", "shadow.git"))).toBe(false);
+      expect(git(g, ["config", "--get", "core.sshCommand"]).trim()).toBe("");
+    } catch (e) {
+      // `git config --get` of an unset key fails: that is the reset we want.
+      expect(String(e)).toMatch(/config --get core.sshCommand failed/);
+    } finally {
+      setShadowRoot(null as unknown as string);
+    }
   });
 });
