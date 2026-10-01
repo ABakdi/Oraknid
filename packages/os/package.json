@@ -1,0 +1,23 @@
+{
+  "name": "@oraknid/os",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@napi-rs/keyring": "2.1.0",
+    "@oraknid/contracts": "workspace:^",
+    "nodemailer": "10.0.13",
+    "web-push": "3.6.7"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "8.0.2",
+    "@types/web-push": "3.6.4"
+  }
+}
