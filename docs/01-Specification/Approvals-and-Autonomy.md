@@ -44,8 +44,10 @@ command), The Eye decides by policy:
    If the attempt ends first (pause, reassignment, a crash), the
    approval is withdrawn: my inbox never holds a question nobody waits
    for.
-4. Unknown → depends on autonomy level: Supervised and Standard ask me,
-   Full approves when it's in scope and not gated.
+4. Unknown → **auto approval** at Standard and Full
+   ([[ADR-014-Auto-Approval]]): a classifier allows it or asks me, and
+   says why; Supervised asks me. Commands are parsed as the shell
+   parses them, so a heredoc or a loop is one program, not its words.
 
 ## The inbox
 

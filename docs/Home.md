@@ -60,10 +60,12 @@ Nothing is built yet.
 - [[ADR-010-API-Contracts]] — Zod 4 + oRPC in Express
 - [[ADR-011-Claude-Code-Adapter]] — the Agent SDK, `canUseTool`, one config dir per account
 - [[ADR-012-Sleep-Inhibition]] — a `systemd-inhibit` holder process
+- [[ADR-014-Auto-Approval]] — rules first, then a classifier; asked only when it matters
 - [[ADR-013-Model-Aware-Routing]] — route to Leg + model + effort; smallest sufficient model; reserve scarce windows
 
 ## 05 — Checkpoints
-- [[Checkpoints-Home]] — none yet
+- [[Checkpoints-Home]] — the index
+- [[Checkpoint-1]] — the first real job: too many approvals, the inbox across projects, agent output, talking to The Eye, the result
 
 ## 06 — Audit
 - [[Audit-Home]] — none yet; the first runs before `v0.1.0`

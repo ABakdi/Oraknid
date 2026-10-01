@@ -63,7 +63,11 @@ items for this job, budgets and their burn, and every problem. See
 
 - **Completed**: job-level verification passed. Oraknid writes a final
   Silk summary, shows the result, notifies me, and offers the work
-  branch for review. Merging is a gated action.
+  branch for review. The job page shows **the result**: the worktree
+  folder, the job branch and its commits, with a button to open the
+  folder and one to merge the branch into the work branch. Merging is
+  my action, so pressing it is the approval; a conflict is reported and
+  nothing is merged.
 - **Blocked**: it can't continue. The reason is shown in plain words
   ("All Legs are out of quota until 14:05" / "The tests fail the same
   way after 3 Legs tried"). It resumes on its own when the reason clears

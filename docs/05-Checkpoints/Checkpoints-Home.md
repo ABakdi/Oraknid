@@ -3,6 +3,8 @@
 What using Oraknid turned up, one note per checkpoint
 (`Checkpoint-N.md`).
 
-*None yet. The first one is taken after dogfooding Phase 1 ([[Phase-1-MVP]] M1.9).*
+| Checkpoint | Theme | Opened | Status |
+| :-- | :-- | :-- | :-- |
+| [[Checkpoint-1]] | The first real job | 2026-10-01 | open |
 
 Related: [[Roadmap]] · [[Audit-Home]]

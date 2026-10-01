@@ -64,6 +64,12 @@ their questions and redirecting The Eye.
 - **Tabs:** Activity · Silk · Inbox (this job) · Budget · Stats · Settings.
 - **Controls** always visible: Pause / Resume, Cancel, Redirect, Edit plan,
   autonomy level.
+- **Agents**: every session of the job (Legs and The Eye's reasoning),
+  live or finished; opening one shows its whole output as a terminal-like
+  log: text, tool calls with their commands and results, permission
+  decisions, usage. The task drawer links to its sessions.
+- **The Eye**: the prompt to The Eye and the conversation so far.
+- **Result**: once tasks are done, where the work is and how to merge it.
 - **Plan editor:** drag to reorder dependencies, edit task text, add and
   remove tasks. Running tasks are paused before an edit is applied.
 
@@ -90,8 +96,9 @@ and says why.
 ### Inbox
 
 Approvals and questions from all jobs. Each item can be answered in
-place. Interview rounds appear as a short form. Filters: job, kind,
-waiting time.
+place. Interview rounds appear as a short form. Each item names its
+project and job. Filters: project, job, kind, state, and a search over
+the text.
 
 ### Legs
 

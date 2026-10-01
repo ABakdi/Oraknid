@@ -114,6 +114,24 @@ wait for me:
 - The Leg claimed done → verify (BR-1).
 - Verification failed → a prompt with the exact failing output.
 
+## Talking to The Eye
+
+Each job has a prompt to The Eye. I write in my words: an instruction,
+a task to add, context, "stop that", "keep this for later". The Eye
+decides what it is (one short reasoning call) and acts, then answers
+me in a line:
+
+| It is | The Eye |
+| :-- | :-- |
+| An instruction for the work now | Records it as my decision in Silk and tells the running session at once. |
+| New work | Adds tasks to The Web (asked again at Supervised). |
+| Context | Records a fact or an architecture note in Silk. |
+| For later | Keeps it in Silk as a note for later, not acted on now. |
+| Stop / pause | Pauses the job at a safe point. |
+| A question about the job | Answers from Silk and the job's state. |
+
+The conversation is kept with the job and shown on its page.
+
 ## Evaluation
 
 After each task, The Eye records the outcome in the Leg's observed

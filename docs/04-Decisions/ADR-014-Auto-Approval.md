@@ -1,0 +1,54 @@
+# ADR-014 — Auto approval: rules first, then a classifier; I'm asked only when it matters
+
+**Status:** Accepted · 2026-10-01 · [[Checkpoint-1]]
+
+## Context
+The first real job asked for my approval twelve times, all for harmless
+commands (B1-01). Half the cause was a parser that didn't understand the
+shell. The other half is the policy itself: at Standard autonomy, any
+program not on a fixed allow list asks me. For autonomous work that is
+far too often. Claude Code solves the same problem with an "auto" mode:
+a model classifier approves or refuses each action and only asks when
+it can't decide.
+
+## Decision
+A command's verdict comes from four layers, in order:
+
+1. **Never-allowed list** (shipped, absolute) → deny, drift D7.
+2. **Gated actions** (push, merge, deploy, publish, send, install,
+   delete outside the workspace, spend) → ask me, unless waived; always
+   ask when the task read untrusted content (BR-15). These are the
+   approvals that are "absolutely needed".
+3. **My rules** and the **allow list** (now parsed by a real shell
+   lexer, so heredocs, loops and quoted scripts count as one program)
+   → allow.
+4. **Auto approval** for everything else (Standard and Full): a
+   classifier decides *allow* or *ask*.
+   - Deterministic first: a program that only reads or writes inside
+     the sandbox (interpreters, build tools, test runners, file tools)
+     is allowed; anything that reaches the network on its own (`curl`,
+     `wget`, `ssh`, `scp`, `rsync`, `nc`…) or touches credentials goes
+     to the model.
+   - The model: the cheapest healthy Leg with the `classify` strength
+     is asked, with the task, the command and the sandbox's limits, for
+     `{ decision: "allow" | "ask", reason }`. Its answer is cached per
+     job for the same set of programs.
+   - If no Leg can classify, the command asks me (fail safe).
+
+Supervised keeps asking about every unknown program (no auto approval).
+Every auto decision is recorded in the audit log with its reason, and
+shown on the task.
+
+## Consequences
+- A small job should need no approvals beyond the plan (Supervised)
+  and real gated actions.
+- A classifier can be wrong. The sandbox remains the second wall: an
+  approved command still cannot see outside the worktree.
+- A few classification calls per job cost tokens; caching keeps them
+  rare.
+
+## Why not a longer allow list only
+It never ends, and it can't judge a command by what it does (`node -e`
+can do anything; it's harmless here only because of the sandbox).
+
+Related: [[Approvals-and-Autonomy]] · [[Security]] · [[ADR-006-Sandbox]] · [[Checkpoint-1]]
