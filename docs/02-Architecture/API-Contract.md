@@ -10,7 +10,7 @@ table is the summary and is kept in step with the contracts.
 | | `system.doctor` | Run the checks. |
 | Devices | `devices.pairStart` / `devices.pairComplete` / `devices.list` / `devices.revoke` | Pairing. |
 | Projects | `projects.create` / `list` (since M1.6) · `get` / `archive` / `delete` / `stats` | Creating a project in a folder that isn't a git repo asks: `initGit: true` or a shadow repo. |
-| Jobs | `jobs.create` / `start` / `get` / `list` / `pause` / `resume` / `cancel` (M1.6) · `setAutonomy` / `setWaivers` / `setRules` (M1.7) · `redirect` / `stats` / `export` · `talk` / `conversation` · `result` / `merge` / `openFolder` (Checkpoint 1) | A job's view carries its tasks, worktree and branch. `talk` returns at once; The Eye's reply arrives as `eye.replied`. `merge` returns `{ok, commit}` or `{ok: false, reason, conflicts}`. |
+| Jobs | `jobs.create` / `start` / `get` / `list` / `pause` / `resume` / `cancel` (M1.6) · `setAutonomy` / `setWaivers` / `setRules` (M1.7) · `setBudget` (M1.9) · `redirect` / `stats` / `export` · `talk` / `conversation` · `result` / `merge` / `openFolder` (Checkpoint 1) | A job's view carries its tasks, worktree and branch. `talk` returns at once; The Eye's reply arrives as `eye.replied`. `merge` returns `{ok, commit}` or `{ok: false, reason, conflicts}`. |
 | Policies | `policies.get` / `policies.update` (since M1.7) | My global allow and deny rules. |
 | Web | `web.get` / `web.edit` (add, remove, reorder, rewrite tasks) | Plan editing. |
 | Tasks | `tasks.get` / `tasks.pin` (to a Leg) / `tasks.takeOver` / `tasks.handBack` / `tasks.rollback` / `tasks.diff` | |

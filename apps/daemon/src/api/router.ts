@@ -1,5 +1,6 @@
 import {
   Autonomy,
+  Budget,
   ChannelTestResult,
   DoctorCheck,
   EmailSettings,
@@ -53,6 +54,7 @@ import type { JobRunner } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
 import { SAME_PROVIDER_FALLBACK } from "../eye/attempt.ts";
 import type { EyeBrain } from "../eye/brain.ts";
+import { setBudget } from "../eye/budgets.ts";
 import {
   editWeb,
   handBack,
@@ -505,6 +507,13 @@ export const router = {
         guard(() => redirect(controls(c), input.id, input.instruction)),
       ),
     /** Changeable while the job runs: the next decision uses it. */
+    /** My new budget, while the job runs or before (Budgets-and-Quotas). */
+    setBudget: base
+      .input(z.object({ id: z.string(), budget: Budget }))
+      .output(z.object({ changed: z.array(z.string()) }))
+      .handler(({ context: c, input }) =>
+        guard(() => setBudget(c.jobs.db, c.bus, input.id, input.budget)),
+      ),
     setAutonomy: base
       .input(z.object({ id: z.string(), autonomy: Autonomy }))
       .handler(({ context: c, input }) =>

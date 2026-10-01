@@ -42,6 +42,8 @@ export interface RouteOptions {
   moneyAllowed: boolean;
   /** Below this remaining share, a window's models only take high-difficulty tasks. */
   scarceBelow?: number;
+  /** The job's quota-share budget: the share (0–1) of any window it may push a Leg to. */
+  quotaShare?: { limit: number; hard: boolean } | null;
   now?: number;
 }
 
@@ -105,6 +107,19 @@ export function route(task: RouteTask, candidates: RouteCandidate[], o: RouteOpt
     );
     if (full) {
       out(`the ${full.name} window is used up.`);
+      continue;
+    }
+    const share = o.quotaShare;
+    const over =
+      share?.hard &&
+      c.windows.find(
+        (w) =>
+          (w.utilization ?? 0) >= share.limit && (w.resetsAt ?? Number.POSITIVE_INFINITY) > now,
+      );
+    if (over && share) {
+      out(
+        `its ${over.name} window is at ${Math.round((over.utilization ?? 0) * 100)}%, and this job may use it up to ${Math.round(share.limit * 100)}%.`,
+      );
       continue;
     }
     if (c.profile.costModel === "per-token" && !o.moneyAllowed) {

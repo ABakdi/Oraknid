@@ -132,3 +132,34 @@ export function startBudgetWatch(o: {
     },
   };
 }
+
+/**
+ * My new budget for a job, at any time (Checkpoint 1 hardening): a changed
+ * dimension starts its warnings afresh. A job paused at a limit stays
+ * paused until I resume it.
+ */
+export function setBudget(db: Db, bus: EventBus, jobId: string, budget: Budget) {
+  const job = db.select().from(jobs).where(eq(jobs.id, jobId)).get();
+  if (!job) throw new Error(`No job ${jobId}.`);
+  if (job.state === "completed" || job.state === "cancelled")
+    throw new Error("The job has ended; its budget can't change.");
+  const old = job.budget as Budget;
+  const changed = (Object.keys(budget) as (keyof Budget)[]).filter(
+    (k) => JSON.stringify(old[k]) !== JSON.stringify(budget[k]),
+  );
+  db.update(jobs)
+    .set({
+      budget,
+      budgetFlags: job.budgetFlags.filter((f) => !changed.some((k) => f.startsWith(`${k}:`))),
+    })
+    .where(eq(jobs.id, jobId))
+    .run();
+  bus.publish({
+    type: "budget.changed",
+    topic: `job:${jobId}`,
+    jobId,
+    payload: { changed },
+    actor: "owner",
+  });
+  return { changed };
+}

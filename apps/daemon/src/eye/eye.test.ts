@@ -644,6 +644,51 @@ describe("budgets (M1.7)", () => {
   });
 });
 
+describe("budgets after the start (M1.9)", () => {
+  const budget = (tokens: number | null, share: number | null) => ({
+    tokens: tokens === null ? null : { limit: tokens, hard: true },
+    quotaShare: share === null ? null : { limit: share, hard: true },
+    wallClockMs: null,
+    money: { limit: 0, hard: true },
+  });
+
+  it("lets me change a budget while the job is paused at it, then go on", async () => {
+    const { api, id } = await eye(good, { budget: budget(1400, null) });
+    expect((await until(api, id, ["paused", "completed", "blocked"])).state).toBe("paused");
+    expect(await api.jobs.setBudget({ id, budget: budget(1_000_000, null) })).toEqual({
+      changed: ["tokens"],
+    });
+    await api.jobs.resume({ id });
+    expect((await until(api, id, ["completed", "blocked", "paused"])).state).toBe("completed");
+    await expect(api.jobs.setBudget({ id, budget: budget(1, null) })).rejects.toThrow(/has ended/);
+  });
+
+  it("stops routing to a Leg past the job's quota share, and waits for its reset", async () => {
+    const resetsAt = Date.now() + 3_600_000;
+    const { api, id } = await eye(
+      (t) =>
+        task(t) === "Write hello.sh"
+          ? [
+              {
+                rateLimit: {
+                  window: "seven_day",
+                  scope: "account",
+                  status: "allowed",
+                  utilization: 0.7,
+                  resetsAt,
+                },
+              },
+              ...good(t),
+            ]
+          : good(t),
+      { budget: budget(null, 0.5) },
+    );
+    const blocked = await until(api, id, ["completed", "blocked"]);
+    expect(blocked.state).toBe("blocked");
+    expect(blocked.blockedReason).toContain("may use it up to 50%");
+  });
+});
+
 describe("the interview (M1.7)", () => {
   const round = (n: number) => ({
     done: false,

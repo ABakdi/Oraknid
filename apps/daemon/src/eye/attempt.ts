@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Autonomy, Difficulty, TaskKind } from "@oraknid/contracts";
+import type { Autonomy, Budget, Difficulty, TaskKind } from "@oraknid/contracts";
 import {
   allowRuleFor,
   buildContextPack,
@@ -31,7 +31,7 @@ import type { Sandbox } from "@oraknid/os";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "../db/open.ts";
-import { attempts, sessions, tasks } from "../db/schema.ts";
+import { attempts, jobs, sessions, tasks } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 import type { InboxStore } from "../inbox/store.ts";
@@ -158,6 +158,13 @@ export async function runAttempt(
     (c) => !blockedKinds.has(d.registry.require(c.legId).kind) || limitedLegs.has(c.legId),
   );
   const heldBack = all.length - candidates.length;
+  // Read now, so a budget I changed while the job runs applies to the next task.
+  const quotaShare =
+    (
+      d.db.select({ budget: jobs.budget }).from(jobs).where(eq(jobs.id, job.id)).get()?.budget as
+        | Budget
+        | undefined
+    )?.quotaShare ?? null;
   const estimatedTokens = 20_000 + Math.ceil(task.instructions.length / 4);
   const routed = route(
     {
@@ -170,13 +177,20 @@ export async function runAttempt(
       avoid: task.avoid,
     },
     candidates,
-    { moneyAllowed: job.moneyAllowed },
+    { moneyAllowed: job.moneyAllowed, quotaShare },
   );
   const pick = routed.ranked[0];
   if (!pick) {
-    const until = d.registry
-      .all()
-      .map((l) => l.limitedUntil)
+    // The earliest reset that frees a Leg: a used-up window, or one past this job's quota share.
+    const share = quotaShare?.hard ? quotaShare.limit : null;
+    const until = [
+      ...d.registry.all().map((l) => l.limitedUntil),
+      ...(share === null
+        ? []
+        : candidates.flatMap((c) =>
+            c.windows.filter((w) => (w.utilization ?? 0) >= share).map((w) => w.resetsAt),
+          )),
+    ]
       .filter((t): t is number => !!t && t > now())
       .sort((a, b) => a - b)[0];
     const resets = until ? ` until ${new Date(until).toISOString()}` : "";
@@ -185,7 +199,7 @@ export async function runAttempt(
       reason: heldBack
         ? `"${task.title}" hit a usage limit on ${[...blockedKinds].join(", ")}; other accounts of the same provider are not used as fallback (ADR-009). It waits${resets}, for another provider, or for my setting.`
         : until
-          ? `All allowed Legs are out of quota${resets}.`
+          ? `All allowed Legs are out of quota${resets}${routed.excluded.length ? `: ${routed.excluded.map((e) => e.why).join(" ")}` : "."}`
           : `No Leg can take "${task.title}": ${routed.excluded.map((e) => e.why).join(" ") || "there are no Legs."}`,
       until: until ?? null,
     };

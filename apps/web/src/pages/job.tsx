@@ -34,6 +34,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { WebGraph } from "@/components/web-graph";
@@ -948,6 +949,16 @@ function Budget({ job }: { job: JobView }) {
             : t("none may be spent")
         }
       />
+      <Stat
+        label={t("Quota share")}
+        value={b.quotaShare ? `${Math.round(b.quotaShare.limit * 100)}%` : "100%"}
+        hint={t("of any Leg's quota window")}
+      />
+      {job.state !== "completed" && job.state !== "cancelled" ? (
+        <div className="flex items-center sm:col-span-2">
+          <BudgetDialog job={job} />
+        </div>
+      ) : null}
       {job.unsandboxed ? (
         <div className="flex items-center gap-2 rounded-lg border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive sm:col-span-3">
           <ShieldAlert className="size-4" />
@@ -955,6 +966,107 @@ function Budget({ job }: { job: JobView }) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** Changing a job's budget at any time (Budgets-and-Quotas). */
+function BudgetDialog({ job }: { job: JobView }) {
+  const b = job.budget;
+  const [open, setOpen] = useState(false);
+  const [tok, setTok] = useState(b.tokens ? String(b.tokens.limit) : "");
+  const [tokHard, setTokHard] = useState(b.tokens?.hard ?? true);
+  const [share, setShare] = useState(
+    b.quotaShare ? String(Math.round(b.quotaShare.limit * 100)) : "",
+  );
+  const [hours, setHours] = useState(b.wallClockMs ? String(b.wallClockMs.limit / 3600_000) : "");
+  const [hoursHard, setHoursHard] = useState(b.wallClockMs?.hard ?? false);
+  const save = async () => {
+    await act(
+      () =>
+        api.jobs.setBudget({
+          id: job.id,
+          budget: {
+            tokens: tok ? { limit: Number(tok), hard: tokHard } : null,
+            quotaShare: share ? { limit: Math.min(100, Number(share)) / 100, hard: true } : null,
+            wallClockMs: hours ? { limit: Number(hours) * 3600_000, hard: hoursHard } : null,
+            money: b.money,
+          },
+        }),
+      job.state === "paused"
+        ? t("Budget changed. Resume the job when you're ready.")
+        : t("Budget changed; it applies now."),
+    );
+    setOpen(false);
+  };
+  const digits = (v: string) => v.replace(/[^\d.]/g, "");
+  return (
+    <>
+      <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
+        {t("Change the budget")}
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("The budget of “{title}”", { title: job.title })}</DialogTitle>
+            <DialogDescription>
+              {t(
+                "Empty means no limit. A hard limit pauses the job and asks you; an alarm only tells you.",
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="b-tok">{t("Tokens")}</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="b-tok"
+                  inputMode="numeric"
+                  placeholder={t("none")}
+                  value={tok}
+                  onChange={(e) => setTok(digits(e.target.value))}
+                />
+                <label className="flex shrink-0 items-center gap-1 text-sm">
+                  <Switch checked={tokHard} onCheckedChange={setTokHard} />
+                  {t("hard")}
+                </label>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="b-share">{t("Most of a Leg's quota window to use (%)")}</Label>
+              <Input
+                id="b-share"
+                inputMode="numeric"
+                placeholder="100"
+                value={share}
+                onChange={(e) => setShare(digits(e.target.value).slice(0, 3))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="b-hours">{t("Time (hours)")}</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="b-hours"
+                  inputMode="decimal"
+                  placeholder={t("none")}
+                  value={hours}
+                  onChange={(e) => setHours(digits(e.target.value))}
+                />
+                <label className="flex shrink-0 items-center gap-1 text-sm">
+                  <Switch checked={hoursHard} onCheckedChange={setHoursHard} />
+                  {t("hard")}
+                </label>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setOpen(false)}>
+              {t("Cancel")}
+            </Button>
+            <Button onClick={save}>{t("Save")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

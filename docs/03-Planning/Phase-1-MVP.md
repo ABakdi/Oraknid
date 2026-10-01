@@ -80,7 +80,7 @@ crashes and reboots.
 ### M1.7 — Approvals, budgets, skills
 - [x] Autonomy levels, gated actions, permission policy, inbox ([[Approvals-and-Autonomy]]): Supervised approves the plan and each replan, asked on every run so a resume can't skip it (found by a test: a denied plan once ran after a resume); a Leg's request can be approved once, denied, or approved for the rest of the job (a waiver or an allow rule, audited); autonomy, waivers and rules can change mid-job and apply to the next decision; answering resumes the job that waited; open approvals first
 - [~] Command allow/deny list: the shipped never-allowed and gated lists, plus my rules per job and globally (most specific level decides, deny beats allow within it, invalid patterns refused). Rules per project come with the project settings screen (M1.8).
-- [~] Budgets ([[Budgets-and-Quotas]]): tokens and time per job, warned once at 80% of a hard limit, paused at the limit with "raise it by half / double it / keep it paused"; time is an alarm by default; money 0 means none. Quota-share and per-task budgets are recorded but not enforced yet; money is counted once a per-token Leg exists.
+- [~] Budgets ([[Budgets-and-Quotas]]): tokens and time per job, warned once at 80% of a hard limit, paused at the limit with "raise it by half / double it / keep it paused"; time is an alarm by default; money 0 means none. Quota-share is enforced in routing and budgets can be changed after the start (M1.9); per-task budgets are recorded but not enforced yet; money is counted once a per-token Leg exists.
 - [x] Skills library on the API (list, get, upload, edit, remove): built-ins read-only, edits make versions, a skill used by a job that hasn't ended can't be removed; `docs/skill.md` ships as the built-in `canon-driven-development` (`skills/` at the repo root)
 - [x] Interview stage ([[Skills]]): rounds of at most four questions in one inbox item each, my answers kept verbatim in Silk, a playback ending "Is this right?", "Enough, start" records what stays open; durable across pauses and restarts
 - [x] Untrusted-content wrapping (BR-15): inputs marked untrusted are wrapped as data in context packs, scanned once for attempts to steer the agent (flagged in Silk and the stream), and make every gated action ask, waivers and Full autonomy or not
@@ -97,7 +97,7 @@ crashes and reboots.
 - [~] Pairing (`oraknid pair`, and `oraknid open` pairs this machine's browser by itself), an installable PWA (manifest and a hand-written service worker), push subscription from Settings. Push on a phone needs the phone to reach the daemon: The Nest (Phase 4). Device tokens are long-lived and revocable rather than short-lived sessions.
 - [x] Empty, loading and error states (BR-17): every empty list says what it is and what to do; errors are sentences
 - [x] Checked by hand on 2026-10-01 against the real daemon and the earlier live job: desktop, and 390 px frames in dark and light; nothing scrolls sideways. That found the graph fitting before its layout, the graph controls ignoring the theme, and activity lines shown twice; all fixed.
-- [~] Not built yet: storage use and pruning, rules per project, editing a job's budget after it starts
+- [~] Not built yet: storage use and pruning, rules per project (editing a job's budget after it starts: M1.9)
 
 ### M1.9 — Dogfood
 - [ ] Run a real job on a real project with the canon-driven skill, from interview to completion

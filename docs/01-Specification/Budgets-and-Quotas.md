@@ -21,8 +21,15 @@ as an alarm that tells me to come and look.
 | Wall-clock time | job, task | job: 8 h alarm | Notify me (soft). Hard only if I set it. |
 | Money | job, Leg | 0 | Only paid Legs need it. Stop and ask (hard). |
 
+The quota-window share is how full this job may make any window of a
+Leg: at a hard 50%, a Leg whose `seven_day` window is at 62% is not
+routed this job's next task, and the routing record says so. When no
+Leg is left, the job is `blocked` until the earliest such reset.
+
 Each budget is marked **hard** (stop and ask) or **soft** (notify and
-continue). At 80% of any hard budget I get a warning notification,
+continue). Every budget can be changed while the job runs or is paused
+(`jobs.setBudget`); a changed dimension starts its warnings afresh, and
+a job paused at a limit resumes when I say so. At 80% of any hard budget I get a warning notification,
 once. At a hard limit the job pauses at a safe point and the inbox asks:
 raise it by half, double it, or keep it paused. A job's tokens are what
 went in and out plus what was written to cache; cache reads are not

@@ -89,6 +89,25 @@ describe("routing: the smallest sufficient model (BR-21)", () => {
 });
 
 describe("routing: who is out, and why", () => {
+  it("keeps a job under its quota-share budget, but only when it is hard", () => {
+    const busy = claude("opus", {
+      windows: [{ name: "seven_day", utilization: 0.62, resetsAt: Date.now() + 60_000 }],
+    });
+    const hard = route(task(), [busy, claude("sonnet")], {
+      moneyAllowed: false,
+      quotaShare: { limit: 0.5, hard: true },
+    });
+    expect(hard.ranked.map((r) => r.candidate.model)).toEqual(["sonnet"]);
+    expect(hard.excluded.map((e) => e.why)).toEqual([
+      "Claude · opus: its seven_day window is at 62%, and this job may use it up to 50%.",
+    ]);
+    const soft = route(task(), [busy], {
+      moneyAllowed: false,
+      quotaShare: { limit: 0.5, hard: false },
+    });
+    expect(soft.ranked).toHaveLength(1);
+  });
+
   it("excludes rate-limited, paused, used-up and paid Legs, saying why", () => {
     const r = route(
       task(),

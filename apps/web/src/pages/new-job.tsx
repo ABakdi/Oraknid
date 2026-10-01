@@ -37,6 +37,7 @@ export function NewJobPage() {
   const [legIds, setLegIds] = useState<string[]>([]);
   const [tokensLimit, setTokensLimit] = useState("");
   const [hours, setHours] = useState("8");
+  const [share, setShare] = useState("");
   const [verify, setVerify] = useState("");
   const [inputs, setInputs] = useState("");
   const [untrusted, setUntrusted] = useState(false);
@@ -80,7 +81,7 @@ export function NewJobPage() {
         unsandboxed: false,
         budget: {
           tokens: tokensLimit ? { limit: Number(tokensLimit), hard: true } : null,
-          quotaShare: null,
+          quotaShare: share ? { limit: Math.min(100, Number(share)) / 100, hard: true } : null,
           wallClockMs: hours ? { limit: Number(hours) * 3600_000, hard: false } : null,
           money: { limit: 0, hard: true },
         },
@@ -198,6 +199,16 @@ export function NewJobPage() {
                 placeholder={t("none")}
                 value={tokensLimit}
                 onChange={(e) => setTokensLimit(e.target.value.replace(/\D/g, ""))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="share">{t("Most of a Leg's quota window to use (%)")}</Label>
+              <Input
+                id="share"
+                inputMode="numeric"
+                placeholder="100"
+                value={share}
+                onChange={(e) => setShare(e.target.value.replace(/\D/g, "").slice(0, 3))}
               />
             </div>
             <div className="space-y-1.5">
