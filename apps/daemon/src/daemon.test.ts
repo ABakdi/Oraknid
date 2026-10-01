@@ -77,6 +77,18 @@ describe("daemon API", () => {
     expect(status.lastSeq).toBeGreaterThanOrEqual(1);
   });
 
+  it("answers with a code and a sentence, never with internals (Audit 1 → Q1-14)", async () => {
+    await expect(client().jobs.get({ id: "01J9Z3K8W2Q4V6X8Y0A1B2C3D4" })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    await expect(
+      client().web.edit({
+        jobId: "01J9Z3K8W2Q4V6X8Y0A1B2C3D4",
+        edits: [{ op: "remove", taskId: "01J9Z3K8W2Q4V6X8Y0A1B2C3D5" }],
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
   it("runs doctor checks and says what each one found", async () => {
     const checks = await client().system.doctor();
     expect(checks.map((c) => c.name)).toContain("Node.js");

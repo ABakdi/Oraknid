@@ -211,11 +211,32 @@ function jobView(c: ApiContext, id: string): JobView {
 }
 
 /** Turns a refusal (an illegal move, an unknown job) into a sentence for the UI. */
+/**
+ * Errors carry a code and a sentence (API-Contract, BR-17; Audit 1 → Q1-14).
+ * Oraknid's own sentences (a plain Error) reach me as they are; anything
+ * else (SQLite, git, a bug) gets a generic sentence, and its details go
+ * to the daemon's log, not to the UI.
+ */
 async function guard<T>(fn: () => Promise<T> | T): Promise<T> {
   try {
     return await fn();
   } catch (error) {
-    throw userError(error instanceof Error ? error.message : String(error));
+    if (error instanceof ORPCError) throw error;
+    if (error instanceof Error && error.constructor === Error) {
+      const code =
+        /^No (such |[a-z]+ )?\w*\s*[0-9A-HJKMNP-TV-Z]{26}\b|^No (job|task|project|device|session|inbox item)\b/.test(
+          error.message,
+        )
+          ? "NOT_FOUND"
+          : /already|is running|has ended|was withdrawn/.test(error.message)
+            ? "CONFLICT"
+            : "BAD_REQUEST";
+      throw new ORPCError(code, { message: error.message });
+    }
+    console.error("request failed", error);
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: "Something went wrong inside Oraknid; the details are in its log (oraknid logs).",
+    });
   }
 }
 
