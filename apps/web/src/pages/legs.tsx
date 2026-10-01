@@ -243,7 +243,10 @@ export function LegsPage() {
 }
 
 function AddLeg({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const [kind, setKind] = useState<"claude-code" | "openai-compatible">("claude-code");
+  const [kind, setKind] = useState<"claude-code" | "openai-compatible" | "opencode">("claude-code");
+  const [providerID, setProviderID] = useState("openrouter");
+  const [ocBaseURL, setOcBaseURL] = useState("https://openrouter.ai/api/v1");
+  const [models, setModels] = useState("");
   const [name, setName] = useState("");
   const [binary, setBinary] = useState("claude");
   const [configDir, setConfigDir] = useState("");
@@ -263,12 +266,28 @@ function AddLeg({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boole
               name,
               config: { binary, ...(configDir ? { configDir } : {}) },
             })
-          : await api.legs.create({
-              kind,
-              name,
-              config: { baseUrl },
-              ...(secret ? { secret } : {}),
-            });
+          : kind === "opencode"
+            ? await api.legs.create({
+                kind,
+                name,
+                config: {
+                  binary: "opencode",
+                  providerID,
+                  package: "@opencode/ai/providers/openai-compatible",
+                  ...(ocBaseURL ? { baseURL: ocBaseURL } : {}),
+                  models: models
+                    .split(/[\s,]+/)
+                    .map((m) => m.trim())
+                    .filter(Boolean),
+                },
+                ...(secret ? { secret } : {}),
+              })
+            : await api.legs.create({
+                kind,
+                name,
+                config: { baseUrl },
+                ...(secret ? { secret } : {}),
+              });
       setResult(leg);
     } catch (e) {
       setError(e);
@@ -319,6 +338,9 @@ function AddLeg({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boole
                   <SelectItem value="openai-compatible">
                     {t("OpenAI-compatible server (Ollama, LM Studio…)")}
                   </SelectItem>
+                  <SelectItem value="opencode">
+                    {t("OpenCode, with a provider's API key")}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -329,7 +351,11 @@ function AddLeg({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boole
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={
-                  kind === "claude-code" ? t("Claude — personal") : t("Ollama on this machine")
+                  kind === "claude-code"
+                    ? t("Claude — personal")
+                    : kind === "opencode"
+                      ? t("OpenCode — OpenRouter")
+                      : t("Ollama on this machine")
                 }
               />
             </div>
@@ -354,6 +380,53 @@ function AddLeg({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boole
                     value={configDir}
                     onChange={(e) => setConfigDir(e.target.value)}
                     placeholder={t("empty: a folder of its own")}
+                  />
+                </div>
+              </>
+            ) : kind === "opencode" ? (
+              <>
+                <div className="rounded-md border px-3 py-2 text-xs text-muted-foreground">
+                  {t(
+                    "OpenCode runs with one provider's API key, never a Claude subscription (Anthropic's terms). Each Leg keeps its own OpenCode data.",
+                  )}
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="op">{t("Provider id")}</Label>
+                    <Input
+                      id="op"
+                      className="font-mono"
+                      value={providerID}
+                      onChange={(e) => setProviderID(e.target.value.toLowerCase())}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="ou">{t("Endpoint (OpenAI-compatible)")}</Label>
+                    <Input
+                      id="ou"
+                      className="font-mono"
+                      value={ocBaseURL}
+                      onChange={(e) => setOcBaseURL(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="om">{t("Models, by their id at the provider")}</Label>
+                  <Input
+                    id="om"
+                    className="font-mono"
+                    value={models}
+                    onChange={(e) => setModels(e.target.value)}
+                    placeholder="qwen/qwen3-coder, deepseek/deepseek-chat"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="ok">{t("API key")}</Label>
+                  <Input
+                    id="ok"
+                    type="password"
+                    value={secret}
+                    onChange={(e) => setSecret(e.target.value)}
                   />
                 </div>
               </>

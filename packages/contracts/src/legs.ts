@@ -18,6 +18,18 @@ export const OpenAICompatibleLegConfig = z.object({
   commandTimeoutMs: z.number().int().positive().optional(),
 });
 
+/** An OpenCode Leg (ADR-015): one provider, never a Claude subscription. */
+export const OpenCodeLegConfig = z.object({
+  binary: z.string().min(1).default("opencode"),
+  /** The provider's id inside OpenCode, e.g. "openrouter". */
+  providerID: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, "lowercase letters, digits and dashes"),
+  /** The AI SDK package; OpenAI-compatible by default. */
+  package: z.string().min(1).default("@opencode/ai/providers/openai-compatible"),
+  baseURL: z.url().optional(),
+  models: z.array(z.string().min(1)).min(1),
+  contextWindow: z.number().int().positive().optional(),
+});
+
 export const NewLeg = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("claude-code"),
@@ -29,6 +41,13 @@ export const NewLeg = z.discriminatedUnion("kind", [
     name: z.string().min(1),
     config: OpenAICompatibleLegConfig,
     /** An API key, if the server needs one. Goes to the secret store, never the database. */
+    secret: z.string().min(1).optional(),
+  }),
+  z.object({
+    kind: z.literal("opencode"),
+    name: z.string().min(1),
+    config: OpenCodeLegConfig,
+    /** The provider's API key. Goes to the secret store, never the database. */
     secret: z.string().min(1).optional(),
   }),
 ]);

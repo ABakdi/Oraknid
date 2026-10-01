@@ -8,6 +8,7 @@ import type { LegKind } from "@oraknid/contracts";
 import { scrubSecrets } from "@oraknid/core";
 import { createClaudeCodeAdapter } from "@oraknid/leg-claude-code";
 import { createOpenAICompatibleAdapter } from "@oraknid/leg-openai-compatible";
+import { createOpenCodeAdapter } from "@oraknid/leg-opencode";
 import type { LegAdapter } from "@oraknid/leg-sdk";
 import { RPCHandler } from "@orpc/server/node";
 import { eq } from "drizzle-orm";
@@ -108,6 +109,7 @@ export async function startDaemon(options: DaemonOptions) {
   const adapters: Partial<Record<LegKind, LegAdapter>> = options.adapters ?? {
     "claude-code": createClaudeCodeAdapter(),
     "openai-compatible": createOpenAICompatibleAdapter(),
+    opencode: createOpenCodeAdapter(),
   };
   const registry = new LegRegistry(db, bus, secrets, paths.legs, now);
   // No Leg keeps my own ~/.claude as its config folder (Audit 1 → S1-02).

@@ -22,14 +22,16 @@ makes fallback and cross-Leg handoff real.
 - [x] Projects: archive, restore and delete (Core-Entities → Project)
 
 ### M2.1 — OpenCode adapter
-- [ ] Adapter on OpenCode's headless/server interface (see [[Leg-Adapters]])
-- [ ] Usage reporting, permission mapping, resume
-- [ ] Default capability profile
-- [ ] Contract tests shared with the other adapters
+- [x] Adapter on OpenCode **v2**'s private `serve --stdio` per session, inside the sandbox, over HTTP and SSE ([[ADR-015-OpenCode-Adapter]]); every action asked, a Leg's own `HOME`, `TMPDIR` and XDG dirs, project config ignored, only its provider allowed
+- [x] Usage from each step, permission mapping (`shell` → Bash, `edit` → Edit…), resume by session id, rate limits from retry events
+- [x] Default capability profile (the generic one for agent kinds until outcomes are learned)
+- [x] The shared contract tests pass against the real OpenCode 2.0.20 with a stand-in model, also inside bubblewrap
+- [x] OpenCode in "Add a Leg": a provider id, its endpoint, the models and the API key (to the keychain)
 
 ### M2.2 — Routing across three kinds
-- [ ] Routing and fallback exercised across all three kinds
-- [ ] Cross-Leg handoff tests (Claude Code → OpenCode → Claude Code) through Silk only
+- [~] Routing and fallback across kinds: a usage limit on Claude Code moves the task to OpenCode (ADR-009 keeps other Claude accounts out). Routing over all three kinds by learned profiles is exercised once real outcomes exist.
+- [x] Cross-Leg handoff through Silk only (Claude Code → OpenCode), tested with the real OpenCode binary
+- [ ] A real job with a real provider key (needs my key; OpenCode never uses a Claude subscription)
 
 ## Exit criterion
 

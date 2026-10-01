@@ -58,7 +58,7 @@ export class LegRegistry {
     if (typeof config.configDir === "string")
       mkdirSync(config.configDir, { recursive: true, mode: 0o700 });
     let secretRef: string | null = null;
-    if (input.kind === "openai-compatible" && input.secret) {
+    if ((input.kind === "openai-compatible" || input.kind === "opencode") && input.secret) {
       secretRef = secretName(id);
       await this.secrets.set(secretRef, input.secret);
     }
@@ -343,8 +343,8 @@ export class LegRegistry {
       healthDetail: leg.healthDetail,
       limitedUntil: leg.limitedUntil,
       remote:
-        kind !== "openai-compatible" ||
-        !/\/\/(127\.0\.0\.1|localhost|\[::1\])[:/]/.test(String(config.baseUrl)),
+        (kind !== "openai-compatible" && kind !== "opencode") ||
+        !/\/\/(127\.0\.0\.1|localhost|\[::1\])[:/]/.test(String(config.baseUrl ?? config.baseURL)),
       quota: leg.quota as QuotaWindow[],
       models: this.models(leg.id).map((m) => ({
         id: m.id,

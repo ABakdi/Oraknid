@@ -35,6 +35,10 @@ export function sandboxPlan(leg: LegRow, sandbox: Sandbox, legsDir: string): San
   const config = leg.config as Record<string, unknown>;
   const readonly = toolchainDirs();
   const writable: string[] = [];
+  if (leg.kind === "opencode") {
+    const dir = binaryDir(String(config.binary ?? "opencode"));
+    if (dir) readonly.push(dir);
+  }
   if (leg.kind === "claude-code") {
     const dir = binaryDir(String(config.binary ?? "claude"));
     if (dir) readonly.push(dir);
