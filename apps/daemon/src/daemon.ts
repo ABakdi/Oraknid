@@ -110,6 +110,8 @@ export async function startDaemon(options: DaemonOptions) {
     "openai-compatible": createOpenAICompatibleAdapter(),
   };
   const registry = new LegRegistry(db, bus, secrets, paths.legs, now);
+  // No Leg keeps my own ~/.claude as its config folder (Audit 1 → S1-02).
+  registry.ownConfigFolders();
   const supervisor = new LegSupervisor({
     db,
     bus,

@@ -99,7 +99,7 @@ export function OverviewPage() {
           {(legs.data ?? []).map((leg) => {
             const doing = (activity.data ?? []).filter((a) => a.legId === leg.id);
             return (
-              <Card key={leg.id} className="gap-2 py-3">
+              <Card key={leg.id} className="min-w-0 gap-2 py-3">
                 <CardHeader className="px-3">
                   <CardTitle className="flex items-center gap-2 text-sm">
                     <Bot className="size-4 shrink-0" />
@@ -162,8 +162,9 @@ export function OverviewPage() {
         </div>
       </section>
 
+      {/* min-w-0: a grid cell may shrink below its content, so nothing pushes past a phone's width. */}
       <div className="grid gap-4 xl:grid-cols-3">
-        <Card className="xl:col-span-2">
+        <Card className="min-w-0 xl:col-span-2">
           <CardHeader>
             <CardTitle className="text-sm">{t("Activity")}</CardTitle>
           </CardHeader>
@@ -172,15 +173,17 @@ export function OverviewPage() {
               <div className="text-muted-foreground">{t("Nothing yet.")}</div>
             ) : null}
             {stream.slice(0, 120).map((e) => (
-              <div key={e.seq} className="flex gap-2">
+              <div key={e.seq} className="flex flex-wrap gap-x-2">
                 <span className="shrink-0 text-muted-foreground">{clock(e.at)}</span>
                 <span className="shrink-0 text-primary">{e.type}</span>
-                <span className="truncate text-muted-foreground">{describe(e)}</span>
+                <span className="min-w-0 basis-full text-muted-foreground [overflow-wrap:anywhere] sm:basis-0 sm:flex-1">
+                  {describe(e)}
+                </span>
               </div>
             ))}
           </CardContent>
         </Card>
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-sm">
@@ -252,8 +255,8 @@ export function OverviewPage() {
                   ))}
                   <div className="pt-1 text-muted-foreground">{t("Processes")}</div>
                   {last.processes.map((p) => (
-                    <div key={p.id} className="flex justify-between gap-2">
-                      <span className="truncate">{p.label}</span>
+                    <div key={p.id} className="flex min-w-0 justify-between gap-2">
+                      <span className="min-w-0 truncate">{p.label}</span>
                       <span className="shrink-0 tabular-nums text-muted-foreground">
                         {p.cpuPercent}% · {bytes(p.rssBytes)}
                         {p.vramBytes ? ` · VRAM ${bytes(p.vramBytes)}` : ""}
@@ -269,7 +272,7 @@ export function OverviewPage() {
         </div>
       </div>
 
-      <Card>
+      <Card className="min-w-0">
         <CardHeader>
           <CardTitle className="text-sm">{t("Tokens today, by Leg")}</CardTitle>
         </CardHeader>
@@ -297,13 +300,15 @@ function Resource({
   values: number[];
 }) {
   return (
-    <div className="grid grid-cols-[1fr_auto] items-center gap-x-2">
-      <span className="flex items-center gap-1.5 truncate">
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2">
+      <span className="flex min-w-0 items-center gap-1.5 truncate">
         <Icon className="size-3.5 shrink-0 text-muted-foreground" />
         {label}
       </span>
-      <span className="tabular-nums text-muted-foreground">{value}</span>
-      <div className="col-span-2">
+      <span className="text-right tabular-nums text-muted-foreground [overflow-wrap:anywhere]">
+        {value}
+      </span>
+      <div className="col-span-2 min-w-0">
         <Sparkline values={values.slice(-120)} />
       </div>
     </div>

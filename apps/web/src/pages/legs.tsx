@@ -353,7 +353,7 @@ function AddLeg({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boole
                     className="font-mono"
                     value={configDir}
                     onChange={(e) => setConfigDir(e.target.value)}
-                    placeholder="~/.claude"
+                    placeholder={t("empty: a folder of its own")}
                   />
                 </div>
               </>

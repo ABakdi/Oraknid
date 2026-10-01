@@ -28,7 +28,7 @@ jobs. Feature work stopped. It is finished when every finding below is
 | ID | Severity | Where | Finding | Status |
 | :-- | :-- | :-- | :-- | :-- |
 | S1-01 | High | `workspace/git.ts` | Oraknid's own git calls ran in the Leg-writable worktree: a rewritten `.git` file, or a shadow repo inside the project, could set `core.fsmonitor` and run a command on the host. | Fixed: git calls on a worktree use the main repo's records (`worktreeGit`), with fsmonitor and hooks off; shadow repos live in the data folder; handoffs get their diff from that handle. |
-| S1-02 | High | Leg config, `legs/plan.ts` | My real `~/.claude` was the Leg's config dir, bound read-write in the sandbox: a Leg could plant hooks or settings my own Claude Code then runs, and read every transcript. | Open: my decision (a Leg config dir of its own, or sharing only the login file). See below. |
+| S1-02 | High | Leg config, `legs/plan.ts` | My real `~/.claude` was the Leg's config dir, bound read-write in the sandbox: a Leg could plant hooks or settings my own Claude Code then runs, and read every transcript. | Fixed (my choice, 2026-10-01: no login sharing): a Leg's config folder can't be my `~/.claude` or around it; a Leg that had it is moved to `legs/<id>/claude-config` at start and asks for one login. |
 | S1-03 | High | `eye/verify.ts` | Verify commands (planner output) ran with no command policy, and with the Leg's home. | Fixed: every check goes through the policy (never-allowed or gated: a failed check, not run); checks get a throwaway home. |
 | S1-04 | High | `auth/devices.ts` | Pairing codes had no attempt limit: a Leg (the network is shared) could guess an open six-digit code and get a device token. | Fixed: five wrong codes cancel every open code. Documented: the API stays reachable from the sandbox, but only with a token. |
 | S1-05 | Medium | `core/policy.ts` | The "inside the worktree" check didn't resolve `..`. | Fixed: paths are resolved before the check. |
@@ -107,23 +107,15 @@ jobs. Feature work stopped. It is finished when every finding below is
 | U1-01 | Medium | real job | A paused task still said "running" (B1-02 in [[Checkpoint-1]]). | Fixed: set to `ready` when the attempt stops. |
 | U1-02 | Medium | real job | A `kill -9` left the cut-short attempt open (B1-03). | Fixed: recovery closes it as `abandoned`. |
 | U1-03 | Low | Agents tab | A session stopped by a pause looks finished, not stopped. | Fixed: a session stopped by a pause or shutdown says "Stopped". |
-| U1-04 | — | every screen | Phone width not checked: the browser here can't be resized. | Open: my hands-on check at phone width. |
+| U1-04 | — | every screen | Phone width not checked: the browser here can't be resized. | Fixed: checked on my phone, 2026-10-01. Everything fit except the overview: the chart cards (Resources) and the activity stream ran off to the right. Fixed: grid cells may shrink (`min-w-0`), values and activity lines wrap. |
 
 ## Where it ended
 
 61 findings: 15 security, 16 durability, 25 quality, 1 performance,
-4 by hand. **54 fixed** (four of them in part, the rest documented:
+4 by hand. **56 fixed** (four of them in part, the rest documented:
 S1-04, S1-08, S1-10, Q1-24), **5 documented** (D1-05, D1-12, Q1-18,
-Q1-20, Q1-25), **2 open**:
-
-- **S1-02** is my decision. My Leg's config dir is my real
-  `~/.claude`, so a Leg can write settings, hooks and memory there that
-  my own Claude Code later trusts. The canon says a Leg's config dir
-  lives in its own home; moving it there means logging that Leg in once
-  more, or letting Oraknid copy only the login file in and out.
-- **U1-04**, my check at phone width.
-
-Every wave ended with `pnpm check` green (177 daemon tests at the end)
-and a check on the real daemon. The audit closes when these two are.
+Q1-20, Q1-25). Every wave ended with `pnpm check` green and a check on
+the real daemon; the last one, my phone check, found the overview's
+overflow, fixed the same day. **Closed 2026-10-01.**
 
 Related: [[Audit-Home]] · [[Checkpoint-1]] · [[Security]] · [[Durability]]

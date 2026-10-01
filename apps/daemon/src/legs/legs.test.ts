@@ -1,18 +1,20 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { RouterClient } from "@orpc/server";
+import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Router } from "../api/router.ts";
 import { type Daemon, startDaemon } from "../daemon.ts";
-import { attempts, sessions } from "../db/schema.ts";
+import { attempts, legs, sessions } from "../db/schema.ts";
 import { resolvePaths } from "../paths.ts";
 import { fakeLeg } from "../testing/fake-leg.ts";
 import { fakeOs } from "../testing/fake-os.ts";
 import { seedJob } from "../testing/fixtures.ts";
+import { sharesMyClaude } from "./registry.ts";
 import { pidStartTime } from "./supervisor.ts";
 
 let daemon: Daemon | undefined;
@@ -322,5 +324,39 @@ describe("recovery of orphaned Leg processes", () => {
     const rows = d.db.select().from(attempts).all();
     expect(rows.map((r) => r.outcome)).toEqual(["abandoned", "succeeded"]);
     expect(rows.every((r) => r.endedAt !== null)).toBe(true);
+  });
+});
+
+describe("a Leg's own config folder (Audit 1 → S1-02)", () => {
+  it("refuses my own ~/.claude, and moves a Leg that has it to a folder of its own", async () => {
+    const { d, api } = await start();
+    await expect(
+      api.legs.create({ kind: "claude-code", name: "Mine", config: { configDir: "~/.claude" } }),
+    ).rejects.toThrow(/can't use your own ~\/.claude/);
+    expect(sharesMyClaude(join(homedir(), ".claude", "x"))).toBe(true);
+    expect(sharesMyClaude(homedir())).toBe(true);
+    expect(sharesMyClaude(join(homedir(), ".local/share/oraknid/legs/a/claude-config"))).toBe(
+      false,
+    );
+    // A Leg made before the rule, straight in the database.
+    const { id } = await api.legs.create({ kind: "claude-code", name: "Old", config: {} });
+    const row = d.db.select().from(legs).where(eq(legs.id, id)).get();
+    d.db
+      .update(legs)
+      .set({
+        config: {
+          ...(row?.config as Record<string, unknown>),
+          configDir: join(homedir(), ".claude"),
+        },
+      })
+      .where(eq(legs.id, id))
+      .run();
+    expect(d.registry.ownConfigFolders()).toEqual([id]);
+    const moved = d.db.select().from(legs).where(eq(legs.id, id)).get();
+    expect((moved?.config as { configDir?: string } | undefined)?.configDir).toMatch(
+      /legs\/.+\/claude-config$/,
+    );
+    expect(moved?.healthDetail).toMatch(/log it in once/);
+    expect(d.registry.ownConfigFolders()).toEqual([]);
   });
 });

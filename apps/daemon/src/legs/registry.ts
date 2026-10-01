@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import {
   type LegHealth,
   type LegKind,
@@ -50,6 +51,10 @@ export class LegRegistry {
     if (input.kind === "claude-code" && !config.configDir) {
       config.configDir = join(this.legsDir, id, "claude-config");
     }
+    if (typeof config.configDir === "string" && sharesMyClaude(config.configDir))
+      throw new Error(
+        "A Leg can't use your own ~/.claude: the sandbox would let it change what your Claude Code trusts. Leave the folder empty and log the Leg in once with the command its card shows.",
+      );
     if (typeof config.configDir === "string")
       mkdirSync(config.configDir, { recursive: true, mode: 0o700 });
     let secretRef: string | null = null;
@@ -111,6 +116,39 @@ export class LegRegistry {
 
   async credential(leg: LegRow): Promise<string | null> {
     return leg.secretRef ? ((await this.secrets.get(leg.secretRef)) ?? null) : null;
+  }
+
+  /**
+   * A Leg whose config folder is my own ~/.claude gets a folder of its own
+   * (Audit 1 → S1-02). It then needs one login; its card says how.
+   * Returns the Legs moved.
+   */
+  ownConfigFolders(): string[] {
+    const moved: string[] = [];
+    for (const leg of this.all()) {
+      const config = leg.config as Record<string, unknown>;
+      if (leg.kind !== "claude-code" || typeof config.configDir !== "string") continue;
+      if (!sharesMyClaude(config.configDir)) continue;
+      const dir = join(this.legsDir, leg.id, "claude-config");
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      this.bus.atomically(() => {
+        this.db
+          .update(legs)
+          .set({
+            config: { ...config, configDir: dir },
+            health: "unavailable",
+            healthDetail: `Moved to a config folder of its own; log it in once: CLAUDE_CONFIG_DIR="${dir}" ${String(config.binary ?? "claude")} — then /login.`,
+          })
+          .where(eq(legs.id, leg.id))
+          .run();
+        this.#event(leg.id, "leg.updated", {
+          configDir: dir,
+          reason: "own config folder (Audit 1 → S1-02)",
+        });
+      });
+      moved.push(leg.id);
+    }
+    return moved;
   }
 
   update(id: string, patch: { name?: string; enabled?: boolean; paused?: boolean }) {
@@ -334,4 +372,11 @@ export class LegRegistry {
     });
     this.bus.publish({ type, topic: `leg:${legId}`, jobId: null, payload });
   }
+}
+
+/** Is this folder my own Claude Code's config, or inside or above it? */
+export function sharesMyClaude(dir: string, home = homedir()): boolean {
+  const mine = resolve(home, ".claude");
+  const d = resolve(dir.replace(/^~(?=$|\/)/, home));
+  return d === mine || d.startsWith(`${mine}/`) || mine.startsWith(`${d}/`);
 }

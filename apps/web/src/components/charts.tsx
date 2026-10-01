@@ -49,7 +49,7 @@ export function TokensChart({
     series.map((s, i) => [key(s), { label: s, color: COLORS[i % COLORS.length] }]),
   );
   return (
-    <ChartContainer config={config} className="w-full" style={{ height }}>
+    <ChartContainer config={config} className="w-full min-w-0" style={{ height }}>
       <AreaChart data={data} margin={{ left: 0, right: 8, top: 8 }}>
         <CartesianGrid vertical={false} />
         <XAxis
@@ -101,7 +101,7 @@ export function LegComparison({
   return (
     <ChartContainer
       config={config}
-      className="w-full"
+      className="w-full min-w-0"
       style={{ height: Math.max(120, rows.length * 36) }}
     >
       <BarChart data={data} layout="vertical" margin={{ left: 0, right: 16 }}>
@@ -128,7 +128,7 @@ export function Sparkline({
   return (
     <ChartContainer
       config={{ v: { label: "", color } }}
-      className="w-full"
+      className="w-full min-w-0"
       style={{ height, aspectRatio: "auto" }}
     >
       <LineChart data={data} margin={{ top: 2, bottom: 2, left: 0, right: 0 }}>
