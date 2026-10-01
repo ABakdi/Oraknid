@@ -33,3 +33,6 @@ export function writeSetting<T extends z.ZodType>(
 
 /** How many jobs run at once (ADR-016). */
 export const MAX_RUNNING_JOBS = "jobs.maxRunning";
+
+/** How many tasks of one job run at once (ADR-016). */
+export const MAX_TASKS_PER_JOB = "jobs.maxTasks";

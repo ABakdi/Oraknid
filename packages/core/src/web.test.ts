@@ -1,6 +1,6 @@
 import type { PlannedTask, WebPlan } from "@oraknid/contracts";
 import { describe, expect, it } from "vitest";
-import { inScope, readyTasks, validateWeb } from "./web.ts";
+import { inScope, readyTasks, scopesOverlap, validateWeb } from "./web.ts";
 
 const t = (over: Partial<PlannedTask>): PlannedTask => ({
   key: "t1",
@@ -77,5 +77,17 @@ describe("inScope", () => {
     ["src/a.tsx", ["src/?.ts"], false],
   ])("%s in %j → %s", (path, globs, expected) => {
     expect(inScope(path, globs)).toBe(expected);
+  });
+});
+
+describe("scopes that may overlap (ADR-016)", () => {
+  it("lets disjoint trees run side by side, and nothing else", () => {
+    expect(scopesOverlap(["src/auth/**"], ["src/billing/**"])).toBe(false);
+    expect(scopesOverlap(["src/**"], ["src/auth/login.ts"])).toBe(true);
+    expect(scopesOverlap(["hello.sh"], ["test.sh"])).toBe(false);
+    expect(scopesOverlap(["**/*.ts"], ["docs/**"])).toBe(true);
+    expect(scopesOverlap([], ["a"])).toBe(true);
+    expect(scopesOverlap(["src/a*.ts"], ["src/b.ts"])).toBe(true);
+    expect(scopesOverlap(["./docs/x.md"], ["docs/x.md"])).toBe(true);
   });
 });

@@ -106,3 +106,33 @@ export function globToRegExp(glob: string): RegExp {
   // A directory glob like "src/auth" covers what is inside it.
   return new RegExp(`^${re}(?:/.*)?$`);
 }
+
+/**
+ * Could two tasks touch the same file? Compares the fixed roots of their
+ * scope globs (`src/auth/**` → `src/auth`): one root inside the other, or a
+ * scope with no fixed root, can overlap (ADR-016: only disjoint tasks run
+ * side by side).
+ */
+export function scopesOverlap(a: string[], b: string[]): boolean {
+  const roots = (globs: string[]) =>
+    globs.map(
+      (g) =>
+        g
+          .replace(/^\.\//, "")
+          .split("/")
+          .filter(Boolean)
+          .reduce<{ parts: string[]; open: boolean }>(
+            (acc, seg) => {
+              if (!acc.open || /[*?[{]/.test(seg)) return { ...acc, open: false };
+              return { parts: [...acc.parts, seg], open: true };
+            },
+            { parts: [], open: true },
+          ).parts,
+    );
+  const ra = roots(a);
+  const rb = roots(b);
+  if (ra.length === 0 || rb.length === 0) return true;
+  const within = (x: string[], y: string[]) =>
+    x.length <= y.length && x.every((s, i) => s === y[i]);
+  return ra.some((x) => rb.some((y) => within(x, y) || within(y, x)));
+}

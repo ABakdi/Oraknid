@@ -11,7 +11,7 @@ import { and, eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Router } from "../api/router.ts";
 import { type Daemon, startDaemon } from "../daemon.ts";
-import { eyeMessages, jobs, legs, silkEntries, tasks } from "../db/schema.ts";
+import { eyeMessages, jobs, legs, sessions, silkEntries, tasks } from "../db/schema.ts";
 import { resolvePaths } from "../paths.ts";
 import { fakeOs } from "../testing/fake-os.ts";
 import { type Action, scriptedLeg, type TurnContext } from "../testing/scripted-leg.ts";
@@ -1654,4 +1654,117 @@ describe("several jobs share a Leg (ADR-016)", () => {
     expect((await until(api, second.id, ["completed", "blocked"], 15_000)).state).toBe("completed");
     expect((await until(api, id, ["completed", "blocked"], 15_000)).state).toBe("completed");
   }, 30_000);
+});
+
+describe("tasks side by side (ADR-016, M3.1–M3.2)", () => {
+  const openItem = async (api: Awaited<ReturnType<typeof eye>>["api"], title: string) => {
+    const end = Date.now() + 5000;
+    for (;;) {
+      const item = (await api.inbox.list({ state: "open" })).find((i) => i.title === title);
+      if (item) return item;
+      if (Date.now() > end) throw new Error(`no "${title}"`);
+      await new Promise((r) => setTimeout(r, 20));
+    }
+  };
+  const SIDE: WebPlan = {
+    summary: "Two scripts, then a test of both.",
+    tasks: [
+      { ...(HELLO.tasks[0] as WebPlan["tasks"][number]), key: "a", title: "Write hello.sh" },
+      {
+        ...(HELLO.tasks[0] as WebPlan["tasks"][number]),
+        key: "b",
+        title: "Write bye.sh",
+        scope: ["bye.sh"],
+        verify: ["sh bye.sh | grep -q bye"],
+      },
+      {
+        ...(HELLO.tasks[1] as WebPlan["tasks"][number]),
+        key: "c",
+        title: "Test hello.sh",
+        dependsOn: ["a", "b"],
+      },
+    ],
+    jobVerify: ["sh test.sh"],
+  };
+
+  it("runs independent tasks together, each in its own worktree, and merges them", async () => {
+    const { api, id, d, workspace } = await eye(
+      (t) =>
+        task(t) === "Write bye.sh"
+          ? [{ run: "sleep 1" }, { write: "bye.sh", content: "echo bye\n" }, { say: "DONE" }]
+          : task(t) === "Write hello.sh"
+            ? [{ run: "sleep 1" }, ...good(t)]
+            : good(t),
+      { plan: SIDE, autonomy: "supervised" },
+    );
+    // While the plan waits for me: two at once, and the Leg may run two sessions.
+    await openItem(api, "Approve the plan");
+    await api.settings.setMaxTasksPerJob({ max: 2 });
+    for (const leg of await api.legs.list()) await api.legs.update({ id: leg.id, maxSessions: 2 });
+    await api.inbox.answer({ id: (await openItem(api, "Approve the plan")).id, answer: "Approve" });
+    const done = await until(api, id, ["completed", "blocked"], 20_000);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+    const s = d.db.select().from(sessions).where(eq(sessions.jobId, id)).all();
+    const hello = s.find((x) => x.taskId === done.tasks[0]?.id);
+    const bye = s.find((x) => x.taskId === done.tasks[1]?.id);
+    // Their sessions overlapped in time.
+    expect(
+      (hello?.startedAt ?? 0) < (bye?.endedAt ?? 0) &&
+        (bye?.startedAt ?? 0) < (hello?.endedAt ?? 0),
+    ).toBe(true);
+    const r = await api.jobs.result({ id });
+    const show = (f: string) =>
+      spawnSync("git", ["show", `${r.branch}:${f}`], { cwd: workspace, encoding: "utf8" }).stdout;
+    expect(show("hello.sh")).toBe("echo hi\n");
+    expect(show("bye.sh")).toBe("echo bye\n");
+    // Each task's worktree is gone once merged.
+    const worktrees = spawnSync("git", ["worktree", "list"], {
+      cwd: workspace,
+      encoding: "utf8",
+    }).stdout;
+    expect(worktrees).not.toMatch(/-t-/);
+  }, 40_000);
+
+  it("merges nothing when the checks fail once merged, and redoes the task on top", async () => {
+    const plan: WebPlan = {
+      ...SIDE,
+      tasks: [
+        SIDE.tasks[0] as WebPlan["tasks"][number],
+        {
+          ...(SIDE.tasks[1] as WebPlan["tasks"][number]),
+          scope: ["bye.sh", "bye.ok"],
+          // Passes alone; once hello.sh is there, it also needs bye.ok.
+          verify: ["sh bye.sh | grep -q bye && { test ! -f hello.sh || test -f bye.ok; }"],
+        },
+        SIDE.tasks[2] as WebPlan["tasks"][number],
+      ],
+    };
+    let byeTurns = 0;
+    const { api, id } = await eye(
+      (t) => {
+        if (task(t) !== "Write bye.sh") return good(t);
+        byeTurns++;
+        return byeTurns === 1
+          ? // Slow, so hello.sh is merged first.
+            [{ run: "sleep 3" }, { write: "bye.sh", content: "echo bye\n" }, { say: "DONE" }]
+          : [
+              { write: "bye.sh", content: "echo bye\n" },
+              { write: "bye.ok", content: "ok\n" },
+              { say: "DONE" },
+            ];
+      },
+      { plan, autonomy: "supervised" },
+    );
+    await openItem(api, "Approve the plan");
+    await api.settings.setMaxTasksPerJob({ max: 2 });
+    for (const leg of await api.legs.list()) await api.legs.update({ id: leg.id, maxSessions: 2 });
+    await api.inbox.answer({ id: (await openItem(api, "Approve the plan")).id, answer: "Approve" });
+    const done = await until(api, id, ["completed", "blocked"], 30_000);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+    const issue = (await api.silk.list({ jobId: id })).find(
+      (e) => e.title === "Not merged: Write bye.sh",
+    );
+    expect(issue?.body).toContain("failed once merged");
+    expect(byeTurns).toBeGreaterThanOrEqual(2);
+  }, 60_000);
 });

@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   appendFileSync,
   existsSync,
@@ -247,7 +247,11 @@ export function createWorktree(
 /** A tree object of the work tree as it is now, untracked files included, without touching the index. */
 async function snapshotTree(g: Git, tmpDir: string): Promise<string> {
   mkdirSync(tmpDir, { recursive: true });
-  const index = join(tmpDir, `index-${process.pid}-${Date.now()}`);
+  // Unique even for two snapshots in the same millisecond (tasks side by side).
+  const index = join(
+    tmpDir,
+    `index-${process.pid}-${Date.now()}-${randomBytes(4).toString("hex")}`,
+  );
   const env = { GIT_INDEX_FILE: index };
   try {
     if (ok(g, ["rev-parse", "--verify", "HEAD"])) await gitAsync(g, ["read-tree", "HEAD"], env);
@@ -497,4 +501,84 @@ export function mergeBranch(
     }
   } else git(g, ["update-ref", `refs/heads/${into}`, commit, before]);
   return { ok: true, commit };
+}
+
+// ── Tasks side by side (ADR-016) ────────────────────────────────────
+
+/**
+ * A worktree of its own for a task running beside others, on a branch from
+ * the job branch's tip. Made again from the tip if a crash left it half made.
+ */
+export function createTaskWorktree(
+  repoPath: string,
+  jobId: string,
+  taskId: string,
+  jobBranch: string,
+): { path: string; branch: string } {
+  const g = { cwd: repoPath, base: [] };
+  const path = join(
+    repoPath,
+    ".oraknid",
+    "worktrees",
+    `${jobId}-t-${taskId.slice(-6).toLowerCase()}`,
+  );
+  const branch = `${jobBranch}--t-${taskId.slice(-6).toLowerCase()}`;
+  if (existsSync(path)) {
+    try {
+      worktreeGit(repoPath, path);
+      return { path, branch };
+    } catch {
+      renameSync(path, `${path}.broken-${Date.now()}`);
+      git(g, ["worktree", "prune"]);
+    }
+  }
+  if (ok(g, ["rev-parse", "--verify", `refs/heads/${branch}`])) git(g, ["branch", "-D", branch]);
+  git(g, ["worktree", "add", "-q", "-b", branch, path, jobBranch]);
+  // A fresh tree from the job's newer tip: the task's scope is measured from here, not from an
+  // earlier attempt's tree (that made other tasks' merged files look like its own edits).
+  const base = `refs/oraknid/${jobId}/${taskId}/base`;
+  if (ok(g, ["rev-parse", "--verify", "--quiet", base])) git(g, ["update-ref", "-d", base]);
+  return { path, branch };
+}
+
+/** Removes a task's worktree and branch once its work is merged, or to start it again. */
+export function removeTaskWorktree(repoPath: string, path: string, branch: string) {
+  const g = { cwd: repoPath, base: [] };
+  if (existsSync(path)) {
+    try {
+      git(g, ["worktree", "remove", "--force", path]);
+    } catch {
+      rmSync(path, { recursive: true, force: true });
+      git(g, ["worktree", "prune"]);
+    }
+  }
+  if (ok(g, ["rev-parse", "--verify", `refs/heads/${branch}`])) git(g, ["branch", "-D", branch]);
+}
+
+/**
+ * Merges a task's branch into the job worktree (Oraknid's own checkout of
+ * the job branch). A conflict merges nothing and names the files.
+ */
+export async function mergeTaskBranch(
+  jobG: Git,
+  branch: string,
+  message: string,
+): Promise<{ ok: true; commit: string } | { ok: false; conflicts: string[] }> {
+  try {
+    await gitAsync(jobG, ["merge", "--no-ff", "--no-edit", "-m", message, branch], authorEnv());
+    return { ok: true, commit: git(jobG, ["rev-parse", "HEAD"]).trim() };
+  } catch {
+    const conflicts = git(jobG, ["diff", "--name-only", "--diff-filter=U"])
+      .split("\n")
+      .filter(Boolean);
+    try {
+      git(jobG, ["merge", "--abort"]);
+    } catch {}
+    return { ok: false, conflicts };
+  }
+}
+
+/** Takes back the merge just made (its checks failed on the merged tree). */
+export function undoMerge(jobG: Git) {
+  git(jobG, ["reset", "-q", "--hard", "HEAD^1"]);
 }

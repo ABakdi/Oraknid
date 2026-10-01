@@ -1,8 +1,16 @@
 import { join, resolve } from "node:path";
 import type { Autonomy, InterviewRound, JobInput, WebPlan } from "@oraknid/contracts";
-import { decide, type GatedAction, readyTasks, skillExcerpt, suspicious } from "@oraknid/core";
+import {
+  decide,
+  type GatedAction,
+  readyTasks,
+  scopesOverlap,
+  skillExcerpt,
+  suspicious,
+} from "@oraknid/core";
 import type { Sandbox } from "@oraknid/os";
 import { and, asc, count, eq, inArray } from "drizzle-orm";
+import { z } from "zod";
 import type { Db } from "../db/open.ts";
 import { attempts, jobs, projects, steps, taskEdges, tasks } from "../db/schema.ts";
 import { AwaitingOwner } from "../engine/effects.ts";
@@ -13,9 +21,19 @@ import type { InboxStore } from "../inbox/store.ts";
 import { sandboxPlan } from "../legs/plan.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor } from "../legs/supervisor.ts";
+import { MAX_TASKS_PER_JOB, readSetting } from "../settings.ts";
 import type { SilkStore } from "../silk/store.ts";
 import type { SkillStore } from "../skills/store.ts";
-import { createWorktree, type Git, shadowRepo, worktreeGit } from "../workspace/git.ts";
+import {
+  createTaskWorktree,
+  createWorktree,
+  type Git,
+  mergeTaskBranch,
+  removeTaskWorktree,
+  shadowRepo,
+  undoMerge,
+  worktreeGit,
+} from "../workspace/git.ts";
 import { type AttemptJob, runAttempt } from "./attempt.ts";
 import type { EyeBrain } from "./brain.ts";
 import { readSmall, renderInputs } from "./inputs.ts";
@@ -162,7 +180,7 @@ export function eyeProgram(d: EyeDeps): JobProgram {
     for (;;) {
       // Asked every time, before any work: approved passes through, denied stops (never skipped on a resume).
       await approvePlanIfSupervised(d, ctx);
-      await runTasks(d, ctx, where);
+      await runTasks(d, ctx, where, !ws.shadow);
       if (ctx.state() === "cancelled") return;
 
       // ── Job-level verification (BR-1): only this completes a job.
@@ -238,17 +256,33 @@ async function runTasks(
   d: EyeDeps,
   ctx: JobContext,
   where: { cwd: string; g: Git; tmpDir: string; trash: string; projectPath: string },
+  parallel = false,
 ) {
+  const running = new Map<string, Promise<void>>();
+  // Written by the running tasks' callbacks.
+  const run: { failure: { error: unknown } | null; cancelled: boolean } = {
+    failure: null,
+    cancelled: false,
+  };
   for (;;) {
     const job = d.db.select().from(jobs).where(eq(jobs.id, ctx.jobId)).get();
     if (!job) return;
     const all = taskRows(d.db, ctx.jobId);
     const unfinished = all.filter((t) => t.state !== "done" && t.state !== "skipped");
-    if (unfinished.length === 0) return;
+    if (unfinished.length === 0 && running.size === 0) return;
     const ready = readyTasks(
       all.filter((t) => !t.ownerHeld && t.state !== "failed" && t.state !== "paused"),
-    );
+    ).filter((t) => !running.has(t.id));
+    if (ready.length === 0 && running.size > 0) {
+      await Promise.race(running.values());
+      if (run.cancelled) {
+        await Promise.allSettled(running.values());
+        return;
+      }
+      continue;
+    }
     if (ready.length === 0) {
+      if (run.failure) throw run.failure.error;
       const held = unfinished.filter((t) => t.ownerHeld).map((t) => t.title);
       throw new Error(
         held.length
@@ -256,115 +290,221 @@ async function runTasks(
           : `No task can start: ${unfinished.map((t) => `${t.title} (${t.state})`).join(", ")}.`,
       );
     }
-    const task = ready[0] as (typeof ready)[number];
-    // Only real failures count: a pause, a restart or a crash cut an attempt short, it didn't fail (Audit 1 → D1-01).
-    const failures =
-      d.db
-        .select({ n: count() })
-        .from(attempts)
-        .where(
-          and(eq(attempts.taskId, task.id), inArray(attempts.outcome, ["failed", "reassigned"])),
-        )
-        .get()?.n ?? 0;
-    if (failures >= (d.maxAttempts ?? 8)) {
-      throw new Error(`"${task.title}" failed ${failures} attempts. Look at it, then resume.`);
+    // Tasks side by side (ADR-016): as many as the per-job limit allows, whose scopes can't overlap.
+    const limit = parallel ? tasksAtOnce(d) : 1;
+    for (const t of ready) {
+      if (running.size >= limit || run.failure) break;
+      if (running.has(t.id)) continue;
+      const others = all.filter((x) => running.has(x.id));
+      if (others.some((x) => scopesOverlap(x.scope, t.scope))) continue;
+      const p = runTask(d, ctx, job, t, where, limit > 1)
+        .then((r) => {
+          if (r === "cancelled") run.cancelled = true;
+        })
+        .catch((error) => {
+          run.failure ??= { error };
+        })
+        .finally(() => running.delete(t.id));
+      running.set(t.id, p);
     }
-    // An outcome recorded in the journal but not applied before a crash is replayed, not run again
-    // (Audit 1 → D1-12): the task's work and my decision on it are never lost or done twice.
-    let attemptNo = task.attemptCount + 1;
-    if (task.attemptCount > task.settledAttempt) {
-      const recorded = d.db
-        .select({ status: steps.status })
-        .from(steps)
-        .where(
-          and(
-            eq(steps.jobId, job.id),
-            eq(steps.stepKey, `task:${task.id}:attempt:${task.attemptCount}`),
-          ),
-        )
-        .get();
-      if (recorded?.status === "done") attemptNo = task.attemptCount;
+    if (running.size === 0) {
+      if (run.failure) throw run.failure.error;
+      return;
     }
-    const attemptJob: AttemptJob = {
-      id: job.id,
-      title: job.title,
-      goal: job.goal,
-      autonomy: job.autonomy as Autonomy,
-      allowedLegIds: job.allowedLegIds,
-      moneyAllowed: ((job.budget as { money?: { limit: number } }).money?.limit ?? 0) > 0,
-      waived: job.waived as GatedAction[],
-      unsandboxed: job.unsandboxed,
-      skillBody: d.skills.version(job.skillId, job.skillVersion)?.body ?? "",
-      inputs: renderInputs(job.inputs as JobInput[], where.projectPath),
-    };
-    const outcome = await ctx.step(
-      `task:${task.id}:attempt:${attemptNo}`,
-      { taskId: task.id, attemptNo },
-      async (signal) => {
-        const result = await runAttempt(
-          {
-            db: d.db,
-            bus: d.bus,
-            silk: d.silk,
-            inbox: d.inbox,
-            registry: d.registry,
-            supervisor: d.supervisor,
-            sandbox: d.sandbox,
-            legsDir: d.legsDir,
-            now: d.now,
-            brain: d.brain,
-            ...(d.stallCheckMs ? { stallCheckMs: d.stallCheckMs } : {}),
-          },
-          attemptJob,
-          task.id,
-          where,
-          attemptNo,
-          signal,
-        );
-        // Being blocked is not an attempt: fail the step so a resume tries again rather than replaying it.
-        if (result.kind === "blocked") {
-          setTask(d, job.id, task.id, "ready", result.reason);
-          d.db.update(jobs).set({ blockedUntil: result.until }).where(eq(jobs.id, job.id)).run();
-          throw new Error(result.reason);
-        }
-        return result;
-      },
-    );
-    // Applied first, then marked settled: a crash in between applies it again, which changes nothing.
-    const settle = () =>
-      d.db.update(tasks).set({ settledAttempt: attemptNo }).where(eq(tasks.id, task.id)).run();
-    switch (outcome.kind) {
-      case "done":
-        if (outcome.commit)
-          d.db.update(tasks).set({ commit: outcome.commit }).where(eq(tasks.id, task.id)).run();
-        setTask(d, job.id, task.id, "done");
-        break;
-      case "retry":
-        setTask(d, job.id, task.id, "ready", outcome.reason);
-        break;
-      case "skipped":
-        setTask(d, job.id, task.id, "skipped", "Skipped by me.");
-        break;
-      case "owner-held":
-        d.db
-          .update(tasks)
-          .set({ ownerHeld: true, state: "paused" })
-          .where(eq(tasks.id, task.id))
-          .run();
-        d.bus.publish({
-          type: "task.state",
-          topic: `job:${job.id}`,
-          jobId: job.id,
-          payload: { taskId: task.id, to: "paused", reason: "I took it over." },
-        });
-        break;
-      case "cancel-job":
-        ctx.setState("cancelled", outcome.reason);
-        settle();
-        return;
+    await Promise.race(running.values());
+    if (run.cancelled) {
+      await Promise.allSettled(running.values());
+      return;
     }
-    settle();
   }
+}
+
+/** Merges of one job happen one at a time. */
+const merging = new Map<string, Promise<unknown>>();
+function oneMergeAtATime<T>(jobId: string, fn: () => Promise<T>): Promise<T> {
+  const next = (merging.get(jobId) ?? Promise.resolve()).then(fn, fn);
+  merging.set(
+    jobId,
+    next.catch(() => {}),
+  );
+  return next;
+}
+
+/** How many tasks of one job run at once (ADR-016); one by default. */
+function tasksAtOnce(d: EyeDeps): number {
+  return readSetting(d.db, MAX_TASKS_PER_JOB, z.number().int().min(1), 1);
+}
+
+/** One attempt at one task, applied; in parallel, in its own worktree and merged after (ADR-016). */
+async function runTask(
+  d: EyeDeps,
+  ctx: JobContext,
+  job: typeof jobs.$inferSelect,
+  task: ReturnType<typeof taskRows>[number],
+  where: { cwd: string; g: Git; tmpDir: string; trash: string; projectPath: string },
+  parallel: boolean,
+): Promise<"cancelled" | undefined> {
+  // Only real failures count: a pause, a restart or a crash cut an attempt short, it didn't fail (Audit 1 → D1-01).
+  const failures =
+    d.db
+      .select({ n: count() })
+      .from(attempts)
+      .where(and(eq(attempts.taskId, task.id), inArray(attempts.outcome, ["failed", "reassigned"])))
+      .get()?.n ?? 0;
+  if (failures >= (d.maxAttempts ?? 8)) {
+    throw new Error(`"${task.title}" failed ${failures} attempts. Look at it, then resume.`);
+  }
+  // An outcome recorded in the journal but not applied before a crash is replayed, not run again
+  // (Audit 1 → D1-12): the task's work and my decision on it are never lost or done twice.
+  let attemptNo = task.attemptCount + 1;
+  if (task.attemptCount > task.settledAttempt) {
+    const recorded = d.db
+      .select({ status: steps.status })
+      .from(steps)
+      .where(
+        and(
+          eq(steps.jobId, job.id),
+          eq(steps.stepKey, `task:${task.id}:attempt:${task.attemptCount}`),
+        ),
+      )
+      .get();
+    if (recorded?.status === "done") attemptNo = task.attemptCount;
+  }
+  const attemptJob: AttemptJob = {
+    id: job.id,
+    title: job.title,
+    goal: job.goal,
+    autonomy: job.autonomy as Autonomy,
+    allowedLegIds: job.allowedLegIds,
+    moneyAllowed: ((job.budget as { money?: { limit: number } }).money?.limit ?? 0) > 0,
+    waived: job.waived as GatedAction[],
+    unsandboxed: job.unsandboxed,
+    skillBody: d.skills.version(job.skillId, job.skillVersion)?.body ?? "",
+    inputs: renderInputs(job.inputs as JobInput[], where.projectPath),
+  };
+  // Beside other tasks, it works in a worktree of its own, branched from the job branch (ADR-016).
+  let taskWhere = where;
+  let own: { path: string; branch: string } | null = null;
+  if (parallel && job.branch) {
+    own = createTaskWorktree(where.projectPath, job.id, task.id, job.branch);
+    d.db.update(tasks).set({ worktree: own.path }).where(eq(tasks.id, task.id)).run();
+    taskWhere = { ...where, cwd: own.path, g: worktreeGit(where.projectPath, own.path) };
+  }
+  const outcome = await ctx.step(
+    `task:${task.id}:attempt:${attemptNo}`,
+    { taskId: task.id, attemptNo },
+    async (signal) => {
+      const result = await runAttempt(
+        {
+          db: d.db,
+          bus: d.bus,
+          silk: d.silk,
+          inbox: d.inbox,
+          registry: d.registry,
+          supervisor: d.supervisor,
+          sandbox: d.sandbox,
+          legsDir: d.legsDir,
+          now: d.now,
+          brain: d.brain,
+          ...(d.stallCheckMs ? { stallCheckMs: d.stallCheckMs } : {}),
+        },
+        attemptJob,
+        task.id,
+        taskWhere,
+        attemptNo,
+        signal,
+      );
+      // Being blocked is not an attempt: fail the step so a resume tries again rather than replaying it.
+      if (result.kind === "blocked") {
+        setTask(d, job.id, task.id, "ready", result.reason);
+        d.db.update(jobs).set({ blockedUntil: result.until }).where(eq(jobs.id, job.id)).run();
+        throw new Error(result.reason);
+      }
+      return result;
+    },
+  );
+  // Merged into the job branch, one task at a time, and checked again there; a conflict or a
+  // failing check merges nothing and the task is redone on top of the newer work (ADR-016).
+  if (own && outcome.kind === "done") {
+    const branch = own.branch;
+    const merged = await ctx.step(`task:${task.id}:merge:${attemptNo}`, { attemptNo }, () =>
+      oneMergeAtATime(job.id, async () => {
+        const m = await mergeTaskBranch(where.g, branch, `merge: ${task.title}`);
+        if (!m.ok)
+          return {
+            ok: false,
+            why: `it conflicted with work merged meanwhile (${m.conflicts.join(", ")})`,
+          };
+        const results = await runVerify(
+          task.verify,
+          where.cwd,
+          job.unsandboxed ? null : sandboxPlan(firstLeg(d), d.sandbox, d.legsDir),
+          {
+            refuse: (command) =>
+              verifyRefusal(
+                decide({ tool: "Bash", command, path: null }, policyFor(d.db, job.id, where.cwd)),
+              ),
+          },
+        );
+        const failed = results.find((r) => !r.ok);
+        if (failed) {
+          undoMerge(where.g);
+          return { ok: false, why: `\`${failed.command}\` failed once merged with the other work` };
+        }
+        return { ok: true, why: "" };
+      }),
+    );
+    removeTaskWorktree(where.projectPath, own.path, own.branch);
+    d.db.update(tasks).set({ worktree: null }).where(eq(tasks.id, task.id)).run();
+    if (!merged.ok) {
+      d.silk.add({
+        jobId: job.id,
+        taskId: task.id,
+        kind: "issue",
+        title: `Not merged: ${task.title}`,
+        body: `Its work was verified alone, but ${merged.why}. It is redone on top of the newer work.`,
+        authoredBy: "eye",
+      });
+      setTask(d, job.id, task.id, "ready", `Redone on top of the newer work: ${merged.why}.`);
+      d.db.update(tasks).set({ settledAttempt: attemptNo }).where(eq(tasks.id, task.id)).run();
+      return;
+    }
+  }
+
+  // Applied first, then marked settled: a crash in between applies it again, which changes nothing.
+  const settle = () =>
+    d.db.update(tasks).set({ settledAttempt: attemptNo }).where(eq(tasks.id, task.id)).run();
+  switch (outcome.kind) {
+    case "done":
+      if (outcome.commit)
+        d.db.update(tasks).set({ commit: outcome.commit }).where(eq(tasks.id, task.id)).run();
+      setTask(d, job.id, task.id, "done");
+      break;
+    case "retry":
+      setTask(d, job.id, task.id, "ready", outcome.reason);
+      break;
+    case "skipped":
+      setTask(d, job.id, task.id, "skipped", "Skipped by me.");
+      break;
+    case "owner-held":
+      d.db
+        .update(tasks)
+        .set({ ownerHeld: true, state: "paused" })
+        .where(eq(tasks.id, task.id))
+        .run();
+      d.bus.publish({
+        type: "task.state",
+        topic: `job:${job.id}`,
+        jobId: job.id,
+        payload: { taskId: task.id, to: "paused", reason: "I took it over." },
+      });
+      break;
+    case "cancel-job":
+      ctx.setState("cancelled", outcome.reason);
+      settle();
+      return;
+  }
+  settle();
 }
 
 export const ENOUGH = "Enough, start";

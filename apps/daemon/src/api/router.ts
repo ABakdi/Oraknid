@@ -81,7 +81,7 @@ import { readSessionLog } from "../legs/session-log.ts";
 import type { Notifications } from "../notify/notifications.ts";
 import type { Secrets } from "../os/secrets.ts";
 import type { Paths } from "../paths.ts";
-import { MAX_RUNNING_JOBS, readSetting, writeSetting } from "../settings.ts";
+import { MAX_RUNNING_JOBS, MAX_TASKS_PER_JOB, readSetting, writeSetting } from "../settings.ts";
 import type { SilkStore } from "../silk/store.ts";
 import type { SkillStore } from "../skills/store.ts";
 import { pruneLogs, storageUsage } from "../storage/storage.ts";
@@ -539,6 +539,26 @@ export const router = {
           c.runner.admit();
         }),
       ),
+    /** How many tasks of one job run at once (ADR-016). */
+    maxTasksPerJob: base
+      .output(z.number().int())
+      .handler(({ context: c }) =>
+        readSetting(c.jobs.db, MAX_TASKS_PER_JOB, z.number().int().min(1), 1),
+      ),
+    setMaxTasksPerJob: base
+      .input(z.object({ max: z.number().int().min(1).max(8) }))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          writeSetting(c.jobs.db, MAX_TASKS_PER_JOB, z.number().int().min(1), input.max);
+          c.bus.publish({
+            type: "settings.updated",
+            topic: "overview",
+            jobId: null,
+            payload: { maxTasksPerJob: input.max },
+            actor: "owner",
+          });
+        }),
+      ),
     setEyeLeg: base
       .input(z.object({ legModelId: z.string().nullable() }))
       .handler(({ context: c, input }) =>
@@ -764,7 +784,7 @@ export const router = {
       .handler(({ context: c, input }) =>
         guard(async () => {
           const { id, maxSessions, ...patch } = input;
-          c.registry.update(id, patch);
+          if (Object.keys(patch).length) c.registry.update(id, patch);
           if (maxSessions !== undefined) c.registry.setConfig(id, { maxSessions });
           await c.health.check(id);
         }),
