@@ -1,9 +1,19 @@
 import type { JobResult } from "@oraknid/contracts";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
-import { jobs, projects } from "../db/schema.ts";
+import { jobs, projects, tasks } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
-import { commitsAhead, isMerged, type MergeResult, mergeBranch } from "./git.ts";
+import {
+  commitPatch,
+  commitsAhead,
+  diffSince,
+  hasRef,
+  isMerged,
+  type MergeResult,
+  mergeBranch,
+  shadowRepo,
+  worktreeGit,
+} from "./git.ts";
 
 // A finished job's result: where it is, and merging it into the work
 // branch (Jobs-and-Projects → Ending a job, Checkpoint 1 → F1-5).
@@ -70,4 +80,39 @@ export function mergeJob(db: Db, bus: EventBus, jobId: string): MergeResult {
     actor: "owner",
   });
   return r;
+}
+
+const MAX_DIFF = 200_000;
+
+/**
+ * A task's work as a patch (Web-UI → Task drawer; Phase 2 → M2.0): its
+ * commit once done, or what changed since before its first attempt.
+ */
+export function taskDiff(
+  db: Db,
+  taskId: string,
+  tmpDir: string,
+): { text: string; from: "commit" | "work" | "none"; truncated: boolean } {
+  const task = db.select().from(tasks).where(eq(tasks.id, taskId)).get();
+  if (!task) throw new Error(`No task ${taskId}.`);
+  const { job, project } = load(db, task.jobId);
+  if (!job.worktree) return { text: "", from: "none", truncated: false };
+  const g = project.isGitRepo
+    ? worktreeGit(project.workspacePath, job.worktree)
+    : shadowRepo(job.worktree);
+  const base = `refs/oraknid/${job.id}/${task.id}/base`;
+  const text = task.commit
+    ? commitPatch(g, task.commit)
+    : hasRef(g, base)
+      ? diffSince(g, base, tmpDir)
+      : "";
+  const from = task.commit ? "commit" : text ? "work" : "none";
+  return {
+    text:
+      text.length > MAX_DIFF
+        ? `${text.slice(0, MAX_DIFF)}\n… (cut: ${text.length - MAX_DIFF} more characters)`
+        : text,
+    from,
+    truncated: text.length > MAX_DIFF,
+  };
 }

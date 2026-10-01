@@ -317,6 +317,8 @@ async function runTasks(
     );
     switch (outcome.kind) {
       case "done":
+        if (outcome.commit)
+          d.db.update(tasks).set({ commit: outcome.commit }).where(eq(tasks.id, task.id)).run();
         setTask(d, job.id, task.id, "done");
         break;
       case "retry":

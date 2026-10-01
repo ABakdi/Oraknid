@@ -86,7 +86,7 @@ import type { SkillStore } from "../skills/store.ts";
 import { pruneLogs, storageUsage } from "../storage/storage.ts";
 import { VERSION } from "../version.ts";
 import type { Projects } from "../workspace/projects.ts";
-import { jobResult, mergeJob } from "../workspace/result.ts";
+import { jobResult, mergeJob, taskDiff } from "../workspace/result.ts";
 import {
   Activity,
   activity,
@@ -379,6 +379,17 @@ export const router = {
       .handler(({ context: c, input }) =>
         guard(() => rollbackTask(controls(c), input.taskId, input.attempt)),
       ),
+    /** The task's work as a patch (Phase 2 → M2.0). */
+    diff: base
+      .input(z.object({ taskId: z.string() }))
+      .output(
+        z.object({
+          text: z.string(),
+          from: z.enum(["commit", "work", "none"]),
+          truncated: z.boolean(),
+        }),
+      )
+      .handler(({ context: c, input }) => guard(() => taskDiff(c.jobs.db, input.taskId, c.tmpDir))),
     attempts: base
       .input(z.object({ taskId: z.string() }))
       .output(

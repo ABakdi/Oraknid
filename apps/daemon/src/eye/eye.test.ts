@@ -1507,3 +1507,28 @@ describe("after a crash, the next attempt knows where the last one stopped (Audi
     expect(leg.log.some((t) => t.system.includes("echo trying"))).toBe(true);
   });
 });
+
+describe("a task's diff (Phase 2 → M2.0)", () => {
+  it("shows a done task's own commit, and a running task's work so far", async () => {
+    let hang = true;
+    const { api, id } = await eye((t) =>
+      task(t) === "Test hello.sh" && hang
+        ? [{ write: "test.sh", content: "draft\n" }, { hang: true }]
+        : good(t),
+    );
+    const end = Date.now() + 5000;
+    while ((await api.jobs.get({ id })).tasks[1]?.state !== "running" && Date.now() < end)
+      await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => setTimeout(r, 150));
+    const [t1, t2] = (await api.jobs.get({ id })).tasks;
+    const done = await api.tasks.diff({ taskId: t1?.id as string });
+    expect(done.from).toBe("commit");
+    expect(done.text).toContain("+echo hi");
+    const running = await api.tasks.diff({ taskId: t2?.id as string });
+    expect(running.from).toBe("work");
+    expect(running.text).toContain("+draft");
+    expect(running.text).not.toContain("+echo hi");
+    hang = false;
+    await api.jobs.cancel({ id });
+  });
+});

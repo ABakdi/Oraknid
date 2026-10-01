@@ -268,6 +268,17 @@ export function diffStatSince(g: Git, ref: string, tmpDir: string): string {
   return git(g, ["diff", "--stat", `${ref}^{tree}`, tree]);
 }
 
+/** The patch from a checkpoint to the work tree now. */
+export function diffSince(g: Git, ref: string, tmpDir: string): string {
+  const tree = snapshotTree(g, tmpDir);
+  return git(g, ["diff", "--no-color", "--stat", "--patch", `${ref}^{tree}`, tree]);
+}
+
+/** One commit's patch. */
+export function commitPatch(g: Git, commit: string): string {
+  return git(g, ["show", "--no-color", "--format=%s%n", "--stat", "--patch", commit]);
+}
+
 /**
  * Puts the work tree back to a checkpoint. Files created since are moved
  * to `.oraknid/trash/<time>/`, never deleted (Drift-Control → Rollback).

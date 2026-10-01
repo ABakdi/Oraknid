@@ -96,6 +96,8 @@ export const tasks = sqliteTable(
     jobId: text("job_id")
       .notNull()
       .references(() => jobs.id),
+    /** The commit of its work, once done (the task drawer's diff). */
+    commit: text("commit"),
     title: text("title").notNull(),
     instructions: text("instructions").notNull(),
     kind: text("kind").notNull(),

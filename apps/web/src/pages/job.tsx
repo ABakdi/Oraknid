@@ -8,6 +8,7 @@ import { ErrorNote, Loading, Markdown, PageHeader, Stat, StateBadge } from "@/co
 import { EyeChat } from "@/components/eye-chat";
 import { JobResult } from "@/components/job-result";
 import { JobSettings } from "@/components/job-settings";
+import { TaskDiff } from "@/components/task-diff";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -390,6 +391,9 @@ function TaskDrawer({
                     </Button>
                   </div>
                 ))}
+              </Field>
+              <Field label={t("Diff")}>
+                <TaskDiff key={task.id} taskId={task.id} />
               </Field>
               <Field label={t("Output")}>
                 <Agents jobId={job.id} taskId={task.id} compact />
