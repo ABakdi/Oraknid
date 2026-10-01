@@ -9,6 +9,13 @@ const PATTERNS: RegExp[] = [
   /\bAIza[0-9A-Za-z_-]{35}\b/g, // Google API keys
   /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
   /(\bBearer\s+)[A-Za-z0-9._~+/=-]{20,}/g,
+  // Audit 1 → S1-13:
+  /\b[sr]k_(live|test)_[A-Za-z0-9]{16,}/g, // Stripe
+  /\bnpm_[A-Za-z0-9]{30,}/g, // npm
+  /\bglpat-[A-Za-z0-9_-]{20,}/g, // GitLab
+  /\bhf_[A-Za-z0-9]{30,}/g, // Hugging Face
+  /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, // JWTs
+  /(?<=[a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:)[^\s@/]{3,}(?=@)/gi, // the password in user:pass@host
 ];
 
 /** Replaces known secret values (longest first) and secret-shaped strings with [secret]. */

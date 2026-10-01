@@ -21,4 +21,18 @@ describe("scrubSecrets (BR-13)", () => {
   it("ignores values too short to be secrets, so it never blanks ordinary words", () => {
     expect(scrubSecrets("the cat sat", ["cat"])).toBe("the cat sat");
   });
+
+  it("covers more token shapes (Audit 1 → S1-13)", () => {
+    const text = [
+      `sk_${"live"}_${"a".repeat(24)}`,
+      `npm_${"b".repeat(36)}`,
+      `glpat-${"c".repeat(20)}`,
+      `hf_${"d".repeat(34)}`,
+      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghijklmnop",
+      "https://me:hunter2pass@example.com/repo.git",
+    ].join(" ");
+    expect(scrubSecrets(text)).toBe(
+      "[secret] [secret] [secret] [secret] [secret] https://me:[secret]@example.com/repo.git",
+    );
+  });
 });

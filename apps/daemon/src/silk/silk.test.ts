@@ -1,5 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createORPCClient } from "@orpc/client";
@@ -201,5 +209,19 @@ describe("summaries of shortened entries (M1.9)", () => {
         covers: [ids[3] as string],
       }),
     ).toThrow("Only I can supersede an entry I wrote.");
+  });
+});
+
+describe("the mirror is in the Leg's reach (Audit 1 → S1-06)", () => {
+  it("never follows a link a Leg planted there", async () => {
+    const { d, jobId, mirror } = await start();
+    d.silk.add({ jobId, kind: "decision", title: "A", body: "a", authoredBy: "eye" });
+    const secret = join(mkdtempSync(join(tmpdir(), "oraknid-secret-")), "secret.txt");
+    writeFileSync(secret, "do not read\n");
+    rmSync(join(mirror, "decisions.md"));
+    symlinkSync(secret, join(mirror, "decisions.md"));
+    expect(d.silk.checkMirror(jobId)).toEqual([]);
+    d.silk.add({ jobId, kind: "decision", title: "B", body: "b", authoredBy: "eye" });
+    expect(readFileSync(secret, "utf8")).toBe("do not read\n");
   });
 });

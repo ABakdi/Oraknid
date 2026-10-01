@@ -209,9 +209,30 @@ export function allowRuleFor(command: string): string {
   return `^\\s*(${programs.join("|")})(\\s|$)`;
 }
 
+/**
+ * The command with git's and package managers' global options taken out, so
+ * `git -C . push` reads as `git push` for the lists below (Audit 1 → S1-11).
+ */
+export function withoutGlobalOptions(command: string): string {
+  return command
+    .replace(
+      /\bgit((?:\s+(?:-C\s+\S+|-c\s+\S+|--git-dir(?:=|\s+)\S+|--work-tree(?:=|\s+)\S+|--namespace(?:=|\s+)\S+|--no-pager|--paginate|-P|-p|--bare|--no-replace-objects|--literal-pathspecs|--exec-path(?:=\S+)?))+)(?=\s)/g,
+      "git",
+    )
+    .replace(
+      /\b(npm|pnpm|yarn)((?:\s+(?:--filter\s+\S+|-F\s+\S+|-C\s+\S+|--dir\s+\S+|--prefix\s+\S+|--workspace\s+\S+|-w\s+\S+|--?[\w-]+(?:=\S+)?))+)(?=\s)/g,
+      "$1",
+    );
+}
+
+/** Commands that fetch and run code, or run inline code: a look before they run (Audit 1 → S1-10). */
+const FETCHES_OR_INLINE =
+  /\b(npx|bunx|uvx)\s+(-\S+\s+)*(?!(vitest|tsc|tsx|eslint|prettier|biome|jest|playwright|vite|next|astro|turbo)\b)[@\w]|\b(pnpm|yarn)\s+dlx\b|\bnpm\s+exec\b|\b(pip3?|uv\s+pip)\s+install\b|\b(python3?|node|perl|ruby|php)\s+(-\S+\s+)*-[ce]\b/;
+
 export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
-  const command = r.command ?? "";
-  const own = command ? mine(command, ctx.rules ?? []) : null;
+  const raw = r.command ?? "";
+  const command = raw ? `${raw}\n${withoutGlobalOptions(raw)}` : "";
+  const own = raw ? mine(raw, ctx.rules ?? []) : null;
 
   if (command) {
     for (const d of DEFAULT_DENY) {
@@ -253,7 +274,14 @@ export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
 
   if (SHELL_TOOLS.has(r.tool)) {
     if (own?.verdict === "allow") return own;
-    const unknown = [...new Set(programsOf(command).filter((p) => !ALLOWED_PROGRAMS.has(p)))];
+    const unknown = [...new Set(programsOf(raw).filter((p) => !ALLOWED_PROGRAMS.has(p)))];
+    const fetches = FETCHES_OR_INLINE.test(raw);
+    if (fetches && ctx.autonomy === "standard")
+      return {
+        verdict: "classify",
+        reason: "it fetches and runs code, or runs inline code, with the network open",
+        programs: [...new Set(programsOf(raw))],
+      };
     if (unknown.length === 0)
       return { verdict: "allow", reason: "every program is on the allow list" };
     // Supervised: every unknown program is my decision.
@@ -282,7 +310,17 @@ export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
     return { verdict: "classify", reason: why, programs: [...outward, ...unfamiliar] };
   }
 
-  // A tool Oraknid doesn't know (e.g. an MCP tool).
+  // An MCP tool may write outside: gated as an external write, like publishing (Security; Audit 1 → S1-15).
+  if (r.tool.startsWith("mcp__")) {
+    if (ctx.waived.has("external-write") && !ctx.untrusted)
+      return { verdict: "allow", reason: "external-write waived for this job" };
+    return {
+      verdict: "ask",
+      reason: `${r.tool} is an MCP tool: it may write outside the machine`,
+      gated: "external-write",
+    };
+  }
+  // A tool Oraknid doesn't know.
   if (ctx.autonomy === "full") return { verdict: "allow", reason: "unknown tool at Full autonomy" };
   if (ctx.autonomy === "supervised")
     return { verdict: "ask", reason: `uses ${r.tool}, which Oraknid does not know`, gated: null };

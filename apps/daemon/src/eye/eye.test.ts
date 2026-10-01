@@ -1415,3 +1415,30 @@ describe("checks obey the command policy (Audit 1 → S1-03)", () => {
     await api.jobs.cancel({ id });
   });
 });
+
+describe("what a Leg reads from the web is untrusted (Audit 1 → S1-09)", () => {
+  it("asks before a gated action once the task fetched from the web, even at Full", async () => {
+    const { api, id } = await eye(
+      (t) =>
+        task(t) === "Write hello.sh" && t.turn === 1
+          ? [
+              { run: "git merge --help >/dev/null 2>&1; true" },
+              { run: "curl --version >/dev/null; true" },
+              { run: "git merge --help >/dev/null 2>&1; true" },
+              ...good(t),
+            ]
+          : good(t),
+      { autonomy: "full" },
+    );
+    const end = Date.now() + 5000;
+    let item: Awaited<ReturnType<typeof api.inbox.list>>[number] | undefined;
+    while (!item && Date.now() < end) {
+      item = (await api.inbox.list({ state: "open" }))[0];
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(item?.detail).toContain("untrusted");
+    expect(item?.title).toContain("git merge");
+    await api.inbox.answer({ id: item?.id as string, answer: "Deny" });
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+  });
+});

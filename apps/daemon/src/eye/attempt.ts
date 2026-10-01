@@ -289,8 +289,22 @@ export async function runAttempt(
   const event = (type: string, payload: Record<string, unknown>) =>
     d.bus.publish({ type, topic: `job:${job.id}`, jobId: job.id, payload: { taskId, ...payload } });
 
+  /** This attempt read something from the web: untrusted from here on (BR-15; Audit 1 → S1-09). */
+  let readTheWeb = false;
   const onPermission = async (r: PermissionRequest): Promise<PermissionDecision> => {
-    const first = decide(r, policyFor(d.db, job.id, ws.cwd));
+    const policy = policyFor(d.db, job.id, ws.cwd);
+    if (readTheWeb) policy.untrusted = true;
+    const first = decide(r, policy);
+    const fetches =
+      r.tool === "WebFetch" ||
+      r.tool === "WebSearch" ||
+      (r.command ? /\b(curl|wget)\b/.test(r.command) : false);
+    if (fetches && first.verdict !== "deny" && !readTheWeb) {
+      readTheWeb = true;
+      event("task.untrusted", {
+        reason: `read from the web (${r.tool}): gated actions ask me from now on`,
+      });
+    }
     const v =
       first.verdict === "classify"
         ? await classify(d, job.id, ws.cwd, task.title, r, first)

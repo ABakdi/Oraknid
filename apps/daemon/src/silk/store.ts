@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Actor, SilkEntry, SilkKind } from "@oraknid/contracts";
 import { current, parseMirrorEdits, renderMirror } from "@oraknid/core";
@@ -48,8 +48,9 @@ export class SilkStore {
       jobId: e.jobId,
       taskId: e.taskId ?? null,
       kind: e.kind,
-      title: e.title.trim(),
-      body: e.body,
+      // Secrets never reach Silk, its mirror or later prompts (BR-13; Audit 1 → S1-13).
+      title: this.bus.scrub(e.title.trim()),
+      body: this.bus.scrub(e.body),
       supersedes: e.supersedes ?? null,
       covers: e.covers ?? [],
       authoredBy: e.authoredBy,
@@ -121,6 +122,7 @@ export class SilkStore {
   writeMirror(jobId: string, opts: { check?: boolean } = {}) {
     const dir = this.mirrorDir(jobId);
     if (!dir || !existsSync(dirname(dirname(dir)))) return;
+    if (linked(dir)) return;
     if (opts.check ?? true) this.checkMirror(jobId);
     const job = this.db.select({ title: jobs.title }).from(jobs).where(eq(jobs.id, jobId)).get();
     const files = renderMirror(job?.title ?? jobId, this.all(jobId));
@@ -129,6 +131,8 @@ export class SilkStore {
       if (known?.pendingItemId) continue;
       const path = join(dir, file);
       mkdirSync(dirname(path), { recursive: true });
+      // A Leg can write here: a link it planted is never followed (Audit 1 → S1-06).
+      if (linked(dirname(path)) || linked(path)) continue;
       // Atomic: a crash never leaves half a file (ADR-007).
       writeFileSync(`${path}.tmp`, content);
       renameSync(`${path}.tmp`, path);
@@ -152,7 +156,7 @@ export class SilkStore {
     for (const t of tracked) {
       if (t.pendingItemId) continue;
       const path = join(dir, t.file);
-      if (!existsSync(path)) continue;
+      if (!existsSync(path) || linked(dir) || linked(dirname(path)) || linked(path)) continue;
       const text = readFileSync(path, "utf8");
       if (hash(text) === t.hash) continue;
       const edits = parseMirrorEdits(t.file, text, this.all(jobId));
@@ -166,11 +170,14 @@ export class SilkStore {
         jobId,
         raisedBy: "eye",
         title: `Import my edits to Silk (${t.file})?`,
-        detail: edits
+        // The mirror sits in the Leg's worktree: only I know whether I made these edits (S1-06).
+        detail: `${edits
           .map((e) => `- ${e.supersedes ? "Changed" : "New"}: **${e.title}**`)
-          .join("\n"),
+          .join(
+            "\n",
+          )}\n\nThe mirror is in the job's folder, where its Legs work too. Import only edits you made: imported entries become yours, and every later session trusts them.`,
         options: [IMPORT, DISCARD],
-        defaultOption: IMPORT,
+        defaultOption: null,
       });
       this.db
         .update(silkMirror)
@@ -237,5 +244,14 @@ export class SilkStore {
       .set({ hash: value })
       .where(and(eq(silkMirror.jobId, jobId), eq(silkMirror.file, file)))
       .run();
+  }
+}
+
+/** A symlink, or anything that isn't a plain file or folder of its own. */
+function linked(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false;
   }
 }

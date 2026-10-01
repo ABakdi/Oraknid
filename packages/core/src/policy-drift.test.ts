@@ -141,8 +141,39 @@ describe("permission policy", () => {
     });
     expect(decide(bash("frobnicate --all"), ctx({ autonomy: "full" })).verdict).toBe("allow");
     expect(decide({ tool: "mcp__mail__send", command: null, path: null }, ctx())).toMatchObject({
-      verdict: "classify",
+      verdict: "ask",
+      gated: "external-write",
     });
+  });
+
+  it("Audit 1: global options don't hide a gate, fetched or inline code gets a look, MCP is gated", () => {
+    for (const c of ["git -C . push origin dev", "git -c x=y --no-pager push"])
+      expect(decide(bash(c), ctx({ autonomy: "full" }))).toMatchObject({ verdict: "ask" });
+    expect(decide(bash("pnpm --filter web publish"), ctx())).toMatchObject({
+      verdict: "ask",
+      gated: "external-write",
+    });
+    expect(decide(bash("git -C sub push --force"), ctx({ autonomy: "full" })).verdict).toBe("deny");
+    expect(decide(bash("git -C . log --oneline"), ctx()).verdict).toBe("allow");
+    for (const c of [
+      "npx cowsay hi",
+      "pnpm dlx create-x",
+      "pip install requests",
+      "python3 -c 'import os'",
+      "node -e 1",
+    ])
+      expect(decide(bash(c), ctx()), c).toMatchObject({ verdict: "classify" });
+    expect(decide(bash("npx vitest run"), ctx()).verdict).toBe("allow");
+    expect(decide(bash("node -e 1"), ctx({ autonomy: "full" })).verdict).toBe("allow");
+    expect(
+      decide({ tool: "mcp__x__y", command: null, path: null }, ctx({ autonomy: "full" })),
+    ).toMatchObject({ verdict: "ask", gated: "external-write" });
+    expect(
+      decide(
+        { tool: "mcp__x__y", command: null, path: null },
+        ctx({ waived: new Set(["external-write"]) }),
+      ).verdict,
+    ).toBe("allow");
   });
 
   it("finds every program in a command line", () => {
