@@ -87,6 +87,7 @@ async function eye(
     interview?: (answers: string[]) => import("@oraknid/contracts").InterviewRound;
     inputs?: { kind: "file" | "folder" | "link"; ref: string; untrusted: boolean }[];
     sameProviderFallback?: boolean;
+    classify?: (command: string) => { decision: "allow" | "ask"; reason: string };
     files?: Record<string, string>;
   } = {},
 ) {
@@ -104,6 +105,8 @@ async function eye(
       return o.replan;
     },
     summarize: async () => ({ title: "s", body: "s" }),
+    classifyCommand: async ({ command }) =>
+      o.classify?.(command) ?? { decision: "allow", reason: "it only serves the task" },
     interviewRound: async ({ answers }) => {
       plans.push(`interview:${answers.length + 1}`);
       return (
@@ -416,10 +419,17 @@ describe("The Eye, end to end", () => {
 describe("approvals of an attempt that ends", () => {
   it("are withdrawn, so my inbox never holds a question nobody waits for", async () => {
     let hang = true;
-    const { api, id } = await eye((t) =>
-      task(t) === "Write hello.sh" && hang
-        ? [{ write: "hello.sh", content: "echo hi\n" }, { run: "nmap localhost" }]
-        : good(t),
+    const { api, id } = await eye(
+      (t) =>
+        task(t) === "Write hello.sh" && hang
+          ? [{ write: "hello.sh", content: "echo hi\n" }, { run: "nmap localhost" }]
+          : good(t),
+      {
+        classify: () => ({
+          decision: "ask",
+          reason: "scanning the network is not part of this task",
+        }),
+      },
     );
     const end = Date.now() + 5000;
     while ((await api.inbox.list({ state: "open" })).length === 0 && Date.now() < end)
@@ -523,14 +533,16 @@ describe("approvals and autonomy (M1.7)", () => {
   });
 
   it("a change of autonomy applies to the next decision", async () => {
-    const { api, id } = await eye((t) =>
-      task(t) === "Write hello.sh" && t.turn === 1
-        ? [
-            { write: "hello.sh", content: "echo hi\n" },
-            { run: "nmap --version >/dev/null 2>&1; true" },
-            { say: "DONE" },
-          ]
-        : good(t),
+    const { api, id } = await eye(
+      (t) =>
+        task(t) === "Write hello.sh" && t.turn === 1
+          ? [
+              { write: "hello.sh", content: "echo hi\n" },
+              { run: "nmap --version >/dev/null 2>&1; true" },
+              { say: "DONE" },
+            ]
+          : good(t),
+      { classify: () => ({ decision: "ask", reason: "unknown" }) },
     );
     await firstOpen(api);
     await api.jobs.setAutonomy({ id, autonomy: "full" });
@@ -842,5 +854,73 @@ describe("my controls (M1.8 API)", () => {
     await api.tasks.rollback({ taskId: t2?.id as string, attempt: 1 });
     expect(existsSync(join(job.worktree as string, "test.sh"))).toBe(false);
     expect(existsSync(join(job.worktree as string, "hello.sh"))).toBe(true);
+  });
+});
+
+describe("auto approval (ADR-014, Checkpoint 1)", () => {
+  it("lets the heredocs and loops of a real job through without asking", async () => {
+    const real: string[] = JSON.parse(
+      readFileSync(
+        join(
+          import.meta.dirname,
+          "../../../../packages/core/src/fixtures/checkpoint1-commands.json",
+        ),
+        "utf8",
+      ),
+    ).map((c: string) => c.replace(/^cd \S+ && /, ""));
+    const { api, id } = await eye((t) =>
+      task(t) === "Write hello.sh" && t.turn === 1
+        ? [
+            ...real.slice(0, 5).map((c) => ({ run: `(${c}) >/dev/null 2>&1; true` })),
+            { write: "hello.sh", content: "echo hi\n" },
+            { say: "DONE" },
+          ]
+        : good(t),
+    );
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    expect((await api.inbox.list({})).filter((i) => i.kind === "approval")).toEqual([]);
+  });
+
+  it("asks the classifier about what reaches out, caches its yes, and asks me when it says so", async () => {
+    const asked: string[] = [];
+    const { api, id, d } = await eye(
+      (t) =>
+        task(t) === "Write hello.sh" && t.turn === 1
+          ? [
+              { run: "curl --version >/dev/null; true" },
+              { run: "curl --help >/dev/null; true" },
+              { run: "scp --help >/dev/null 2>&1; true" },
+              { write: "hello.sh", content: "echo hi\n" },
+              { say: "DONE" },
+            ]
+          : good(t),
+      {
+        classify: (command) => {
+          asked.push(command);
+          return command.startsWith("scp")
+            ? { decision: "ask", reason: "copying files to another machine could send my data out" }
+            : { decision: "allow", reason: "reading curl's own help is harmless" };
+        },
+      },
+    );
+    const end = Date.now() + 5000;
+    let item: Awaited<ReturnType<typeof api.inbox.list>>[number] | undefined;
+    while (!item && Date.now() < end) {
+      item = (await api.inbox.list({ state: "open" }))[0];
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(item?.detail).toContain(
+      "the classifier says: copying files to another machine could send my data out",
+    );
+    await api.inbox.answer({ id: item?.id as string, answer: "Deny" });
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    // curl was judged once, then the cached yes applied.
+    expect(asked.filter((c) => c.startsWith("curl"))).toHaveLength(1);
+    const auto = d.bus.since(0, [`job:${id}`], 2000).filter((e) => e.type === "policy.auto");
+    expect(auto.map((e) => (e.payload as { cached: boolean }).cached)).toEqual([
+      false,
+      true,
+      false,
+    ]);
   });
 });

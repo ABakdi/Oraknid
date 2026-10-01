@@ -37,8 +37,8 @@ ask. Dangerous ones still do.
 
 ## Where it stands (2026-10-01)
 
-- [ ] B1-01 — shell lexer and auto approval
-- [ ] F1-1 — auto approval
+- [x] B1-01 — shell lexer and auto approval
+- [x] F1-1 — auto approval
 - [ ] F1-2 — inbox filters
 - [ ] F1-3 — agent output
 - [ ] F1-4 — talking to The Eye

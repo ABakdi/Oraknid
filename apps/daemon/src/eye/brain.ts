@@ -27,6 +27,14 @@ export interface EyeBrain {
     skill: string;
     answers: string[];
   }): Promise<InterviewRound>;
+  /** Auto approval (ADR-014): may this command run, or should I be asked? */
+  classifyCommand(input: {
+    jobId: string;
+    cwd: string;
+    task: string;
+    command: string;
+    why: string;
+  }): Promise<CommandVerdict>;
   /** Several Silk entries in one shorter entry. */
   summarize(input: {
     jobId: string;
@@ -46,6 +54,12 @@ export interface PlanInput {
 }
 
 export class BrainFailed extends Error {}
+
+export const CommandVerdict = z.object({
+  decision: z.enum(["allow", "ask"]),
+  reason: z.string().min(1),
+});
+export type CommandVerdict = z.infer<typeof CommandVerdict>;
 
 const Summary = z.object({ title: z.string().min(1), body: z.string().min(1) });
 
@@ -117,6 +131,23 @@ Plan ONLY the new tasks needed to fix this. Do not repeat done work. Use new tas
       `Write the next round: a short "playback" of what you understood${i.answers.length ? ', ending with "Is this right?"' : ""}, then at most 4 questions, open ones first, with suggested options and a recommendation where useful. Never guess to fill a gap. Set "done" to true only when every point the method lists is answered or recorded as decide-later, and list what stays open in "open".`,
     ].join("\n\n");
     return this.#ask(i.jobId, i.cwd, "medium", ["planning"], InterviewRound, prompt, "interview");
+  }
+
+  classifyCommand(i: { jobId: string; cwd: string; task: string; command: string; why: string }) {
+    const prompt = `You decide whether a coding agent may run a shell command without asking its owner.
+
+The agent works on this task: ${i.task}
+It runs in a sandbox: it can read and write only its project's worktree (${i.cwd}), has a private /tmp, sees no other files of the owner, and has no credentials except those of its own tool. The network is open.
+It was flagged because ${i.why}.
+
+The command:
+\`\`\`
+${i.command.slice(0, 4000)}
+\`\`\`
+
+Answer "allow" when the command plausibly serves the task and cannot harm anything outside the worktree: fetching documentation or packages, running the project's tools, reading public URLs.
+Answer "ask" when it could send the owner's data out, change things outside the machine (posting, uploading, deploying, logging in), download and run unknown code, or when you cannot tell. Explain in one sentence.`;
+    return this.#ask(i.jobId, i.cwd, "low", ["classify"], CommandVerdict, prompt, "classify");
   }
 
   summarize(i: { jobId: string; cwd: string; entries: SilkEntry[] }) {

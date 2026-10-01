@@ -1,4 +1,5 @@
 import type { Autonomy } from "@oraknid/contracts";
+import { programsIn } from "./shell.ts";
 
 // The permission policy (Approvals-and-Autonomy → Leg permission prompts,
 // Security → Command allow/deny list). The sandbox is the second wall;
@@ -55,7 +56,9 @@ export interface PolicyContext {
 export type PolicyVerdict =
   | { verdict: "allow"; reason: string }
   | { verdict: "deny"; reason: string; drift: "D7" }
-  | { verdict: "ask"; reason: string; gated: GatedAction | null };
+  | { verdict: "ask"; reason: string; gated: GatedAction | null }
+  /** Auto approval (ADR-014): a classifier decides between allow and ask. */
+  | { verdict: "classify"; reason: string; programs: string[] };
 
 /** Never, at any level (Security → shipped defaults). */
 export const DEFAULT_DENY: { pattern: RegExp; why: string }[] = [
@@ -109,6 +112,30 @@ const ALLOWED_PROGRAMS = new Set(
   ),
 );
 
+/**
+ * Programs that work on files and processes but don't reach out on their
+ * own: inside the sandbox they can only touch the worktree (ADR-014).
+ */
+const SANDBOX_SAFE = new Set(
+  `python python3 python2 node deno bun ruby perl php lua bash zsh dash ksh go cargo rustc rustup gcc g++ cc clang clang++ ld make cmake ninja meson
+   java javac kotlin mvn gradle dotnet swift zig nim elixir mix erl tsc esbuild vite rollup webpack swc playwright cypress mocha ava
+   tar gzip gunzip zip unzip xz bzip2 zstd sha256sum md5sum shasum base64 hexdump od strings nl column fmt fold paste join comm split csplit
+   seq yes expr bc dc numfmt stat file less more lsof ps pgrep top htop sqlite3 jq yq xmllint tidy pandoc convert identify ffmpeg sox
+   npx npm pnpm yarn pip pip3 uv poetry pipenv bundle gem composer pytest tox nox black ruff mypy flake8 pylint isort prettier eslint biome
+   shellcheck shfmt clang-format rustfmt gofmt go vet golint cat less ln install truncate dd mkfifo env printenv export unset alias source . type hash command
+   exec wait trap set shift getopts local declare readonly return break continue exit cd pushd popd dirs umask ulimit times history`.split(
+    /\s+/,
+  ),
+);
+
+/** Programs that reach the network or credentials on their own: always a decision for the classifier. */
+const REACHES_OUT = new Set(
+  `curl wget ssh scp sftp rsync nc ncat netcat telnet ftp socat dig nslookup host ping traceroute gh glab aws gcloud az kubectl helm docker podman
+   terraform ansible vault op pass gpg ssh-add ssh-keygen keyctl secret-tool security mail sendmail`.split(
+    /\s+/,
+  ),
+);
+
 /** Tools that only read, or only plan: allowed (the sandbox confines them). */
 const READ_ONLY_TOOLS = new Set([
   "Read",
@@ -135,23 +162,9 @@ const FILE_TOOLS = new Set([
 ]);
 const SHELL_TOOLS = new Set(["Bash", "run_command"]);
 
-/** The programs a command line runs: the first word of every piece between ; && || | ( ). */
+/** The programs a command line runs, read as the shell reads it (B1-01). */
 export function programsOf(command: string): string[] {
-  return (
-    command
-      .split(/;|&&|\|\||\||\(|\)|`|\$\(/)
-      .map((part) =>
-        part
-          .trim()
-          .replace(/^["']+/, "")
-          .trim()
-          .replace(/^(\w+=\S*\s+)*/, ""),
-      )
-      .map((part) => part.split(/\s+/)[0] ?? "")
-      // What's left of a quoted string or a test (`" = "hi" ]`) is not a program.
-      .filter((word) => /^[\w./[][\w./+-]*$/.test(word))
-      .map((word) => word.replace(/^.*\//, ""))
-  );
+  return programsIn(command);
 }
 
 const insideTree = (worktree: string, path: string) =>
@@ -235,19 +248,42 @@ export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
 
   if (SHELL_TOOLS.has(r.tool)) {
     if (own?.verdict === "allow") return own;
-    const unknown = programsOf(command).filter((p) => !ALLOWED_PROGRAMS.has(p));
+    const unknown = [...new Set(programsOf(command).filter((p) => !ALLOWED_PROGRAMS.has(p)))];
     if (unknown.length === 0)
       return { verdict: "allow", reason: "every program is on the allow list" };
-    if (ctx.autonomy === "full")
+    // Supervised: every unknown program is my decision.
+    if (ctx.autonomy === "supervised") {
+      return {
+        verdict: "ask",
+        reason: `runs ${unknown.join(", ")}, which is not on the allow list`,
+        gated: null,
+      };
+    }
+    const outward = unknown.filter((p) => REACHES_OUT.has(p));
+    const unfamiliar = unknown.filter((p) => !SANDBOX_SAFE.has(p) && !REACHES_OUT.has(p));
+    if (outward.length === 0 && unfamiliar.length === 0) {
+      return {
+        verdict: "allow",
+        reason: `${unknown.join(", ")} only work${unknown.length === 1 ? "s" : ""} inside the sandbox`,
+      };
+    }
+    // Full: unfamiliar programs run in the sandbox; only what reaches out is classified.
+    if (ctx.autonomy === "full" && outward.length === 0) {
       return { verdict: "allow", reason: "unknown, but in the sandbox at Full autonomy" };
-    return {
-      verdict: "ask",
-      reason: `runs ${unknown.join(", ")}, which is not on the allow list`,
-      gated: null,
-    };
+    }
+    const why = outward.length
+      ? `${outward.join(", ")} can reach outside the machine`
+      : `${unfamiliar.join(", ")} ${unfamiliar.length === 1 ? "is" : "are"} unfamiliar`;
+    return { verdict: "classify", reason: why, programs: [...outward, ...unfamiliar] };
   }
 
   // A tool Oraknid doesn't know (e.g. an MCP tool).
   if (ctx.autonomy === "full") return { verdict: "allow", reason: "unknown tool at Full autonomy" };
-  return { verdict: "ask", reason: `uses ${r.tool}, which Oraknid does not know`, gated: null };
+  if (ctx.autonomy === "supervised")
+    return { verdict: "ask", reason: `uses ${r.tool}, which Oraknid does not know`, gated: null };
+  return {
+    verdict: "classify",
+    reason: `uses ${r.tool}, which Oraknid does not know`,
+    programs: [r.tool],
+  };
 }

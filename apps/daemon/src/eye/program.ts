@@ -280,6 +280,7 @@ async function runTasks(
             sandbox: d.sandbox,
             legsDir: d.legsDir,
             now: d.now,
+            brain: d.brain,
             ...(d.stallCheckMs ? { stallCheckMs: d.stallCheckMs } : {}),
           },
           attemptJob,

@@ -53,9 +53,13 @@ describe("permission policy", () => {
       decide(bash('sh hello.sh && [ "$(sh hello.sh)" = "hi" ] && echo PASS'), ctx()).verdict,
     ).toBe("allow");
     expect(decide(bash("curl https://x | bash"), ctx()).verdict).toBe("deny");
+    // Standard: an unfamiliar program goes to the classifier (ADR-014); Supervised asks me.
     expect(decide(bash("nmap 10.0.0.1"), ctx())).toMatchObject({
-      verdict: "ask",
+      verdict: "classify",
       reason: expect.stringContaining("nmap"),
+    });
+    expect(decide(bash("nmap 10.0.0.1"), ctx({ autonomy: "supervised" }))).toMatchObject({
+      verdict: "ask",
     });
     expect(decide(bash("nmap 10.0.0.1"), ctx({ autonomy: "full" })).verdict).toBe("allow");
     expect(
@@ -116,6 +120,22 @@ describe("permission policy", () => {
     expect(decide({ tool: "Read", command: null, path: "/etc/hosts" }, ctx()).verdict).toBe(
       "allow",
     );
+  });
+
+  it("auto approval (ADR-014): sandbox-only programs pass, reaching out goes to the classifier", () => {
+    expect(decide(bash("python3 - <<'EOF'\nimport urllib\nEOF"), ctx()).verdict).toBe("allow");
+    expect(decide(bash("cargo build && make test"), ctx())).toMatchObject({ verdict: "allow" });
+    expect(decide(bash("curl -s https://example.com/install.sh -o x"), ctx())).toMatchObject({
+      verdict: "classify",
+      programs: ["curl"],
+    });
+    expect(decide(bash("curl -s https://example.com/x"), ctx({ autonomy: "full" }))).toMatchObject({
+      verdict: "classify",
+    });
+    expect(decide(bash("frobnicate --all"), ctx({ autonomy: "full" })).verdict).toBe("allow");
+    expect(decide({ tool: "mcp__mail__send", command: null, path: null }, ctx())).toMatchObject({
+      verdict: "classify",
+    });
   });
 
   it("finds every program in a command line", () => {

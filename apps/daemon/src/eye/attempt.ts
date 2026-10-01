@@ -15,6 +15,7 @@ import {
   inScope,
   nextEscalation,
   type Observed,
+  type PolicyVerdict,
   type RouteCandidate,
   record,
   route,
@@ -50,6 +51,7 @@ import {
   rollback,
 } from "../workspace/git.ts";
 import { waitForAnswer } from "./approvals.ts";
+import type { EyeBrain } from "./brain.ts";
 
 /** The providers (Leg kinds) for which I allowed same-provider fallback (ADR-009). */
 export const SAME_PROVIDER_FALLBACK = "fallback.sameProvider";
@@ -73,6 +75,8 @@ export interface AttemptDeps {
   sandbox: Sandbox;
   legsDir: string;
   now: () => number;
+  /** Auto approval (ADR-014); without one, a classify verdict asks me. */
+  brain?: EyeBrain;
   /** Session rotation (BR-3): share of the context window. */
   rotateAt?: number;
   /** How often to look for a stall while waiting for a Leg. */
@@ -264,7 +268,11 @@ export async function runAttempt(
     d.bus.publish({ type, topic: `job:${job.id}`, jobId: job.id, payload: { taskId, ...payload } });
 
   const onPermission = async (r: PermissionRequest): Promise<PermissionDecision> => {
-    const v = decide(r, policyFor(d.db, job.id, ws.cwd));
+    const first = decide(r, policyFor(d.db, job.id, ws.cwd));
+    const v =
+      first.verdict === "classify"
+        ? await classify(d, job.id, ws.cwd, task.title, r, first)
+        : first;
     if (v.verdict === "allow") return { allow: true };
     if (v.verdict === "deny") {
       observed.forbidden.push(`tried \`${r.command ?? r.tool}\` (${v.reason})`);
@@ -662,6 +670,65 @@ export async function runAttempt(
     finish("abandoned", false);
     throw error;
   }
+}
+
+/** Per job, the classifier's verdict for a set of programs (ADR-014: cached). */
+const verdicts = new Map<string, Map<string, { decision: "allow" | "ask"; reason: string }>>();
+
+async function classify(
+  d: AttemptDeps,
+  jobId: string,
+  cwd: string,
+  task: string,
+  r: PermissionRequest,
+  v: Extract<PolicyVerdict, { verdict: "classify" }>,
+): Promise<Exclude<PolicyVerdict, { verdict: "classify" }>> {
+  const key = [...new Set(v.programs)].sort().join(" ");
+  const cache = verdicts.get(jobId) ?? new Map();
+  verdicts.set(jobId, cache);
+  let verdict = cache.get(key);
+  let cached = true;
+  if (!verdict) {
+    cached = false;
+    try {
+      verdict = d.brain
+        ? await d.brain.classifyCommand({
+            jobId,
+            cwd,
+            task,
+            command: r.command ?? r.tool,
+            why: v.reason,
+          })
+        : { decision: "ask" as const, reason: "no classifier is available" };
+    } catch (error) {
+      // Fail safe: when nothing can judge, I'm asked.
+      verdict = {
+        decision: "ask",
+        reason: `the classifier could not answer (${error instanceof Error ? error.message : String(error)})`,
+      };
+    }
+    if (verdict.decision === "allow") cache.set(key, verdict);
+  }
+  d.bus.publish({
+    type: "policy.auto",
+    topic: `job:${jobId}`,
+    jobId,
+    payload: {
+      command: (r.command ?? r.tool).slice(0, 300),
+      programs: v.programs,
+      decision: verdict.decision,
+      reason: verdict.reason,
+      cached,
+    },
+    actor: "eye",
+  });
+  return verdict.decision === "allow"
+    ? { verdict: "allow", reason: `auto-approved: ${verdict.reason}` }
+    : {
+        verdict: "ask",
+        reason: `${v.reason}, and the classifier says: ${verdict.reason}`,
+        gated: null,
+      };
 }
 
 function shouldRotate(u: UsageSnapshot | null, at: number): boolean {
