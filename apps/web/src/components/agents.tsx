@@ -77,7 +77,10 @@ export function Agents({
             </div>
             <div className="text-xs text-muted-foreground">
               {ago(s.startedAt)} · {tokens(s.tokens)}
-              {s.endedAt !== null && s.endReason && s.endReason !== "completed"
+              {s.endedAt !== null &&
+              s.endReason &&
+              s.endReason !== "completed" &&
+              s.endReason !== "closed"
                 ? ` · ${s.endReason}`
                 : ""}
             </div>
@@ -158,7 +161,11 @@ function SessionLog({
       <CardContent className="p-0">
         <div className="flex items-center gap-2 border-b px-3 py-2 text-xs text-muted-foreground">
           <Badge variant={session.endedAt === null ? "default" : "secondary"}>
-            {session.endedAt === null ? t("Live") : (session.endReason ?? t("Ended"))}
+            {session.endedAt === null
+              ? t("Live")
+              : session.endReason === "closed" || session.endReason === "completed"
+                ? t("Finished")
+                : (session.endReason ?? t("Ended"))}
           </Badge>
           <span className="truncate">
             {session.legName} · {session.model}

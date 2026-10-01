@@ -388,8 +388,8 @@ export async function runAttempt(
     });
   };
 
-  const closeSession = async () => {
-    if (session) await session.session.kill();
+  const closeSession = async (kill = false) => {
+    if (session) await (kill ? session.session.kill() : d.supervisor.close(session));
     session = null;
   };
 
@@ -484,7 +484,7 @@ export async function runAttempt(
           .run();
         throw new EndAttempt({ kind: "retry", reason: `reassigning after ${drift.code}` });
       case "kill":
-        await closeSession();
+        await closeSession(true);
         rollback(ws.g, ckpt, ws.tmpDir, ws.trash);
         d.db
           .update(tasks)

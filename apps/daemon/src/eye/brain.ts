@@ -328,7 +328,7 @@ When the message mixes several, pick what matters most and say in "reply" what y
         `The Eye's reasoning gave no valid answer twice (${call}): ${lastError}`,
       );
     } finally {
-      await session.session.kill();
+      await this.o.supervisor.close(session);
     }
   }
 }

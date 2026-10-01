@@ -75,6 +75,15 @@ export class LegSupervisor {
     return (this.o.now ?? Date.now)();
   }
 
+  /** Sessions being closed on purpose, not killed. */
+  readonly #closing = new Set<string>();
+
+  /** Ends a session Oraknid is done with: recorded as "closed", not "killed" (Checkpoint 1 → F1-3). */
+  async close(s: Supervised) {
+    this.#closing.add(s.id);
+    await s.session.kill();
+  }
+
   async start(req: StartRequest): Promise<Supervised> {
     const { registry } = this.o;
     const leg = registry.require(req.legId);
@@ -126,7 +135,7 @@ export class LegSupervisor {
       ...session,
       kill: async () => {
         await session.kill();
-        this.#end(id, "killed", null);
+        this.#end(id, this.#closing.delete(id) ? "closed" : "killed", null);
         this.#live.delete(id);
       },
     };

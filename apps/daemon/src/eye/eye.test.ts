@@ -948,6 +948,7 @@ describe("each agent's output (Checkpoint 1 → F1-3)", () => {
     expect(hello).toMatchObject({
       purpose: "task",
       legName: "Claude A",
+      endReason: "closed",
       endedAt: expect.any(Number),
     });
     const page = await api.sessions.log({ id: hello?.id as string, after: 0 });
