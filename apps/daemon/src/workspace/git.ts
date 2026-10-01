@@ -28,7 +28,17 @@ export interface Git {
  * a work tree is the Leg's, so nothing found in it may run a command on
  * the host (fsmonitor, hooks).
  */
-const SAFE = ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null"];
+const SAFE = [
+  "-c",
+  "core.fsmonitor=false",
+  "-c",
+  "core.hooksPath=/dev/null",
+  // Objects and refs reach the disk like the database's commits do (Audit 1 → D1-09).
+  "-c",
+  "core.fsync=committed",
+  "-c",
+  "core.fsyncMethod=batch",
+];
 
 export function git(g: Git, args: string[], env: Record<string, string> = {}): string {
   const r = spawnSync("git", [...SAFE, ...g.base, ...args], {
@@ -70,10 +80,12 @@ export function excludeOraknid(g: Git, gitDir: string) {
   const file = join(gitDir, "info", "exclude");
   mkdirSync(dirname(file), { recursive: true });
   const text = existsSync(file) ? readFileSync(file, "utf8") : "";
-  if (text.includes("/.oraknid/*")) return;
+  const lines = ["/.oraknid/*", "!/.oraknid/silk/", "/.oraknid/silk/*.tmp"];
+  const missing = lines.filter((l) => !text.split("\n").includes(l));
+  if (!missing.length) return;
   appendFileSync(
     file,
-    `${text.endsWith("\n") || !text ? "" : "\n"}# Oraknid\n/.oraknid/*\n!/.oraknid/silk/\n`,
+    `${text.endsWith("\n") || !text ? "" : "\n"}${text.includes("# Oraknid") ? "" : "# Oraknid\n"}${missing.join("\n")}\n`,
   );
   void g;
 }
@@ -177,7 +189,24 @@ export function createWorktree(
   }
   const path = join(repoPath, ".oraknid", "worktrees", jobId);
   const branch = `oraknid/${slug}-${jobId.slice(-6).toLowerCase()}`;
-  if (!existsSync(path)) git(g, ["worktree", "add", "-q", "-b", branch, path, branches.work]);
+  // A folder a crash left behind, not registered as a worktree, is set aside and made again (Audit 1 → D1-10).
+  if (existsSync(path)) {
+    try {
+      worktreeGit(repoPath, path);
+    } catch {
+      renameSync(path, `${path}.broken-${Date.now()}`);
+      git(g, ["worktree", "prune"]);
+    }
+  }
+  if (!existsSync(path)) {
+    const branchExists = ok(g, ["rev-parse", "--verify", `refs/heads/${branch}`]);
+    git(
+      g,
+      branchExists
+        ? ["worktree", "add", "-q", path, branch]
+        : ["worktree", "add", "-q", "-b", branch, path, branches.work],
+    );
+  }
   return { path, branch };
 }
 
@@ -189,7 +218,24 @@ function snapshotTree(g: Git, tmpDir: string): string {
   try {
     if (ok(g, ["rev-parse", "--verify", "HEAD"])) git(g, ["read-tree", "HEAD"], env);
     // Oraknid's own folder (Silk mirror, trash, worktrees) is never part of a checkpoint.
-    git(g, ["add", "-A", "--", ".", ":(exclude).oraknid"], env);
+    // A nested repo with no commit can't be added: it is left out, not a reason to fail (Audit 1 → D1-16).
+    const skip: string[] = [];
+    for (;;) {
+      try {
+        git(
+          g,
+          ["add", "-A", "--", ".", ":(exclude).oraknid", ...skip.map((p) => `:(exclude)${p}`)],
+          env,
+        );
+        break;
+      } catch (error) {
+        const nested = /error: '([^']+)' does not have a commit checked out/.exec(
+          String(error),
+        )?.[1];
+        if (!nested || skip.length >= 50 || skip.includes(nested)) throw error;
+        skip.push(nested.replace(/\/$/, ""));
+      }
+    }
     return git(g, ["write-tree"], env).trim();
   } finally {
     rmSync(index, { force: true });

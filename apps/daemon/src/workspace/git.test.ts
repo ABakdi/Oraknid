@@ -167,3 +167,32 @@ describe("a work tree is the Leg's (Audit 1 → S1-01)", () => {
     }
   });
 });
+
+describe("what a crash or a Leg leaves in a worktree (Audit 1 → D1-10, D1-16)", () => {
+  it("checkpoints around a nested repo with no commit", () => {
+    const r = repo("master");
+    const wt = createWorktree(r, "01J9Z3K8W2Q4V6X8Y0A1B2C3E2", "x", detectBranches(r));
+    sh(wt.path, "init", "-q", "vendor/lib");
+    writeFileSync(join(wt.path, "b.txt"), "two\n");
+    const g = worktreeGit(r, wt.path);
+    const tmp = join(r, ".oraknid", "tmp");
+    checkpoint(g, "refs/oraknid/j/t/1", "c1", tmp);
+    expect(git(g, ["ls-tree", "-r", "--name-only", "refs/oraknid/j/t/1"]).split("\n")).toContain(
+      "b.txt",
+    );
+  });
+
+  it("sets aside a folder a crash left that isn't a worktree, and makes it again", () => {
+    const r = repo("master");
+    const id = "01J9Z3K8W2Q4V6X8Y0A1B2C3E3";
+    const half = join(r, ".oraknid", "worktrees", id);
+    mkdirSync(half, { recursive: true });
+    writeFileSync(join(half, "junk"), "half made\n");
+    const wt = createWorktree(r, id, "x", detectBranches(r));
+    expect(existsSync(join(wt.path, "a.txt"))).toBe(true);
+    expect(existsSync(join(wt.path, "junk"))).toBe(false);
+    // Made again a second time with its branch already there.
+    sh(r, "worktree", "remove", "--force", wt.path);
+    expect(createWorktree(r, id, "x", detectBranches(r)).branch).toBe(wt.branch);
+  });
+});

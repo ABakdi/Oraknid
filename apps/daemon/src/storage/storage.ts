@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { ACTIVE_JOB_STATES, type PruneRequest, type StorageUsage } from "@oraknid/contracts";
+import Database from "better-sqlite3";
 import { inArray } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
 import { jobs } from "../db/schema.ts";
@@ -103,7 +104,17 @@ export async function nightlyBackup(db: Db, dir: string, now = Date.now(), keep 
   mkdirSync(dir, { recursive: true });
   const name = `nightly-${new Date(now).toISOString().slice(0, 10)}.db`;
   if (existsSync(join(dir, name))) return null;
-  await db.$client.backup(join(dir, name));
+  // Written aside, checked, then named: a crash never leaves a half backup that counts (Audit 1 → D1-14).
+  const tmp = join(dir, `${name}.tmp`);
+  await db.$client.backup(tmp);
+  const check = new Database(tmp, { readonly: true });
+  try {
+    const r = check.pragma("quick_check", { simple: true });
+    if (r !== "ok") throw new Error(`The nightly backup failed its check: ${String(r)}`);
+  } finally {
+    check.close();
+  }
+  renameSync(tmp, join(dir, name));
   for (const f of readdirSync(dir)
     .filter((f) => f.startsWith("nightly-") && f.endsWith(".db"))
     .sort()
