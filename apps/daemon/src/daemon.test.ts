@@ -1,7 +1,7 @@
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { ServerFrame } from "@oraknid/contracts";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
@@ -15,9 +15,10 @@ import { fakeOs } from "./testing/fake-os.ts";
 import { VERSION } from "./version.ts";
 
 let daemon: Daemon;
+let dir = "";
 
 beforeEach(async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oraknid-daemon-"));
+  dir = mkdtempSync(join(tmpdir(), "oraknid-daemon-"));
   daemon = await startDaemon({
     paths: resolvePaths({ ORAKNID_DATA_DIR: dir, ORAKNID_CONFIG_DIR: dir }),
     port: 0,
@@ -87,6 +88,23 @@ describe("daemon API", () => {
         edits: [{ op: "remove", taskId: "01J9Z3K8W2Q4V6X8Y0A1B2C3D5" }],
       }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("shows the last lines of its own log (Phase 2 → M2.0)", async () => {
+    const file = resolvePaths({ ORAKNID_DATA_DIR: dir, ORAKNID_CONFIG_DIR: dir }).daemonLog;
+    expect(await client().logs.tail({ lines: 5 })).toMatchObject({ lines: [] });
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(
+      file,
+      Array.from({ length: 12 }, (_, i) => `line ${i + 1}`)
+        .join("\n")
+        .concat("\n"),
+    );
+    expect((await client().logs.tail({ lines: 3 })).lines).toEqual([
+      "line 10",
+      "line 11",
+      "line 12",
+    ]);
   });
 
   it("runs doctor checks and says what each one found", async () => {

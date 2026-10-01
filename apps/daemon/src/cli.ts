@@ -1,7 +1,17 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, openSync, readFileSync, rmSync } from "node:fs";
-import { resolve } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeSync,
+} from "node:fs";
+import { dirname, resolve } from "node:path";
+import { format } from "node:util";
 import {
   createBwrapSandbox,
   createKeychainStore,
@@ -39,6 +49,8 @@ program
         `unhandled rejection: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
       ),
     );
+    // The daemon writes its own log, however it was started (Phase 2 → M2.0: readable in the UI).
+    teeToLog(paths.daemonLog);
     const daemon = await startDaemon({ paths, port, host: DEFAULT_HOST, writeRuntimeFile: true });
     log(`Oraknid ${VERSION} listening on ${daemon.url} (data: ${paths.dataDir})`);
     const stop = async (signal: string) => {
@@ -59,12 +71,10 @@ program
       console.log(`Already running at ${running.url} (pid ${running.pid}).`);
       return;
     }
-    mkdirSync(paths.logs, { recursive: true });
-    const out = openSync(paths.daemonLog, "a");
-    // Re-run this same entry point (with any loader flags, e.g. tsx in development).
+    // Re-run this same entry point (with any loader flags, e.g. tsx in development); it writes its own log.
     const child = spawn(process.execPath, [...process.execArgv, process.argv[1] ?? "", "run"], {
       detached: true,
-      stdio: ["ignore", out, out],
+      stdio: "ignore",
     });
     child.unref();
     const info = await waitFor(async () => findRunning(), 10_000);
@@ -258,6 +268,24 @@ function formatDuration(ms: number): string {
 function report(steps: InstallStep[]) {
   for (const s of steps) console.log(`${s.ok ? "✓" : "✗"} ${s.step}${s.ok ? "" : `: ${s.detail}`}`);
   if (steps.some((s) => !s.ok)) process.exitCode = 1;
+}
+
+/** Everything the daemon prints also goes to its log file, rotated at 10 MB (one old file kept). */
+function teeToLog(file: string) {
+  mkdirSync(dirname(file), { recursive: true });
+  try {
+    if (statSync(file).size > 10 * 1024 * 1024) renameSync(file, `${file}.1`);
+  } catch {}
+  const fd = openSync(file, "a", 0o600);
+  for (const name of ["log", "error", "warn"] as const) {
+    const original = console[name].bind(console);
+    console[name] = (...args: unknown[]) => {
+      original(...args);
+      try {
+        writeSync(fd, `${format(...args)}\n`);
+      } catch {}
+    };
+  }
 }
 
 function log(message: string) {

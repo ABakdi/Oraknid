@@ -1,3 +1,4 @@
+import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
 import {
   Autonomy,
   Budget,
@@ -126,6 +127,24 @@ export interface ApiContext {
 }
 
 const base = os.$context<ApiContext>();
+
+/** The last `n` lines of a file, reading at most its last 512 KB. */
+function tailFile(file: string, n: number): string[] {
+  if (!existsSync(file)) return [];
+  const size = statSync(file).size;
+  const length = Math.min(size, 512 * 1024);
+  const buf = Buffer.alloc(length);
+  const fd = openSync(file, "r");
+  try {
+    readSync(fd, buf, 0, length, size - length);
+  } finally {
+    closeSync(fd);
+  }
+  const lines = buf.toString("utf8").split("\n");
+  if (size > length) lines.shift(); // a partial first line
+  if (lines.at(-1) === "") lines.pop();
+  return lines.slice(-n);
+}
 
 const GatedActionSchema = z.enum([
   "send",
@@ -776,6 +795,16 @@ export const router = {
       .handler(({ context: c, input }) =>
         guard(() => c.inbox.answer(input.id, input.answer, c.device)),
       ),
+  },
+  /** The daemon's own log, its last lines (Phase 2 → M2.0). */
+  logs: {
+    tail: base
+      .input(z.object({ lines: z.number().int().positive().max(2000).default(300) }))
+      .output(z.object({ file: z.string(), lines: z.array(z.string()) }))
+      .handler(({ context: c, input }) => ({
+        file: c.paths.daemonLog,
+        lines: tailFile(c.paths.daemonLog, input.lines),
+      })),
   },
   /** Storage use and pruning (Persistence-and-Recovery → Backups and pruning, M1.9). */
   storage: {
