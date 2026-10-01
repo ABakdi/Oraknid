@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Agents } from "@/components/agents";
 import { LegComparison, TokensChart } from "@/components/charts";
 import { ErrorNote, Loading, Markdown, PageHeader, Stat, StateBadge } from "@/components/common";
+import { EyeChat } from "@/components/eye-chat";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -175,6 +176,8 @@ export function JobPage({ id }: { id: string }) {
           {j.blockedReason ?? j.pauseReason}
         </div>
       ) : null}
+
+      <EyeChat jobId={id} />
 
       <WebGraph tasks={j.tasks} legName={legName} onOpen={setOpen} />
       <div className="flex justify-end">
@@ -812,6 +815,7 @@ function Silk({ jobId }: { jobId: string }) {
     "issue",
     "handoff",
     "fact",
+    "later",
   ] as const;
   return (
     <div className="space-y-3">

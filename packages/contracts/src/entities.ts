@@ -214,6 +214,8 @@ export const SilkKind = z.enum([
   "handoff",
   "fact",
   "interview-answer",
+  /** Kept for later, not acted on now (Talking to The Eye). */
+  "later",
 ]);
 export type SilkKind = z.infer<typeof SilkKind>;
 
@@ -362,3 +364,27 @@ export const SessionLogPage = z.object({
   live: z.boolean(),
 });
 export type SessionLogPage = z.infer<typeof SessionLogPage>;
+
+// ── Talking to The Eye (Checkpoint 1 → F1-4) ───────────────────────
+
+/** What The Eye made of a message of mine. */
+export const EyeIntent = z.enum(["instruction", "task", "context", "later", "stop", "question"]);
+export type EyeIntent = z.infer<typeof EyeIntent>;
+
+export const EyeMessage = z.object({
+  id: Id,
+  jobId: Id,
+  author: z.enum(["owner", "eye"]),
+  text: z.string(),
+  action: z
+    .object({
+      intent: EyeIntent,
+      /** What it did, in words: "Recorded as your decision", "Added 2 tasks"… */
+      did: z.array(z.string()),
+      silkIds: z.array(Id).default([]),
+      taskIds: z.array(Id).default([]),
+    })
+    .nullable(),
+  createdAt: Timestamp,
+});
+export type EyeMessage = z.infer<typeof EyeMessage>;

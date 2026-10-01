@@ -4,6 +4,7 @@ import {
   DoctorCheck,
   EmailSettings,
   Event,
+  EyeMessage,
   InboxFilter,
   InboxItem,
   JobView,
@@ -50,6 +51,7 @@ import type { JobStore } from "../engine/jobs.ts";
 import type { JobRunner } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
 import { SAME_PROVIDER_FALLBACK } from "../eye/attempt.ts";
+import type { EyeBrain } from "../eye/brain.ts";
 import {
   editWeb,
   handBack,
@@ -60,6 +62,7 @@ import {
   WebEdit,
 } from "../eye/controls.ts";
 import { GlobalPolicy, readGlobalPolicy, writeGlobalPolicy } from "../eye/policy.ts";
+import { conversation, talk } from "../eye/talk.ts";
 import type { InboxStore } from "../inbox/store.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import { readSessionLog } from "../legs/session-log.ts";
@@ -101,6 +104,7 @@ export interface ApiContext {
   projects: Projects;
   skills: SkillStore;
   devices: Devices;
+  brain: EyeBrain;
   tmpDir: string;
 }
 
@@ -445,6 +449,31 @@ export const router = {
         .all()
         .map((j) => jobView(c, j.id)),
     ),
+    /** Talking to The Eye (Checkpoint 1 → F1-4): its reply arrives as `eye.replied`. */
+    talk: base
+      .input(z.object({ id: z.string(), text: z.string().min(1).max(8000) }))
+      .output(z.object({ id: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(() => ({
+          id: talk(
+            {
+              db: c.jobs.db,
+              bus: c.bus,
+              silk: c.silk,
+              runner: c.runner,
+              brain: c.brain,
+              tmpDir: c.tmpDir,
+              now: c.now,
+            },
+            input.id,
+            input.text.trim(),
+          ),
+        })),
+      ),
+    conversation: base
+      .input(z.object({ id: z.string() }))
+      .output(z.array(EyeMessage))
+      .handler(({ context: c, input }) => conversation(c.jobs.db, input.id)),
     redirect: base
       .input(z.object({ id: z.string(), instruction: z.string().min(1) }))
       .handler(({ context: c, input }) =>

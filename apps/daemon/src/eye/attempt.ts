@@ -61,6 +61,7 @@ import { approveAllLikeThis, policyFor } from "./policy.ts";
 /** The third answer to a Leg's permission request (Approvals → The inbox). */
 export const ALL_LIKE_THIS = "Approve all like this for this job";
 
+import { guidanceMark, takeGuidance } from "./talk.ts";
 import { runVerify } from "./verify.ts";
 
 export type TaskRow = typeof tasks.$inferSelect;
@@ -240,6 +241,8 @@ export async function runAttempt(
   const started = now();
   const tokensAtStart = 0;
   let level = task.escalation;
+  // Only messages written after this attempt began: older ones are in Silk, in its context pack.
+  let guidanceSeen = guidanceMark();
   // Typed by assertion: they change inside closures, which narrowing cannot follow.
   let session = null as Supervised | null;
   let sessionLog: string | null = null;
@@ -580,6 +583,15 @@ export async function runAttempt(
           .run();
         finish("failed", false);
         return { kind: "retry", reason: `${leg.legName} failed: ${end.error ?? "unknown error"}` };
+      }
+
+      // My messages to The Eye for the work now (Talking to The Eye) go on before any check.
+      const told = takeGuidance(job.id, guidanceSeen);
+      if (told.text && session) {
+        guidanceSeen = told.mark;
+        event("task.guided", {});
+        await session.session.send(told.text);
+        continue;
       }
 
       observed.changedPaths = changedSince(ws.g, ckpt, ws.tmpDir);

@@ -156,6 +156,7 @@ function SessionLog({ jobId, session }: { jobId: string; session: SessionView })
             <div className="text-muted-foreground">{t("Nothing yet…")}</div>
           ) : null}
           {entries.map((e, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: the log only grows at its end, so an index never moves
             <Line key={`${e.at}-${i}`} e={e} />
           ))}
         </div>

@@ -1,8 +1,10 @@
 import {
-  type Capability,
-  type Difficulty,
+  Capability,
+  Difficulty,
+  EyeIntent,
   InterviewRound,
   type SilkEntry,
+  TaskKind,
   WebPlan,
 } from "@oraknid/contracts";
 import { type RouteCandidate, route, validateWeb } from "@oraknid/core";
@@ -35,6 +37,16 @@ export interface EyeBrain {
     command: string;
     why: string;
   }): Promise<CommandVerdict>;
+  /** What a message of mine is, and what to do about it (Talking to The Eye). */
+  triage(input: {
+    jobId: string;
+    cwd: string;
+    goal: string;
+    state: string;
+    silk: string;
+    conversation: string;
+    message: string;
+  }): Promise<EyeTriage>;
   /** Several Silk entries in one shorter entry. */
   summarize(input: {
     jobId: string;
@@ -60,6 +72,37 @@ export const CommandVerdict = z.object({
   reason: z.string().min(1),
 });
 export type CommandVerdict = z.infer<typeof CommandVerdict>;
+
+export const EyeTriage = z.object({
+  intent: EyeIntent,
+  /** One or two sentences back to me: what it understood and did, or the answer. */
+  reply: z.string().min(1),
+  /** The Silk entry to keep (instruction → decision, context → fact or architecture, later → later). */
+  silk: z
+    .object({
+      kind: z.enum(["decision", "architecture", "fact", "later"]),
+      title: z.string().min(1).max(120),
+      body: z.string().min(1),
+    })
+    .nullable()
+    .default(null),
+  /** New tasks, when the message asks for new work. */
+  tasks: z
+    .array(
+      z.object({
+        title: z.string().min(1),
+        instructions: z.string().min(1),
+        kind: TaskKind,
+        scope: z.array(z.string().min(1)),
+        verify: z.array(z.string().min(1)).default([]),
+        dependsOn: z.array(z.string()).default([]),
+        difficulty: Difficulty.default("medium"),
+        requiredCapabilities: z.array(Capability).min(1).default(["implementation"]),
+      }),
+    )
+    .default([]),
+});
+export type EyeTriage = z.infer<typeof EyeTriage>;
 
 const Summary = z.object({ title: z.string().min(1), body: z.string().min(1) });
 
@@ -148,6 +191,35 @@ ${i.command.slice(0, 4000)}
 Answer "allow" when the command plausibly serves the task and cannot harm anything outside the worktree: fetching documentation or packages, running the project's tools, reading public URLs.
 Answer "ask" when it could send the owner's data out, change things outside the machine (posting, uploading, deploying, logging in), download and run unknown code, or when you cannot tell. Explain in one sentence.`;
     return this.#ask(i.jobId, i.cwd, "low", ["classify"], CommandVerdict, prompt, "classify");
+  }
+
+  triage(i: {
+    jobId: string;
+    cwd: string;
+    goal: string;
+    state: string;
+    silk: string;
+    conversation: string;
+    message: string;
+  }) {
+    const prompt = [
+      `You are The Eye, the supervisor of a job run by coding agents. The owner of the job just wrote to you. Decide what the message is and what to do with it.\n\n# The job's goal\n${i.goal}`,
+      `# Where the job stands\n${i.state}`,
+      i.silk ? `# What is known (Silk)\n${i.silk}` : "",
+      i.conversation ? `# Your conversation so far\n${i.conversation}` : "",
+      `# The owner's message\n${i.message}`,
+      `Choose one intent:
+- "instruction": guidance for the work now (a constraint, a correction, a preference). Put it in "silk" as a "decision" in the owner's words; it is also passed to the agents working now.
+- "task": new work. Put the new tasks in "tasks" (dependsOn uses the ids of existing tasks above). Small and verifiable, like a plan's tasks.
+- "context": information to know, not a request. Put it in "silk" as a "fact", or as "architecture" when it is about the design.
+- "later": an idea or request for later, not for now. Put it in "silk" as "later".
+- "stop": the owner wants the work stopped or paused.
+- "question": the owner asks about the job. Answer it in "reply" from what is above; "silk" is null.
+When the message mixes several, pick what matters most and say in "reply" what you did. Never invent facts. "reply" is one or two plain sentences to the owner.`,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    return this.#ask(i.jobId, i.cwd, "low", ["planning"], EyeTriage, prompt, "talk");
   }
 
   summarize(i: { jobId: string; cwd: string; entries: SilkEntry[] }) {

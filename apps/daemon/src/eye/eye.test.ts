@@ -14,7 +14,7 @@ import { jobs, legs } from "../db/schema.ts";
 import { resolvePaths } from "../paths.ts";
 import { fakeOs } from "../testing/fake-os.ts";
 import { type Action, scriptedLeg, type TurnContext } from "../testing/scripted-leg.ts";
-import type { EyeBrain } from "./brain.ts";
+import type { EyeBrain, EyeTriage } from "./brain.ts";
 
 let daemon: Daemon | undefined;
 afterEach(async () => {
@@ -88,6 +88,7 @@ async function eye(
     inputs?: { kind: "file" | "folder" | "link"; ref: string; untrusted: boolean }[];
     sameProviderFallback?: boolean;
     classify?: (command: string) => { decision: "allow" | "ask"; reason: string };
+    triage?: (message: string) => EyeTriage | Promise<EyeTriage>;
     files?: Record<string, string>;
   } = {},
 ) {
@@ -105,6 +106,10 @@ async function eye(
       return o.replan;
     },
     summarize: async () => ({ title: "s", body: "s" }),
+    triage: async ({ message }) => {
+      if (!o.triage) throw new Error("no triage scripted");
+      return o.triage(message);
+    },
     classifyCommand: async ({ command }) =>
       o.classify?.(command) ?? { decision: "allow", reason: "it only serves the task" },
     interviewRound: async ({ answers }) => {
@@ -957,5 +962,141 @@ describe("each agent's output (Checkpoint 1 → F1-3)", () => {
     expect((await api.sessions.log({ id: hello?.id as string, after: page.next })).entries).toEqual(
       [],
     );
+  });
+});
+
+describe("talking to The Eye (Checkpoint 1 → F1-4)", () => {
+  const reply = async (api: Awaited<ReturnType<typeof eye>>["api"], id: string, n: number) => {
+    const end = Date.now() + 5000;
+    for (;;) {
+      const c = await api.jobs.conversation({ id });
+      if (c.filter((m) => m.author === "eye").length >= n || Date.now() > end) return c;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+  };
+
+  it("passes an instruction to the agent at work, and keeps it as my decision", async () => {
+    const { api, id, leg, d } = await eye(
+      (t) =>
+        task(t) === "Write hello.sh" && !t.message.includes("Use printf")
+          ? [{ run: "sleep 1" }, { say: "still thinking" }]
+          : task(t) === "Write hello.sh"
+            ? [{ write: "hello.sh", content: "printf 'hi\\n'\n" }, { say: "DONE" }]
+            : good(t),
+      {
+        triage: () => ({
+          intent: "instruction",
+          reply: "Understood: printf, not echo.",
+          silk: { kind: "decision", title: "Use printf, not echo", body: "Use printf, not echo." },
+          tasks: [],
+        }),
+      },
+    );
+    const end = Date.now() + 5000;
+    while ((await api.jobs.get({ id })).tasks[0]?.state !== "running" && Date.now() < end)
+      await new Promise((r) => setTimeout(r, 20));
+    await api.jobs.talk({ id, text: "Use printf, not echo." });
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    expect(
+      leg.log.some(
+        (t) => t.message.includes("passed on by The Eye") && t.message.includes("Use printf"),
+      ),
+    ).toBe(true);
+    const c = await reply(api, id, 1);
+    expect(c.map((m) => m.author)).toEqual(["owner", "eye"]);
+    expect(c[1]?.action?.did).toEqual([
+      "Recorded as your decision",
+      "Passed to the agents working now",
+    ]);
+    expect(d.silk.current(id).find((e) => e.title === "Use printf, not echo")).toMatchObject({
+      kind: "decision",
+      authoredBy: "owner",
+    });
+  });
+
+  it("adds new work to The Web of a running job", async () => {
+    const { api, id } = await eye(
+      (t) =>
+        task(t) === "Write hello.sh" && t.turn === 1
+          ? [{ run: "sleep 1" }, { write: "hello.sh", content: "echo hi\n" }, { say: "DONE" }]
+          : task(t) === "Write a README"
+            ? [{ write: "README.md", content: "# hello\n" }, { say: "DONE" }]
+            : good(t),
+      {
+        triage: () => ({
+          intent: "task",
+          reply: "I'll add a README.",
+          silk: null,
+          tasks: [
+            {
+              title: "Write a README",
+              instructions: "Say what hello.sh does.",
+              kind: "implement",
+              scope: ["README.md"],
+              verify: ["test -s README.md"],
+              dependsOn: ["not-a-task"],
+              difficulty: "low",
+              requiredCapabilities: ["docs"],
+            },
+          ],
+        }),
+      },
+    );
+    await api.jobs.talk({ id, text: "Also write a README." });
+    const c = await reply(api, id, 1);
+    expect(c[1]?.action).toMatchObject({ intent: "task", did: ["Added a task"] });
+    const done = await until(api, id, ["completed", "blocked"]);
+    expect(done.state).toBe("completed");
+    expect(done.tasks.map((t) => [t.title, t.state])).toContainEqual(["Write a README", "done"]);
+  });
+
+  it("keeps context and ideas for later, answers questions, and never loses my words", async () => {
+    const answers: Record<string, EyeTriage> = {
+      ctx: {
+        intent: "context",
+        reply: "Noted.",
+        silk: { kind: "fact", title: "The server runs Debian 12", body: "Debian 12." },
+        tasks: [],
+      },
+      later: {
+        intent: "later",
+        reply: "Kept for later.",
+        silk: { kind: "later", title: "Add a dark theme", body: "Some day, a dark theme." },
+        tasks: [],
+      },
+      more: { intent: "task", reply: "A new test.", silk: null, tasks: [] },
+      ask: { intent: "question", reply: "Two tasks, both done.", silk: null, tasks: [] },
+      stop: { intent: "stop", reply: "Stopping.", silk: null, tasks: [] },
+    };
+    const { api, id, d } = await eye(good, {
+      triage: (m) => {
+        if (m === "boom") throw new Error("no Leg can think now");
+        return answers[m] as EyeTriage;
+      },
+    });
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    for (const [n, m] of ["ctx", "later", "ask", "stop", "boom"].entries()) {
+      await api.jobs.talk({ id, text: m });
+      await reply(api, id, n + 1);
+    }
+    const c = (await api.jobs.conversation({ id })).filter((m) => m.author === "eye");
+    expect(c.map((m) => m.action?.did)).toEqual([
+      ["Kept as a fact"],
+      ["Kept for later"],
+      [],
+      ["Nothing to stop: the job isn't running"],
+      ["Recorded as your decision"],
+    ]);
+    expect(c[2]?.text).toBe("Two tasks, both done.");
+    expect(c[4]?.text).toContain("no Leg can think now");
+    const kinds = d.silk.current(id).map((e) => [e.kind, e.title]);
+    expect(kinds).toContainEqual(["fact", "The server runs Debian 12"]);
+    expect(kinds).toContainEqual(["later", "Add a dark theme"]);
+    expect(kinds).toContainEqual(["decision", "My note: boom"]);
+    // New work for a finished job is kept for later, not lost.
+    await api.jobs.talk({ id, text: "more" });
+    expect((await reply(api, id, 6)).at(-1)?.action?.did).toEqual([
+      "Kept for later: the job has ended",
+    ]);
   });
 });

@@ -195,6 +195,23 @@ export const silkEntries = sqliteTable(
   (t) => [index("silk_job_kind").on(t.jobId, t.kind)],
 );
 
+/** My conversation with The Eye about a job (Checkpoint 1 → F1-4). */
+export const eyeMessages = sqliteTable(
+  "eye_messages",
+  {
+    id: text("id").primaryKey(),
+    jobId: text("job_id")
+      .notNull()
+      .references(() => jobs.id),
+    author: text("author", { enum: ["owner", "eye"] }).notNull(),
+    text: text("text").notNull(),
+    /** What The Eye made of my message and did about it (its replies only). */
+    action: json<unknown>("action"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("eye_messages_job").on(t.jobId, t.createdAt)],
+);
+
 export const inboxItems = sqliteTable(
   "inbox_items",
   {

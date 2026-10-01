@@ -145,6 +145,7 @@ const FILES: Record<Exclude<SilkKind, "handoff">, string> = {
   issue: "issues.md",
   fact: "facts.md",
   "interview-answer": "interview.md",
+  later: "later.md",
 };
 
 const TITLES: Record<string, string> = {
@@ -154,6 +155,7 @@ const TITLES: Record<string, string> = {
   "issues.md": "Issues",
   "facts.md": "Facts",
   "interview.md": "Interview",
+  "later.md": "For later",
 };
 
 const marker = (e: SilkEntry) =>
