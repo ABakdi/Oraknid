@@ -1,3 +1,4 @@
+import type { ProjectView } from "@oraknid/contracts";
 import { FolderGit2, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -25,10 +26,11 @@ import { useLive } from "@/lib/live";
 export function ProjectsPage() {
   const projects = useLive(() => api.projects.list(), {
     topics: ["overview"],
-    refreshOn: (e) => e.type === "project.created" || e.type === "job.created",
+    refreshOn: (e) => e.type.startsWith("project.") || e.type === "job.created",
   });
   const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
   if (projects.error) return <ErrorNote error={projects.error} />;
   if (projects.loading) return <Loading />;
   const add = (
@@ -37,7 +39,11 @@ export function ProjectsPage() {
       {t("New project")}
     </Button>
   );
-  const current = selected ?? projects.data?.[0]?.id ?? null;
+  const all = projects.data ?? [];
+  const archived = all.filter((p) => p.archivedAt);
+  const shown = all.filter((p) => showArchived || !p.archivedAt);
+  const current =
+    (selected && all.some((p) => p.id === selected) ? selected : null) ?? shown[0]?.id ?? null;
   return (
     <div className="space-y-4">
       <PageHeader title={t("Projects")} actions={add} />
@@ -50,7 +56,7 @@ export function ProjectsPage() {
       ) : (
         <div className="grid gap-4 lg:grid-cols-[18rem_1fr]">
           <div className="space-y-1">
-            {(projects.data ?? []).map((p) => (
+            {shown.map((p) => (
               <button
                 key={p.id}
                 type="button"
@@ -60,6 +66,11 @@ export function ProjectsPage() {
                 <div className="flex items-center gap-2 font-medium">
                   <FolderGit2 className="size-4" />
                   <span className="truncate">{p.name}</span>
+                  {p.archivedAt ? (
+                    <span className="text-xs font-normal text-muted-foreground">
+                      {t("archived")}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="truncate text-xs text-muted-foreground">{p.workspacePath}</div>
                 <div className="text-xs text-muted-foreground">
@@ -70,11 +81,85 @@ export function ProjectsPage() {
                 </div>
               </button>
             ))}
+            {archived.length ? (
+              <Button variant="ghost" size="sm" onClick={() => setShowArchived((v) => !v)}>
+                {showArchived
+                  ? t("Hide archived")
+                  : t("Show archived ({n})", { n: archived.length })}
+              </Button>
+            ) : null}
           </div>
-          {current ? <ProjectStats id={current} /> : null}
+          {current ? (
+            <div className="min-w-0 space-y-3">
+              <ProjectActions project={all.find((p) => p.id === current) as ProjectView} />
+              <ProjectStats id={current} />
+            </div>
+          ) : null}
         </div>
       )}
       <NewProject open={creating} onOpenChange={setCreating} />
+    </div>
+  );
+}
+
+/** Archive (hidden, kept for stats) or delete (gone from Oraknid, my folder untouched). */
+function ProjectActions({ project }: { project: ProjectView }) {
+  const [confirming, setConfirming] = useState(false);
+  const archive = async () => {
+    try {
+      await api.projects.archive({ id: project.id, archived: !project.archivedAt });
+      toast.success(project.archivedAt ? t("Back in the list.") : t("Archived."));
+    } catch (e) {
+      toast.error(message(e));
+    }
+  };
+  const remove = async () => {
+    setConfirming(false);
+    try {
+      const r = await api.projects.delete({ id: project.id });
+      toast.success(
+        t("Deleted, with {n} job(s). {folder} is untouched.", { n: r.jobs, folder: r.folder }),
+      );
+    } catch (e) {
+      toast.error(message(e));
+    }
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+        {project.workspacePath}
+      </span>
+      <Button variant="secondary" size="sm" onClick={archive}>
+        {project.archivedAt ? t("Restore") : t("Archive")}
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="text-destructive"
+        onClick={() => setConfirming(true)}
+      >
+        {t("Delete")}
+      </Button>
+      <Dialog open={confirming} onOpenChange={setConfirming}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("Delete “{name}”?", { name: project.name })}</DialogTitle>
+            <DialogDescription>
+              {t(
+                "Its jobs and their history (tasks, sessions, Silk, logs) leave Oraknid for good. Your folder, the job branches and worktrees in it stay as they are.",
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setConfirming(false)}>
+              {t("Keep it")}
+            </Button>
+            <Button variant="destructive" onClick={remove}>
+              {t("Delete")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

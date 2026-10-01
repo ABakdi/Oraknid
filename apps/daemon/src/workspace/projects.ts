@@ -1,9 +1,29 @@
-import { accessSync, constants, existsSync, statSync } from "node:fs";
-import { basename, resolve } from "node:path";
-import { DEFAULT_BUDGET, type NewJob, type NewProject } from "@oraknid/contracts";
-import { count, eq } from "drizzle-orm";
+import { accessSync, constants, existsSync, rmSync, statSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
+import {
+  ACTIVE_JOB_STATES,
+  DEFAULT_BUDGET,
+  type NewJob,
+  type NewProject,
+} from "@oraknid/contracts";
+import { count, eq, inArray } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
-import { jobs, projects } from "../db/schema.ts";
+import {
+  attempts,
+  events,
+  eyeMessages,
+  inboxItems,
+  jobs,
+  projects,
+  sessions,
+  settings,
+  sideEffects,
+  silkEntries,
+  silkMirror,
+  steps,
+  taskEdges,
+  tasks,
+} from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 import { BUILT_IN_DEFAULT, type SkillStore } from "../skills/store.ts";
@@ -91,6 +111,78 @@ export class Projects {
         jobCount:
           this.db.select({ n: count() }).from(jobs).where(eq(jobs.projectId, p.id)).get()?.n ?? 0,
       }));
+  }
+
+  /** Archived: hidden from the lists, kept for stats (Core-Entities → Project). */
+  setArchived(id: string, archived: boolean) {
+    this.require(id);
+    this.bus.atomically(() => {
+      this.db
+        .update(projects)
+        .set({ archivedAt: archived ? this.now() : null })
+        .where(eq(projects.id, id))
+        .run();
+      this.bus.publish({
+        type: archived ? "project.archived" : "project.restored",
+        topic: "overview",
+        jobId: null,
+        payload: { id },
+        actor: "owner",
+      });
+    });
+  }
+
+  /**
+   * Deleted on my request: the project and its jobs leave Oraknid with their
+   * history (tasks, sessions, Silk, inbox, events, logs). My folder, the
+   * job branches and worktrees in it are left as they are.
+   */
+  remove(id: string, logsDir: string) {
+    const project = this.require(id);
+    const mine = this.db.select().from(jobs).where(eq(jobs.projectId, id)).all();
+    const busy = mine.find((j) => (ACTIVE_JOB_STATES as readonly string[]).includes(j.state));
+    if (busy) throw new Error(`"${busy.title}" is still going; cancel it first.`);
+    const ids = mine.map((j) => j.id);
+    this.bus.atomically(() => {
+      if (ids.length) {
+        const taskIds = this.db
+          .select({ id: tasks.id })
+          .from(tasks)
+          .where(inArray(tasks.jobId, ids))
+          .all()
+          .map((t) => t.id);
+        if (taskIds.length)
+          this.db.delete(taskEdges).where(inArray(taskEdges.taskId, taskIds)).run();
+        for (const table of [
+          attempts,
+          sessions,
+          silkMirror,
+          silkEntries,
+          inboxItems,
+          eyeMessages,
+          steps,
+          sideEffects,
+          events,
+          tasks,
+        ])
+          this.db.delete(table).where(inArray(table.jobId, ids)).run();
+        this.db.delete(jobs).where(inArray(jobs.id, ids)).run();
+      }
+      this.db
+        .delete(settings)
+        .where(eq(settings.key, `policy.project.${id}`))
+        .run();
+      this.db.delete(projects).where(eq(projects.id, id)).run();
+      this.bus.publish({
+        type: "project.deleted",
+        topic: "overview",
+        jobId: null,
+        payload: { id, name: project.name, jobs: ids.length },
+        actor: "owner",
+      });
+    });
+    for (const jobId of ids) rmSync(join(logsDir, "jobs", jobId), { recursive: true, force: true });
+    return { jobs: ids.length, folder: project.workspacePath };
   }
 
   createJob(input: NewJob) {

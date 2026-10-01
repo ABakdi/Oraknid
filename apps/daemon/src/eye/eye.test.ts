@@ -1532,3 +1532,31 @@ describe("a task's diff (Phase 2 → M2.0)", () => {
     await api.jobs.cancel({ id });
   });
 });
+
+describe("archiving and deleting a project (Phase 2 → M2.0)", () => {
+  it("archives and restores; deletes with its jobs' history, never my folder", async () => {
+    const { api, id, workspace, d } = await eye(good);
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    const { projectId } = await api.jobs.get({ id });
+    await api.projects.archive({ id: projectId, archived: true });
+    expect((await api.projects.list()).find((p) => p.id === projectId)?.archivedAt).toBeTruthy();
+    await api.projects.archive({ id: projectId, archived: false });
+    expect(await api.projects.delete({ id: projectId })).toEqual({ jobs: 1, folder: workspace });
+    expect((await api.projects.list()).map((p) => p.id)).not.toContain(projectId);
+    await expect(api.jobs.get({ id })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(d.bus.since(0, [`job:${id}`], 10)).toEqual([]);
+    expect(existsSync(join(workspace, "README.md"))).toBe(true);
+  });
+
+  it("refuses while a job of it is still going", async () => {
+    const { api, id } = await eye((t) =>
+      task(t) === "Write hello.sh" ? [{ hang: true }] : good(t),
+    );
+    const end = Date.now() + 5000;
+    while ((await api.jobs.get({ id })).state !== "running" && Date.now() < end)
+      await new Promise((r) => setTimeout(r, 20));
+    const { projectId } = await api.jobs.get({ id });
+    await expect(api.projects.delete({ id: projectId })).rejects.toThrow(/cancel it first/);
+    await api.jobs.cancel({ id });
+  });
+});

@@ -313,6 +313,17 @@ export const router = {
         guard(() => ({ ...c.projects.create(input), jobCount: 0 })),
       ),
     list: base.output(z.array(ProjectView)).handler(({ context: c }) => c.projects.list()),
+    /** Hidden from the lists, kept for stats; or back again. */
+    archive: base
+      .input(z.object({ id: z.string(), archived: z.boolean() }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.projects.setArchived(input.id, input.archived)),
+      ),
+    /** Gone from Oraknid with its jobs' history; my folder is left as it is. */
+    delete: base
+      .input(z.object({ id: z.string() }))
+      .output(z.object({ jobs: z.number(), folder: z.string() }))
+      .handler(({ context: c, input }) => guard(() => c.projects.remove(input.id, c.paths.logs))),
   },
   skills: {
     list: base

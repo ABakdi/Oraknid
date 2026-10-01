@@ -8,7 +8,7 @@ table is the summary and is kept in step with the contracts.
 | :-- | :-- | :-- |
 | System | `system.status` · `system.doctor` | Version, uptime, pid, data directory, last event `seq`, inhibitor, secret store, sandbox and service status; the checks. |
 | Devices | `devices.pairStart` / `pairComplete` / `list` / `revoke` | Pairing. Five wrong codes cancel every open one (Audit 1). |
-| Projects | `projects.create` / `list` (M1.6) · `policy` / `setPolicy` (M1.9) | Creating a project in a folder that isn't a git repo asks: `initGit: true` or a shadow repo. |
+| Projects | `projects.create` / `list` (M1.6) · `policy` / `setPolicy` (M1.9) · `archive` / `delete` (M2.0) | Creating a project in a folder that isn't a git repo asks: `initGit: true` or a shadow repo. |
 | Jobs | `jobs.create` / `start` / `get` / `list` / `pause` / `resume` / `cancel` (M1.6) · `setAutonomy` / `setWaivers` / `setRules` / `redirect` (M1.7) · `setBudget` (M1.9) · `talk` / `conversation` · `result` / `merge` / `openFolder` (Checkpoint 1) | A job's view carries its tasks, worktree and branch. `talk` returns at once; The Eye's reply arrives as `eye.replied`. `merge` returns `{ok, commit}` or `{ok: false, reason, conflicts}`. |
 | Web | `web.edit` (add, update, remove tasks) | Plan editing; an edit that breaks The Web's rules is refused and undone. |
 | Tasks | `tasks.pin` / `takeOver` / `handBack` / `rollback` / `attempts` · `diff` (M2.0) | `diff`: the task's commit once done, else its work since before its first attempt. |
@@ -25,8 +25,7 @@ table is the summary and is kept in step with the contracts.
 | Settings | `settings.setEyeLeg` · `sameProviderFallback` / `setSameProviderFallback` (ADR-009) · `policies.get` / `update` | |
 | Storage | `storage.usage` / `storage.prune` (M1.9) | |
 
-**Not built yet** (Audit 1 → Q1-15), with where they land: `projects.get`
-/ `archive` / `delete`, `jobs.export` (Phase 2); a general `settings.get` / `update` when a second setting
+**Not built yet** (Audit 1 → Q1-15), with where they land: `projects.get`, `jobs.export` (Phase 2); a general `settings.get` / `update` when a second setting
 needs it.
 
 Mutating procedures are not idempotent by a client `requestId` yet: they

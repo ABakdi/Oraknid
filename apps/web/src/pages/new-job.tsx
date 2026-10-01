@@ -21,7 +21,8 @@ import { useLive } from "@/lib/live";
 /** One form, everything on it (Jobs-and-Projects → Creating a job). */
 export function NewJobPage() {
   const [, go] = useLocation();
-  const projects = useLive(() => api.projects.list(), {
+  // An archived project takes no new jobs.
+  const projects = useLive(() => api.projects.list().then((l) => l.filter((p) => !p.archivedAt)), {
     topics: ["overview"],
     refreshOn: (e) => e.type === "project.created",
   });

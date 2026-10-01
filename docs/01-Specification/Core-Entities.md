@@ -33,8 +33,10 @@ erDiagram
 | `releaseBranch`, `workBranch` | Detected from the repo. Fallback is `main` / `dev` (rule BR-14). |
 | `createdAt`, `archivedAt` | |
 
-**Life cycle:** active → archived (hidden from lists, kept for stats)
-→ deleted (only on my request; history is pruned with it).
+**Life cycle:** active → archived (hidden from lists, kept for stats,
+takes no new jobs; restorable) → deleted (only on my request, refused
+while a job of it is going; its jobs and their history leave Oraknid; my
+folder, the job branches and the worktrees in it stay).
 
 ## Job
 
