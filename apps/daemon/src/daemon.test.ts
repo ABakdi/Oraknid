@@ -11,6 +11,7 @@ import WebSocket from "ws";
 import type { Router } from "./api/router.ts";
 import { type Daemon, startDaemon } from "./daemon.ts";
 import { resolvePaths } from "./paths.ts";
+import { fakeOs } from "./testing/fake-os.ts";
 import { VERSION } from "./version.ts";
 
 let daemon: Daemon;
@@ -21,6 +22,7 @@ beforeEach(async () => {
     paths: resolvePaths({ ORAKNID_DATA_DIR: dir, ORAKNID_CONFIG_DIR: dir }),
     port: 0,
     dbFile: ":memory:",
+    os: fakeOs().os,
   });
 });
 afterEach(() => daemon.close());

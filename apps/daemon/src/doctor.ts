@@ -1,24 +1,50 @@
 import { spawnSync } from "node:child_process";
 import { accessSync, constants, mkdirSync } from "node:fs";
 import type { DoctorCheck } from "@oraknid/contracts";
+import type { SandboxStatus, SecretStoreStatus, ServiceStatus } from "@oraknid/os";
 import type { Paths } from "./paths.ts";
+
+export interface DoctorInputs {
+  sandbox: SandboxStatus;
+  secrets: SecretStoreStatus;
+  service: ServiceStatus;
+}
 
 /**
  * Checks the machine Oraknid runs on and says, in plain words, what is
- * wrong and how to fix it (BR-17). Later milestones add their own checks.
+ * wrong and how to fix it (BR-17).
  */
-export function runDoctor(paths: Paths): DoctorCheck[] {
+export function runDoctor(paths: Paths, inputs: DoctorInputs): DoctorCheck[] {
   return [
     checkNode(),
     checkDataDir(paths),
     checkCommand("git", ["--version"], "git", "Install git: sudo pacman -S git"),
-    checkSandbox(),
+    {
+      name: "Sandbox (bubblewrap)",
+      ok: inputs.sandbox.available,
+      detail: inputs.sandbox.detail,
+      fix: inputs.sandbox.available
+        ? null
+        : "Install bubblewrap (sudo pacman -S bubblewrap) and allow unprivileged user namespaces. Jobs refuse to run without it.",
+    },
     checkCommand(
       "systemd-inhibit",
       ["--version"],
       "Sleep inhibition (systemd-inhibit)",
       "Oraknid needs systemd-logind to keep the machine awake while jobs run.",
     ),
+    {
+      name: "Secret store",
+      ok: inputs.secrets.available || inputs.secrets.kind === "none",
+      detail: inputs.secrets.detail,
+      fix: null,
+    },
+    {
+      name: "Background service",
+      ok: true,
+      detail: inputs.service.detail,
+      fix: inputs.service.startsAtBoot ? null : "Run: oraknid install",
+    },
     checkCommand(
       "notify-send",
       ["--version"],
@@ -53,34 +79,6 @@ function checkDataDir(paths: Paths): DoctorCheck {
       fix: "Make the directory writable, or set ORAKNID_DATA_DIR to one that is.",
     };
   }
-}
-
-/** bwrap must exist and be allowed to create user namespaces (ADR-006). */
-function checkSandbox(): DoctorCheck {
-  const name = "Sandbox (bubblewrap)";
-  const found = spawnSync("bwrap", ["--version"], { encoding: "utf8" });
-  if (found.error || found.status !== 0) {
-    return {
-      name,
-      ok: false,
-      detail: "bwrap was not found.",
-      fix: "Install bubblewrap: sudo pacman -S bubblewrap. Jobs refuse to run without it.",
-    };
-  }
-  const run = spawnSync(
-    "bwrap",
-    ["--unshare-all", "--die-with-parent", "--ro-bind", "/", "/", "--dev", "/dev", "true"],
-    { encoding: "utf8", timeout: 5000 },
-  );
-  if (run.status !== 0) {
-    return {
-      name,
-      ok: false,
-      detail: `bwrap is installed but could not create a sandbox: ${(run.stderr || "no output").trim()}`,
-      fix: "Allow unprivileged user namespaces (kernel.unprivileged_userns_clone=1).",
-    };
-  }
-  return { name, ok: true, detail: found.stdout.trim(), fix: null };
 }
 
 function checkCommand(cmd: string, args: string[], name: string, fix: string): DoctorCheck {

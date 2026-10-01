@@ -230,3 +230,12 @@ export const settings = sqliteTable("settings", {
   value: json<unknown>("value").notNull(),
   updatedAt: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),
 });
+
+/** Web push subscriptions, one per subscribed browser or phone (Notifications spec). */
+export const pushSubscriptions = sqliteTable("push_subscriptions", {
+  endpoint: text("endpoint").primaryKey(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  deviceId: text("device_id"),
+  createdAt: integer("created_at").notNull(),
+});

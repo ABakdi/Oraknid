@@ -3,6 +3,7 @@ import {
   ClientFrame,
   type Event,
   MAX_REPLAY,
+  type MetricsSample,
   type ServerFrame,
   type Topic,
 } from "@oraknid/contracts";
@@ -24,6 +25,8 @@ export interface LiveOptions {
  */
 export function attachLive({ server, bus, allow, heartbeatMs = 15_000 }: LiveOptions) {
   const wss = new WebSocketServer({ noServer: true });
+  /** Clients subscribed to "metrics", for the ephemeral metrics stream. */
+  const metricsClients = new Set<WebSocket>();
 
   server.on("upgrade", (req, socket, head) => {
     const path = new URL(req.url ?? "/", "http://localhost").pathname;
@@ -63,9 +66,11 @@ export function attachLive({ server, bus, allow, heartbeatMs = 15_000 }: LiveOpt
       switch (frame.type) {
         case "subscribe":
           for (const t of frame.topics) topics.add(t);
+          if (topics.has("metrics")) metricsClients.add(ws);
           break;
         case "unsubscribe":
           for (const t of frame.topics) topics.delete(t);
+          if (!topics.has("metrics")) metricsClients.delete(ws);
           break;
         case "resume":
           replay(frame.lastSeq);
@@ -98,6 +103,7 @@ export function attachLive({ server, bus, allow, heartbeatMs = 15_000 }: LiveOpt
 
     ws.on("close", () => {
       clearInterval(heartbeat);
+      metricsClients.delete(ws);
       off();
     });
   });
@@ -109,6 +115,12 @@ export function attachLive({ server, bus, allow, heartbeatMs = 15_000 }: LiveOpt
         wss.close(() => resolve());
       }),
     clientCount: () => wss.clients.size,
+    /** Metrics are not events: sent to "metrics" subscribers, never stored. */
+    broadcastMetrics(sample: MetricsSample) {
+      if (metricsClients.size === 0) return;
+      const data = JSON.stringify({ type: "metrics", sample } satisfies ServerFrame);
+      for (const ws of metricsClients) if (ws.readyState === ws.OPEN) ws.send(data);
+    },
     wss: wss as WebSocketServer & { clients: Set<WebSocket> },
   };
 }
