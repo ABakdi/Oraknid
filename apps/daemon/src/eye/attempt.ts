@@ -250,7 +250,18 @@ export async function runAttempt(
   });
 
   const ckpt = `refs/oraknid/${job.id}/${taskId}/${attemptNo}`;
-  checkpoint(ws.g, ckpt, `oraknid: before ${task.title} (attempt ${attemptNo})`, ws.tmpDir);
+  try {
+    checkpoint(ws.g, ckpt, `oraknid: before ${task.title} (attempt ${attemptNo})`, ws.tmpDir);
+  } catch (error) {
+    // No attempt or task is left looking alive by a checkpoint that failed (Audit 1 → Q1-13).
+    d.db
+      .update(attempts)
+      .set({ endedAt: now(), outcome: "abandoned" })
+      .where(eq(attempts.id, attemptId))
+      .run();
+    d.db.update(tasks).set({ state: "ready" }).where(eq(tasks.id, taskId)).run();
+    throw error;
+  }
 
   const escalations: string[] = [];
   const started = now();

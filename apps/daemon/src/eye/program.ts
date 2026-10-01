@@ -392,16 +392,23 @@ async function interview(
       });
       return;
     }
-    const itemId = await ctx.step(`interview:${n}:ask`, { n }, async () =>
-      d.inbox.open({
-        kind: "question",
-        jobId: job.id,
-        raisedBy: "eye",
-        title: `Interview, round ${n}`,
-        detail: renderRound(round),
-        options: [ENOUGH],
-        defaultOption: null,
-      }),
+    // A crash after opening but before the step was recorded reuses that question (Audit 1 → D1-13).
+    const itemId = await ctx.step(
+      `interview:${n}:ask`,
+      { n },
+      async () =>
+        d.inbox
+          .list({ jobId: job.id, kind: "question", state: "open" })
+          .find((i) => i.title === `Interview, round ${n}`)?.id ??
+        d.inbox.open({
+          kind: "question",
+          jobId: job.id,
+          raisedBy: "eye",
+          title: `Interview, round ${n}`,
+          detail: renderRound(round),
+          options: [ENOUGH],
+          defaultOption: null,
+        }),
     );
     const item = d.inbox.get(itemId);
     if (item?.state === "open")

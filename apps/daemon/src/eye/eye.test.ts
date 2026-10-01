@@ -11,12 +11,13 @@ import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Router } from "../api/router.ts";
 import { type Daemon, startDaemon } from "../daemon.ts";
-import { jobs, legs } from "../db/schema.ts";
+import { eyeMessages, jobs, legs } from "../db/schema.ts";
 import { resolvePaths } from "../paths.ts";
 import { fakeOs } from "../testing/fake-os.ts";
 import { type Action, scriptedLeg, type TurnContext } from "../testing/scripted-leg.ts";
 import type { EyeBrain, EyeTriage } from "./brain.ts";
 import { policyFor } from "./policy.ts";
+import { resumeConversations } from "./talk.ts";
 
 let daemon: Daemon | undefined;
 afterEach(async () => {
@@ -1440,5 +1441,42 @@ describe("what a Leg reads from the web is untrusted (Audit 1 → S1-09)", () =>
     expect(item?.title).toContain("git merge");
     await api.inbox.answer({ id: item?.id as string, answer: "Deny" });
     expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+  });
+});
+
+describe("a message cut off by a crash (Audit 1 → D1-11)", () => {
+  it("is handled at the next start", async () => {
+    const { api, id, d } = await eye(good, {
+      triage: () => ({ intent: "question", reply: "Two tasks.", silk: null, tasks: [] }),
+    });
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    d.db
+      .insert(eyeMessages)
+      .values({
+        id: "01J9Z3K8W2Q4V6X8Y0A1B2C3M1",
+        jobId: id,
+        author: "owner",
+        text: "How many tasks?",
+        action: null,
+        createdAt: Date.now(),
+      })
+      .run();
+    const brain = {
+      triage: async () => ({ intent: "question", reply: "Two tasks.", silk: null, tasks: [] }),
+    } as never;
+    expect(
+      resumeConversations({
+        db: d.db,
+        bus: d.bus,
+        silk: d.silk,
+        runner: d.runner,
+        brain,
+        tmpDir: "/tmp",
+      }),
+    ).toBe(1);
+    const end = Date.now() + 3000;
+    while ((await api.jobs.conversation({ id })).at(-1)?.author !== "eye" && Date.now() < end)
+      await new Promise((r) => setTimeout(r, 20));
+    expect((await api.jobs.conversation({ id })).at(-1)?.text).toBe("Two tasks.");
   });
 });

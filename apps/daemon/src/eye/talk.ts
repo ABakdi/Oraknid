@@ -75,6 +75,29 @@ export function talk(d: TalkDeps, jobId: string, text: string): string {
   const job = d.db.select().from(jobs).where(eq(jobs.id, jobId)).get();
   if (!job) throw new Error(`No job ${jobId}.`);
   const id = add(d, jobId, "owner", text, null);
+  respond(d, jobId, text);
+  return id;
+}
+
+/**
+ * On start: a message of mine a crash left without a reply is handled now,
+ * never lost (Audit 1 → D1-11). Returns how many were picked up.
+ */
+export function resumeConversations(d: TalkDeps): number {
+  let n = 0;
+  for (const { jobId } of d.db
+    .selectDistinct({ jobId: eyeMessages.jobId })
+    .from(eyeMessages)
+    .all()) {
+    const last = conversation(d.db, jobId).at(-1);
+    if (last?.author !== "owner") continue;
+    respond(d, jobId, last.text);
+    n++;
+  }
+  return n;
+}
+
+function respond(d: TalkDeps, jobId: string, text: string) {
   void handle(d, jobId, text).catch((error) => {
     // Fail safe: my words are never lost. They are kept as my decision.
     const entry = d.silk.add({
@@ -98,7 +121,6 @@ export function talk(d: TalkDeps, jobId: string, text: string): string {
       },
     );
   });
-  return id;
 }
 
 async function handle(d: TalkDeps, jobId: string, text: string) {

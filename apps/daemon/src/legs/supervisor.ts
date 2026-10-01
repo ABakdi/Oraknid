@@ -117,18 +117,25 @@ export class LegSupervisor {
       })
       .run();
 
-    const session = await adapter.start({
-      leg: registry.toConfig(leg),
-      model: model.model,
-      effort: req.effort,
-      cwd: req.cwd,
-      systemPrompt: req.systemPrompt,
-      prompt: req.prompt,
-      resumeFrom: req.resumeFrom ?? null,
-      sandbox: req.unsandboxed ? null : sandboxPlan(leg, this.o.sandbox, this.o.legsDir),
-      credential: await registry.credential(leg),
-      onPermission: req.onPermission,
-    });
+    let session: LegSession;
+    try {
+      session = await adapter.start({
+        leg: registry.toConfig(leg),
+        model: model.model,
+        effort: req.effort,
+        cwd: req.cwd,
+        systemPrompt: req.systemPrompt,
+        prompt: req.prompt,
+        resumeFrom: req.resumeFrom ?? null,
+        sandbox: req.unsandboxed ? null : sandboxPlan(leg, this.o.sandbox, this.o.legsDir),
+        credential: await registry.credential(leg),
+        onPermission: req.onPermission,
+      });
+    } catch (error) {
+      // A start that failed leaves no session looking alive (Audit 1 → Q1-13).
+      this.#end(id, "crashed", error instanceof Error ? error.message : String(error));
+      throw error;
+    }
 
     // Killing through the supervisor records the end itself: after a kill nobody may read the stream's last event.
     const supervised: LegSession = {

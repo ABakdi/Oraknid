@@ -28,7 +28,7 @@ import { forgetJob } from "./eye/attempt.ts";
 import { type EyeBrain, PoolLegBrain } from "./eye/brain.ts";
 import { startBudgetWatch } from "./eye/budgets.ts";
 import { eyeProgram } from "./eye/program.ts";
-import { forgetGuidance } from "./eye/talk.ts";
+import { forgetGuidance, resumeConversations } from "./eye/talk.ts";
 import { isLocalRequest } from "./http/guard.ts";
 import { InboxStore } from "./inbox/store.ts";
 import { startHealthChecks } from "./legs/health.ts";
@@ -386,6 +386,7 @@ export async function startDaemon(options: DaemonOptions) {
   // Recovery may have left jobs active: take the lock straight away if so.
   await inhibit.reconcile();
   void health.checkAll().catch((err) => console.error("health check failed", err));
+  resumeConversations({ db, bus, silk, runner, brain, tmpDir: join(paths.dataDir, "tmp"), now });
   os.serviceNotifier.ready();
   const stopWatchdog = os.serviceNotifier.startWatchdog();
 

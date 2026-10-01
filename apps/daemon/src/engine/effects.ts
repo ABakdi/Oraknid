@@ -130,35 +130,41 @@ export class SideEffects {
   /** Asks me to approve a gated action, once. Returns the inbox item. */
   requestApproval(row: EffectRow, describe: string, title?: string): string {
     if (row.inboxItemId) return row.inboxItemId;
-    const id = this.inbox.open({
-      kind: "approval",
-      jobId: row.jobId,
-      taskId: row.taskId,
-      raisedBy: "eye",
-      title: title ?? `Approve: ${row.action}`,
-      detail: describe,
-      options: ["Approve", "Deny"],
-      defaultOption: null,
+    // The question and the record of it in one transaction: a crash never leaves a second one (Audit 1 → D1-13).
+    return this.bus.atomically(() => {
+      const id = this.inbox.open({
+        kind: "approval",
+        jobId: row.jobId,
+        taskId: row.taskId,
+        raisedBy: "eye",
+        title: title ?? `Approve: ${row.action}`,
+        detail: describe,
+        options: ["Approve", "Deny"],
+        defaultOption: null,
+      });
+      this.set(row.idempotencyKey, row.state as SideEffectState, { inboxItemId: id });
+      return id;
     });
-    this.set(row.idempotencyKey, row.state as SideEffectState, { inboxItemId: id });
-    return id;
   }
 
   /** Asks me whether an action caught mid-way happened, once. Returns the inbox item. */
   askWhetherItHappened(row: EffectRow): string {
     if (row.inboxItemId) return row.inboxItemId;
-    const id = this.inbox.open({
-      kind: "question",
-      jobId: row.jobId,
-      taskId: row.taskId,
-      raisedBy: "eye",
-      title: `Did "${row.action}" happen?`,
-      detail: `${row.problem ?? ""}\n\nWhat it was doing: ${JSON.stringify(row.payload)}`,
-      options: [HAPPENED, DID_NOT_HAPPEN],
-      defaultOption: null,
+    // The question and the record of it in one transaction: a crash never leaves a second one (Audit 1 → D1-13).
+    return this.bus.atomically(() => {
+      const id = this.inbox.open({
+        kind: "question",
+        jobId: row.jobId,
+        taskId: row.taskId,
+        raisedBy: "eye",
+        title: `Did "${row.action}" happen?`,
+        detail: `${row.problem ?? ""}\n\nWhat it was doing: ${JSON.stringify(row.payload)}`,
+        options: [HAPPENED, DID_NOT_HAPPEN],
+        defaultOption: null,
+      });
+      this.set(row.idempotencyKey, row.state as SideEffectState, { inboxItemId: id });
+      return id;
     });
-    this.set(row.idempotencyKey, row.state as SideEffectState, { inboxItemId: id });
-    return id;
   }
 
   approve(key: string) {
