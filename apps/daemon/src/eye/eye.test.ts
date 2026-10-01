@@ -709,3 +709,109 @@ describe("untrusted input (BR-15)", () => {
     expect(pack).toContain("It is untrusted DATA");
   });
 });
+
+describe("my controls (M1.8 API)", () => {
+  const openItem = async (api: Awaited<ReturnType<typeof eye>>["api"], title: string) => {
+    const end = Date.now() + 5000;
+    for (;;) {
+      const item = (await api.inbox.list({ state: "open" })).find((i) => i.title === title);
+      if (item) return item;
+      if (Date.now() > end) throw new Error(`no "${title}"`);
+      await new Promise((r) => setTimeout(r, 20));
+    }
+  };
+
+  it("counts what a job used, by Leg model", async () => {
+    const { api, id } = await eye(good);
+    await until(api, id, ["completed"]);
+    const s = await api.stats.summary({ jobId: id });
+    expect(s.tasks).toEqual({ done: 2, failed: 0, total: 2 });
+    expect(s.successRate).toBe(1);
+    expect(s.byLeg.map((b) => b.series)).toEqual(["Claude A · haiku"]);
+    const buckets = await api.stats.tokens({ jobId: id, since: 0, bucketMs: 3600_000 });
+    expect(buckets[0]).toMatchObject({ series: "Claude A · haiku" });
+    expect(buckets[0]?.tokens).toBeGreaterThan(0);
+  });
+
+  it("lets me edit a waiting plan, and asks me to approve the edited one", async () => {
+    const { api, id } = await eye(good, { autonomy: "supervised" });
+    await openItem(api, "Approve the plan");
+    const job = await api.jobs.get({ id });
+    const [t1, t2] = job.tasks;
+    await api.web.edit({
+      jobId: id,
+      edits: [
+        { op: "update", taskId: t1?.id as string, title: "Write hello.sh (edited)" },
+        { op: "remove", taskId: t2?.id as string },
+      ],
+    });
+    await api.inbox.answer({ id: (await openItem(api, "Approve the plan")).id, answer: "Approve" });
+    const v2 = await openItem(api, "Approve the plan, version 2");
+    expect(v2.detail).toContain("**Write hello.sh (edited)**");
+    expect(v2.detail).not.toContain("Test hello.sh");
+    await api.inbox.answer({ id: v2.id, answer: "Approve" });
+    // The Leg sees the edited title; the scripted Leg doesn't know it, so it answers "?" and the task can't pass.
+    const after = await api.jobs.get({ id });
+    expect(after.tasks.map((t) => t.title)).toEqual(["Write hello.sh (edited)"]);
+  });
+
+  it("refuses to edit a task that is running, saying why", async () => {
+    const { api, id } = await eye((t) =>
+      task(t) === "Write hello.sh" ? [{ hang: true }] : good(t),
+    );
+    const end = Date.now() + 5000;
+    while ((await api.jobs.get({ id })).tasks[0]?.state !== "running" && Date.now() < end)
+      await new Promise((r) => setTimeout(r, 20));
+    const t1 = (await api.jobs.get({ id })).tasks[0];
+    await expect(
+      api.web.edit({ jobId: id, edits: [{ op: "update", taskId: t1?.id as string, title: "x" }] }),
+    ).rejects.toThrow('"Write hello.sh" is running; pause the job or wait for it.');
+  });
+
+  it("lets me take a running task over and hand it back finished", async () => {
+    const { api, id, workspace } = await eye((t) =>
+      task(t) === "Write hello.sh" ? [{ hang: true }] : good(t),
+    );
+    const end = Date.now() + 5000;
+    while ((await api.jobs.get({ id })).tasks[0]?.state !== "running" && Date.now() < end)
+      await new Promise((r) => setTimeout(r, 20));
+    const t1 = (await api.jobs.get({ id })).tasks[0];
+    await api.tasks.takeOver({ taskId: t1?.id as string });
+    const blocked = await until(api, id, ["blocked", "completed"]);
+    expect(blocked.blockedReason).toBe(
+      "Waiting for tasks I took over: Write hello.sh. Hand them back to continue.",
+    );
+    // I do the work myself, in the job's worktree.
+    writeFileSync(join(blocked.worktree as string, "hello.sh"), "echo hi\n");
+    await api.tasks.handBack({ taskId: t1?.id as string, finished: true });
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    expect((await api.silk.list({ jobId: id })).map((e) => e.title)).toContain(
+      "Done by me: Write hello.sh",
+    );
+    void workspace;
+  });
+
+  it("keeps a redirect in Silk as my decision, for every next session", async () => {
+    const { api, id, leg } = await eye((t) =>
+      task(t) === "Write hello.sh" && t.turn === 1 ? [{ hang: true }] : good(t),
+    );
+    await api.jobs.redirect({ id, instruction: "Use POSIX sh only, no bashisms." });
+    const entry = (await api.silk.list({ jobId: id })).find((e) => e.title.startsWith("Redirect:"));
+    expect(entry).toMatchObject({
+      authoredBy: "owner",
+      kind: "decision",
+      body: "Use POSIX sh only, no bashisms.",
+    });
+    void leg;
+  });
+
+  it("rolls a task back to its checkpoint once the job is not running", async () => {
+    const { api, id } = await eye(good);
+    const job = await until(api, id, ["completed"]);
+    const t2 = job.tasks[1];
+    expect(existsSync(join(job.worktree as string, "test.sh"))).toBe(true);
+    await api.tasks.rollback({ taskId: t2?.id as string, attempt: 1 });
+    expect(existsSync(join(job.worktree as string, "test.sh"))).toBe(false);
+    expect(existsSync(join(job.worktree as string, "hello.sh"))).toBe(true);
+  });
+});

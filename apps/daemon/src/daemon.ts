@@ -312,6 +312,7 @@ export async function startDaemon(options: DaemonOptions) {
         projects: projectsService,
         skills,
         devices,
+        tmpDir: join(paths.dataDir, "tmp"),
       },
     });
     if (!matched) next();

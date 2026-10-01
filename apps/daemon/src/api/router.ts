@@ -32,11 +32,25 @@ import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { AuditQuery, searchAudit } from "../audit/audit.ts";
 import type { Devices } from "../auth/devices.ts";
-import { jobs as jobsTable, taskEdges, tasks as tasksTable } from "../db/schema.ts";
+import {
+  attempts as attemptsTable,
+  jobs as jobsTable,
+  taskEdges,
+  tasks as tasksTable,
+} from "../db/schema.ts";
 import { runDoctor } from "../doctor.ts";
 import type { JobStore } from "../engine/jobs.ts";
 import type { JobRunner } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
+import {
+  editWeb,
+  handBack,
+  pin,
+  redirect,
+  rollbackTask,
+  takeOver,
+  WebEdit,
+} from "../eye/controls.ts";
 import { GlobalPolicy, readGlobalPolicy, writeGlobalPolicy } from "../eye/policy.ts";
 import type { InboxStore } from "../inbox/store.ts";
 import type { LegRegistry } from "../legs/registry.ts";
@@ -48,6 +62,15 @@ import type { SilkStore } from "../silk/store.ts";
 import type { SkillStore } from "../skills/store.ts";
 import { VERSION } from "../version.ts";
 import type { Projects } from "../workspace/projects.ts";
+import {
+  Activity,
+  activity,
+  StatsScope,
+  Summary,
+  summary as statsSummary,
+  TokenBucket,
+  tokensOverTime,
+} from "./stats.ts";
 
 export interface ApiContext {
   startedAt: number;
@@ -69,6 +92,7 @@ export interface ApiContext {
   projects: Projects;
   skills: SkillStore;
   devices: Devices;
+  tmpDir: string;
 }
 
 const base = os.$context<ApiContext>();
@@ -108,6 +132,14 @@ const summary = (s: {
   requiredTools: string[];
   verify: string[];
 }) => SkillSummary.parse(s);
+
+const controls = (c: ApiContext) => ({
+  db: c.jobs.db,
+  bus: c.bus,
+  runner: c.runner,
+  silk: c.silk,
+  tmpDir: c.tmpDir,
+});
 
 function jobView(c: ApiContext, id: string): JobView {
   const job = c.jobs.require(id);
@@ -239,6 +271,72 @@ export const router = {
       ),
     ),
   },
+  stats: {
+    tokens: base
+      .input(
+        StatsScope.extend({
+          since: z.number(),
+          bucketMs: z.number().int().positive().default(3600_000),
+        }),
+      )
+      .output(z.array(TokenBucket))
+      .handler(({ context: c, input }) => tokensOverTime(c.jobs.db, input)),
+    summary: base
+      .input(StatsScope)
+      .output(Summary)
+      .handler(({ context: c, input }) => statsSummary(c.jobs.db, input)),
+    activity: base.output(z.array(Activity)).handler(({ context: c }) => activity(c.jobs.db)),
+  },
+  tasks: {
+    pin: base
+      .input(z.object({ taskId: z.string(), legModelId: z.string().nullable() }))
+      .handler(({ context: c, input }) =>
+        guard(() => pin(controls(c), input.taskId, input.legModelId)),
+      ),
+    takeOver: base
+      .input(z.object({ taskId: z.string() }))
+      .handler(({ context: c, input }) => guard(() => takeOver(controls(c), input.taskId))),
+    handBack: base
+      .input(z.object({ taskId: z.string(), finished: z.boolean() }))
+      .handler(({ context: c, input }) =>
+        guard(() => handBack(controls(c), input.taskId, input.finished)),
+      ),
+    rollback: base
+      .input(z.object({ taskId: z.string(), attempt: z.number().int().positive() }))
+      .handler(({ context: c, input }) =>
+        guard(() => rollbackTask(controls(c), input.taskId, input.attempt)),
+      ),
+    attempts: base
+      .input(z.object({ taskId: z.string() }))
+      .output(
+        z.array(
+          z.object({
+            id: z.string(),
+            legModelId: z.string(),
+            effort: z.string().nullable(),
+            startedAt: z.number(),
+            endedAt: z.number().nullable(),
+            outcome: z.string().nullable(),
+            escalations: z.array(z.string()),
+          }),
+        ),
+      )
+      .handler(({ context: c, input }) =>
+        c.jobs.db
+          .select()
+          .from(attemptsTable)
+          .where(eq(attemptsTable.taskId, input.taskId))
+          .orderBy(asc(attemptsTable.startedAt))
+          .all(),
+      ),
+  },
+  web: {
+    edit: base
+      .input(z.object({ jobId: z.string(), edits: z.array(WebEdit).min(1) }))
+      .handler(({ context: c, input }) =>
+        guard(() => editWeb(controls(c), input.jobId, input.edits)),
+      ),
+  },
   devices: {
     /** A short code for a new device to enter (Security → pairing). */
     pairStart: base
@@ -312,6 +410,11 @@ export const router = {
         .all()
         .map((j) => jobView(c, j.id)),
     ),
+    redirect: base
+      .input(z.object({ id: z.string(), instruction: z.string().min(1) }))
+      .handler(({ context: c, input }) =>
+        guard(() => redirect(controls(c), input.id, input.instruction)),
+      ),
     /** Changeable while the job runs: the next decision uses it. */
     setAutonomy: base
       .input(z.object({ id: z.string(), autonomy: Autonomy }))
