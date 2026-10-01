@@ -1,4 +1,10 @@
-import { type Capability, type Difficulty, type SilkEntry, WebPlan } from "@oraknid/contracts";
+import {
+  type Capability,
+  type Difficulty,
+  InterviewRound,
+  type SilkEntry,
+  WebPlan,
+} from "@oraknid/contracts";
 import { type RouteCandidate, route, validateWeb } from "@oraknid/core";
 import { z } from "zod";
 import type { LegRegistry } from "../legs/registry.ts";
@@ -13,6 +19,14 @@ export interface EyeBrain {
   plan(input: PlanInput): Promise<WebPlan>;
   /** New tasks that fix what job-level verification found. */
   replan(input: PlanInput & { failure: string; done: string[] }): Promise<WebPlan>;
+  /** The next interview round, from the method's interview guidance and my answers so far. */
+  interviewRound(input: {
+    jobId: string;
+    cwd: string;
+    goal: string;
+    skill: string;
+    answers: string[];
+  }): Promise<InterviewRound>;
   /** Several Silk entries in one shorter entry. */
   summarize(input: {
     jobId: string;
@@ -85,6 +99,24 @@ Plan ONLY the new tasks needed to fix this. Do not repeat done work. Use new tas
       "replan",
       validateWeb,
     );
+  }
+
+  interviewRound(i: {
+    jobId: string;
+    cwd: string;
+    goal: string;
+    skill: string;
+    answers: string[];
+  }) {
+    const prompt = [
+      `You are interviewing the owner of this job before any work starts, as the method below says.\n\n# The goal\n${i.goal}`,
+      `# The method's interview guidance\n${i.skill}`,
+      i.answers.length
+        ? `# The interview so far (the owner's words)\n${i.answers.map((a, n) => `## Round ${n + 1}\n${a}`).join("\n\n")}`
+        : "This is the first round.",
+      `Write the next round: a short "playback" of what you understood${i.answers.length ? ', ending with "Is this right?"' : ""}, then at most 4 questions, open ones first, with suggested options and a recommendation where useful. Never guess to fill a gap. Set "done" to true only when every point the method lists is answered or recorded as decide-later, and list what stays open in "open".`,
+    ].join("\n\n");
+    return this.#ask(i.jobId, i.cwd, "medium", ["planning"], InterviewRound, prompt, "interview");
   }
 
   summarize(i: { jobId: string; cwd: string; entries: SilkEntry[] }) {

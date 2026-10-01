@@ -66,6 +66,8 @@ export class LegSupervisor {
       legsDir: string;
       logsDir: string;
       now?: () => number;
+      /** Secrets out of logs (BR-13). */
+      scrub?: (text: string) => string;
     },
   ) {}
 
@@ -166,7 +168,8 @@ export class LegSupervisor {
     };
     try {
       for await (const e of session.events()) {
-        appendFileSync(logFile, `${JSON.stringify({ at: this.#now(), ...e })}\n`);
+        const line = JSON.stringify({ at: this.#now(), ...e });
+        appendFileSync(logFile, `${this.o.scrub ? this.o.scrub(line) : line}\n`);
         this.#recordPid(id, session);
         switch (e.type) {
           case "text.delta":
@@ -245,9 +248,10 @@ export class LegSupervisor {
   }
 
   #publish(req: StartRequest, legId: string, type: string, payload: Record<string, unknown>) {
+    const actor = `leg:${legId}`;
     if (req.jobId)
-      this.o.bus.publish({ type, topic: `job:${req.jobId}`, jobId: req.jobId, payload });
-    this.o.bus.publish({ type, topic: `leg:${legId}`, jobId: req.jobId, payload });
+      this.o.bus.publish({ type, topic: `job:${req.jobId}`, jobId: req.jobId, payload, actor });
+    this.o.bus.publish({ type, topic: `leg:${legId}`, jobId: req.jobId, payload, actor });
   }
 
   /** Process trees to measure (Overview → Resources). */

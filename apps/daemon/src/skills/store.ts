@@ -62,6 +62,28 @@ export class SkillStore {
     return { skill: this.latest(id) as SkillRow, ignored: parsed.ignored };
   }
 
+  /** A new version of one of my skills; built-ins are read-only. */
+  edit(id: string, markdown: string): { skill: SkillRow; ignored: string[] } {
+    const current = this.latest(id);
+    if (!current) throw new Error(`No skill ${id}.`);
+    if (current.source === "built-in")
+      throw new Error("Built-in skills are read-only. Upload a copy to change it.");
+    const parsed = parseSkill(markdown, current.name);
+    this.#save(id, parsed, "uploaded");
+    return { skill: this.latest(id) as SkillRow, ignored: parsed.ignored };
+  }
+
+  /** Removes one of my skills, unless a job that hasn't ended uses it. */
+  remove(id: string, inUse: (id: string) => string[]) {
+    const current = this.latest(id);
+    if (!current) throw new Error(`No skill ${id}.`);
+    if (current.source === "built-in") throw new Error("Built-in skills cannot be deleted.");
+    const jobs = inUse(id);
+    if (jobs.length)
+      throw new Error(`"${current.name}" is used by jobs that haven't ended: ${jobs.join(", ")}.`);
+    this.db.delete(skills).where(eq(skills.id, id)).run();
+  }
+
   latest(id: string): SkillRow | undefined {
     return this.db
       .select()

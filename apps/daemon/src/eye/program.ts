@@ -1,10 +1,11 @@
-import { join } from "node:path";
-import type { Autonomy, WebPlan } from "@oraknid/contracts";
-import { type GatedAction, readyTasks, skillExcerpt } from "@oraknid/core";
+import { join, resolve } from "node:path";
+import type { Autonomy, InterviewRound, JobInput, WebPlan } from "@oraknid/contracts";
+import { type GatedAction, readyTasks, skillExcerpt, suspicious } from "@oraknid/core";
 import type { Sandbox } from "@oraknid/os";
 import { asc, eq } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
 import { jobs, projects, taskEdges, tasks } from "../db/schema.ts";
+import { AwaitingOwner } from "../engine/effects.ts";
 import type { JobContext, JobProgram } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
@@ -17,6 +18,7 @@ import type { SkillStore } from "../skills/store.ts";
 import { createWorktree, type Git, shadowRepo } from "../workspace/git.ts";
 import { type AttemptJob, runAttempt } from "./attempt.ts";
 import type { EyeBrain } from "./brain.ts";
+import { readSmall, renderInputs } from "./inputs.ts";
 import { runVerify } from "./verify.ts";
 
 export interface EyeDeps {
@@ -81,6 +83,7 @@ export function eyeProgram(d: EyeDeps): JobProgram {
       g,
       tmpDir: d.tmpDir,
       trash: join(project.workspacePath, ".oraknid", "trash"),
+      projectPath: project.workspacePath,
     };
 
     // A Leg's permission request dies with its session: one still open is stale.
@@ -107,7 +110,33 @@ export function eyeProgram(d: EyeDeps): JobProgram {
       }
     });
 
-    if (ctx.state() === "draft") ctx.setState("planning");
+    // Untrusted inputs are looked at once for attempts to steer the agent (Security → Prompt injection).
+    await ctx.step("untrusted-scan", null, async () => {
+      for (const input of (job0.inputs as JobInput[]).filter((i) => i.untrusted)) {
+        const text =
+          input.kind === "file" ? readSmall(resolve(project.workspacePath, input.ref)) : null;
+        const why = text ? suspicious(text) : [];
+        if (why.length === 0) continue;
+        d.silk.add({
+          jobId: job0.id,
+          kind: "issue",
+          title: `Suspicious input: ${input.ref}`,
+          body: `It ${why.join("; it ")}. Treated as data only.`,
+          authoredBy: "eye",
+        });
+        d.bus.publish({
+          type: "job.suspicious-input",
+          topic: `job:${job0.id}`,
+          jobId: job0.id,
+          payload: { ref: input.ref, why },
+        });
+      }
+    });
+
+    // The interview (Skills → The interview): the method needs my answers before any work.
+    if (skill?.interview) await interview(d, ctx, job0, skill.body, ws.cwd);
+
+    if (ctx.state() === "draft" || ctx.state() === "interviewing") ctx.setState("planning");
 
     // ── Plan The Web, once.
     if (taskRows(d.db, ctx.jobId).length === 0) {
@@ -198,7 +227,7 @@ export function eyeProgram(d: EyeDeps): JobProgram {
 async function runTasks(
   d: EyeDeps,
   ctx: JobContext,
-  where: { cwd: string; g: Git; tmpDir: string; trash: string },
+  where: { cwd: string; g: Git; tmpDir: string; trash: string; projectPath: string },
 ) {
   for (;;) {
     const job = d.db.select().from(jobs).where(eq(jobs.id, ctx.jobId)).get();
@@ -234,6 +263,7 @@ async function runTasks(
       waived: job.waived as GatedAction[],
       unsandboxed: job.unsandboxed,
       skillBody: d.skills.version(job.skillId, job.skillVersion)?.body ?? "",
+      inputs: renderInputs(job.inputs as JobInput[], where.projectPath),
     };
     const outcome = await ctx.step(
       `task:${task.id}:attempt:${attemptNo}`,
@@ -295,6 +325,116 @@ async function runTasks(
         return;
     }
   }
+}
+
+export const ENOUGH = "Enough, start";
+const INTERVIEW_DONE = "What I want (interview)";
+
+async function interview(
+  d: EyeDeps,
+  ctx: JobContext,
+  job: { id: string; goal: string },
+  skillBody: string,
+  cwd: string,
+) {
+  if (d.silk.current(job.id).some((e) => e.kind === "decision" && e.title === INTERVIEW_DONE))
+    return;
+  if (ctx.state() === "draft") ctx.setState("interviewing");
+  for (let n = 1; ; n++) {
+    const answers = d.silk
+      .current(job.id)
+      .filter((e) => e.kind === "interview-answer")
+      .map((e) => e.body);
+    const round = await ctx.step(`interview:${n}`, { n }, () =>
+      d.brain.interviewRound({
+        jobId: job.id,
+        cwd,
+        goal: job.goal,
+        skill: skillExcerpt(skillBody, "interview ask questions owner", 5000),
+        answers,
+      }),
+    );
+    if (round.done || n > 12) {
+      await ctx.step(`interview:${n}:close`, { n }, async () => {
+        d.silk.add({
+          jobId: job.id,
+          kind: "decision",
+          title: INTERVIEW_DONE,
+          body: round.playback || "The interview found nothing more to ask.",
+          authoredBy: "eye",
+        });
+        for (const point of round.open)
+          d.silk.add({
+            jobId: job.id,
+            kind: "issue",
+            title: `Open question: ${point.slice(0, 80)}`,
+            body: point,
+            authoredBy: "eye",
+          });
+      });
+      return;
+    }
+    const itemId = await ctx.step(`interview:${n}:ask`, { n }, async () =>
+      d.inbox.open({
+        kind: "question",
+        jobId: job.id,
+        raisedBy: "eye",
+        title: `Interview, round ${n}`,
+        detail: renderRound(round),
+        options: [ENOUGH],
+        defaultOption: null,
+      }),
+    );
+    const item = d.inbox.get(itemId);
+    if (item?.state === "open")
+      throw new AwaitingOwner(itemId, `Waiting for my answers to interview round ${n}.`);
+    const answer = item?.answer ?? "";
+    await ctx.step(`interview:${n}:answer`, { n }, async () => {
+      const qs = round.questions.map((q, i) => `${i + 1}. ${q.question}`).join("\n");
+      // My words, verbatim (Skills → The interview, step 4).
+      d.silk.add({
+        jobId: job.id,
+        kind: "interview-answer",
+        title: `Interview, round ${n}`,
+        body: `${qs}\n\n**My answer:** ${answer}`,
+        authoredBy: "owner",
+      });
+      if (answer === ENOUGH) {
+        for (const q of round.questions) {
+          d.silk.add({
+            jobId: job.id,
+            kind: "issue",
+            title: `Open question: ${q.question.slice(0, 80)}`,
+            body: `${q.question} (left open when I ended the interview)`,
+            authoredBy: "eye",
+          });
+        }
+        d.silk.add({
+          jobId: job.id,
+          kind: "decision",
+          title: INTERVIEW_DONE,
+          body: round.playback || "I ended the interview early.",
+          authoredBy: "eye",
+        });
+      }
+    });
+    if (answer === ENOUGH) return;
+  }
+}
+
+function renderRound(round: InterviewRound): string {
+  return [
+    round.playback ? `**What I understood**\n\n${round.playback}` : "",
+    `**Questions**\n\n${round.questions
+      .map(
+        (q, i) =>
+          `${i + 1}. ${q.question}${q.options.length ? `\n   Options: ${q.options.join(" · ")}${q.recommended ? ` (recommended: ${q.recommended})` : ""}` : ""}`,
+      )
+      .join("\n")}`,
+    `Answer in your own words, numbered; or choose "${ENOUGH}" to stop here.`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 /** Supervised: I approve the plan before work starts, and each replan (Approvals → Autonomy levels). */

@@ -16,6 +16,7 @@ export class Secrets {
   #store: SecretStore | undefined;
   #status: SecretStoreStatus = { kind: "none", available: false, detail: "Not checked yet." };
   readonly #file: string;
+  readonly #known = new Set<string>();
 
   constructor(
     dataDir: string,
@@ -54,12 +55,20 @@ export class Secrets {
   }
 
   async get(name: string): Promise<string | undefined> {
-    return this.#store?.get(name);
+    const v = await this.#store?.get(name);
+    if (v) this.#known.add(v);
+    return v;
   }
 
   async set(name: string, value: string): Promise<void> {
     if (!this.#store) throw new SecretStoreUnavailable(this.#status.detail);
     await this.#store.set(name, value);
+    this.#known.add(value);
+  }
+
+  /** Values handled since start, so logs and events can be scrubbed of them (BR-13). */
+  known(): Iterable<string> {
+    return this.#known;
   }
 
   async delete(name: string): Promise<boolean> {

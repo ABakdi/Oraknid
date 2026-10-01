@@ -310,8 +310,13 @@ export const events = sqliteTable(
     topic: text("topic").notNull(),
     jobId: text("job_id"),
     payload: json<unknown>("payload"),
+    actor: text("actor").notNull().default("oraknid"),
   },
-  (t) => [index("events_topic_seq").on(t.topic, t.seq), index("events_job").on(t.jobId)],
+  (t) => [
+    index("events_topic_seq").on(t.topic, t.seq),
+    index("events_job").on(t.jobId),
+    index("events_type").on(t.type),
+  ],
 );
 
 export const devices = sqliteTable("devices", {

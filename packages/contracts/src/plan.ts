@@ -27,3 +27,24 @@ export const WebPlan = z.object({
   jobVerify: z.array(z.string().min(1)),
 });
 export type WebPlan = z.infer<typeof WebPlan>;
+
+/** One interview round (Skills → The interview): a playback of what is understood, then a few questions. */
+export const InterviewRound = z.object({
+  /** True when every point the method asks about is answered or recorded as "decide later". */
+  done: z.boolean(),
+  /** What is understood so far, played back for me to confirm. */
+  playback: z.string(),
+  questions: z
+    .array(
+      z.object({
+        question: z.string().min(1),
+        /** Suggested answers; the first may be marked recommended. */
+        options: z.array(z.string()).max(5),
+        recommended: z.string().nullable(),
+      }),
+    )
+    .max(6),
+  /** Points still open when done: recorded as open questions. */
+  open: z.array(z.string()),
+});
+export type InterviewRound = z.infer<typeof InterviewRound>;

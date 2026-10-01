@@ -84,6 +84,8 @@ export interface AttemptJob {
   waived: GatedAction[];
   unsandboxed: boolean;
   skillBody: string;
+  /** The job's inputs, rendered for context packs. */
+  inputs: string;
 }
 
 export type AttemptOutcome =
@@ -301,6 +303,7 @@ export async function runAttempt(
       skill: skillExcerpt(job.skillBody, `${task.title} ${task.kind}`),
       entries: d.silk.all(job.id),
       digest: "",
+      inputs: job.inputs,
       capTokens: Math.floor(window * 0.15),
     }).text;
   };

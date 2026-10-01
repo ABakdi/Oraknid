@@ -67,6 +67,7 @@ export class SilkStore {
         topic: `job:${e.jobId}`,
         jobId: e.jobId,
         payload: { id: row.id, kind: row.kind, title: row.title, supersedes: row.supersedes },
+        actor: typeof e.authoredBy === "string" ? e.authoredBy : `leg:${e.authoredBy.legId}`,
       });
     });
     this.writeMirror(e.jobId);

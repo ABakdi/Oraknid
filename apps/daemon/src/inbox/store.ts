@@ -100,6 +100,7 @@ export class InboxStore {
         topic: "inbox",
         jobId: item.jobId,
         payload: { id, answer },
+        actor: "owner",
       });
     });
   }

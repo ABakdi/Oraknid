@@ -17,12 +17,33 @@ export class EventBus {
   /** Events published inside `atomically`, announced after it commits. */
   #pending: Event[] | null = null;
 
+  /** Scrubs secrets from every payload before it is stored (BR-13). */
+  scrub: (text: string) => string = (t) => t;
+
   constructor(db: Db, now: () => number = Date.now) {
     this.#db = db;
     this.#now = now;
   }
 
+  #closed = false;
+
+  /** After shutdown nothing can be stored: late publishers (a notification finishing) are dropped. */
+  close() {
+    this.#closed = true;
+  }
+
   publish(event: NewEvent): Event {
+    if (this.#closed) {
+      return {
+        seq: 0,
+        at: this.#now(),
+        type: event.type,
+        topic: event.topic,
+        jobId: event.jobId,
+        payload: event.payload ?? null,
+        actor: event.actor ?? "oraknid",
+      };
+    }
     const row = this.#db
       .insert(events)
       .values({
@@ -30,7 +51,11 @@ export class EventBus {
         type: event.type,
         topic: event.topic,
         jobId: event.jobId,
-        payload: event.payload ?? null,
+        payload:
+          event.payload === undefined || event.payload === null
+            ? null
+            : JSON.parse(this.scrub(JSON.stringify(event.payload))),
+        actor: event.actor ?? "oraknid",
       })
       .returning()
       .get();
@@ -121,5 +146,6 @@ function toEvent(row: typeof events.$inferSelect): Event {
     topic: row.topic,
     jobId: row.jobId,
     payload: row.payload ?? null,
+    actor: row.actor,
   };
 }

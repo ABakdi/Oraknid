@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import type { LegKind } from "@oraknid/contracts";
+import { scrubSecrets } from "@oraknid/core";
 import { createClaudeCodeAdapter } from "@oraknid/leg-claude-code";
 import { createOpenAICompatibleAdapter } from "@oraknid/leg-openai-compatible";
 import type { LegAdapter } from "@oraknid/leg-sdk";
@@ -11,6 +12,7 @@ import { eq } from "drizzle-orm";
 import express from "express";
 import { z } from "zod";
 import { router } from "./api/router.ts";
+import { startAuditExport } from "./audit/audit.ts";
 import { closeDatabase, openDatabase } from "./db/open.ts";
 import { jobs as jobsTable } from "./db/schema.ts";
 import { SideEffects } from "./engine/effects.ts";
@@ -85,9 +87,11 @@ export async function startDaemon(options: DaemonOptions) {
 
   mkdirSync(paths.dataDir, { recursive: true });
   const db = await openDatabase({ file: options.dbFile ?? paths.db, backupsDir: paths.backups });
-  const bus = new EventBus(db, now);
-
   const secrets = new Secrets(paths.dataDir, os.keychain);
+  const bus = new EventBus(db, now);
+  // Secrets never reach the event log (BR-13).
+  bus.scrub = (text) => scrubSecrets(text, secrets.known());
+
   await secrets.init();
   const adapters: Partial<Record<LegKind, LegAdapter>> = options.adapters ?? {
     "claude-code": createClaudeCodeAdapter(),
@@ -103,6 +107,7 @@ export async function startDaemon(options: DaemonOptions) {
     legsDir: paths.legs,
     logsDir: join(paths.logs, "jobs"),
     now,
+    scrub: (text) => scrubSecrets(text, secrets.known()),
   });
 
   // Recovery comes first, before the API answers anyone (Durability spec).
@@ -228,6 +233,7 @@ export async function startDaemon(options: DaemonOptions) {
     uiUrl: () => url,
     ...(options.emailDelayMs ? { emailDelayMs: options.emailDelayMs } : {}),
   });
+  const audit = startAuditExport(db, join(paths.logs, "audit"));
   const budgets = startBudgetWatch({
     db,
     bus,
@@ -340,6 +346,7 @@ export async function startDaemon(options: DaemonOptions) {
       clearInterval(blockedTimer);
       budgets.stop();
       notifyRouter.stop();
+      audit.stop();
       await supervisor.killAll();
       await inhibit.stop();
       await live.close();
@@ -348,6 +355,7 @@ export async function startDaemon(options: DaemonOptions) {
         // Idle keep-alive connections would otherwise hold close() open.
         server.closeAllConnections();
       });
+      bus.close();
       closeDatabase(db);
       if (options.writeRuntimeFile) rmSync(paths.runtimeFile, { force: true });
     })();

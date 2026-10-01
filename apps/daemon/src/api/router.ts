@@ -3,6 +3,7 @@ import {
   ChannelTestResult,
   DoctorCheck,
   EmailSettings,
+  Event,
   InboxItem,
   JobView,
   LegView,
@@ -29,6 +30,7 @@ import {
 import { ORPCError, os } from "@orpc/server";
 import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
+import { AuditQuery, searchAudit } from "../audit/audit.ts";
 import { jobs as jobsTable, taskEdges, tasks as tasksTable } from "../db/schema.ts";
 import { runDoctor } from "../doctor.ts";
 import type { JobStore } from "../engine/jobs.ts";
@@ -82,6 +84,28 @@ const GatedActionSchema = z.enum([
 
 /** Errors carry a sentence for the UI (BR-17). */
 const userError = (message: string) => new ORPCError("BAD_REQUEST", { message });
+
+const SkillSummary = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  source: z.enum(["built-in", "uploaded"]),
+  version: z.number(),
+  interview: z.boolean(),
+  requiredTools: z.array(z.string()),
+  verify: z.array(z.string()),
+});
+const SkillFull = SkillSummary.extend({ body: z.string() });
+const summary = (s: {
+  id: string;
+  name: string;
+  description: string;
+  source: string;
+  version: number;
+  interview: boolean;
+  requiredTools: string[];
+  verify: string[];
+}) => SkillSummary.parse(s);
 
 function jobView(c: ApiContext, id: string): JobView {
   const job = c.jobs.require(id);
@@ -164,6 +188,61 @@ export const router = {
       ),
     list: base.output(z.array(ProjectView)).handler(({ context: c }) => c.projects.list()),
   },
+  skills: {
+    list: base
+      .output(z.array(SkillSummary))
+      .handler(({ context: c }) => c.skills.list().map(summary)),
+    get: base
+      .input(z.object({ id: z.string(), version: z.number().int().positive().optional() }))
+      .output(SkillFull)
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          const s = input.version
+            ? c.skills.version(input.id, input.version)
+            : c.skills.latest(input.id);
+          if (!s) throw new Error(`No skill ${input.id}.`);
+          return { ...summary(s), body: s.body };
+        }),
+      ),
+    /** Never refused for bad front matter: what was ignored is said (Skills → Format). */
+    upload: base
+      .input(z.object({ name: z.string().min(1), markdown: z.string().min(1) }))
+      .output(z.object({ skill: SkillSummary, ignored: z.array(z.string()) }))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          const r = c.skills.upload(input.markdown, input.name);
+          return { skill: summary(r.skill), ignored: r.ignored };
+        }),
+      ),
+    edit: base
+      .input(z.object({ id: z.string(), markdown: z.string().min(1) }))
+      .output(z.object({ skill: SkillSummary, ignored: z.array(z.string()) }))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          const r = c.skills.edit(input.id, input.markdown);
+          return { skill: summary(r.skill), ignored: r.ignored };
+        }),
+      ),
+    remove: base.input(z.object({ id: z.string() })).handler(({ context: c, input }) =>
+      guard(() =>
+        c.skills.remove(input.id, (id) =>
+          c.jobs.db
+            .select({ title: jobsTable.title, state: jobsTable.state })
+            .from(jobsTable)
+            .where(eq(jobsTable.skillId, id))
+            .all()
+            .filter((j) => j.state !== "completed" && j.state !== "cancelled")
+            .map((j) => j.title),
+        ),
+      ),
+    ),
+  },
+  audit: {
+    search: base
+      .input(AuditQuery)
+      .output(z.array(Event))
+      .handler(({ context: c, input }) => searchAudit(c.jobs.db, input)),
+  },
   policies: {
     get: base.output(GlobalPolicy).handler(({ context: c }) => readGlobalPolicy(c.jobs.db)),
     update: base
@@ -218,6 +297,7 @@ export const router = {
             topic: `job:${input.id}`,
             jobId: input.id,
             payload: { autonomy: input.autonomy },
+            actor: "owner",
           });
         }),
       ),
@@ -237,6 +317,7 @@ export const router = {
             topic: `job:${input.id}`,
             jobId: input.id,
             payload: { waived: input.waived },
+            actor: "owner",
           });
         }),
       ),
@@ -256,6 +337,7 @@ export const router = {
             topic: `job:${input.id}`,
             jobId: input.id,
             payload: { level: "job", allow: input.allow, deny: input.deny },
+            actor: "owner",
           });
         }),
       ),

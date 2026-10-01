@@ -14,8 +14,12 @@ export const Event = z.object({
   topic: z.string().min(1),
   jobId: Id.nullable(),
   payload: z.unknown(),
+  /** Who or what caused it (Security → Audit log): "owner", "eye", "leg:<id>", "oraknid". */
+  actor: z.string(),
 });
 export type Event = z.infer<typeof Event>;
 
-export const NewEvent = Event.omit({ seq: true, at: true });
+export const NewEvent = Event.omit({ seq: true, at: true, actor: true }).extend({
+  actor: z.string().optional(),
+});
 export type NewEvent = z.infer<typeof NewEvent>;

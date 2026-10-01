@@ -195,3 +195,50 @@ describe("verifier (BR-1)", () => {
     expect(a).not.toBe(c);
   });
 });
+
+describe("skills library over the API", () => {
+  it("lists, uploads, edits and deletes my skills; built-ins are read-only", async () => {
+    const { startDaemon } = await import("../daemon.ts");
+    const { resolvePaths } = await import("../paths.ts");
+    const { fakeOs } = await import("../testing/fake-os.ts");
+    const { createORPCClient } = await import("@orpc/client");
+    const { RPCLink } = await import("@orpc/client/fetch");
+    const dir = folder();
+    const d = await startDaemon({
+      paths: resolvePaths({ ORAKNID_DATA_DIR: dir, ORAKNID_CONFIG_DIR: dir }),
+      port: 0,
+      dbFile: ":memory:",
+      os: fakeOs().os,
+      adapters: {},
+    });
+    try {
+      // biome-ignore lint/suspicious/noExplicitAny: a test client
+      const api: any = createORPCClient(new RPCLink({ url: `${d.url}/api` }));
+      expect((await api.skills.list()).map((s: { name: string }) => s.name)).toEqual([
+        "canon-driven-development",
+      ]);
+      await expect(api.skills.edit({ id: BUILT_IN_DEFAULT, markdown: "x" })).rejects.toThrow(
+        "Built-in skills are read-only",
+      );
+      await expect(api.skills.remove({ id: BUILT_IN_DEFAULT })).rejects.toThrow(
+        "Built-in skills cannot be deleted.",
+      );
+      const up = await api.skills.upload({
+        name: "emails",
+        markdown: "---\nname: triage\ncolour: red\n---\nRead, classify.",
+      });
+      expect(up.skill).toMatchObject({ name: "triage", version: 1, source: "uploaded" });
+      expect(up.ignored).toEqual(['"colour" is not a field Oraknid knows; it was ignored.']);
+      const edited = await api.skills.edit({
+        id: up.skill.id,
+        markdown: "---\nname: triage\n---\nRead, classify, draft.",
+      });
+      expect(edited.skill.version).toBe(2);
+      expect((await api.skills.get({ id: up.skill.id, version: 1 })).body).toBe("Read, classify.");
+      await api.skills.remove({ id: up.skill.id });
+      expect(await api.skills.list()).toHaveLength(1);
+    } finally {
+      await d.close();
+    }
+  });
+});

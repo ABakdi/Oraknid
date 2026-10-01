@@ -28,6 +28,7 @@ export function writeGlobalPolicy(db: Db, bus: EventBus, policy: GlobalPolicy) {
     topic: "overview",
     jobId: null,
     payload: { level: "global", ...policy },
+    actor: "owner",
   });
 }
 
@@ -48,6 +49,7 @@ export function policyFor(db: Db, jobId: string, worktree: string): PolicyContex
     autonomy: (job?.autonomy ?? "supervised") as Autonomy,
     waived: new Set((job?.waived ?? []) as GatedAction[]),
     rules,
+    untrusted: ((job?.inputs ?? []) as { untrusted?: boolean }[]).some((i) => i.untrusted),
   };
 }
 
@@ -72,5 +74,11 @@ export function approveAllLikeThis(
       .run();
   }
   // Every waiver is audited (Approvals → Overrides).
-  bus.publish({ type: "policy.waived", topic: `job:${jobId}`, jobId, payload: what });
+  bus.publish({
+    type: "policy.waived",
+    topic: `job:${jobId}`,
+    jobId,
+    payload: what,
+    actor: "owner",
+  });
 }
