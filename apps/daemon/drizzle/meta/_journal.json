@@ -29,6 +29,13 @@
       "when": 1790836203389,
       "tag": "0003_legs",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1790836721292,
+      "tag": "0004_silk_mirror",
+      "breakpoints": true
     }
   ]
 }

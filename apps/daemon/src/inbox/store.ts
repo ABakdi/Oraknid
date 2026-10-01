@@ -1,5 +1,5 @@
-import type { Actor } from "@oraknid/contracts";
-import { eq } from "drizzle-orm";
+import type { Actor, InboxItem } from "@oraknid/contracts";
+import { desc, eq } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
 import { inboxItems } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
@@ -54,6 +54,13 @@ export class InboxStore {
       });
     });
     return id;
+  }
+
+  list(state?: string): InboxItem[] {
+    const q = this.db.select().from(inboxItems);
+    return (state ? q.where(eq(inboxItems.state, state)) : q)
+      .orderBy(desc(inboxItems.id))
+      .all() as InboxItem[];
   }
 
   get(id: string) {

@@ -10,6 +10,7 @@ import { RPCHandler } from "@orpc/server/node";
 import express from "express";
 import { router } from "./api/router.ts";
 import { closeDatabase, openDatabase } from "./db/open.ts";
+import { jobs as jobsTable } from "./db/schema.ts";
 import { SideEffects } from "./engine/effects.ts";
 import { JobStore } from "./engine/jobs.ts";
 import { StepJournal } from "./engine/journal.ts";
@@ -28,6 +29,7 @@ import { countActiveJobs, createInhibitController } from "./os/inhibit-controlle
 import { startMetricsLoop } from "./os/metrics-loop.ts";
 import { Secrets } from "./os/secrets.ts";
 import { DEFAULT_HOST, DEFAULT_PORT, type Paths } from "./paths.ts";
+import { SilkStore } from "./silk/store.ts";
 import { VERSION } from "./version.ts";
 
 export interface DaemonOptions {
@@ -97,6 +99,17 @@ export async function startDaemon(options: DaemonOptions) {
   const journal = new StepJournal(db, now);
   const inbox = new InboxStore(db, bus, now);
   const effects = new SideEffects(db, bus, inbox, now);
+  const silk = new SilkStore(db, bus, inbox, now);
+  // My answer to "import my edits?" goes back to Silk.
+  bus.subscribe((e) => {
+    if (e.type !== "inbox.answered") return;
+    const { id, answer } = e.payload as { id: string; answer: string };
+    try {
+      silk.answerImport(id, answer);
+    } catch (error) {
+      console.error("silk import failed", error);
+    }
+  });
   const runner = new JobRunner({
     jobs: jobsStore,
     journal,
@@ -164,6 +177,18 @@ export async function startDaemon(options: DaemonOptions) {
     if (e.type === "job.state") void inhibit.reconcile();
   });
 
+  // Hand edits to the mirror are noticed within 30 s.
+  const mirrorTimer = setInterval(() => {
+    for (const { id } of db.select({ id: jobsTable.id }).from(jobsTable).all()) {
+      try {
+        silk.checkMirror(id);
+      } catch (error) {
+        console.error("silk mirror check failed", error);
+      }
+    }
+  }, 30_000);
+  mirrorTimer.unref();
+
   const health = startHealthChecks({
     registry,
     adapters,
@@ -192,6 +217,8 @@ export async function startDaemon(options: DaemonOptions) {
         runner,
         registry,
         health,
+        silk,
+        inbox,
       },
     });
     if (!matched) next();
@@ -236,6 +263,7 @@ export async function startDaemon(options: DaemonOptions) {
       // Jobs reach a safe point and keep their state for the next start.
       await runner.shutdown();
       health.stop();
+      clearInterval(mirrorTimer);
       await supervisor.killAll();
       await inhibit.stop();
       await live.close();
@@ -266,6 +294,7 @@ export async function startDaemon(options: DaemonOptions) {
     registry,
     supervisor,
     health,
+    silk,
     inbox,
     effects,
     recovery,

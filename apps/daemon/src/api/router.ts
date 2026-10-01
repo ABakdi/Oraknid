@@ -2,6 +2,7 @@ import {
   ChannelTestResult,
   DoctorCheck,
   EmailSettings,
+  InboxItem,
   LegView,
   MetricsSample,
   NewLeg,
@@ -9,6 +10,8 @@ import {
   NotificationSettings,
   ProfileOverrides,
   PushSubscriptionInput,
+  SilkEntry,
+  SilkKind,
   SystemStatus,
 } from "@oraknid/contracts";
 import {
@@ -23,10 +26,12 @@ import { runDoctor } from "../doctor.ts";
 import type { JobStore } from "../engine/jobs.ts";
 import type { JobRunner } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
+import type { InboxStore } from "../inbox/store.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { Notifications } from "../notify/notifications.ts";
 import type { Secrets } from "../os/secrets.ts";
 import type { Paths } from "../paths.ts";
+import type { SilkStore } from "../silk/store.ts";
 import { VERSION } from "../version.ts";
 
 export interface ApiContext {
@@ -44,6 +49,8 @@ export interface ApiContext {
   runner: JobRunner;
   registry: LegRegistry;
   health: { check(id: string): Promise<void> };
+  silk: SilkStore;
+  inbox: InboxStore;
 }
 
 const base = os.$context<ApiContext>();
@@ -177,6 +184,63 @@ export const router = {
       .handler(({ context: c, input }) =>
         guard(() => c.registry.setOverrides(input.modelId, input.overrides)),
       ),
+  },
+  silk: {
+    list: base
+      .input(z.object({ jobId: z.string(), includeSuperseded: z.boolean().default(false) }))
+      .output(z.array(SilkEntry))
+      .handler(({ context: c, input }) =>
+        input.includeSuperseded ? c.silk.all(input.jobId) : c.silk.current(input.jobId),
+      ),
+    /** I add an entry: marked mine, never superseded automatically. */
+    add: base
+      .input(
+        z.object({
+          jobId: z.string(),
+          taskId: z.string().nullable().default(null),
+          kind: SilkKind,
+          title: z.string(),
+          body: z.string(),
+        }),
+      )
+      .output(SilkEntry)
+      .handler(({ context: c, input }) =>
+        guard(() => c.silk.add({ ...input, authoredBy: "owner" })),
+      ),
+    /** I edit an entry: a new entry of mine supersedes it. */
+    edit: base
+      .input(z.object({ id: z.string(), title: z.string(), body: z.string() }))
+      .output(SilkEntry)
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          const old = c.silk.get(input.id);
+          if (!old) throw new Error(`No Silk entry ${input.id}.`);
+          return c.silk.add({
+            jobId: old.jobId,
+            taskId: old.taskId,
+            kind: old.kind,
+            title: input.title,
+            body: input.body,
+            authoredBy: "owner",
+            supersedes: old.id,
+          });
+        }),
+      ),
+    /** Look at the mirror now for hand edits, instead of within 30 s. */
+    importMirror: base
+      .input(z.object({ jobId: z.string() }))
+      .output(z.array(z.string()))
+      .handler(({ context: c, input }) => c.silk.checkMirror(input.jobId)),
+  },
+  inbox: {
+    // Routing, notifications and the full inbox come in M1.7.
+    list: base
+      .input(z.object({ state: z.enum(["open", "answered", "expired", "withdrawn"]).optional() }))
+      .output(z.array(InboxItem))
+      .handler(({ context: c, input }) => c.inbox.list(input.state)),
+    answer: base
+      .input(z.object({ id: z.string(), answer: z.string().min(1) }))
+      .handler(({ context: c, input }) => guard(() => c.inbox.answer(input.id, input.answer))),
   },
   metrics: {
     recent: base

@@ -3,7 +3,7 @@ import type { Db } from "../db/open.ts";
 import { jobs, projects, skills } from "../db/schema.ts";
 
 /** A project, a skill and a job in `state`, for tests. Returns the job id. */
-export function seedJob(db: Db, state = "draft"): string {
+export function seedJob(db: Db, state = "draft", workspacePath?: string): string {
   const projectId = ulid();
   const skillId = ulid();
   const jobId = ulid();
@@ -11,7 +11,7 @@ export function seedJob(db: Db, state = "draft"): string {
     .values({
       id: projectId,
       name: "p",
-      workspacePath: `/tmp/p-${projectId}`,
+      workspacePath: workspacePath ?? `/tmp/p-${projectId}`,
       isGitRepo: true,
       releaseBranch: "main",
       workBranch: "dev",

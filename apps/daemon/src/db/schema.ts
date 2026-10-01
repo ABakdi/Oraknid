@@ -304,3 +304,16 @@ export const pushSubscriptions = sqliteTable("push_subscriptions", {
   deviceId: text("device_id"),
   createdAt: integer("created_at").notNull(),
 });
+
+/** What Oraknid last wrote to each mirror file, to notice my hand edits (ADR-007). */
+export const silkMirror = sqliteTable(
+  "silk_mirror",
+  {
+    jobId: text("job_id").notNull(),
+    file: text("file").notNull(),
+    hash: text("hash").notNull(),
+    /** The open "import my edits?" question, if one was asked. */
+    pendingItemId: text("pending_item_id"),
+  },
+  (t) => [primaryKey({ columns: [t.jobId, t.file] })],
+);
