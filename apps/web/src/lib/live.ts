@@ -138,6 +138,15 @@ export function useLive<T>(
     () => live.epoch,
   );
 
+  // Another job, project or filter: what was shown belongs to the old one (Audit 1 → Q1-22).
+  const depsKey = JSON.stringify(o.deps ?? []);
+  const [shownFor, setShownFor] = useState(depsKey);
+  if (shownFor !== depsKey) {
+    setShownFor(depsKey);
+    setData(undefined);
+    setLoading(true);
+  }
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: reloads on the caller's deps, a tick, or a snapshot
   useEffect(() => {
     let cancelled = false;

@@ -165,7 +165,9 @@ function SessionLog({
               ? t("Live")
               : session.endReason === "closed" || session.endReason === "completed"
                 ? t("Finished")
-                : (session.endReason ?? t("Ended"))}
+                : session.endReason === "stopped"
+                  ? t("Stopped")
+                  : (session.endReason ?? t("Ended"))}
           </Badge>
           <span className="truncate">
             {session.legName} · {session.model}

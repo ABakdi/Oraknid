@@ -59,7 +59,14 @@ async function act(fn: () => Promise<unknown>, done?: string) {
 
 export function JobPage({ id }: { id: string }) {
   const topic = `job:${id}`;
-  const job = useLive(() => api.jobs.get({ id }), { topics: [topic], deps: [id] });
+  // Reloaded on what changes the job's view, not on every streamed line (Audit 1 → Q1-06).
+  const job = useLive(() => api.jobs.get({ id }), {
+    topics: [topic],
+    deps: [id],
+    refreshOn: (e) =>
+      /^(job|task|web|budget|policy\.updated|policy\.waived|eye\.replied)/.test(e.type) &&
+      e.type !== "task.waiting",
+  });
   const legs = useLive(() => api.legs.list(), {
     topics: ["overview"],
     refreshOn: (e) => e.type.startsWith("leg."),
@@ -893,8 +900,8 @@ function Silk({ jobId }: { jobId: string }) {
 }
 
 function JobInbox({ jobId }: { jobId: string }) {
-  const items = useLive(() => api.inbox.list({}), { topics: ["inbox"] });
-  const mine = (items.data ?? []).filter((i) => i.jobId === jobId);
+  const items = useLive(() => api.inbox.list({ jobId }), { topics: ["inbox"], deps: [jobId] });
+  const mine = items.data ?? [];
   return mine.length === 0 ? (
     <div className="p-4 text-sm text-muted-foreground">{t("Nothing for this job.")}</div>
   ) : (
@@ -910,6 +917,7 @@ function Budget({ job }: { job: JobView }) {
   const s = useLive(() => api.stats.summary({ jobId: job.id }), {
     topics: [`job:${job.id}`],
     refreshOn: (e) => e.type === "session.usage",
+    deps: [job.id],
   });
   const used = s.data?.tokens ?? 0;
   const elapsed = job.startedAt ? (job.finishedAt ?? Date.now()) - job.startedAt : 0;
@@ -1074,6 +1082,7 @@ function Stats({ jobId }: { jobId: string }) {
   const s = useLive(() => api.stats.summary({ jobId }), {
     topics: [`job:${jobId}`],
     refreshOn: (e) => e.type === "session.ended" || e.type === "task.state",
+    deps: [jobId],
   });
   const buckets = useLive(() => api.stats.tokens({ jobId, since: 0, bucketMs: 15 * 60_000 }), {
     topics: [`job:${jobId}`],

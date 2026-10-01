@@ -416,6 +416,8 @@ describe("The Eye, end to end", () => {
     expect(paused).toMatchObject({ state: "paused", pauseReason: "Paused by me." });
     // Seen live: nothing runs a paused task, so it must not say "running".
     expect(paused.tasks[0]?.state).toBe("ready");
+    // …and its session says it was stopped, not that it finished (Audit 1 → U1-03).
+    expect((await api.sessions.list({ jobId: id })).map((x) => x.endReason)).toContain("stopped");
     const handoff = (await api.silk.list({ jobId: id })).find((e) => e.kind === "handoff");
     expect(handoff?.body).toContain("## Goal of the task");
     expect(handoff?.body).toContain("hello.sh");

@@ -173,7 +173,13 @@ const controls = (c: ApiContext) => ({
 
 function jobView(c: ApiContext, id: string): JobView {
   const job = c.jobs.require(id);
-  const edges = c.jobs.db.select().from(taskEdges).all();
+  // Only this job's edges (Audit 1 → Q1-07).
+  const edges = c.jobs.db
+    .select({ taskId: taskEdges.taskId, dependsOn: taskEdges.dependsOn })
+    .from(taskEdges)
+    .innerJoin(tasksTable, eq(tasksTable.id, taskEdges.taskId))
+    .where(eq(tasksTable.jobId, id))
+    .all();
   const tasks = c.jobs.db
     .select()
     .from(tasksTable)

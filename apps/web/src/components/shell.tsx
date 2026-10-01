@@ -138,12 +138,12 @@ export function Shell({ children }: { children: ReactNode }) {
         >
           <Search className="size-4" />
         </Button>
-        <Link href="/inbox">
-          <Button variant="ghost" size="sm" className="gap-1.5" aria-label={t("Inbox")}>
+        <Button asChild variant="ghost" size="sm" className="gap-1.5" aria-label={t("Inbox")}>
+          <Link href="/inbox">
             <Inbox className="size-4" />
             {open ? <Badge className="h-5 min-w-5 justify-center px-1">{open}</Badge> : null}
-          </Button>
-        </Link>
+          </Link>
+        </Button>
         <Button
           variant="ghost"
           size="icon"
@@ -152,12 +152,12 @@ export function Shell({ children }: { children: ReactNode }) {
         >
           {resolved === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
         </Button>
-        <Link href="/jobs/new">
-          <Button size="sm" className="hidden gap-1 sm:flex">
+        <Button asChild size="sm" className="hidden gap-1 sm:flex">
+          <Link href="/jobs/new">
             <Plus className="size-4" />
             {t("New job")}
-          </Button>
-        </Link>
+          </Link>
+        </Button>
       </header>
 
       <div className="flex min-h-0 flex-1">
@@ -247,7 +247,11 @@ export function Shell({ children }: { children: ReactNode }) {
 /** ⌘K: jump to anything, run any control (Web-UI → Layout). */
 function Palette({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const [, go] = useLocation();
-  const jobs = useLive(() => api.jobs.list(), { topics: ["overview"], deps: [open] });
+  // Loaded when the palette opens, not on every overview event (Audit 1 → Q1-06).
+  const jobs = useLive(() => (open ? api.jobs.list() : Promise.resolve([])), {
+    topics: [],
+    deps: [open],
+  });
   const run = (fn: () => unknown) => {
     onOpenChange(false);
     fn();

@@ -513,7 +513,12 @@ function taskRows(db: Db, jobId: string) {
     .where(eq(tasks.jobId, jobId))
     .orderBy(asc(tasks.position))
     .all();
-  const edges = db.select().from(taskEdges).all();
+  const edges = db
+    .select({ taskId: taskEdges.taskId, dependsOn: taskEdges.dependsOn })
+    .from(taskEdges)
+    .innerJoin(tasks, eq(tasks.id, taskEdges.taskId))
+    .where(eq(tasks.jobId, jobId))
+    .all();
   return rows.map((t) => ({
     ...t,
     dependsOn: edges.filter((e) => e.taskId === t.id).map((e) => e.dependsOn),

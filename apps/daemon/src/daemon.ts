@@ -24,9 +24,11 @@ import { StepJournal } from "./engine/journal.ts";
 import { recover } from "./engine/recovery.ts";
 import { type JobProgram, JobRunner } from "./engine/runner.ts";
 import { EventBus } from "./events/bus.ts";
+import { forgetJob } from "./eye/attempt.ts";
 import { type EyeBrain, PoolLegBrain } from "./eye/brain.ts";
 import { startBudgetWatch } from "./eye/budgets.ts";
 import { eyeProgram } from "./eye/program.ts";
+import { forgetGuidance } from "./eye/talk.ts";
 import { isLocalRequest } from "./http/guard.ts";
 import { InboxStore } from "./inbox/store.ts";
 import { startHealthChecks } from "./legs/health.ts";
@@ -244,6 +246,7 @@ export async function startDaemon(options: DaemonOptions) {
       ...supervisor.watched(),
     ],
     onSample: (sample) => live.broadcastMetrics(sample),
+    busy: () => live.metricsWatchers() > 0 || supervisor.watched().length > 0,
     ...(options.metricsIntervalMs ? { intervalMs: options.metricsIntervalMs } : {}),
   });
 
@@ -260,8 +263,11 @@ export async function startDaemon(options: DaemonOptions) {
       void inhibit.reconcile().catch((err) => console.error("inhibitor failed", err));
     // An ended job asks me nothing any more (Audit 1 → Q1-12).
     const to = (e.payload as { to?: string } | null)?.to;
-    if (e.type === "job.state" && e.jobId && (to === "completed" || to === "cancelled"))
+    if (e.type === "job.state" && e.jobId && (to === "completed" || to === "cancelled")) {
       for (const item of inbox.list({ jobId: e.jobId, state: "open" })) inbox.withdraw(item.id);
+      forgetJob(e.jobId);
+      forgetGuidance(e.jobId);
+    }
   });
 
   const audit = startAuditExport(db, join(paths.logs, "audit"));

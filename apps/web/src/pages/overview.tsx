@@ -52,9 +52,9 @@ export function OverviewPage() {
         <Empty
           title={t("Add your first Leg")}
           action={
-            <Link href="/legs">
-              <Button>{t("Add a Leg")}</Button>
-            </Link>
+            <Button asChild>
+              <Link href="/legs">{t("Add a Leg")}</Link>
+            </Button>
           }
         >
           {t(

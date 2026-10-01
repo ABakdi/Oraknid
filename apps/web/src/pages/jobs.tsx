@@ -14,12 +14,12 @@ export function JobsPage() {
     refreshOn: (e) => e.type.startsWith("job.") || e.type === "task.state",
   });
   const add = (
-    <Link href="/jobs/new">
-      <Button className="gap-1">
+    <Button asChild className="gap-1">
+      <Link href="/jobs/new">
         <Plus className="size-4" />
         {t("New job")}
-      </Button>
-    </Link>
+      </Link>
+    </Button>
   );
   if (jobs.error) return <ErrorNote error={jobs.error} />;
   if (jobs.loading) return <Loading />;

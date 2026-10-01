@@ -23,6 +23,15 @@ export interface LiveOptions {
  * The /live WebSocket (ADR-004): sequenced events per topic, with replay
  * from `lastSeq` after a reconnect.
  */
+const RELAYED = new Set([
+  "job.state",
+  "task.state",
+  "session.started",
+  "session.ended",
+  "web.updated",
+  "job.merged",
+]);
+
 export function attachLive({ server, bus, allow, heartbeatMs = 15_000 }: LiveOptions) {
   const wss = new WebSocketServer({ noServer: true });
   /** Clients subscribed to "metrics", for the ephemeral metrics stream. */
@@ -47,7 +56,22 @@ export function attachLive({ server, bus, allow, heartbeatMs = 15_000 }: LiveOpt
     const send = (frame: ServerFrame) => {
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(frame));
     };
+    // A job's state, its tasks' and its sessions' starts and ends also tell "overview" that
+    // something changed, at most 4/s (Realtime-Transport; Audit 1 → Q1-05). A hint to reload:
+    // not stored, not replayed.
+    let relayTimer: ReturnType<typeof setTimeout> | undefined;
+    let relayLatest: Event | undefined;
+    const relay = (event: Event) => {
+      relayLatest = { ...event, topic: "overview" };
+      relayTimer ??= setTimeout(() => {
+        relayTimer = undefined;
+        if (relayLatest) send({ type: "event", event: relayLatest });
+        relayLatest = undefined;
+      }, 250);
+    };
     const deliver = (event: Event) => {
+      if (topics.has("overview") && event.topic.startsWith("job:") && RELAYED.has(event.type))
+        relay(event);
       if (!topics.has(event.topic as Topic) || sent.has(event.seq)) return;
       sent.add(event.seq);
       send({ type: "event", event });
@@ -102,6 +126,7 @@ export function attachLive({ server, bus, allow, heartbeatMs = 15_000 }: LiveOpt
     }, heartbeatMs);
 
     ws.on("close", () => {
+      clearTimeout(relayTimer);
       clearInterval(heartbeat);
       metricsClients.delete(ws);
       off();
@@ -115,6 +140,8 @@ export function attachLive({ server, bus, allow, heartbeatMs = 15_000 }: LiveOpt
         wss.close(() => resolve());
       }),
     clientCount: () => wss.clients.size,
+    /** How many clients watch metrics live now. */
+    metricsWatchers: () => metricsClients.size,
     /** Metrics are not events: sent to "metrics" subscribers, never stored. */
     broadcastMetrics(sample: MetricsSample) {
       if (metricsClients.size === 0) return;

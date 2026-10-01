@@ -34,6 +34,10 @@ const RUNNING = new Set(["interviewing", "planning", "running", "verifying", "wa
 const guidance = new Map<string, { seq: number; text: string }[]>();
 let guidanceSeq = 0;
 
+export function forgetGuidance(jobId: string) {
+  guidance.delete(jobId);
+}
+
 export function guidanceMark(): number {
   return guidanceSeq;
 }
@@ -107,7 +111,12 @@ async function handle(d: TalkDeps, jobId: string, text: string) {
     .where(eq(tasks.jobId, jobId))
     .orderBy(asc(tasks.position))
     .all();
-  const edges = d.db.select().from(taskEdges).all();
+  const edges = d.db
+    .select({ taskId: taskEdges.taskId, dependsOn: taskEdges.dependsOn })
+    .from(taskEdges)
+    .innerJoin(tasks, eq(tasks.id, taskEdges.taskId))
+    .where(eq(tasks.jobId, jobId))
+    .all();
   const state = [
     `The job is ${job.state}${job.pauseReason ? ` (${job.pauseReason})` : ""}${job.blockedReason ? ` (${job.blockedReason})` : ""}.`,
     all.length

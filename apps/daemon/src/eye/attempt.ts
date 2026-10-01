@@ -419,8 +419,11 @@ export async function runAttempt(
     });
   };
 
-  const closeSession = async (kill = false) => {
-    if (session) await (kill ? session.session.kill() : d.supervisor.close(session));
+  const closeSession = async (how: "close" | "kill" | "stop" = "close") => {
+    if (session)
+      await (how === "kill"
+        ? session.session.kill()
+        : d.supervisor.close(session, how === "stop" ? "stopped" : "closed"));
     session = null;
   };
 
@@ -522,7 +525,7 @@ export async function runAttempt(
           .run();
         throw new EndAttempt({ kind: "retry", reason: `reassigning after ${drift.code}` });
       case "kill":
-        await closeSession(true);
+        await closeSession("kill");
         rollback(ws.g, ckpt, ws.tmpDir, ws.trash);
         d.db
           .update(tasks)
@@ -751,7 +754,7 @@ export async function runAttempt(
       try {
         await open.session.interrupt();
       } catch {}
-      await closeSession();
+      await closeSession("stop");
       try {
         await handOff(false);
       } catch {}
@@ -779,6 +782,11 @@ export async function runAttempt(
     });
     throw error;
   }
+}
+
+/** A job that ended keeps nothing in memory here (Audit 1 → Q1-19). */
+export function forgetJob(jobId: string) {
+  verdicts.delete(jobId);
 }
 
 /** Per job, the classifier's "allow" for one exact command (ADR-014: cached; per command since Audit 1 → S1-07). */

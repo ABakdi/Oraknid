@@ -76,11 +76,11 @@ export class LegSupervisor {
   }
 
   /** Sessions being closed on purpose, not killed. */
-  readonly #closing = new Set<string>();
+  readonly #closing = new Map<string, string>();
 
-  /** Ends a session Oraknid is done with: recorded as "closed", not "killed" (Checkpoint 1 → F1-3). */
-  async close(s: Supervised) {
-    this.#closing.add(s.id);
+  /** Ends a session Oraknid is done with: "closed", or "stopped" by a pause or shutdown, not "killed". */
+  async close(s: Supervised, reason: "closed" | "stopped" = "closed") {
+    this.#closing.set(s.id, reason);
     await s.session.kill();
   }
 
@@ -135,7 +135,9 @@ export class LegSupervisor {
       ...session,
       kill: async () => {
         await session.kill();
-        this.#end(id, this.#closing.delete(id) ? "closed" : "killed", null);
+        const reason = this.#closing.get(id) ?? "killed";
+        this.#closing.delete(id);
+        this.#end(id, reason, null);
         this.#live.delete(id);
       },
     };

@@ -139,7 +139,10 @@ export const taskEdges = sqliteTable(
       .notNull()
       .references(() => tasks.id),
   },
-  (t) => [primaryKey({ columns: [t.taskId, t.dependsOn] })],
+  (t) => [
+    primaryKey({ columns: [t.taskId, t.dependsOn] }),
+    index("task_edges_depends").on(t.dependsOn),
+  ],
 );
 
 export const legs = sqliteTable("legs", {
@@ -233,7 +236,7 @@ export const inboxItems = sqliteTable(
     answeredByDeviceId: text("answered_by_device_id"),
     createdAt: integer("created_at").notNull(),
   },
-  (t) => [index("inbox_state").on(t.state)],
+  (t) => [index("inbox_state").on(t.state), index("inbox_job").on(t.jobId)],
 );
 
 /** One Leg's try at one task (Core-Entities → Attempt). */
@@ -251,7 +254,7 @@ export const attempts = sqliteTable(
     outcome: text("outcome", { enum: ["succeeded", "failed", "reassigned", "abandoned"] }),
     escalations: json<string[]>("escalations").notNull(),
   },
-  (t) => [index("attempts_task").on(t.taskId)],
+  (t) => [index("attempts_task").on(t.taskId), index("attempts_job").on(t.jobId)],
 );
 
 /** One process or conversation of a Leg (Core-Entities → Session). */
@@ -284,6 +287,7 @@ export const sessions = sqliteTable(
   (t) => [
     index("sessions_leg_started").on(t.legId, t.startedAt),
     index("sessions_open").on(t.endedAt),
+    index("sessions_job").on(t.jobId),
   ],
 );
 

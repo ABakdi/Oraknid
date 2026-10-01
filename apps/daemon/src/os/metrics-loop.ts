@@ -7,6 +7,12 @@ export interface MetricsLoopOptions {
   watched: () => Watched[];
   onSample: (sample: MetricsSample) => void;
   intervalMs?: number;
+  /**
+   * Someone watches live, or a Leg works: sample every interval. Otherwise
+   * every `idleIntervalMs` (Audit 1 → P1-01: idle, the samples cost more than they tell).
+   */
+  busy?: () => boolean;
+  idleIntervalMs?: number;
   /** Samples kept in memory: one hour at 1/s. */
   keep?: number;
 }
@@ -20,9 +26,17 @@ export function startMetricsLoop(options: MetricsLoopOptions) {
   const keep = options.keep ?? 3600;
   const buffer: MetricsSample[] = [];
   let running = false;
+  let last = 0;
 
-  const tick = async () => {
+  const tick = async (force = true) => {
     if (running) return; // never overlap a slow sample
+    if (
+      !force &&
+      !(options.busy?.() ?? true) &&
+      Date.now() - last < (options.idleIntervalMs ?? 15_000)
+    )
+      return;
+    last = Date.now();
     running = true;
     try {
       const sample = await options.metrics.sample(options.watched());
@@ -37,7 +51,7 @@ export function startMetricsLoop(options: MetricsLoopOptions) {
   };
 
   void tick();
-  const timer = setInterval(() => void tick(), options.intervalMs ?? 1000);
+  const timer = setInterval(() => void tick(false), options.intervalMs ?? 1000);
   timer.unref();
 
   return {

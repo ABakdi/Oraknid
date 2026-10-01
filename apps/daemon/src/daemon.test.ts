@@ -111,6 +111,25 @@ describe("live socket", () => {
     c.ws.close();
   });
 
+  it("tells overview that a job changed, coalesced, without storing it (Audit 1 → Q1-05)", async () => {
+    const c = connect();
+    await c.opened;
+    await c.until((f) => f.some((x) => x.type === "hello"));
+    c.send({ type: "subscribe", topics: ["overview"] });
+    await new Promise((r) => setTimeout(r, 50));
+    const job = "job:01J9Z3K8W2Q4V6X8Y0A1B2C3D4";
+    daemon.bus.publish({ type: "task.state", topic: job, jobId: null, payload: null });
+    daemon.bus.publish({ type: "job.state", topic: job, jobId: null, payload: null });
+    daemon.bus.publish({ type: "session.text", topic: job, jobId: null, payload: null });
+    await c.until((f) => events(f).length >= 1);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(events(c.frames).map((e) => [e.type, e.topic])).toEqual([["job.state", "overview"]]);
+    expect(daemon.bus.since(0, ["overview"], 100).filter((e) => e.type === "job.state")).toEqual(
+      [],
+    );
+    c.ws.close();
+  });
+
   it("replays what was missed after a reconnect, without duplicates", async () => {
     const first = daemon.bus.publish({ type: "x1", topic: "overview", jobId: null, payload: 1 });
     daemon.bus.publish({ type: "x2", topic: "overview", jobId: null, payload: 2 });

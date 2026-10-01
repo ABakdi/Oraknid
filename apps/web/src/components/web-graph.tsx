@@ -56,7 +56,7 @@ const TaskCard = memo(({ data }: NodeProps<TaskNode>) => {
       className={cn(
         "flex h-[76px] w-[220px] flex-col justify-between rounded-lg border bg-card px-2.5 py-2 text-left shadow-sm transition-shadow hover:shadow-md",
         running &&
-          "border-primary shadow-[0_0_0_3px_color-mix(in_oklch,var(--primary)_25%,transparent)] animate-[pulse_2s_ease-in-out_infinite]",
+          "border-primary shadow-[0_0_0_3px_color-mix(in_oklch,var(--primary)_25%,transparent)] motion-safe:animate-[pulse_2s_ease-in-out_infinite]",
         task.state === "done" && "border-success/50",
         task.state === "failed" && "border-destructive/60",
       )}
