@@ -176,6 +176,23 @@ export async function startDaemon(options: DaemonOptions) {
         ...(options.stallCheckMs ? { stallCheckMs: options.stallCheckMs } : {}),
       }),
   });
+  // Notifications start before recovery, so "Oraknid recovered" and its questions reach me (Audit 1 → D1-03).
+  let url = "";
+  const notifications = new Notifications({
+    db,
+    secrets,
+    uiUrl: () => url,
+    channels: os.channels,
+    now,
+  });
+  const notifyRouter = startNotificationRouter({
+    db,
+    bus,
+    inbox,
+    notifications,
+    uiUrl: () => url,
+    ...(options.emailDelayMs ? { emailDelayMs: options.emailDelayMs } : {}),
+  });
   const recovery = await recover({
     db,
     bus,
@@ -192,15 +209,6 @@ export async function startDaemon(options: DaemonOptions) {
   app.disable("x-powered-by");
   const server = createServer(app);
   let port = options.port ?? DEFAULT_PORT;
-  let url = "";
-
-  const notifications = new Notifications({
-    db,
-    secrets,
-    uiUrl: () => url,
-    channels: os.channels,
-    now,
-  });
 
   app.use((req, res, next) => {
     if (isLocalRequest(req, port)) return next();
@@ -244,17 +252,14 @@ export async function startDaemon(options: DaemonOptions) {
   });
   // Any job state change may start or end the need to stay awake.
   bus.subscribe((e) => {
-    if (e.type === "job.state") void inhibit.reconcile();
+    if (e.type === "job.state")
+      void inhibit.reconcile().catch((err) => console.error("inhibitor failed", err));
+    // An ended job asks me nothing any more (Audit 1 → Q1-12).
+    const to = (e.payload as { to?: string } | null)?.to;
+    if (e.type === "job.state" && e.jobId && (to === "completed" || to === "cancelled"))
+      for (const item of inbox.list({ jobId: e.jobId, state: "open" })) inbox.withdraw(item.id);
   });
 
-  const notifyRouter = startNotificationRouter({
-    db,
-    bus,
-    inbox,
-    notifications,
-    uiUrl: () => url,
-    ...(options.emailDelayMs ? { emailDelayMs: options.emailDelayMs } : {}),
-  });
   const audit = startAuditExport(db, join(paths.logs, "audit"));
   const backups = startNightlyBackups(db, paths.backups, now);
   const budgets = startBudgetWatch({
@@ -369,7 +374,7 @@ export async function startDaemon(options: DaemonOptions) {
   });
   // Recovery may have left jobs active: take the lock straight away if so.
   await inhibit.reconcile();
-  void health.checkAll();
+  void health.checkAll().catch((err) => console.error("health check failed", err));
   os.serviceNotifier.ready();
   const stopWatchdog = os.serviceNotifier.startWatchdog();
 

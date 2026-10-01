@@ -33,6 +33,12 @@ program
   .action(async ({ port }: { port: number }) => {
     const running = await findRunning();
     if (running) fail(`Oraknid is already running (pid ${running.pid}) at ${running.url}.`);
+    // A promise nobody awaited must never take every running job down with it (Audit 1 → Q1-04).
+    process.on("unhandledRejection", (error) =>
+      log(
+        `unhandled rejection: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+      ),
+    );
     const daemon = await startDaemon({ paths, port, host: DEFAULT_HOST, writeRuntimeFile: true });
     log(`Oraknid ${VERSION} listening on ${daemon.url} (data: ${paths.dataDir})`);
     const stop = async (signal: string) => {

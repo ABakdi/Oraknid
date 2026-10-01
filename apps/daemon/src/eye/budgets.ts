@@ -7,6 +7,8 @@ import type { JobRunner } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
 import type { InboxStore } from "../inbox/store.ts";
 
+const logError = (error: unknown) => console.error("budget watch failed", error);
+
 export const RAISE_HALF = "Raise it by half";
 export const RAISE_DOUBLE = "Double it";
 export const KEEP_PAUSED = "Keep it paused";
@@ -88,6 +90,8 @@ export function startBudgetWatch(o: {
       .where(sql`${jobs.budgetQuestion} like ${`${itemId}:%`}`)
       .get();
     if (!job?.budgetQuestion) return;
+    // A job that ended meanwhile has nothing to raise (Audit 1 → D1-02).
+    if (job.state === "completed" || job.state === "cancelled") return;
     const dimension = job.budgetQuestion.split(":")[1] as BudgetDimension;
     db.update(jobs).set({ budgetQuestion: null }).where(eq(jobs.id, job.id)).run();
     if (answer === KEEP_PAUSED) return;
@@ -109,10 +113,11 @@ export function startBudgetWatch(o: {
   };
 
   const off = bus.subscribe((e) => {
-    if (e.type === "session.usage" && e.jobId && e.topic.startsWith("job:")) void check(e.jobId);
+    if (e.type === "session.usage" && e.jobId && e.topic.startsWith("job:"))
+      void check(e.jobId).catch(logError);
     if (e.type === "inbox.answered") {
       const { id, answer } = e.payload as { id: string; answer: string };
-      void answered(id, answer);
+      void answered(id, answer).catch(logError);
     }
   });
   const timer = setInterval(() => {
@@ -121,7 +126,7 @@ export function startBudgetWatch(o: {
       .from(jobs)
       .where(inArray(jobs.state, [...ACTIVE_JOB_STATES]))
       .all())
-      void check(j.id);
+      void check(j.id).catch(logError);
   }, o.intervalMs ?? 30_000);
   timer.unref();
   return {

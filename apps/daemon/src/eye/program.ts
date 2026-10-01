@@ -2,9 +2,9 @@ import { join, resolve } from "node:path";
 import type { Autonomy, InterviewRound, JobInput, WebPlan } from "@oraknid/contracts";
 import { decide, type GatedAction, readyTasks, skillExcerpt, suspicious } from "@oraknid/core";
 import type { Sandbox } from "@oraknid/os";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, count, eq, inArray } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
-import { jobs, projects, taskEdges, tasks } from "../db/schema.ts";
+import { attempts, jobs, projects, taskEdges, tasks } from "../db/schema.ts";
 import { AwaitingOwner } from "../engine/effects.ts";
 import type { JobContext, JobProgram } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
@@ -257,10 +257,17 @@ async function runTasks(
       );
     }
     const task = ready[0] as (typeof ready)[number];
-    if (task.attemptCount >= (d.maxAttempts ?? 8)) {
-      throw new Error(
-        `"${task.title}" failed ${task.attemptCount} attempts. Look at it, then resume.`,
-      );
+    // Only real failures count: a pause, a restart or a crash cut an attempt short, it didn't fail (Audit 1 → D1-01).
+    const failures =
+      d.db
+        .select({ n: count() })
+        .from(attempts)
+        .where(
+          and(eq(attempts.taskId, task.id), inArray(attempts.outcome, ["failed", "reassigned"])),
+        )
+        .get()?.n ?? 0;
+    if (failures >= (d.maxAttempts ?? 8)) {
+      throw new Error(`"${task.title}" failed ${failures} attempts. Look at it, then resume.`);
     }
     const attemptNo = task.attemptCount + 1;
     const attemptJob: AttemptJob = {

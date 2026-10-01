@@ -428,6 +428,27 @@ describe("The Eye, end to end", () => {
   });
 });
 
+describe("pausing costs no attempt (Audit 1 → D1-01)", () => {
+  it("lets me pause and resume a task more times than its attempt limit", async () => {
+    let hang = true;
+    const { api, id } = await eye((t) =>
+      task(t) === "Write hello.sh" && hang ? [{ hang: true }] : good(t),
+    );
+    for (let i = 0; i < 9; i++) {
+      const end = Date.now() + 5000;
+      while ((await api.jobs.get({ id })).tasks[0]?.state !== "running" && Date.now() < end)
+        await new Promise((r) => setTimeout(r, 10));
+      await api.jobs.pause({ id });
+      await api.jobs.resume({ id });
+    }
+    hang = false;
+    await api.jobs.pause({ id });
+    await api.jobs.resume({ id });
+    const done = await until(api, id, ["completed", "blocked"], 15_000);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+  }, 30_000);
+});
+
 describe("approvals of an attempt that ends", () => {
   it("are withdrawn, so my inbox never holds a question nobody waits for", async () => {
     let hang = true;
@@ -669,6 +690,32 @@ describe("budgets (M1.7)", () => {
     const done = await api.jobs.get({ id });
     expect(done.state).toBe("completed");
     expect(done.budget.tokens?.limit).toBeGreaterThanOrEqual(2800);
+  });
+});
+
+describe("an ended job asks nothing (Audit 1 → D1-02, Q1-12)", () => {
+  it("withdraws a cancelled job's budget question, and answering it harms nothing", async () => {
+    const budget = {
+      tokens: { limit: 1400, hard: true },
+      quotaShare: null,
+      wallClockMs: null,
+      money: { limit: 0, hard: true },
+    };
+    const { api, id } = await eye(good, { budget });
+    expect((await until(api, id, ["paused", "completed", "blocked"])).state).toBe("paused");
+    const end = Date.now() + 5000;
+    let q = (await api.inbox.list({ state: "open" }))[0];
+    while (!q && Date.now() < end) {
+      await new Promise((r) => setTimeout(r, 20));
+      q = (await api.inbox.list({ state: "open" }))[0];
+    }
+    await api.jobs.cancel({ id });
+    expect(await api.inbox.list({ state: "open" })).toEqual([]);
+    await expect(
+      api.inbox.answer({ id: q?.id as string, answer: "Raise it by half" }),
+    ).rejects.toThrow();
+    // The daemon is still here.
+    expect((await api.jobs.get({ id })).state).toBe("cancelled");
   });
 });
 

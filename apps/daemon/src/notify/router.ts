@@ -65,7 +65,10 @@ export function startNotificationRouter(o: {
       const t = setTimeout(
         () => {
           timers.delete(t);
-          if (o.inbox.get(itemId)?.state === "open") void o.notifications.send(p.n, ["email"]);
+          if (o.inbox.get(itemId)?.state === "open")
+            void o.notifications
+              .send(p.n, ["email"])
+              .catch((err) => console.error("email reminder failed", err));
         },
         o.emailDelayMs ?? 15 * 60_000,
       );
@@ -189,7 +192,8 @@ export function startNotificationRouter(o: {
   // What quiet hours held goes out when they end.
   const flush = setInterval(() => {
     if (held.length === 0 || inQuietHours(o.notifications.settings().quietHours, now())) return;
-    for (const p of held.splice(0)) void deliver(p, null);
+    for (const p of held.splice(0))
+      void deliver(p, null).catch((err) => console.error("held notification failed", err));
   }, o.flushMs ?? 60_000);
   flush.unref();
 

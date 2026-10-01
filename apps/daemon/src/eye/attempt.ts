@@ -354,7 +354,10 @@ export async function runAttempt(
       capTokens: Math.floor(window * 0.15),
     });
     // What had to be shortened is summarised in the background for the next pack.
-    if (built.shortened.length >= 2) void summarizeShortened(d, job.id, ws.cwd, built.shortened);
+    if (built.shortened.length >= 2)
+      void summarizeShortened(d, job.id, ws.cwd, built.shortened).catch((e) =>
+        console.error("silk summary failed", e),
+      );
     return built.text;
   };
 
