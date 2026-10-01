@@ -98,7 +98,7 @@ jobs. Feature work stopped. It is finished when every finding below is
 
 | ID | Severity | Where | Finding | Status |
 | :-- | :-- | :-- | :-- | :-- |
-| P1-01 | High | `os/metrics-loop.ts` | Idle, with no job and no UI, the daemon used 7.5% of a core: metrics were sampled every second, `nvidia-smi` spawned each time, for nobody. | Fixed: every second only while someone watches metrics or a Leg works, every 15 s otherwise. |
+| P1-01 | High | `os/metrics-loop.ts` | Idle, with no job and no UI, the daemon used 7.5% of a core: metrics were sampled every second, `nvidia-smi` spawned each time, for nobody. | Fixed: every second only while someone watches metrics or a Leg works, every 15 s otherwise. Measured on the real daemon after the fix: 1.5% of a core idle, children included (was 7.5%); 115 MB resident. |
 
 ## By hand
 
