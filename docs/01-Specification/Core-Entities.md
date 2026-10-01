@@ -165,6 +165,7 @@ whether it happened. It is never blindly repeated (BR-6).
 
 ## Event
 
+Each carries its `actor` (`owner`, `eye`, `leg:<id>`, `oraknid`).
 The append-only stream of everything that happened: state changes, Leg
 output chunks (summarised), usage samples, drift detections, escalations,
 approvals. It feeds the live UI, the stats and the audit log.

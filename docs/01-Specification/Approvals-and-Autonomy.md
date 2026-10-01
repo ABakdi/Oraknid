@@ -56,7 +56,13 @@ most blocking first. Each item shows:
 - What exactly will happen (the command, the email body, the diff summary).
 - Why (the task's reason).
 - Buttons: **Approve**, **Deny**, **Approve all like this for this job**
-  (approvals); an answer field and suggested answers (questions).
+  (approvals: a gate becomes a waiver, an unknown program an allow
+  rule, both audited); an answer field and suggested answers
+  (questions).
+- Answering an item a job was waiting for resumes the job at once.
+- At Supervised, the plan approval is asked on every run of the job,
+  before any work: once approved it passes, once denied the plan never
+  runs.
 
 Answering works from the inbox, the task view, or a notification.
 Unanswered items never expire on their own. The waiting task shows how

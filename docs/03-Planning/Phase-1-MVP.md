@@ -78,13 +78,15 @@ crashes and reboots.
 - [x] Found live (2026-10-01): `sh` and `[` were not on the allow list, so an agent checking its own script had to ask; approvals of an attempt that ended were left open in the inbox — both fixed with tests
 
 ### M1.7 — Approvals, budgets, skills
-- [ ] Autonomy levels, gated actions, permission policy, inbox ([[Approvals-and-Autonomy]])
-- [ ] Command allow/deny list with shipped defaults ([[Security]])
-- [ ] Budgets: tokens, quota share, context, time alarm, money (0 by default) ([[Budgets-and-Quotas]])
-- [ ] Skills library; `docs/skill.md` shipped as the built-in `canon-driven-development`
-- [ ] Interview stage ([[Skills]])
-- [ ] Untrusted-content wrapping (BR-15)
-- [ ] Audit log + daily JSONL
+- [x] Autonomy levels, gated actions, permission policy, inbox ([[Approvals-and-Autonomy]]): Supervised approves the plan and each replan, asked on every run so a resume can't skip it (found by a test: a denied plan once ran after a resume); a Leg's request can be approved once, denied, or approved for the rest of the job (a waiver or an allow rule, audited); autonomy, waivers and rules can change mid-job and apply to the next decision; answering resumes the job that waited; open approvals first
+- [~] Command allow/deny list: the shipped never-allowed and gated lists, plus my rules per job and globally (most specific level decides, deny beats allow within it, invalid patterns refused). Rules per project come with the project settings screen (M1.8).
+- [~] Budgets ([[Budgets-and-Quotas]]): tokens and time per job, warned once at 80% of a hard limit, paused at the limit with "raise it by half / double it / keep it paused"; time is an alarm by default; money 0 means none. Quota-share and per-task budgets are recorded but not enforced yet; money is counted once a per-token Leg exists.
+- [x] Skills library on the API (list, get, upload, edit, remove): built-ins read-only, edits make versions, a skill used by a job that hasn't ended can't be removed; `docs/skill.md` ships as the built-in `canon-driven-development` (`skills/` at the repo root)
+- [x] Interview stage ([[Skills]]): rounds of at most four questions in one inbox item each, my answers kept verbatim in Silk, a playback ending "Is this right?", "Enough, start" records what stays open; durable across pauses and restarts
+- [x] Untrusted-content wrapping (BR-15): inputs marked untrusted are wrapped as data in context packs, scanned once for attempts to steer the agent (flagged in Silk and the stream), and make every gated action ask, waivers and Full autonomy or not
+- [x] Audit log + daily JSONL: every event records its actor (me, The Eye, a Leg, Oraknid), is scrubbed of known secrets and secret-shaped strings before it's stored (Leg logs too), is searchable (`audit.search`), and exported once to `logs/audit/<day>.jsonl`
+- [x] From M1.2: notification routing per event (the spec's table, my changes win), quiet hours, grouping ("2 approvals waiting"), email only after 15 minutes unanswered
+- [~] Moved to M1.9 hardening: summarising shortened Silk entries with `brain.summarize`, and a second reasoning look at tasks without verify commands (accepted after their turn for now)
 
 ### M1.8 — Web UI
 - [ ] Shell: sidebar / bottom tabs, ⌘K palette, live indicator, inhibitor badge, inbox count, dark-first theme

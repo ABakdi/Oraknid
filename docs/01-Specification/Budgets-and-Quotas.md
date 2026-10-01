@@ -22,7 +22,11 @@ as an alarm that tells me to come and look.
 | Money | job, Leg | 0 | Only paid Legs need it. Stop and ask (hard). |
 
 Each budget is marked **hard** (stop and ask) or **soft** (notify and
-continue). At 80% of any hard budget I get a warning notification.
+continue). At 80% of any hard budget I get a warning notification,
+once. At a hard limit the job pauses at a safe point and the inbox asks:
+raise it by half, double it, or keep it paused. A job's tokens are what
+went in and out plus what was written to cache; cache reads are not
+counted.
 
 ## Quota tracking per Leg
 

@@ -45,7 +45,8 @@ sandbox limits damage, but it doesn't make that safe.
   inputs marked untrusted) is wrapped and labelled as data in every
   prompt, with an instruction not to follow it.
 - A task whose context contains untrusted content can't trigger a gated
-  action without an approval, whatever the autonomy level.
+  action without an approval, whatever the autonomy level or waivers.
+- Job inputs are marked untrusted when I create the job.
 - MCP tools that write externally are always `external-write` gated.
 - Suspicious content (instructions aimed at the agent) is flagged in
   the UI.
@@ -67,9 +68,13 @@ sandbox limits damage, but it doesn't make that safe.
 
 ## Audit log (BR-16)
 
-Append-only table, also exported daily to a JSONL file. Each entry
-records the time, the actor (owner/device, eye, leg), the job and task,
-the action, its inputs (secrets scrubbed) and its outcome. The UI can
-search and filter it.
+The event stream is the audit log: append-only, also exported to
+`logs/audit/<day>.jsonl` (each event once). Each entry records the time,
+the actor (`owner`, `eye`, `leg:<id>`, `oraknid`), the job, the action
+and its details. Before anything is stored, known secret values and
+secret-shaped strings (API keys, tokens, private keys, bearer tokens)
+are replaced with `[secret]`; Leg session logs are scrubbed the same
+way. `audit.search` filters by job, type or type prefix, actor and
+text.
 
 Related: [[Sandboxing]] · [[Approvals-and-Autonomy]] · [[The-Nest]] · [[Data-Map]]
