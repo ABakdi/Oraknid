@@ -14,6 +14,8 @@ export class EventBus {
   readonly #db: Db;
   readonly #listeners = new Set<Listener>();
   readonly #now: () => number;
+  /** Events published inside `atomically`, announced after it commits. */
+  #pending: Event[] | null = null;
 
   constructor(db: Db, now: () => number = Date.now) {
     this.#db = db;
@@ -33,6 +35,34 @@ export class EventBus {
       .returning()
       .get();
     const committed = toEvent(row);
+    if (this.#pending) {
+      this.#pending.push(committed);
+      return committed;
+    }
+    this.#announce(committed);
+    return committed;
+  }
+
+  /**
+   * Runs `fn` in one database transaction. Events it publishes are
+   * committed with it and announced only after the commit, so a rolled
+   * back transition is never heard (BR-8).
+   */
+  atomically<T>(fn: () => T): T {
+    if (this.#pending) return fn(); // already inside one
+    this.#pending = [];
+    let events: Event[] = [];
+    try {
+      const result = this.#db.$client.transaction(fn)();
+      events = this.#pending;
+      return result;
+    } finally {
+      this.#pending = null;
+      for (const e of events) this.#announce(e);
+    }
+  }
+
+  #announce(committed: Event) {
     for (const listener of this.#listeners) {
       try {
         listener(committed);
@@ -41,7 +71,6 @@ export class EventBus {
         console.error("event listener failed", error);
       }
     }
-    return committed;
   }
 
   subscribe(listener: Listener): () => void {

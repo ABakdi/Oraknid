@@ -249,3 +249,17 @@ describe("metrics", () => {
     expect(d.bus.since(0, ["metrics"], 10)).toEqual([]);
   });
 });
+
+describe("jobs over the API", () => {
+  it("pauses, resumes and cancels, refusing illegal moves in plain words", async () => {
+    const { d, api } = await start();
+    const { seedJob } = await import("./testing/fixtures.ts");
+    const id = seedJob(d.db, "blocked");
+    await api.jobs.pause({ id });
+    expect(d.jobs.require(id)).toMatchObject({ state: "paused", pauseReason: "Paused by me." });
+    await api.jobs.cancel({ id });
+    expect(d.jobs.require(id).state).toBe("cancelled");
+    await expect(api.jobs.resume({ id })).rejects.toThrow(/already ended|cannot/);
+    await expect(api.jobs.pause({ id: "nope" })).rejects.toThrow(/No job nope/);
+  });
+});

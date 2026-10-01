@@ -60,6 +60,8 @@ export const jobs = sqliteTable(
     pauseReason: text("pause_reason"),
     blockedReason: text("blocked_reason"),
     webVersion: integer("web_version").notNull().default(0),
+    /** The active state a paused or waiting job returns to. */
+    resumeState: text("resume_state"),
     createdAt: integer("created_at").notNull(),
     startedAt: integer("started_at"),
     finishedAt: integer("finished_at"),
@@ -198,6 +200,11 @@ export const sideEffects = sqliteTable("side_effects", {
   action: text("action").notNull(),
   payload: json<Record<string, unknown>>("payload").notNull(),
   state: text("state").notNull(),
+  result: json<unknown>("result"),
+  /** Why it needs me, in plain words, when reconciliation could not tell. */
+  problem: text("problem"),
+  /** The approval or question waiting on me for this action, if any. */
+  inboxItemId: text("inbox_item_id"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });

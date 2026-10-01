@@ -17,6 +17,8 @@ import {
 import { ORPCError, os } from "@orpc/server";
 import { z } from "zod";
 import { runDoctor } from "../doctor.ts";
+import type { JobStore } from "../engine/jobs.ts";
+import type { JobRunner } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
 import type { Notifications } from "../notify/notifications.ts";
 import type { Secrets } from "../os/secrets.ts";
@@ -34,12 +36,23 @@ export interface ApiContext {
   service: ServiceManager;
   notifications: Notifications;
   recentMetrics: (since: number) => MetricsSample[];
+  jobs: JobStore;
+  runner: JobRunner;
 }
 
 const base = os.$context<ApiContext>();
 
 /** Errors carry a sentence for the UI (BR-17). */
 const userError = (message: string) => new ORPCError("BAD_REQUEST", { message });
+
+/** Turns a refusal (an illegal move, an unknown job) into a sentence for the UI. */
+async function guard<T>(fn: () => Promise<T> | T): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    throw userError(error instanceof Error ? error.message : String(error));
+  }
+}
 
 // Procedures follow docs/02-Architecture/API-Contract.md. Later milestones add the rest.
 export const router = {
@@ -73,6 +86,22 @@ export const router = {
         throw error;
       }
     }),
+  },
+  jobs: {
+    // Creating jobs arrives with The Eye (M1.6) and the job form (M1.8).
+    pause: base
+      .input(z.object({ id: z.string(), reason: z.string().optional() }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.runner.pause(input.id, input.reason ?? "Paused by me.")),
+      ),
+    resume: base
+      .input(z.object({ id: z.string() }))
+      .handler(({ context: c, input }) => guard(() => c.runner.resume(input.id))),
+    cancel: base
+      .input(z.object({ id: z.string(), reason: z.string().optional() }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.runner.cancel(input.id, input.reason ?? "Cancelled by me.")),
+      ),
   },
   metrics: {
     recent: base

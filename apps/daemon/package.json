@@ -16,6 +16,7 @@
   "dependencies": {
     "@napi-rs/keyring": "2.1.0",
     "@oraknid/contracts": "workspace:*",
+    "@oraknid/core": "workspace:^",
     "@oraknid/os": "workspace:^",
     "@orpc/client": "1.15.4",
     "@orpc/server": "1.15.4",

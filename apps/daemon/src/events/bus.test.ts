@@ -68,3 +68,31 @@ describe("EventBus", () => {
     expect(n).toBe(1);
   });
 });
+
+describe("EventBus.atomically", () => {
+  it("announces events only after the transaction commits", () => {
+    const bus = new EventBus(db);
+    const heard: string[] = [];
+    bus.subscribe((e) => heard.push(e.type));
+    bus.atomically(() => {
+      bus.publish(ev("overview", "a"));
+      expect(heard).toEqual([]);
+      bus.publish(ev("overview", "b"));
+    });
+    expect(heard).toEqual(["a", "b"]);
+  });
+
+  it("neither stores nor announces events of a rolled-back transaction", () => {
+    const bus = new EventBus(db);
+    const heard: string[] = [];
+    bus.subscribe((e) => heard.push(e.type));
+    expect(() =>
+      bus.atomically(() => {
+        bus.publish(ev("overview", "lost"));
+        throw new Error("boom");
+      }),
+    ).toThrow("boom");
+    expect(heard).toEqual([]);
+    expect(bus.lastSeq()).toBe(0);
+  });
+});

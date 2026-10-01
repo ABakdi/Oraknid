@@ -5,8 +5,14 @@ import { RPCHandler } from "@orpc/server/node";
 import express from "express";
 import { router } from "./api/router.ts";
 import { closeDatabase, openDatabase } from "./db/open.ts";
+import { SideEffects } from "./engine/effects.ts";
+import { JobStore } from "./engine/jobs.ts";
+import { StepJournal } from "./engine/journal.ts";
+import { recover } from "./engine/recovery.ts";
+import { type JobProgram, JobRunner } from "./engine/runner.ts";
 import { EventBus } from "./events/bus.ts";
 import { isLocalRequest } from "./http/guard.ts";
+import { InboxStore } from "./inbox/store.ts";
 import { attachLive } from "./live/server.ts";
 import { Notifications } from "./notify/notifications.ts";
 import { linuxOs, type OsDeps } from "./os/context.ts";
@@ -30,7 +36,14 @@ export interface DaemonOptions {
   /** OS pieces to replace (tests). */
   os?: Partial<OsDeps>;
   metricsIntervalMs?: number;
+  /** What runs a job. The Eye takes this over in M1.6. */
+  program?: JobProgram;
 }
+
+/** Until The Eye exists (M1.6), a started job stops with an honest reason. */
+const notYet: JobProgram = async () => {
+  throw new Error("Oraknid cannot plan jobs yet: The Eye arrives in milestone M1.6.");
+};
 
 export interface RuntimeInfo {
   pid: number;
@@ -49,6 +62,21 @@ export async function startDaemon(options: DaemonOptions) {
   mkdirSync(paths.dataDir, { recursive: true });
   const db = await openDatabase({ file: options.dbFile ?? paths.db, backupsDir: paths.backups });
   const bus = new EventBus(db, now);
+
+  // Recovery comes first, before the API answers anyone (Durability spec).
+  const jobsStore = new JobStore(db, bus, now);
+  const journal = new StepJournal(db, now);
+  const inbox = new InboxStore(db, bus, now);
+  const effects = new SideEffects(db, bus, inbox, now);
+  const runner = new JobRunner({
+    jobs: jobsStore,
+    journal,
+    effects,
+    inbox,
+    bus,
+    program: options.program ?? notYet,
+  });
+  const recovery = await recover({ db, bus, jobs: jobsStore, journal, effects, runner });
 
   const secrets = new Secrets(paths.dataDir, os.keychain);
   await secrets.init();
@@ -114,6 +142,8 @@ export async function startDaemon(options: DaemonOptions) {
         service: os.service,
         notifications,
         recentMetrics: metricsLoop.recent,
+        jobs: jobsStore,
+        runner,
       },
     });
     if (!matched) next();
@@ -154,6 +184,8 @@ export async function startDaemon(options: DaemonOptions) {
       stopWatchdog();
       bus.publish({ type: "system.stopping", topic: "overview", jobId: null, payload: null });
       metricsLoop.stop();
+      // Jobs reach a safe point and keep their state for the next start.
+      await runner.shutdown();
       await inhibit.stop();
       await live.close();
       await new Promise<void>((resolve) => {
@@ -167,7 +199,24 @@ export async function startDaemon(options: DaemonOptions) {
     return closing;
   };
 
-  return { url, port, info, bus, db, live, inhibit, notifications, secrets, metricsLoop, close };
+  return {
+    url,
+    port,
+    info,
+    bus,
+    db,
+    live,
+    inhibit,
+    notifications,
+    secrets,
+    metricsLoop,
+    jobs: jobsStore,
+    runner,
+    inbox,
+    effects,
+    recovery,
+    close,
+  };
 }
 
 export type Daemon = Awaited<ReturnType<typeof startDaemon>>;
