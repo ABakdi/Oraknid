@@ -378,6 +378,9 @@ function TaskDrawer({
                   </div>
                 ))}
               </Field>
+              <Field label={t("Output")}>
+                <Agents jobId={job.id} taskId={task.id} compact />
+              </Field>
               <Field label={t("Leg model")}>
                 <Select
                   value={task.pinnedModelId ?? "auto"}

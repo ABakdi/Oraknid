@@ -15,6 +15,7 @@ durable step engine runs on the same database ([[ADR-003-Job-Execution-Engine]])
 | `silk_mirror` | What Oraknid last wrote to each mirror file (hash), and the open import question. |
 | `skills`, `skill_versions` | The library. |
 | `inbox_items` | Approvals and questions. |
+| `eye_messages` | My conversation with The Eye per job, with what it did about each message (migration 0012). |
 | `steps` | The step journal: `(job_id, step_key)` PK, status, input hash, output. |
 | `side_effects` | The outbox with idempotency keys. |
 | `checkpoints` | Git refs per task. |

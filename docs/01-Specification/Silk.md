@@ -24,6 +24,7 @@ start clean, with only what it needs.
 | `handoff` | Leg (asked by Eye) | The structured summary below. |
 | `fact` | Eye, Leg | "Node 24 is installed; pnpm 10." |
 | `interview-answer` | owner | The interview's answers, verbatim. |
+| `later` | owner (through The Eye) | "Some day, a dark theme." Kept, not acted on, and not in a context pack. Mirrored to `later.md`. |
 
 Entries are short: a title and a body under ~300 words. Longer content
 goes into a workspace file, and the entry links to it.

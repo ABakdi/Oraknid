@@ -123,14 +123,17 @@ me in a line:
 
 | It is | The Eye |
 | :-- | :-- |
-| An instruction for the work now | Records it as my decision in Silk and tells the running session at once. |
+| An instruction for the work now | Records it as my decision in Silk and passes it to every session working on the job at its next turn end, before any check. |
 | New work | Adds tasks to The Web (asked again at Supervised). |
 | Context | Records a fact or an architecture note in Silk. |
 | For later | Keeps it in Silk as a note for later, not acted on now. |
 | Stop / pause | Pauses the job at a safe point. |
 | A question about the job | Answers from Silk and the job's state. |
 
-The conversation is kept with the job and shown on its page.
+New work for a job that has ended is kept for later instead. If no Leg
+can think (none healthy, or the call fails), my message is kept as my
+decision and passed on anyway: my words are never lost. The
+conversation is kept with the job and shown on its page.
 
 ## Evaluation
 

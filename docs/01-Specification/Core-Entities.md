@@ -141,7 +141,7 @@ Its capability profile is described in [[Legs-and-Capability-Profiles]].
 | Field | Meaning |
 | :-- | :-- |
 | `id`, `jobId`, `taskId?` | |
-| `kind` | `decision` · `architecture` · `progress` · `issue` · `handoff` · `fact` · `interview-answer` |
+| `kind` | `decision` · `architecture` · `progress` · `issue` · `handoff` · `fact` · `interview-answer` · `later` |
 | `title`, `body` | Markdown, short by design. |
 | `supersedes?` | The entry this one replaces. Old entries are kept but marked. |
 | `authoredBy` | `eye`, a Leg ID, or `owner`. |
@@ -152,6 +152,14 @@ Its capability profile is described in [[Legs-and-Capability-Profiles]].
 job and task, the exact action or question, the options, the default,
 the state (`open` · `answered` · `expired` · `withdrawn`), and the answer
 with its time and device.
+
+## Eye message
+
+One message in my conversation with The Eye about a job: the author
+(`owner` or `eye`), the text, and for The Eye's replies what it made of
+my message (`instruction` · `task` · `context` · `later` · `stop` ·
+`question`) and what it did (Silk entries, tasks added). Kept forever,
+with the job.
 
 ## Side effect
 

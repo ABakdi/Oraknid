@@ -14,7 +14,16 @@ import { cn } from "@/lib/utils";
  * session, a task's or one of The Eye's calls, and its output as a
  * terminal-like log that follows along while it runs.
  */
-export function Agents({ jobId, taskId }: { jobId: string; taskId?: string }) {
+export function Agents({
+  jobId,
+  taskId,
+  compact,
+}: {
+  jobId: string;
+  taskId?: string;
+  /** One column, for the task drawer. */
+  compact?: boolean;
+}) {
   const sessions = useLive(() => api.sessions.list({ jobId }), {
     topics: [`job:${jobId}`],
     refreshOn: (e) => e.type === "session.started" || e.type === "session.ended",
@@ -34,15 +43,21 @@ export function Agents({ jobId, taskId }: { jobId: string; taskId?: string }) {
   const current =
     list.find((s) => s.id === picked) ?? list.find((s) => s.endedAt === null) ?? list[0];
   return (
-    <div className="grid gap-3 md:grid-cols-[16rem_1fr]">
-      <div className="flex gap-2 overflow-x-auto md:max-h-[60vh] md:flex-col md:overflow-y-auto">
+    <div className={cn("grid gap-3", !compact && "md:grid-cols-[16rem_1fr]")}>
+      <div
+        className={cn(
+          "flex gap-2 overflow-x-auto",
+          !compact && "md:max-h-[60vh] md:flex-col md:overflow-y-auto",
+        )}
+      >
         {list.map((s) => (
           <button
             key={s.id}
             type="button"
             onClick={() => setPicked(s.id)}
             className={cn(
-              "min-w-52 rounded-lg border px-3 py-2 text-left text-sm transition-colors hover:bg-muted md:min-w-0",
+              "min-w-52 rounded-lg border px-3 py-2 text-left text-sm transition-colors hover:bg-muted",
+              !compact && "md:min-w-0",
               s.id === current?.id && "border-primary bg-muted",
             )}
           >
@@ -69,12 +84,22 @@ export function Agents({ jobId, taskId }: { jobId: string; taskId?: string }) {
           </button>
         ))}
       </div>
-      {current ? <SessionLog key={current.id} jobId={jobId} session={current} /> : null}
+      {current ? (
+        <SessionLog key={current.id} jobId={jobId} session={current} compact={compact} />
+      ) : null}
     </div>
   );
 }
 
-function SessionLog({ jobId, session }: { jobId: string; session: SessionView }) {
+function SessionLog({
+  jobId,
+  session,
+  compact,
+}: {
+  jobId: string;
+  session: SessionView;
+  compact?: boolean;
+}) {
   const [entries, setEntries] = useState<SessionLogEntry[]>([]);
   const [error, setError] = useState<unknown>();
   const [follow, setFollow] = useState(true);
@@ -150,7 +175,10 @@ function SessionLog({ jobId, session }: { jobId: string; session: SessionView })
             const b = box.current;
             if (b && b.scrollTop + b.clientHeight < b.scrollHeight - 40) setFollow(false);
           }}
-          className="h-[60vh] overflow-y-auto bg-muted/40 p-3 font-mono text-xs leading-relaxed"
+          className={cn(
+            "overflow-y-auto bg-muted/40 p-3 font-mono text-xs leading-relaxed",
+            compact ? "h-[45vh]" : "h-[60vh]",
+          )}
         >
           {entries.length === 0 ? (
             <div className="text-muted-foreground">{t("Nothing yet…")}</div>

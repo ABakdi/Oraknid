@@ -44,4 +44,11 @@ ask. Dangerous ones still do.
 - [x] F1-4 — talking to The Eye
 - [x] F1-5 — the result and merging it
 
+All six are on `dev`, each with tests (the twelve real commands, the
+classifier's cache and its "ask", inbox filters across two projects,
+session logs read from an offset, every kind of message to The Eye and
+its fail-safe, merging with a conflict and with a dirty checkout).
+Still to do: my hands-on check with a second real job, then
+Audit 1 before `v0.1.0`.
+
 Related: [[Checkpoints-Home]] · [[Phase-1-MVP]] · [[ADR-014-Auto-Approval]]
