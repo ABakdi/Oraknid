@@ -1,0 +1,191 @@
+#!/usr/bin/env node
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, openSync, readFileSync, rmSync } from "node:fs";
+import { createORPCClient } from "@orpc/client";
+import { RPCLink } from "@orpc/client/fetch";
+import type { RouterClient } from "@orpc/server";
+import { Command, Option } from "commander";
+import type { Router } from "./api/router.ts";
+import { type RuntimeInfo, startDaemon } from "./daemon.ts";
+import { runDoctor } from "./doctor.ts";
+import { DEFAULT_HOST, DEFAULT_PORT, resolvePaths } from "./paths.ts";
+import { VERSION } from "./version.ts";
+
+const paths = resolvePaths();
+const program = new Command()
+  .name("oraknid")
+  .description("Always watching, many legs.")
+  .version(VERSION);
+
+program
+  .command("run")
+  .description("run the daemon in the foreground (what the service runs)")
+  .addOption(
+    new Option("--port <port>", "port to listen on").default(DEFAULT_PORT).argParser(Number),
+  )
+  .action(async ({ port }: { port: number }) => {
+    const running = await findRunning();
+    if (running) fail(`Oraknid is already running (pid ${running.pid}) at ${running.url}.`);
+    const daemon = await startDaemon({ paths, port, host: DEFAULT_HOST, writeRuntimeFile: true });
+    log(`Oraknid ${VERSION} listening on ${daemon.url} (data: ${paths.dataDir})`);
+    const stop = async (signal: string) => {
+      log(`${signal} received, stopping`);
+      await daemon.close();
+      process.exit(0);
+    };
+    process.once("SIGTERM", () => void stop("SIGTERM"));
+    process.once("SIGINT", () => void stop("SIGINT"));
+  });
+
+program
+  .command("start")
+  .description("start the daemon in the background")
+  .action(async () => {
+    const running = await findRunning();
+    if (running) {
+      console.log(`Already running at ${running.url} (pid ${running.pid}).`);
+      return;
+    }
+    mkdirSync(paths.logs, { recursive: true });
+    const out = openSync(paths.daemonLog, "a");
+    // Re-run this same entry point (with any loader flags, e.g. tsx in development).
+    const child = spawn(process.execPath, [...process.execArgv, process.argv[1] ?? "", "run"], {
+      detached: true,
+      stdio: ["ignore", out, out],
+    });
+    child.unref();
+    const info = await waitFor(async () => findRunning(), 10_000);
+    if (!info) fail(`The daemon did not come up within 10 s. See ${paths.daemonLog}.`);
+    console.log(`Oraknid is running at ${info.url} (pid ${info.pid}).`);
+  });
+
+program
+  .command("stop")
+  .description("stop the background daemon")
+  .action(async () => {
+    const info = readRuntime();
+    if (!info || !isAlive(info.pid)) {
+      rmSync(paths.runtimeFile, { force: true });
+      console.log("Oraknid is not running.");
+      return;
+    }
+    process.kill(info.pid, "SIGTERM");
+    const gone = await waitFor(async () => !isAlive(info.pid) || undefined, 10_000);
+    if (!gone) fail(`pid ${info.pid} did not stop within 10 s.`);
+    console.log("Oraknid stopped.");
+  });
+
+program
+  .command("status")
+  .description("show whether the daemon runs, and how it is doing")
+  .action(async () => {
+    const info = await findRunning();
+    if (!info) {
+      console.log("Oraknid is not running. Start it with: oraknid start");
+      process.exitCode = 1;
+      return;
+    }
+    const s = await api(info.url).system.status();
+    console.log(`Oraknid ${s.version} — running`);
+    console.log(`  url      ${info.url}`);
+    console.log(`  pid      ${s.pid}`);
+    console.log(`  uptime   ${formatDuration(s.uptimeMs)}`);
+    console.log(`  data     ${s.dataDir}`);
+    console.log(`  events   ${s.lastSeq}`);
+  });
+
+program
+  .command("logs")
+  .description("show the daemon's log")
+  .option("-f, --follow", "keep printing new lines")
+  .addOption(new Option("-n, --lines <n>", "how many lines").default(100).argParser(Number))
+  .action(({ follow, lines }: { follow?: boolean; lines: number }) => {
+    if (!existsSync(paths.daemonLog)) fail(`No log yet at ${paths.daemonLog}.`);
+    const args = ["-n", String(lines), ...(follow ? ["-F"] : []), paths.daemonLog];
+    spawnSync("tail", args, { stdio: "inherit" });
+  });
+
+program
+  .command("open")
+  .description("open the web UI in the browser")
+  .action(async () => {
+    const info = await findRunning();
+    if (!info) fail("Oraknid is not running. Start it with: oraknid start");
+    spawn("xdg-open", [info.url], { detached: true, stdio: "ignore" }).unref();
+    console.log(`Opening ${info.url}`);
+  });
+
+program
+  .command("doctor")
+  .description("check this machine and say what is wrong")
+  .action(() => {
+    const checks = runDoctor(paths);
+    for (const c of checks) {
+      console.log(`${c.ok ? "✓" : "✗"} ${c.name}: ${c.detail}`);
+      if (c.fix) console.log(`    → ${c.fix}`);
+    }
+    if (checks.some((c) => !c.ok)) process.exitCode = 1;
+  });
+
+await program.parseAsync();
+
+// ── helpers ─────────────────────────────────────────────────────────
+
+function api(url: string) {
+  return createORPCClient<RouterClient<Router>>(new RPCLink({ url: `${url}/api` }));
+}
+
+function readRuntime(): RuntimeInfo | undefined {
+  try {
+    return JSON.parse(readFileSync(paths.runtimeFile, "utf8")) as RuntimeInfo;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The daemon counts as running only if its pid is alive and it answers. */
+async function findRunning(): Promise<RuntimeInfo | undefined> {
+  const info = readRuntime();
+  if (!info || !isAlive(info.pid)) return undefined;
+  try {
+    const res = await fetch(`${info.url}/health`, { signal: AbortSignal.timeout(1000) });
+    return res.ok ? info : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitFor<T>(probe: () => Promise<T | undefined>, ms: number): Promise<T | undefined> {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    const v = await probe();
+    if (v !== undefined) return v;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  return undefined;
+}
+
+function formatDuration(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h ? `${h}h ${m}m` : m ? `${m}m ${s % 60}s` : `${s}s`;
+}
+
+function log(message: string) {
+  console.log(`${new Date().toISOString()} ${message}`);
+}
+
+function fail(message: string): never {
+  console.error(message);
+  process.exit(1);
+}
