@@ -74,7 +74,7 @@ export class InboxStore {
   withdraw(id: string) {
     this.bus.atomically(() => {
       const item = this.get(id);
-      if (!item || item.state !== "open") return;
+      if (item?.state !== "open") return;
       this.db.update(inboxItems).set({ state: "withdrawn" }).where(eq(inboxItems.id, id)).run();
       this.bus.publish({
         type: "inbox.withdrawn",

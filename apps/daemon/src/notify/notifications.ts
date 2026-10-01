@@ -53,12 +53,20 @@ export class Notifications {
     );
   }
 
-  update(patch: { desktop?: boolean; push?: boolean; email?: boolean }): NotificationSettings {
+  update(patch: {
+    desktop?: boolean;
+    push?: boolean;
+    email?: boolean;
+    routes?: NotificationSettings["routes"];
+    quietHours?: NotificationSettings["quietHours"];
+  }): NotificationSettings {
     const s = this.settings();
     const next: NotificationSettings = {
       desktop: { enabled: patch.desktop ?? s.desktop.enabled },
       push: { enabled: patch.push ?? s.push.enabled },
       email: { ...s.email, enabled: patch.email ?? s.email.enabled },
+      routes: patch.routes ?? s.routes,
+      quietHours: patch.quietHours === undefined ? s.quietHours : patch.quietHours,
     };
     if (next.email.enabled && !next.email.server) {
       throw new Error("Set up the email server before turning email notifications on.");
@@ -109,16 +117,18 @@ export class Notifications {
   }
 
   /** Sends to every enabled channel. Returns what each one did. */
-  async send(n: Notification, only?: NotificationChannel): Promise<ChannelTestResult[]> {
+  async send(
+    n: Notification,
+    only?: NotificationChannel | NotificationChannel[],
+  ): Promise<ChannelTestResult[]> {
     const s = this.settings();
     const enabled: Record<NotificationChannel, boolean> = {
       desktop: s.desktop.enabled,
       push: s.push.enabled,
       email: s.email.enabled,
     };
-    const names = (
-      only ? [only] : (["desktop", "push", "email"] as const)
-    ) as NotificationChannel[];
+    const names: NotificationChannel[] =
+      only === undefined ? ["desktop", "push", "email"] : Array.isArray(only) ? only : [only];
     return Promise.all(
       names.map(async (channel) => {
         if (!enabled[channel]) return { channel, enabled: false, delivered: 0, problems: [] };

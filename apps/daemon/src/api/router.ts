@@ -15,6 +15,7 @@ import {
   ProfileOverrides,
   ProjectView,
   PushSubscriptionInput,
+  QuietHours,
   SilkEntry,
   SilkKind,
   SystemStatus,
@@ -407,7 +408,17 @@ export const router = {
   notifications: {
     get: base.output(NotificationSettings).handler(({ context: c }) => c.notifications.settings()),
     update: base
-      .input(z.object({ desktop: z.boolean(), push: z.boolean(), email: z.boolean() }).partial())
+      .input(
+        z
+          .object({
+            desktop: z.boolean(),
+            push: z.boolean(),
+            email: z.boolean(),
+            routes: NotificationSettings.shape.routes,
+            quietHours: QuietHours.nullable(),
+          })
+          .partial(),
+      )
       .output(NotificationSettings)
       .handler(({ context: c, input }) => {
         try {

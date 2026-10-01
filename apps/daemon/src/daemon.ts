@@ -20,6 +20,7 @@ import { recover } from "./engine/recovery.ts";
 import { type JobProgram, JobRunner } from "./engine/runner.ts";
 import { EventBus } from "./events/bus.ts";
 import { type EyeBrain, PoolLegBrain } from "./eye/brain.ts";
+import { startBudgetWatch } from "./eye/budgets.ts";
 import { eyeProgram } from "./eye/program.ts";
 import { isLocalRequest } from "./http/guard.ts";
 import { InboxStore } from "./inbox/store.ts";
@@ -28,6 +29,7 @@ import { LegRegistry } from "./legs/registry.ts";
 import { LegSupervisor } from "./legs/supervisor.ts";
 import { attachLive } from "./live/server.ts";
 import { Notifications } from "./notify/notifications.ts";
+import { startNotificationRouter } from "./notify/router.ts";
 import { linuxOs, type OsDeps } from "./os/context.ts";
 import { countActiveJobs, createInhibitController } from "./os/inhibit-controller.ts";
 import { startMetricsLoop } from "./os/metrics-loop.ts";
@@ -58,6 +60,8 @@ export interface DaemonOptions {
   /** The Eye's reasoning (tests replace it). */
   brain?: EyeBrain;
   stallCheckMs?: number;
+  budgetIntervalMs?: number;
+  emailDelayMs?: number;
   /** Leg adapters by kind (tests replace them). */
   adapters?: Partial<Record<LegKind, LegAdapter>>;
   healthIntervalMs?: number;
@@ -216,6 +220,23 @@ export async function startDaemon(options: DaemonOptions) {
     if (e.type === "job.state") void inhibit.reconcile();
   });
 
+  const notifyRouter = startNotificationRouter({
+    db,
+    bus,
+    inbox,
+    notifications,
+    uiUrl: () => url,
+    ...(options.emailDelayMs ? { emailDelayMs: options.emailDelayMs } : {}),
+  });
+  const budgets = startBudgetWatch({
+    db,
+    bus,
+    inbox,
+    runner,
+    now,
+    ...(options.budgetIntervalMs ? { intervalMs: options.budgetIntervalMs } : {}),
+  });
+
   // A job blocked on quota resumes on its own once the window resets (Jobs-and-Projects → Blocked).
   const blockedTimer = setInterval(() => {
     for (const j of db.select().from(jobsTable).where(eq(jobsTable.state, "blocked")).all()) {
@@ -317,6 +338,8 @@ export async function startDaemon(options: DaemonOptions) {
       health.stop();
       clearInterval(mirrorTimer);
       clearInterval(blockedTimer);
+      budgets.stop();
+      notifyRouter.stop();
       await supervisor.killAll();
       await inhibit.stop();
       await live.close();
@@ -349,6 +372,7 @@ export async function startDaemon(options: DaemonOptions) {
     health,
     silk,
     skills,
+    budgets,
     projects: projectsService,
     inbox,
     effects,
