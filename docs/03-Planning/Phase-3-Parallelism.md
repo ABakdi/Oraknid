@@ -21,10 +21,10 @@ tasks in The Web, and independent jobs, can run together.
 - [ ] Re-verify after every merge
 
 ### M3.3 — Several jobs (first)
-- [ ] A running-jobs limit (setting, default 2), enforced by the runner for every start and resume; past it, the job is queued
-- [ ] Priorities: higher first, then oldest; changeable while queued
-- [ ] A per-Leg session limit; a task whose Legs are all busy waits for one without blocking its job
-- [ ] BR-19 replaced; UI: queued badge, priority, the limits in Settings
+- [x] A running-jobs limit (setting, default 2), enforced by the runner for every start and resume; past it, the job is queued
+- [x] Priorities: higher first, then oldest; changeable while queued
+- [x] A per-Leg session limit (on its card, 1 by default); a task whose Legs are all busy waits for one without blocking its job
+- [x] BR-19 replaced; UI: queued badge, priority in the job header, jobs at once in Settings
 
 ## Exit criterion
 

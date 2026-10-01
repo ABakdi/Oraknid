@@ -47,6 +47,7 @@ export function SettingsPage() {
       <SystemCard />
       <EyeCard />
       <NotificationsCard />
+      <JobsLimitCard />
       <FallbackCard />
       <PolicyCard />
       <DevicesCard />
@@ -421,6 +422,48 @@ const PROVIDERS = [
 ];
 
 /** ADR-009: off by default; turning it on is audited. */
+/** How many jobs run at once; the rest wait in a queue by priority (ADR-016). */
+function JobsLimitCard() {
+  const max = useLive(() => api.settings.maxRunningJobs(), {
+    topics: ["overview"],
+    refreshOn: (e) => e.type === "settings.updated",
+  });
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("Jobs at once")}</CardTitle>
+        <CardDescription>
+          {t(
+            "How many jobs run together. Others wait in a queue, highest priority first, and start when one ends. A job waiting for you takes no place.",
+          )}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Select
+          value={String(max.data ?? 2)}
+          onValueChange={(v) =>
+            act(
+              () => api.settings.setMaxRunningJobs({ max: Number(v) }),
+              t("Saved; queued jobs start if there is room."),
+            )
+          }
+        >
+          <SelectTrigger className="w-40" aria-label={t("Jobs at once")}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {[1, 2, 3, 4, 6, 8].map((n) => (
+              <SelectItem key={n} value={String(n)}>
+                {t("{n} at once", { n })}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </CardContent>
+    </Card>
+  );
+}
+
 function FallbackCard() {
   const on = useLive(() => api.settings.sameProviderFallback(), {
     topics: ["overview"],

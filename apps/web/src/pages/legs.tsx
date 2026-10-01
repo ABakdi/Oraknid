@@ -131,6 +131,23 @@ export function LegsPage() {
                 />
                 {t("enabled")}
               </label>
+              <Select
+                value={String((leg.config as { maxSessions?: number }).maxSessions ?? 1)}
+                onValueChange={(v) =>
+                  act(() => api.legs.update({ id: leg.id, maxSessions: Number(v) }))
+                }
+              >
+                <SelectTrigger className="h-8 w-36 text-xs" aria-label={t("Sessions at once")}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[1, 2, 3, 4].map((n) => (
+                    <SelectItem key={n} value={String(n)}>
+                      {t("{n} at once", { n })}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">

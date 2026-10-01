@@ -151,6 +151,19 @@ export class LegRegistry {
     return moved;
   }
 
+  /** Changes some of a Leg's settings (never a secret). */
+  setConfig(id: string, patch: Record<string, unknown>) {
+    const leg = this.require(id);
+    this.bus.atomically(() => {
+      this.db
+        .update(legs)
+        .set({ config: { ...(leg.config as Record<string, unknown>), ...patch } })
+        .where(eq(legs.id, id))
+        .run();
+      this.#event(id, "leg.updated", patch);
+    });
+  }
+
   update(id: string, patch: { name?: string; enabled?: boolean; paused?: boolean }) {
     this.require(id);
     this.bus.atomically(() => {

@@ -111,6 +111,9 @@ export function JobPage({ id }: { id: string }) {
         sub={
           <span className="flex flex-wrap items-center gap-2">
             <StateBadge state={j.state} />
+            {j.queuedAt ? (
+              <Badge variant="outline">{t("Queued: starts when a slot frees")}</Badge>
+            ) : null}
             {j.branch ? <code className="text-xs">{j.branch}</code> : null}
             {j.startedAt ? <span>{t("started {when}", { when: ago(j.startedAt) })}</span> : null}
           </span>
@@ -153,6 +156,24 @@ export function JobPage({ id }: { id: string }) {
                   <Signpost className="size-4" />
                   {t("Redirect")}
                 </Button>
+                <Select
+                  value={String(j.priority)}
+                  onValueChange={(v) =>
+                    act(
+                      () => api.jobs.setPriority({ id, priority: Number(v) }),
+                      t("Priority changed."),
+                    )
+                  }
+                >
+                  <SelectTrigger className="w-32" aria-label={t("Priority")}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="5">{t("High priority")}</SelectItem>
+                    <SelectItem value="0">{t("Normal priority")}</SelectItem>
+                    <SelectItem value="-5">{t("Low priority")}</SelectItem>
+                  </SelectContent>
+                </Select>
                 <Select
                   value={j.autonomy}
                   onValueChange={(v) =>

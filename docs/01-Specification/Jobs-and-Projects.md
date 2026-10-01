@@ -59,6 +59,16 @@ items for this job, budgets and their burn, and every problem. See
 | Take over a task | The task becomes `owner`-held. Oraknid stops touching its scope until I mark it done or hand it back. |
 | Answer | Inline in the inbox or on the task. |
 
+## Several jobs (Phase 3)
+
+At most the set number of jobs run at once (Settings → Jobs at once,
+2 by default). Starting or resuming one past the limit queues it: its
+state stays, a badge says it waits, and it starts when a running job
+ends, pauses or waits for me. Queued jobs go by priority (high, normal,
+low), then by age. A Leg runs one task session at a time unless I allow
+more on its card; a task whose Legs are all busy waits for one, its job
+still running ([[ADR-016-Parallel-Work]]).
+
 ## Ending a job
 
 - **Completed**: job-level verification passed. Oraknid writes a final

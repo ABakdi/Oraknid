@@ -757,12 +757,15 @@ export const router = {
           id: z.string(),
           name: z.string().min(1).optional(),
           enabled: z.boolean().optional(),
+          /** How many task sessions it runs at once (ADR-016). */
+          maxSessions: z.number().int().min(1).max(10).optional(),
         }),
       )
       .handler(({ context: c, input }) =>
         guard(async () => {
-          const { id, ...patch } = input;
+          const { id, maxSessions, ...patch } = input;
           c.registry.update(id, patch);
+          if (maxSessions !== undefined) c.registry.setConfig(id, { maxSessions });
           await c.health.check(id);
         }),
       ),
