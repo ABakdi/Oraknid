@@ -100,10 +100,10 @@ crashes and reboots.
 - [x] Built in M1.9: storage use and pruning, nightly backups, rules per project, editing a job's budget after it starts
 
 ### M1.9 — Dogfood
-- [ ] Run a real job on a real project with the canon-driven skill, from interview to completion
-- [ ] Pause/resume mid-task; `kill -9` the daemon mid-task; reboot mid-job, with no work redone
+- [x] Run a real job on a real project with the canon-driven skill, from interview to completion (the web piano, 2026-10-01)
+- [~] Pause/resume mid-task and `kill -9` the daemon mid-task, on a real Claude job: completed, every step once, the Leg process gone with the daemon; two bugs found and fixed (B1-02, B1-03 in [[Checkpoint-1]]). A reboot mid-job is still to try.
 - [ ] Hit a Claude quota window during a job and watch fallback or blocked → automatic resume
-- [ ] Take the first checkpoint ([[Checkpoints-Home]])
+- [x] Take the first checkpoint ([[Checkpoint-1]])
 - [ ] Audit before `v0.1.0` ([[Audit-Home]])
 
 ## Exit criterion

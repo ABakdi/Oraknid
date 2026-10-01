@@ -28,7 +28,7 @@ import type {
   UsageSnapshot,
 } from "@oraknid/leg-sdk";
 import type { Sandbox } from "@oraknid/os";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "../db/open.ts";
 import { attempts, jobs, sessions, tasks } from "../db/schema.ts";
@@ -726,6 +726,26 @@ export async function runAttempt(
       } catch {}
     }
     finish("abandoned", false);
+    // Nothing runs it any more: shown as ready at once, not "running" until the job resumes.
+    d.bus.atomically(() => {
+      d.db
+        .update(tasks)
+        .set({ state: "ready", leaseUntil: null })
+        .where(
+          and(eq(tasks.id, taskId), inArray(tasks.state, ["assigned", "running", "verifying"])),
+        )
+        .run();
+      d.bus.publish({
+        type: "task.state",
+        topic: `job:${job.id}`,
+        jobId: job.id,
+        payload: {
+          taskId,
+          to: "ready",
+          reason: "Stopped at a safe point; it starts again on resume.",
+        },
+      });
+    });
     throw error;
   }
 }

@@ -414,6 +414,8 @@ describe("The Eye, end to end", () => {
     await api.jobs.pause({ id });
     const paused = await api.jobs.get({ id });
     expect(paused).toMatchObject({ state: "paused", pauseReason: "Paused by me." });
+    // Seen live: nothing runs a paused task, so it must not say "running".
+    expect(paused.tasks[0]?.state).toBe("ready");
     const handoff = (await api.silk.list({ jobId: id })).find((e) => e.kind === "handoff");
     expect(handoff?.body).toContain("## Goal of the task");
     expect(handoff?.body).toContain("hello.sh");

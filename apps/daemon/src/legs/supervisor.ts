@@ -11,7 +11,7 @@ import type {
 import type { Sandbox, Watched } from "@oraknid/os";
 import { eq, isNull } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
-import { sessions } from "../db/schema.ts";
+import { attempts, sessions } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 import { sandboxPlan } from "./plan.ts";
@@ -306,6 +306,12 @@ export class LegSupervisor {
         .where(eq(sessions.id, s.id))
         .run();
     }
+    // An attempt open at startup was cut short with its process (Durability): closed as abandoned.
+    this.o.db
+      .update(attempts)
+      .set({ endedAt: this.#now(), outcome: "abandoned" })
+      .where(isNull(attempts.endedAt))
+      .run();
     return open.length;
   }
 }

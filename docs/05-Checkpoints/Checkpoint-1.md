@@ -25,6 +25,24 @@ for what is still unknown ([[ADR-014-Auto-Approval]]).
 **Tests:** the twelve real commands from this job are fixtures: none may
 ask. Dangerous ones still do.
 
+### B1-02 — A paused task still said "running"
+
+**Seen:** pausing a real job mid-task (a scratch job, 2026-10-01): the
+job was `paused`, its Leg process gone, the attempt `abandoned`, but
+the task still showed `running` until the job resumed.
+**Why:** only the resume put a cut-short task back to `ready`.
+**Fix:** the attempt's stop path sets it to `ready` at once, with the
+reason. **Test:** the pause test checks the task's state while paused.
+
+### B1-03 — An attempt cut short by `kill -9` stayed open
+
+**Seen:** after `kill -9` of the daemon mid-task and a restart, the job
+completed, with every step done once and its Leg process gone with the
+daemon; but the cut-short attempt had no end and no outcome.
+**Why:** recovery closed orphaned sessions (`crashed`), not attempts.
+**Fix:** recovery closes them as `abandoned`. **Test:** recovery of
+orphans.
+
 ## Features
 
 | # | What | Where |
@@ -50,5 +68,8 @@ session logs read from an offset, every kind of message to The Eye and
 its fail-safe, merging with a conflict and with a dirty checkout).
 Still to do: my hands-on check with a second real job, then
 Audit 1 before `v0.1.0`.
+
+- [x] B1-02 — paused task state
+- [x] B1-03 — attempts left open by a crash
 
 Related: [[Checkpoints-Home]] · [[Phase-1-MVP]] · [[ADR-014-Auto-Approval]]

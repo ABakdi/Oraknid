@@ -8,7 +8,7 @@ import type { RouterClient } from "@orpc/server";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Router } from "../api/router.ts";
 import { type Daemon, startDaemon } from "../daemon.ts";
-import { sessions } from "../db/schema.ts";
+import { attempts, sessions } from "../db/schema.ts";
 import { resolvePaths } from "../paths.ts";
 import { fakeLeg } from "../testing/fake-leg.ts";
 import { fakeOs } from "../testing/fake-os.ts";
@@ -298,5 +298,29 @@ describe("recovery of orphaned Leg processes", () => {
     innocent.kill("SIGKILL");
     const rows = d.db.select().from(sessions).all();
     expect(rows.every((r) => r.endReason === "crashed" && r.endedAt !== null)).toBe(true);
+  });
+
+  it("closes an attempt a crash left open (seen live after a kill -9)", async () => {
+    const { d } = await start();
+    const attempt = {
+      taskId: "t",
+      jobId: "j",
+      legId: "l",
+      legModelId: "m",
+      startedAt: 0,
+      escalations: [],
+    };
+    d.db
+      .insert(attempts)
+      .values({ ...attempt, id: "01J9Z3K8W2Q4V6X8Y0A1B2C3A1" })
+      .run();
+    d.db
+      .insert(attempts)
+      .values({ ...attempt, id: "01J9Z3K8W2Q4V6X8Y0A1B2C3A2", endedAt: 5, outcome: "succeeded" })
+      .run();
+    d.supervisor.recoverOrphans();
+    const rows = d.db.select().from(attempts).all();
+    expect(rows.map((r) => r.outcome)).toEqual(["abandoned", "succeeded"]);
+    expect(rows.every((r) => r.endedAt !== null)).toBe(true);
   });
 });
