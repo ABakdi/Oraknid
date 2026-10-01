@@ -57,6 +57,13 @@
       "when": 1790838688227,
       "tag": "0007_policy",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1790838947293,
+      "tag": "0008_budgets",
+      "breakpoints": true
     }
   ]
 }

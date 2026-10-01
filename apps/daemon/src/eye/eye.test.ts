@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { JobView, WebPlan } from "@oraknid/contracts";
+import type { Budget, JobView, WebPlan } from "@oraknid/contracts";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { RouterClient } from "@orpc/server";
@@ -83,6 +83,7 @@ async function eye(
     replan?: WebPlan;
     legs?: string[];
     autonomy?: "supervised" | "standard" | "full";
+    budget?: Budget;
   } = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), "oraknid-eyed-"));
@@ -123,6 +124,7 @@ async function eye(
     inputs: [],
     allowedLegIds: [],
     unsandboxed: false,
+    ...(o.budget ? { budget: o.budget } : {}),
   });
   await api.jobs.start({ id });
   return { d: daemon, api, id, workspace, leg, plans, legIds };
@@ -543,5 +545,37 @@ describe("approvals and autonomy (M1.7)", () => {
     );
     await api.policies.update({ allow: ["^nmap "], deny: ["rm -rf build"] });
     expect(await api.policies.get()).toEqual({ allow: ["^nmap "], deny: ["rm -rf build"] });
+  });
+});
+
+describe("budgets (M1.7)", () => {
+  it("warns at 80%, pauses at a hard limit and asks me, then goes on when I raise it", async () => {
+    // Each scripted turn reports 1,200 tokens: the first passes 80% of 1,400, the second the limit.
+    const budget = {
+      tokens: { limit: 1400, hard: true },
+      quotaShare: null,
+      wallClockMs: null,
+      money: { limit: 0, hard: true },
+    };
+    const { api, id, d } = await eye(good, { budget });
+    const paused = await until(api, id, ["paused", "completed", "blocked"]);
+    expect(paused.state).toBe("paused");
+    expect(paused.pauseReason).toMatch(
+      /^The job used its token budget \(\d[\d,]* tokens of 1,400 tokens\); it is paused until I raise it\.$/,
+    );
+    expect(d.bus.since(0, [`job:${id}`], 2000).map((e) => e.type)).toContain("budget.warning");
+
+    // Raise it as often as the job needs, answering each question.
+    for (let i = 0; i < 4; i++) {
+      const [q] = await api.inbox.list({ state: "open" });
+      if (!q) break;
+      expect(q.title).toBe('Raise the tokens budget of "Say hi, with a test"?');
+      await api.inbox.answer({ id: q.id, answer: "Double it" });
+      const after = await until(api, id, ["completed", "blocked", "paused"]);
+      if (after.state === "completed") break;
+    }
+    const done = await api.jobs.get({ id });
+    expect(done.state).toBe("completed");
+    expect(done.budget.tokens?.limit).toBeGreaterThanOrEqual(2800);
   });
 });

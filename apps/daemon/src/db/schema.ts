@@ -75,6 +75,9 @@ export const jobs = sqliteTable(
     denyRules: json<string[]>("deny_rules").notNull().default([]),
     /** A job blocked on quota resumes on its own at this time (Jobs-and-Projects → Blocked). */
     blockedUntil: integer("blocked_until"),
+    /** Budget findings already reported ("tokens:warning"…), and the open "raise it?" question. */
+    budgetFlags: json<string[]>("budget_flags").notNull().default([]),
+    budgetQuestion: text("budget_question"),
     /** Job-level verification rounds so far (each failed round replans). */
     verifyRound: integer("verify_round").notNull().default(0),
     /** The active state a paused or waiting job returns to. */
