@@ -20,12 +20,13 @@ crashes and reboots.
 ## Milestones
 
 ### M1.1 — Foundation
-- [ ] Monorepo scaffold ([[ADR-001-Monorepo]]): pnpm, Turborepo, Biome, Vitest, tsdown, Vite; Node LTS pinned
-- [ ] Check that Biome covers the React-hooks rules; add the ESLint plugin to `apps/web` if not
-- [ ] `packages/contracts` with the core entities from [[Core-Entities]]
-- [ ] SQLite + Drizzle + migrations + backup-before-migrate ([[ADR-002-Persistence]])
-- [ ] Daemon skeleton: Express, oRPC `/api`, `ws` `/live`, event bus with `seq`
-- [ ] `oraknid` CLI: `start`, `stop`, `status`, `logs`, `open`, `doctor`, `install`
+- [~] Monorepo scaffold ([[ADR-001-Monorepo]]): pnpm, Turborepo, Biome, Vitest, tsdown done; Vite comes with `apps/web` in M1.8. Node is **≥ 22.12**, not the Active LTS: this machine has Node 22, and every dependency supports it (2026-10-01). Move to the LTS when it's installed.
+- [x] Biome covers the React-hooks rules: `useExhaustiveDependencies` and `useHookAtTopLevel` turn on with Biome's React domain, so no ESLint plugin is needed
+- [x] `packages/contracts` with the core entities from [[Core-Entities]], events and live frames
+- [x] SQLite + Drizzle + migrations + backup-before-migrate ([[ADR-002-Persistence]]); WAL, `synchronous=FULL` and foreign keys checked by tests
+- [x] Daemon skeleton: Express, oRPC `/api` (`system.status`, `system.doctor`), `ws` `/live` with topics, replay from `lastSeq` without duplicates and `snapshot-needed` past 5,000; event bus that commits before notifying
+- [x] Until pairing (M1.8), only local requests are accepted: loopback address, a local `Host` (stops DNS rebinding) and a local or absent `Origin` (stops web pages calling the API)
+- [~] `oraknid` CLI: `run`, `start`, `stop`, `status`, `logs`, `open`, `doctor` done; `install` moves to M1.2 with the systemd unit it writes
 
 ### M1.2 — OS layer (Linux)
 - [ ] systemd user unit, linger, `WatchdogSec` ping

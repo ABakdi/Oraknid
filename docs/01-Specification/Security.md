@@ -47,7 +47,10 @@ sandbox limits damage, but it doesn't make that safe.
 
 ## The daemon's own surface
 
-- The HTTP/WebSocket API listens on `127.0.0.1` only by default.
+- The HTTP/WebSocket API listens on `127.0.0.1` only by default. Until
+  pairing exists, it also refuses any request whose `Host` isn't a local
+  name (stops DNS rebinding) or whose `Origin` is another site (stops a
+  web page in my browser from calling it).
 - Every client must be a **paired device**. Pairing happens from the
   local machine: the CLI or UI shows a short code, which the new device
   enters. Devices hold a key and get short-lived session tokens. Any

@@ -6,7 +6,7 @@ table is the summary and is kept in step with the contracts.
 
 | Area | Procedure | Purpose |
 | :-- | :-- | :-- |
-| System | `system.status` | Version, uptime, inhibitor, keychain, sandbox status. |
+| System | `system.status` | Version, uptime, pid, data directory, last event `seq` (inhibitor, keychain and sandbox status join in M1.2). |
 | | `system.doctor` | Run the checks. |
 | Devices | `devices.pairStart` / `devices.pairComplete` / `devices.list` / `devices.revoke` | Pairing. |
 | Projects | `projects.create` / `list` / `get` / `archive` / `delete` / `stats` | |
@@ -25,6 +25,7 @@ Every mutating procedure takes a client-generated `requestId`
 (idempotency). Errors carry a code **and** a sentence for the UI
 (BR-17).
 
-Live updates: [[Realtime-Transport]].
+Outside `/api`: `GET /health` (liveness, used by the CLI) and the
+`/live` WebSocket ([[Realtime-Transport]]).
 
 Related: [[ADR-010-API-Contracts]] · [[Realtime-Transport]] · [[Core-Entities]]
