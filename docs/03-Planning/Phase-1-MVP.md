@@ -29,12 +29,12 @@ crashes and reboots.
 - [~] `oraknid` CLI: `run`, `start`, `stop`, `status`, `logs`, `open`, `doctor` done; `install` moves to M1.2 with the systemd unit it writes
 
 ### M1.2 — OS layer (Linux)
-- [ ] systemd user unit, linger, `WatchdogSec` ping
-- [ ] Inhibitor via `systemd-inhibit` holder ([[ADR-012-Sleep-Inhibition]]); released ≤ 60 s after the last active job
-- [ ] SecretStore via `@napi-rs/keyring`, with a kernel-keyring fallback warning and the encrypted-file fallback
-- [ ] Metrics: per-process tree CPU/RAM, system, `nvidia-smi` stream, Ollama `/api/ps`
-- [ ] Notifier: `notify-send`, web push (VAPID), SMTP
-- [ ] bwrap sandbox wrapper + `doctor` check ([[Sandboxing]])
+- [x] systemd user unit (`Type=notify`, `WatchdogSec=30`, `Restart=always`, `TimeoutStopSec=150` for safe-point pauses), linger, watchdog pings through `systemd-notify`; `oraknid install` / `uninstall`. Tested with a real transient notify unit that stays up on pings. Still to try by hand: `oraknid install` on this machine, then a reboot.
+- [x] Inhibitor via `systemd-inhibit` holder ([[ADR-012-Sleep-Inhibition]]): block lock, delay-lock fallback with a warning, re-taken if the holder dies, no gap when the reason changes; released 45 s after the last active job (≤ 60 s with the 15 s re-check). Tested against the real logind.
+- [~] SecretStore via `@napi-rs/keyring`, **pinned to Secret Service**, so the silent kernel-keyring fallback can't happen and needs no warning. Without a keychain, the encrypted file (AES-256-GCM, scrypt, 0600) stays locked until `secrets.unlock` gets the passphrase. Keychain reads and writes aren't in automated tests (they would touch my real wallet); the probe was checked on the real daemon.
+- [~] Metrics: per-process-tree CPU, RSS and IO, plus system CPU, memory, disk and network, read straight from `/proc` (no `pidusage` or `systeminformation`); `nvidia-smi` polled per sample, not streamed; Ollama `/api/ps` moves to the adapter in M1.4. Samples are ephemeral: 1/s to `metrics` subscribers, one hour kept in memory, `metrics.recent` for charts.
+- [~] Notifier: `notify-send` (with an Open action), web push (VAPID keys in the secret store, expired subscriptions dropped), SMTP (password in the secret store); per-channel switches and `notifications.test`. Routing per event, quiet hours, grouping and "email after 15 min unanswered" come with the inbox in M1.7.
+- [~] bwrap sandbox wrapper + `doctor` check ([[Sandboxing]]): tested for real (writes in the worktree, can't see or write elsewhere, environment cleared, whole tree dies with it). Detecting toolchain directories moves to M1.4, when Legs are launched.
 
 ### M1.3 — Durable step engine
 - [ ] Step journal, leases, side-effects outbox ([[ADR-003-Job-Execution-Engine]])

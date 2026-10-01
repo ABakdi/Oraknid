@@ -6,7 +6,7 @@ table is the summary and is kept in step with the contracts.
 
 | Area | Procedure | Purpose |
 | :-- | :-- | :-- |
-| System | `system.status` | Version, uptime, pid, data directory, last event `seq` (inhibitor, keychain and sandbox status join in M1.2). |
+| System | `system.status` | Version, uptime, pid, data directory, last event `seq`, inhibitor, secret store, sandbox and service status. |
 | | `system.doctor` | Run the checks. |
 | Devices | `devices.pairStart` / `devices.pairComplete` / `devices.list` / `devices.revoke` | Pairing. |
 | Projects | `projects.create` / `list` / `get` / `archive` / `delete` / `stats` | |
@@ -18,7 +18,10 @@ table is the summary and is kept in step with the contracts.
 | Inbox | `inbox.list` / `inbox.answer` | Approvals, questions, interview rounds. |
 | Skills | `skills.list` / `get` / `upload` / `edit` / `delete` | |
 | Logs | `audit.search` / `logs.tail` / `logs.export` | |
-| Settings | `settings.get` / `settings.update` / `policies.get` / `policies.update` / `notifications.test` | |
+| Secrets | `secrets.unlock` | Opens the encrypted-file store when there is no keychain. |
+| Metrics | `metrics.recent` | Samples since a time, up to the last hour. |
+| Notifications | `notifications.get` / `update` / `configureEmail` / `test` / `vapidPublicKey` / `subscribe` / `unsubscribe` | Per-channel switches, SMTP setup (password to the secret store), web push. |
+| Settings | `settings.get` / `settings.update` / `policies.get` / `policies.update` | |
 | Storage | `storage.usage` / `storage.prune` | |
 
 Every mutating procedure takes a client-generated `requestId`

@@ -17,6 +17,7 @@ Phase 1 (the MVP) is in progress. See [the roadmap](docs/03-Planning/Roadmap.md)
 ```
 apps/daemon/          the service: API, live socket, CLI (`oraknid`)
 packages/contracts/   every entity, API shape and live frame, defined once (Zod)
+packages/os/          Linux integration: sandbox, sleep lock, secrets, metrics, notifications, service
 docs/                 the canon
 ```
 

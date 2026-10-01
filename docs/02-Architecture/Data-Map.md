@@ -9,7 +9,8 @@ Where each piece of data lives, and who can read it.
 | Context packs / prompts | Built in memory, logged condensed | Daemon, the receiving Leg | **Yes, to the Leg's provider** (e.g. Anthropic) for remote Legs. Local Legs: no. |
 | Leg raw output | `logs/<job>/<session>.ndjson` | Daemon, me | No. |
 | Workspace code | The project folder / worktree | Legs of that job (sandboxed) | Yes, to remote Legs' providers, as they read files. |
-| Secrets | OS keychain | Daemon, at process start only | Only to the service they are for. |
+| Secrets | OS keychain, or `secrets.json` (encrypted, 0600) when there's none | Daemon, at process start only | Only to the service they are for. |
+| Resource metrics | Memory only (last hour) | Daemon, paired devices | No. |
 | Provider logins | Each Leg's own config dir, managed by the official binary | That Leg's process | Only to that provider. |
 | Audit log | SQLite + daily JSONL | Me | No. |
 | Device keys | SQLite (public), device (private) | — | No. |
