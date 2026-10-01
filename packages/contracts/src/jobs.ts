@@ -64,6 +64,10 @@ export const JobView = Job.extend({
   unsandboxed: z.boolean(),
   worktree: z.string().nullable(),
   branch: z.string().nullable(),
+  /** Gated actions I waived for this job, and the job's own rules (the job's Settings tab). */
+  waived: z.array(z.string()).default([]),
+  allowRules: z.array(z.string()).default([]),
+  denyRules: z.array(z.string()).default([]),
 });
 export type JobView = z.infer<typeof JobView>;
 

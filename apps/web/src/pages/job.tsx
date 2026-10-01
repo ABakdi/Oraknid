@@ -7,6 +7,7 @@ import { LegComparison, TokensChart } from "@/components/charts";
 import { ErrorNote, Loading, Markdown, PageHeader, Stat, StateBadge } from "@/components/common";
 import { EyeChat } from "@/components/eye-chat";
 import { JobResult } from "@/components/job-result";
+import { JobSettings } from "@/components/job-settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -211,6 +212,7 @@ export function JobPage({ id }: { id: string }) {
           <TabsTrigger value="inbox">{t("Inbox")}</TabsTrigger>
           <TabsTrigger value="budget">{t("Budget")}</TabsTrigger>
           <TabsTrigger value="stats">{t("Stats")}</TabsTrigger>
+          <TabsTrigger value="settings">{t("Settings")}</TabsTrigger>
         </TabsList>
         <TabsContent value="agents">
           <Agents jobId={id} />
@@ -229,6 +231,9 @@ export function JobPage({ id }: { id: string }) {
         </TabsContent>
         <TabsContent value="stats">
           <Stats jobId={id} />
+        </TabsContent>
+        <TabsContent value="settings">
+          <JobSettings job={j} />
         </TabsContent>
       </Tabs>
 
