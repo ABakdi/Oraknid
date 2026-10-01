@@ -1213,3 +1213,39 @@ describe("a finished job's result (Checkpoint 1 → F1-5)", () => {
     expect(readFileSync(join(workspace, "hello.sh"), "utf8")).toBe("echo hi\n");
   });
 });
+
+describe("storage (M1.9)", () => {
+  it("shows what takes room, and prunes a finished job's raw logs only", async () => {
+    const { api, id } = await eye(good);
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    const usage = await api.storage.usage();
+    const mine = usage.jobs.find((j) => j.jobId === id);
+    expect(mine).toMatchObject({ state: "completed", title: "Say hi, with a test" });
+    expect(mine?.bytes).toBeGreaterThan(0);
+    // Nothing is older than an hour ago: nothing goes.
+    expect(await api.storage.prune({ jobIds: [id], before: Date.now() - 3_600_000 })).toEqual({
+      files: 0,
+      bytes: 0,
+    });
+    const pruned = await api.storage.prune({ jobIds: [id], before: Date.now() + 1000 });
+    expect(pruned.files).toBe(mine?.files);
+    expect((await api.storage.usage()).jobs.find((j) => j.jobId === id)?.bytes).toBe(0);
+    // Silk and the job's history stay.
+    expect((await api.silk.list({ jobId: id })).length).toBeGreaterThan(0);
+    const [session] = await api.sessions.list({ jobId: id });
+    expect((await api.sessions.log({ id: session?.id as string, after: 0 })).entries).toEqual([]);
+  });
+
+  it("never prunes a running job's logs", async () => {
+    const { api, id } = await eye((t) =>
+      task(t) === "Write hello.sh" ? [{ hang: true }] : good(t),
+    );
+    const end = Date.now() + 5000;
+    while ((await api.jobs.get({ id })).state !== "running" && Date.now() < end)
+      await new Promise((r) => setTimeout(r, 20));
+    await expect(api.storage.prune({ jobIds: [id], before: Date.now() })).rejects.toThrow(
+      /is running/,
+    );
+    await api.jobs.cancel({ id });
+  });
+});

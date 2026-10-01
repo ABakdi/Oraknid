@@ -46,10 +46,14 @@ The order is set out in [[Durability]]. Implementation notes:
 
 ## Backups and pruning
 
-- `.backup()` before every migration, and nightly (7 kept).
-- Pruning (Settings): drop raw Leg logs and condensed events older than a
-  date for chosen jobs. Silk, stats and audit entries are kept unless I
-  delete the job.
+- `.backup()` before every migration (10 kept), and nightly: the first
+  check of each day takes `nightly-YYYY-MM-DD.db` (7 kept).
+- Storage (Settings): the size of the database, Leg logs per job,
+  backups, the audit export and the daemon log.
+- Pruning (Settings): drop raw Leg logs last written before a date, for
+  finished jobs I choose; a running job's logs are refused. Silk,
+  sessions, stats and audit entries are kept unless I delete the job;
+  a pruned session's output view is then empty.
 - Export: a job or project as a zip (JSON + Silk markdown + logs).
 
 Related: [[Durability]] · [[Data-Map]] · [[ADR-002-Persistence]] · [[ADR-003-Job-Execution-Engine]]

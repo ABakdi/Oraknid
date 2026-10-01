@@ -19,12 +19,14 @@ import {
   NotificationSettings,
   ProfileOverrides,
   ProjectView,
+  PruneRequest,
   PushSubscriptionInput,
   QuietHours,
   SessionLogPage,
   SessionView,
   SilkEntry,
   SilkKind,
+  StorageUsage,
   SystemStatus,
   type TaskView,
 } from "@oraknid/contracts";
@@ -81,6 +83,7 @@ import type { Paths } from "../paths.ts";
 import { readSetting, writeSetting } from "../settings.ts";
 import type { SilkStore } from "../silk/store.ts";
 import type { SkillStore } from "../skills/store.ts";
+import { pruneLogs, storageUsage } from "../storage/storage.ts";
 import { VERSION } from "../version.ts";
 import type { Projects } from "../workspace/projects.ts";
 import { jobResult, mergeJob } from "../workspace/result.ts";
@@ -731,6 +734,14 @@ export const router = {
     answer: base
       .input(z.object({ id: z.string(), answer: z.string().min(1) }))
       .handler(({ context: c, input }) => guard(() => c.inbox.answer(input.id, input.answer))),
+  },
+  /** Storage use and pruning (Persistence-and-Recovery → Backups and pruning, M1.9). */
+  storage: {
+    usage: base.output(StorageUsage).handler(({ context: c }) => storageUsage(c.jobs.db, c.paths)),
+    prune: base
+      .input(PruneRequest)
+      .output(z.object({ files: z.number(), bytes: z.number() }))
+      .handler(({ context: c, input }) => guard(() => pruneLogs(c.jobs.db, c.bus, c.paths, input))),
   },
   /** Each agent's sessions and what they did (Checkpoint 1 → F1-3). */
   sessions: {

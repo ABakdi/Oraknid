@@ -97,7 +97,7 @@ crashes and reboots.
 - [~] Pairing (`oraknid pair`, and `oraknid open` pairs this machine's browser by itself), an installable PWA (manifest and a hand-written service worker), push subscription from Settings. Push on a phone needs the phone to reach the daemon: The Nest (Phase 4). Device tokens are long-lived and revocable rather than short-lived sessions.
 - [x] Empty, loading and error states (BR-17): every empty list says what it is and what to do; errors are sentences
 - [x] Checked by hand on 2026-10-01 against the real daemon and the earlier live job: desktop, and 390 px frames in dark and light; nothing scrolls sideways. That found the graph fitting before its layout, the graph controls ignoring the theme, and activity lines shown twice; all fixed.
-- [~] Not built yet: storage use and pruning (rules per project and editing a job's budget after it starts: M1.9)
+- [x] Built in M1.9: storage use and pruning, nightly backups, rules per project, editing a job's budget after it starts
 
 ### M1.9 — Dogfood
 - [ ] Run a real job on a real project with the canon-driven skill, from interview to completion

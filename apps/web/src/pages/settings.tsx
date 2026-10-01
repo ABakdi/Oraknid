@@ -3,6 +3,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ErrorNote, Loading, PageHeader } from "@/components/common";
 import { RulesCard } from "@/components/rules-card";
+import { StorageCard } from "@/components/storage-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -49,6 +50,7 @@ export function SettingsPage() {
       <FallbackCard />
       <PolicyCard />
       <DevicesCard />
+      <StorageCard />
       <ThemeCard />
     </div>
   );

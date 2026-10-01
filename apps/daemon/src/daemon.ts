@@ -43,6 +43,7 @@ import { DEFAULT_HOST, DEFAULT_PORT, type Paths } from "./paths.ts";
 import { readSetting } from "./settings.ts";
 import { SilkStore } from "./silk/store.ts";
 import { SkillStore } from "./skills/store.ts";
+import { startNightlyBackups } from "./storage/storage.ts";
 import { VERSION } from "./version.ts";
 import { Projects } from "./workspace/projects.ts";
 
@@ -250,6 +251,7 @@ export async function startDaemon(options: DaemonOptions) {
     ...(options.emailDelayMs ? { emailDelayMs: options.emailDelayMs } : {}),
   });
   const audit = startAuditExport(db, join(paths.logs, "audit"));
+  const backups = startNightlyBackups(db, paths.backups, now);
   const budgets = startBudgetWatch({
     db,
     bus,
@@ -381,6 +383,7 @@ export async function startDaemon(options: DaemonOptions) {
       budgets.stop();
       notifyRouter.stop();
       audit.stop();
+      backups.stop();
       await supervisor.killAll();
       await inhibit.stop();
       await live.close();
