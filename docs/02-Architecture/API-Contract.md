@@ -22,7 +22,7 @@ table is the summary and is kept in step with the contracts.
 | Secrets | `secrets.unlock` | Opens the encrypted-file store when there is no keychain. |
 | Metrics | `metrics.recent` | Samples since a time, up to the last hour. |
 | Notifications | `notifications.get` / `update` / `configureEmail` / `test` / `vapidPublicKey` / `subscribe` / `unsubscribe` | Per-channel switches, SMTP setup (password to the secret store), web push. |
-| Settings | `settings.setEyeLeg` (since M1.6) · `settings.get` / `settings.update` / `policies.get` / `policies.update` | |
+| Settings | `settings.setEyeLeg` (since M1.6) · `settings.sameProviderFallback` / `setSameProviderFallback` (ADR-009) · `settings.get` / `settings.update` / `policies.get` / `policies.update` | |
 | Storage | `storage.usage` / `storage.prune` | |
 
 Every mutating procedure takes a client-generated `requestId`

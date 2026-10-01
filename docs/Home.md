@@ -56,7 +56,7 @@ Nothing is built yet.
 - [[ADR-006-Sandbox]] — git worktree + bubblewrap per Leg
 - [[ADR-007-Silk-Storage]] — database + markdown mirror
 - [[ADR-008-Eye-Brain]] — borrow a pool Leg behind `EyeBrain`; Jev/Kev later
-- [[ADR-009-Multiple-Accounts-Per-Provider]] — supported, no quota hopping by default *(Proposed — my decision needed)*
+- [[ADR-009-Multiple-Accounts-Per-Provider]] — supported, no quota hopping by default (a per-provider setting, off)
 - [[ADR-010-API-Contracts]] — Zod 4 + oRPC in Express
 - [[ADR-011-Claude-Code-Adapter]] — the Agent SDK, `canUseTool`, one config dir per account
 - [[ADR-012-Sleep-Inhibition]] — a `systemd-inhibit` holder process

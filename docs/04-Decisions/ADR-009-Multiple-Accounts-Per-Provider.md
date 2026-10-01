@@ -1,6 +1,6 @@
 # ADR-009 — Several accounts per provider: supported, but no quota hopping by default
 
-**Status:** Proposed · 2026-10-01 · [[Phase-1-MVP]] — **needs my decision** (see "Open")
+**Status:** Accepted · 2026-10-01 · [[Phase-1-MVP]]
 
 ## Context
 I want to plug in several accounts of the same agent (e.g. two Claude
@@ -38,9 +38,16 @@ subscriptions). The providers' current terms (checked 2026-10-01):
   shows the relevant terms excerpt and is recorded in the audit log.
 - `oraknid doctor` links the current terms for every provider in my pool.
 
-## Open
-Whether I want same-provider fallback available at all, given the terms.
-Until I decide, this ADR stays Proposed and the setting ships off.
+## Decided
+2026-10-01: accepted as written. The setting exists, per provider, off
+by default; turning it on is audited and the Settings screen shows the
+terms next to the switch.
+
+As built: when a task's attempt ends on a usage limit, that provider is
+recorded on the task. Other accounts of that provider are then left
+out of routing for the task (unless I turned the setting on); the
+account that hit the limit comes back once its window resets. The job
+waits and says why, naming this ADR.
 
 ## Consequences
 - Oraknid stays on the right side of the providers' terms by default,
