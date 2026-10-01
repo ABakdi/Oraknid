@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, openSync, readFileSync, rmSync } from "node:fs";
+import { resolve } from "node:path";
+import {
+  createBwrapSandbox,
+  createKeychainStore,
+  createSystemdService,
+  type InstallStep,
+} from "@oraknid/os";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { RouterClient } from "@orpc/server";
@@ -118,14 +125,55 @@ program
 program
   .command("doctor")
   .description("check this machine and say what is wrong")
-  .action(() => {
-    const checks = runDoctor(paths);
+  .action(async () => {
+    const running = await findRunning();
+    const checks = running
+      ? await api(running.url).system.doctor()
+      : runDoctor(paths, {
+          sandbox: createBwrapSandbox().status(),
+          secrets: await createKeychainStore().probe(),
+          service: createSystemdService().status(),
+        });
     for (const c of checks) {
       console.log(`${c.ok ? "✓" : "✗"} ${c.name}: ${c.detail}`);
       if (c.fix) console.log(`    → ${c.fix}`);
     }
     if (checks.some((c) => !c.ok)) process.exitCode = 1;
   });
+
+program
+  .command("install")
+  .description("run Oraknid as a background service that starts at boot")
+  .action(async () => {
+    const entry = process.argv[1] ?? "";
+    if (!entry.endsWith(".mjs") && !entry.endsWith(".js")) {
+      fail(
+        "Install from a build: pnpm --filter @oraknid/daemon build, then run dist/cli.mjs install.",
+      );
+    }
+    // A daemon started by hand would hold the port the service needs.
+    const running = await findRunning();
+    if (running) {
+      process.kill(running.pid, "SIGTERM");
+      await waitFor(async () => !isAlive(running.pid) || undefined, 10_000);
+    }
+    const env: Record<string, string> = { PATH: process.env.PATH ?? "/usr/bin" };
+    for (const k of ["ORAKNID_DATA_DIR", "ORAKNID_CONFIG_DIR"]) {
+      const v = process.env[k];
+      if (v) env[k] = v;
+    }
+    const steps = createSystemdService().install({
+      execPath: process.execPath,
+      args: [resolve(entry), "run"],
+      env,
+    });
+    report(steps);
+  });
+
+program
+  .command("uninstall")
+  .description("stop and remove the background service (data is kept)")
+  .action(() => report(createSystemdService().uninstall()));
 
 await program.parseAsync();
 
@@ -179,6 +227,11 @@ function formatDuration(ms: number): string {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   return h ? `${h}h ${m}m` : m ? `${m}m ${s % 60}s` : `${s}s`;
+}
+
+function report(steps: InstallStep[]) {
+  for (const s of steps) console.log(`${s.ok ? "✓" : "✗"} ${s.step}${s.ok ? "" : `: ${s.detail}`}`);
+  if (steps.some((s) => !s.ok)) process.exitCode = 1;
 }
 
 function log(message: string) {
