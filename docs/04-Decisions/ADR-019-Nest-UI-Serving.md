@@ -22,8 +22,12 @@ UI, it could read what the UI decrypts, and the end-to-end encryption
    client to build.
 
 ## Decision
-Option 1. The first visit to The Nest's address happens during local
-pairing, so the service worker is installed while I'm at home, and it
-refuses any UI code the daemon didn't sign.
+Option 1, as built (2026-10-02): The Nest serves only a small loader.
+The UI comes from the daemon through the end-to-end tunnel, which
+already authenticates it (only the daemon holds the keys), so no
+separate signature is needed. What a browser can't guarantee is the
+loader itself: a service worker can't stop its own replacement by the
+server. The loader's hash is shown at home and on the loader page for
+me to compare ([[Nest-Protocol]]).
 
 Related: [[The-Nest]] · [[ADR-017-Nest-E2E-Protocol]] · [[ADR-018-Nest-Hosting]] · [[Security]]
