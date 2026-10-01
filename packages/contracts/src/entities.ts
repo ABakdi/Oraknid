@@ -257,6 +257,8 @@ export type InboxItem = z.infer<typeof InboxItem>;
 export const SideEffectState = z.enum([
   "intended",
   "approved",
+  /** Recorded just before the action runs: after a crash, this one must be reconciled. */
+  "performing",
   "performed",
   "confirmed",
   "failed",
