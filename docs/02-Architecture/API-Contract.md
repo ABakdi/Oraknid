@@ -22,7 +22,7 @@ table is the summary and is kept in step with the contracts.
 | Secrets | `secrets.unlock` | Opens the encrypted-file store when there is no keychain. |
 | Metrics | `metrics.recent` | Samples since a time, up to the last hour. |
 | Notifications | `notifications.get` / `update` / `configureEmail` / `test` / `vapidPublicKey` / `subscribe` / `unsubscribe` | Per-channel switches, SMTP setup (password to the secret store), web push. |
-| Settings | `settings.setEyeLeg` · `maxRunningJobs` / `setMaxRunningJobs` (M3.3) · `sameProviderFallback` / `setSameProviderFallback` (ADR-009) · `policies.get` / `update` | |
+| Settings | `settings.setEyeLeg` · `maxRunningJobs` / `setMaxRunningJobs` (M3.3) · `maxTasksPerJob` / `setMaxTasksPerJob` (M3.1) · `sameProviderFallback` / `setSameProviderFallback` (ADR-009) · `policies.get` / `update` | |
 | Storage | `storage.usage` / `storage.prune` (M1.9) | |
 
 **Not built yet** (Audit 1 → Q1-15), with where they land: `projects.get`, `jobs.export` (Phase 2); a general `settings.get` / `update` when a second setting

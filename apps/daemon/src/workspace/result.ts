@@ -97,9 +97,9 @@ export async function taskDiff(
   if (!task) throw new Error(`No task ${taskId}.`);
   const { job, project } = load(db, task.jobId);
   if (!job.worktree) return { text: "", from: "none", truncated: false };
-  const g = project.isGitRepo
-    ? worktreeGit(project.workspacePath, job.worktree)
-    : shadowRepo(job.worktree);
+  // A task running beside others works in its own worktree (ADR-016).
+  const tree = task.worktree ?? job.worktree;
+  const g = project.isGitRepo ? worktreeGit(project.workspacePath, tree) : shadowRepo(tree);
   const base = `refs/oraknid/${job.id}/${task.id}/base`;
   const text = task.commit
     ? await commitPatch(g, task.commit)

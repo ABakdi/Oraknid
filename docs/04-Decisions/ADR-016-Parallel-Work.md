@@ -31,14 +31,19 @@ job side by side.
   branch's tip; the job worktree becomes the integration tree.
 - **Two tasks run together only if their scopes can't overlap** (their
   globs' fixed roots are disjoint) and neither depends on the other.
-- **Limits**: per job (default 2 tasks), per Leg (as above), global
-  (the running-jobs limit times the per-job limit, capped by a setting).
-- **Merging**: a verified task's branch is merged into the job branch
-  (`merge-tree`, no checkout touched); then that task's checks run
-  again on the merged tree. A conflict, or checks that fail after the
-  merge, become a **new task** ("Resolve the merge of …"), routed like
-  any other, with the conflicting files in its instructions; nothing is
-  overwritten.
+- **Limits**: per job (a setting, **1 by default**: tasks side by side
+  are turned on in Settings), per Leg (as above), and the running-jobs
+  limit. With one task at a time a job works in its own worktree as in
+  Phase 1; above one, every task gets a worktree of its own.
+- **Merging**: a verified task's branch is merged into the job
+  worktree (Oraknid's own checkout of the job branch), one merge of a
+  job at a time; then that task's checks run again on the merged tree.
+  A conflict, or checks that fail after the merge, merge nothing: the
+  merge is taken back, an issue goes to Silk, and **the task is redone**
+  in a fresh worktree from the job's newer tip (its scope measured from
+  there). Built 2026-10-01 as a redo rather than a separate "resolve"
+  task: with disjoint scopes a conflict is rare, and a redo on top of
+  the newer work resolves it the same way, without git work for a Leg.
 - Silk stays one per job; handoffs stay per task.
 
 ## Consequences

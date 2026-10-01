@@ -428,6 +428,10 @@ function JobsLimitCard() {
     topics: ["overview"],
     refreshOn: (e) => e.type === "settings.updated",
   });
+  const tasks = useLive(() => api.settings.maxTasksPerJob(), {
+    topics: ["overview"],
+    refreshOn: (e) => e.type === "settings.updated",
+  });
   return (
     <Card>
       <CardHeader>
@@ -438,7 +442,7 @@ function JobsLimitCard() {
           )}
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex flex-wrap items-center gap-3">
         <Select
           value={String(max.data ?? 2)}
           onValueChange={(v) =>
@@ -454,11 +458,36 @@ function JobsLimitCard() {
           <SelectContent>
             {[1, 2, 3, 4, 6, 8].map((n) => (
               <SelectItem key={n} value={String(n)}>
-                {t("{n} at once", { n })}
+                {t("{n} jobs at once", { n })}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
+        <Select
+          value={String(tasks.data ?? 1)}
+          onValueChange={(v) =>
+            act(
+              () => api.settings.setMaxTasksPerJob({ max: Number(v) }),
+              t("Saved; it applies to the next tasks."),
+            )
+          }
+        >
+          <SelectTrigger className="w-52" aria-label={t("Tasks at once in a job")}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {[1, 2, 3, 4].map((n) => (
+              <SelectItem key={n} value={String(n)}>
+                {n === 1 ? t("1 task at a time in a job") : t("{n} tasks at once in a job", { n })}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="w-full text-xs text-muted-foreground">
+          {t(
+            "Tasks of one job run together only when they touch different files; each works in its own worktree and is merged, then checked again.",
+          )}
+        </p>
       </CardContent>
     </Card>
   );

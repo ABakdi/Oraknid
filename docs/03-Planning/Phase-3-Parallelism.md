@@ -11,14 +11,14 @@ tasks in The Web, and independent jobs, can run together.
 ## Milestones
 
 ### M3.1 — Parallel tasks in one job
-- [ ] A worktree per running task, branched from the job's work branch
-- [ ] Scheduler limits: per Leg, per job, global; CPU/RAM/VRAM-aware for local Legs
-- [ ] Scope-overlap check before running two tasks at once
+- [x] A worktree per running task, branched from the job branch's tip, when more than one task at once is allowed (Settings; 1 by default)
+- [~] Scheduler limits: per Leg (sessions at once), per job (tasks at once), global (jobs at once); not yet CPU/RAM/VRAM-aware for local Legs
+- [x] Scope-overlap check before running two tasks at once (their globs' fixed roots)
 
 ### M3.2 — Merging
-- [ ] Merge a verified task's worktree back into the job branch
-- [ ] Conflicts become a new task (routed like any other), never a silent overwrite
-- [ ] Re-verify after every merge
+- [x] Merge a verified task's branch into the job branch, one merge at a time per job; its worktree and branch removed after
+- [x] A conflict merges nothing: the task is redone on top of the newer work, with an issue in Silk (a redo rather than a separate task, [[ADR-016-Parallel-Work]]), never a silent overwrite
+- [x] Re-verify after every merge: the task's checks run again on the merged tree; a failure takes the merge back
 
 ### M3.3 — Several jobs (first)
 - [x] A running-jobs limit (setting, default 2), enforced by the runner for every start and resume; past it, the job is queued

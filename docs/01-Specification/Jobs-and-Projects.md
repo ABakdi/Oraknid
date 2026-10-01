@@ -69,6 +69,12 @@ low), then by age. A Leg runs one task session at a time unless I allow
 more on its card; a task whose Legs are all busy waits for one, its job
 still running ([[ADR-016-Parallel-Work]]).
 
+Inside a job, tasks run one at a time unless I allow more (Settings →
+Tasks at once in a job). Then tasks that touch different files run
+together, each in a worktree of its own, and each is merged into the
+job branch when verified and checked again there; one that conflicts or
+fails once merged is redone on top of the newer work.
+
 ## Ending a job
 
 - **Completed**: job-level verification passed. Oraknid writes a final
