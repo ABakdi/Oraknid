@@ -18,14 +18,20 @@ database:
   the journal (the DBOS model, done locally).
 - **Leases**: a running task holds `lease_until`. At boot, expired leases
   return to `ready` through recovery ([[Durability]]).
-- **Outbox / side effects table**: `intended` → `approved` → `performed`
-  → `confirmed`, each external action with a deterministic idempotency
-  key `job:task:effect-name`. Effects whose target supports idempotency
+- **Outbox / side effects table**: `intended` → `approved` → `performing`
+  → `performed` → `confirmed`, each external action with a deterministic
+  idempotency key `job:task:effect-name`. `performing` is written just
+  before the action runs, so recovery knows which actions might have
+  happened (added 2026-10-01, M1.3). Effects whose target supports idempotency
   keys get them. Others are reconciled on restart, or asked about.
 - **Pause** is a flag checked at step boundaries, plus the adapter's
   interrupt for in-flight Leg turns.
 - **Scheduling**: one runnable job in the MVP (BR-19). The scheduler is
   written for N from the start, so Phase 3 only lifts the limit.
+
+- **Commit, then announce**: a transition and its events are written
+  in one transaction (`EventBus.atomically`), and listeners hear the
+  events only after it commits.
 
 ## Consequences
 - Full control over pause, safe points and recovery semantics, which

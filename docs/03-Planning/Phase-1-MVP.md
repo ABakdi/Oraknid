@@ -37,10 +37,12 @@ crashes and reboots.
 - [~] bwrap sandbox wrapper + `doctor` check ([[Sandboxing]]): tested for real (writes in the worktree, can't see or write elsewhere, environment cleared, whole tree dies with it). Detecting toolchain directories moves to M1.4, when Legs are launched.
 
 ### M1.3 — Durable step engine
-- [ ] Step journal, leases, side-effects outbox ([[ADR-003-Job-Execution-Engine]])
-- [ ] Recovery sequence ([[Durability]])
-- [ ] Fault-injection test: `SIGKILL` at every step boundary of a scripted job, with no duplicate steps or effects
-- [ ] Lossless pause/resume with safe points
+- [x] Job and task life cycles as data in `packages/core`; every state change is checked against them and committed with its event (`EventBus.atomically` announces events only after the commit)
+- [~] Step journal and side-effect outbox ([[ADR-003-Job-Execution-Engine]]): steps replay recorded outputs and refuse a replay with different input; effects go `intended` → `approved` → **`performing`** → `performed`, with reconcilers per action and my approval for gated ones. Task leases: the column exists and recovery clears it; taking and renewing leases arrives with task scheduling in M1.6.
+- [x] Recovery sequence ([[Durability]]) before the API answers: unfinished steps forgotten, interrupted tasks back to `ready`, actions caught mid-way reconciled or asked about (job `waiting`), active jobs resumed, paused ones left paused
+- [x] Fault-injection test: `SIGKILL` at all 20 step and effect boundaries of a scripted job, in a real child process on a real database file; every time the job completes, every step is recorded once, only a step killed before its commit runs twice, and both external actions happen exactly once
+- [x] Lossless pause/resume with safe points: pause aborts the job's signal and waits for the step in flight; a pause that interrupts an action marks it for checking, never for repeating; a safe point that takes over 120 s is reported, not forced (Legs get killed by their adapters in M1.4); the daemon stopping leaves jobs in their state for the next start
+- [x] `jobs.pause` / `jobs.resume` / `jobs.cancel` on the API; until The Eye exists, a started job stops with an honest reason
 
 ### M1.4 — Legs
 - [ ] `LegAdapter` interface + contract test kit

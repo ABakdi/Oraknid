@@ -48,6 +48,7 @@ erDiagram
 | `budget` | See [[Budgets-and-Quotas]]. |
 | `state` | See below. |
 | `pauseReason`, `blockedReason` | Written in my language, shown in the UI. |
+| `resumeState` | The active state a `paused`, `waiting` or `blocked` job returns to. |
 | `createdAt`, `startedAt`, `finishedAt` | |
 
 **States:**
@@ -147,9 +148,12 @@ with its time and device.
 ## Side effect
 
 Every external action (send an email, push, deploy, call an API that
-writes). It has an **idempotency key** and a state: `intended` →
-`approved` → `performed` → `confirmed`, or `failed` / `denied`. Recovery
-reads this table before doing anything external (BR-6).
+writes). It has an **idempotency key** (`job:task:name`) and a state:
+`intended` (gated, waiting for me) → `approved` → `performing` (recorded
+just before it runs) → `performed` → `confirmed`, or `failed` / `denied`.
+An action found in `performing` after a crash or an interrupted pause is
+checked by its action's reconciler. If that can't tell, I'm asked
+whether it happened. It is never blindly repeated (BR-6).
 
 ## Event
 

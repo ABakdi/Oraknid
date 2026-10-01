@@ -25,6 +25,8 @@ the canon. Code identifiers are shown in `code`.
 | **Silk mirror** | — | The readable markdown copy of Silk at `.oraknid/silk/` in the job's workspace. |
 | **Skill** | `skill` | A markdown methodology file. The user uploads it or picks a built-in. It may declare required tools. |
 | **Interview** | `interview` | The opening stage of a job whose skill requires the owner's answers before autonomous work. Questions go to the inbox. |
+| **Step** | `step` | One journaled unit of a job's program. Once done, it is never run again: its recorded output is replayed after a pause, crash or restart. |
+| **Safe point** | — | A step boundary: where a job can pause or stop without losing work. |
 | **Verification** | `verification` | Commands The Eye runs itself (tests, builds, linters, type checks) to decide whether a task is done. |
 | **Drift** | `drift` | A Leg going off course: out-of-scope edits, loops, repeated failures, fake progress claims, stalls, token burn without progress. |
 | **Escalation ladder** | `escalation` | The Eye's response to drift, one step at a time: corrective prompt → context reset → reassign → kill → ask the user. |

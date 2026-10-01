@@ -26,32 +26,40 @@ does anything twice.
 
 ## Crash and reboot recovery
 
-On start, the daemon runs recovery before anything else:
+On start, the daemon runs recovery before the API answers anyone:
 
 1. Open the database (WAL) and run any pending migrations.
-2. Every job in an active state is set to `recovering`, internally.
+2. Steps the journal shows as unfinished are forgotten, so they run again.
 3. Every session that was running is marked `crashed`. Its Leg processes
-   are found by recorded PID and start time, and killed if still alive.
+   are found by recorded PID and start time, and killed if still alive
+   (a recovery hook, from M1.4).
 4. For each task that was `running`:
    - The worktree state is compared with the last checkpoint. Changes
      since then are kept, recorded in a new checkpoint, and noted in a
      Silk handoff built from the event log.
    - The task returns to `ready` with that handoff.
-5. Side effects in `intended` or `approved` are reconciled (BR-6): the
-   adapter checks whether the action happened (e.g. is the commit on
-   the remote, is the email in Sent). If the check is impossible, an
-   inbox question asks me. Nothing is re-run blindly.
-6. Jobs return to the state they were in (a paused job stays paused).
+5. Side effects caught in `performing` are reconciled (BR-6): the
+   action's reconciler checks whether it happened (e.g. is the commit
+   on the remote, is the email in Sent). If the check is impossible, an
+   inbox question asks me and the job waits. Nothing is re-run blindly.
+   Actions still `intended` or `approved` never started, so they simply
+   continue.
+6. Jobs return to the state they were in: active jobs restart their
+   program, which replays completed steps from the journal. A paused job
+   stays paused.
 7. An event "Recovered after crash/reboot" lists what was found and
    done. I'm notified.
 
 ## Lossless pause and resume (BR-7)
 
-**Pause** requests a safe point from every running session:
+**Pause** requests a safe point from every running session. A safe
+point is a step boundary; the step in flight sees its abort signal:
 
-1. Ask the Leg to finish its current turn. Up to 120 s by default.
+1. Ask the Leg to finish its current turn. Up to 120 s by default. Past
+   that, the UI is told the pause is overdue.
 2. If it doesn't finish in time, interrupt. The partial work stays on
-   disk.
+   disk. An external action cut short by the pause is marked for
+   checking on resume, like after a crash.
 3. Record a checkpoint and a handoff for each task.
 4. The job becomes `paused`. The UI said "Pausing…" until this point.
 

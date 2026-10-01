@@ -47,7 +47,7 @@ flowchart TB
 | Layer | Package | Holds |
 | :-- | :-- | :-- |
 | Contracts | `packages/contracts` | Zod schemas for every entity, API call, frame and event. |
-| Core rules | `packages/core` | Pure functions: state machines, routing score, budget math, drift detectors, context-pack assembly. Fully unit-tested, no I/O. |
+| Core rules | `packages/core` | Pure functions: job and task life cycles (M1.3); routing score, budget math, drift detectors and context-pack assembly as they arrive. Fully unit-tested, no I/O. |
 | Leg SDK | `packages/legs/sdk` | `LegAdapter` interface, the contract test kit. |
 | Adapters | `packages/legs/<kind>` | One per Leg kind. |
 | OS | `packages/os` | `Inhibitor`, `SecretStore`, `Metrics`, `Notifier`, `Sandbox`, `ServiceManager`; `linux/` now, `windows/` later. |
