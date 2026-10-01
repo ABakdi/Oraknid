@@ -1,2 +1,9 @@
 # Obsidian window layout — changes every time panes move
 docs/.obsidian/workspace.json
+
+# Dependencies and build output
+node_modules/
+dist/
+.turbo/
+coverage/
+*.tsbuildinfo
