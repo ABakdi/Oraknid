@@ -1,19 +1,22 @@
 # Leg Adapters
 
-Checked against official docs on 2026-10-01. Re-check before each
-adapter's phase and on every agent upgrade. Adapters are pinned to the
-versions their contract tests pass on.
+Checked against official docs on 2026-10-01, and the first two built
+and run the same day (M1.4). Re-check before each adapter's phase and
+on every agent upgrade. Adapters are pinned to the versions their
+contract tests pass on (`@anthropic-ai/claude-agent-sdk` 0.3.286 with
+Claude Code 2.1.286).
 
 ## The interface
 
 ```ts
 interface LegAdapter {
   kind: LegKind;
-  probe(leg: LegConfig): Promise<ProbeResult>;            // health, available models + efforts, context windows, features
-  start(ctx: SessionStart): Promise<LegSession>;          // model, effort, context pack, cwd, sandbox, permission hook
+  probe(leg: LegConfig, sandbox: SandboxPlan | null): Promise<ProbeResult>; // health, models + efforts, context windows, features
+  start(ctx: SessionStart): Promise<LegSession>;  // model, effort, context pack, cwd, sandbox plan, credential, permission hook
 }
 interface LegSession {
-  id: string; nativeSessionId?: string;
+  nativeSessionId(): string | null;                       // for resume
+  pid(): number | null;                                   // for metrics and recovery
   send(message: string): Promise<void>;                   // a follow-up turn
   events(): AsyncIterable<LegEvent>;                      // normalized stream (below)
   interrupt(): Promise<void>;                             // end the current turn at a safe point
@@ -21,13 +24,16 @@ interface LegSession {
   usage(): UsageSnapshot;                                 // tokens, context used, quota windows
 }
 // resume = start({ ..., resumeFrom: nativeSessionId })
-// permissions = SessionStart.onPermission(req) => Promise<"allow" | "deny" | { deny: string }>
+// permissions = SessionStart.onPermission(req) => Promise<{ allow: true } | { allow: false; message }>
 ```
 
 **Normalized events:** `turn.started`, `text.delta`, `tool.called`,
-`tool.result`, `file.changed`, `question` (the Leg asked me something),
-`permission.requested`, `usage`, `rate_limit`, `turn.ended`
-(`completed` · `interrupted` · `error` · `max_turns`), `session.ended`.
+`tool.result`, `question` (the Leg asked me something),
+`permission.requested` (with the decision), `usage`, `rate_limit`,
+`turn.ended` (`completed` · `interrupted` · `error` · `max_turns` ·
+`rate-limited`), `session.ended` (`completed` · `killed` · `crashed` ·
+`rate-limited`). File changes are seen by The Eye through the worktree
+diff, not reported by adapters.
 
 Every adapter passes the same **contract test kit** in
 `packages/legs/sdk`: start, follow-up, interrupt mid-turn, resume,
@@ -40,20 +46,24 @@ See [[ADR-011-Claude-Code-Adapter]].
 | Need | How |
 | :-- | :-- |
 | Start / follow-up | `@anthropic-ai/claude-agent-sdk` `query({ prompt: AsyncIterable })`. Each `send` pushes a user message. One `result` per turn. |
+| Sandbox | `spawnClaudeCodeProcess` runs the binary through the bwrap wrapper; the account's config dir is writable inside. |
+| Probe | `supportedModels()` and `accountInfo()` on a query that is never sent a message: no tokens spent. |
+| Context pack | `systemPrompt: { type: "preset", preset: "claude_code", append: <pack> }`, so Claude Code keeps its own tool instructions. |
 | Model / effort | `model` option per session (`opus`, `sonnet`, `haiku` or a full ID); the effort or thinking option where the SDK exposes one (checked at M1.4). `fallbackModel` is **not** used: The Eye chooses the model. |
 | Stream | `includePartialMessages: true` → `stream_event` deltas; `assistant` / `user` messages for tool calls and results. |
 | Resume | `resume: session_id`. MCP and settings are passed again. Sessions live under the Leg's `CLAUDE_CONFIG_DIR` (30-day retention); their format is internal and never parsed. |
 | Interrupt / kill | `interrupt()`; `close()` + kill the process group. SIGTERM leaves the turn unfinished. |
 | Permissions | `canUseTool` → The Eye's policy. Mode `default`. Never `bypassPermissions`. |
 | Usage | `result.modelUsage[model]` (input, output, cache, contextWindow; running totals); `getContextUsage()`. |
-| Quota | `rate_limit_event.rate_limit_info`: `status`, `rateLimitType` (`five_hour`, `seven_day`, `seven_day_opus`, `seven_day_sonnet`…), `utilization`, `resetsAt`. A 429 shows up as `system/api_retry` or an assistant `error: "rate_limit"`. |
+| Quota | `rate_limit_event.rate_limit_info`: `status`, `rateLimitType` (`five_hour`, `seven_day`, `seven_day_opus`, `seven_day_sonnet`…), `utilization`, `resetsAt` (**epoch seconds**). Seen live: while a window is `allowed`, `utilization` is absent, so Oraknid estimates it. A 429 shows up as `system/api_retry` or an assistant `error: "rate_limit"`. |
 | Accounts | One `CLAUDE_CONFIG_DIR` per Leg. I log into it with the official binary. Oraknid never reads tokens ([[ADR-009-Multiple-Accounts-Per-Provider]]). |
 | Host isolation | `settingSources: []`, explicit `mcpServers`. Not `--bare` (it skips subscription credentials). |
 | MCP | `mcpServers` option. |
 
 **Terms note:** the Agent SDK and `claude -p` usage draws from my plan's
 limits. Anthropic announced and then paused (2026-06-15) a separate
-Agent SDK credit. Its status is to be re-checked before Phase 1 ships.
+Agent SDK credit; re-checked 2026-10-01, **still paused**, with no new
+date. Re-check before `v0.1.0`.
 
 ## OpenAI-compatible (local) — MVP
 
@@ -61,9 +71,11 @@ These servers are models, not agents. They have no tools of their own.
 The adapter is therefore a **minimal agent loop owned by Oraknid**:
 
 - Chat completions with tool calling: `read_file`, `write_file`,
-  `apply_patch`, `list_dir`, `search`, `run_command`. The daemon
-  executes every tool **inside the sandbox**, through the same
-  permission policy.
+  `edit_file` (one exact replacement), `list_dir`, `search`,
+  `run_command`. File tools are confined to the worktree by real path;
+  `search` and `run_command` run **inside the sandbox**. Writes, edits
+  and commands go through the same permission policy; reads inside the
+  worktree do not ask.
 - The history is held by the adapter for the session's life only.
   Rotation and handoff work through Silk like every other Leg.
 - Models without reliable tool calling get profile strengths limited to

@@ -18,6 +18,8 @@ Phase 1 (the MVP) is in progress. See [the roadmap](docs/03-Planning/Roadmap.md)
 apps/daemon/          the service: API, live socket, CLI (`oraknid`)
 packages/contracts/   every entity, API shape and live frame, defined once (Zod)
 packages/os/          Linux integration: sandbox, sleep lock, secrets, metrics, notifications, service
+packages/core/        pure rules: life cycles, capability profiles
+packages/legs/        the Leg SDK and adapters: Claude Code, OpenAI-compatible
 docs/                 the canon
 ```
 

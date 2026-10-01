@@ -43,7 +43,9 @@ windows:
 
 1. Pick the kind.
 2. Fill in the kind's fields (binary path, config directory, endpoint,
-   model). Secrets go to the keychain (BR-13).
+   model). Secrets go to the keychain (BR-13). For Claude Code, an empty
+   config directory is created under Oraknid's data, and the Leg shows
+   the one command to log it in with the official binary.
 3. **Test.** Oraknid runs a tiny health prompt, reads the model and
    context window, and reports usage support. A failed test says
    exactly what failed and saves nothing until it passes, or until I
@@ -73,6 +75,8 @@ that agent and model, from my edits, and from observation.
 | `costModel` | `subscription` · `free` · `local` · `per-token` (with prices) |
 | `quotaWeight` | How fast this model burns the shared window relative to the Leg's cheapest model (e.g. Opus ≈ 5× Haiku). Starts from defaults, then learned from observed window movement. |
 | `effortLevels` | Supported effort or thinking levels, and the observed token multiplier of each. |
+| `windowLimits` | My estimate of each window's token allowance, used only when the provider reports no utilization. |
+| `maxDifficulty` | The hardest task (`low` · `medium` · `high`) this model should take on its own. |
 | `quotaModel` | Rolling windows (lengths), or tokens per minute, or none. |
 | `rateLimits` | Known limits. |
 | `speed` | Observed tokens/s and first-token latency. |

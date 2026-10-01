@@ -30,9 +30,10 @@ bwrap --unshare-all --share-net --die-with-parent --new-session \
   -- <command>
 ```
 
-- **Toolchain dirs** are detected per project (e.g. the node/pnpm
-  install, `~/.cargo`, `~/.local/share/pnpm`) and listed in the job
-  settings, where I can edit them.
+- **Toolchain dirs**: every `PATH` entry under my home (system ones live
+  under `/usr`, already bound), plus the real directory of the agent's
+  binary (e.g. `~/.local/share/claude/versions`). Editing them per job
+  arrives with the job settings.
 - The **Leg home** holds the Leg's config dir (e.g. `CLAUDE_CONFIG_DIR`),
   so its login and sessions persist across sessions.
 - Verification commands run in the same wrapper, without the Leg home.

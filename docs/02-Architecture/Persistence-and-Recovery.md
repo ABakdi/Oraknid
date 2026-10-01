@@ -10,7 +10,7 @@ durable step engine runs on the same database ([[ADR-003-Job-Execution-Engine]])
 | `projects`, `jobs`, `tasks`, `task_edges`, `web_versions` | The work. |
 | `attempts`, `sessions` | Who tried what, native session IDs, end reasons, usage totals. |
 | `legs`, `capability_profiles`, `leg_observations` | The pool and what was learned. |
-| `quota_windows` | The latest window state per Leg. |
+| (quota windows) | Stored as JSON on `legs` (account-wide windows) and `leg_models` (per-model windows), with `limited_until` on the Leg. |
 | `silk_entries` | Silk. |
 | `skills`, `skill_versions` | The library. |
 | `inbox_items` | Approvals and questions. |

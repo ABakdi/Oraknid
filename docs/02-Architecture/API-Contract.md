@@ -13,7 +13,7 @@ table is the summary and is kept in step with the contracts.
 | Jobs | `jobs.create` / `list` / `get` / `start` / `pause` / `resume` / `cancel` / `redirect` / `setAutonomy` / `stats` / `export` | |
 | Web | `web.get` / `web.edit` (add, remove, reorder, rewrite tasks) | Plan editing. |
 | Tasks | `tasks.get` / `tasks.pin` (to a Leg) / `tasks.takeOver` / `tasks.handBack` / `tasks.rollback` / `tasks.diff` | |
-| Legs | `legs.create` / `update` / `delete` / `list` / `test` / `pause` / `resume` / `profile.get` / `profile.update` | |
+| Legs | `legs.list` / `get` / `create` / `test` / `update` / `pause` / `resume` / `remove` / `setModelHidden` / `setProfile` | Creating tests the Leg at once. A Leg's view carries its models with effective profiles (defaults, learned, my overrides), quota windows, VRAM, and a setup hint (e.g. how to log in). |
 | Silk | `silk.list` / `silk.add` / `silk.edit` / `silk.supersede` / `silk.importMirror` | |
 | Inbox | `inbox.list` / `inbox.answer` | Approvals, questions, interview rounds. |
 | Skills | `skills.list` / `get` / `upload` / `edit` / `delete` | |

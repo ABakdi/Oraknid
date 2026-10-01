@@ -7,7 +7,7 @@ Where each piece of data lives, and who can read it.
 | Jobs, tasks, Web, stats | SQLite | Daemon, paired devices | Only through The Nest (E2E, Phase 4). |
 | Silk | SQLite + `.oraknid/silk/` mirror | Daemon, Legs of that job, me | Only as part of prompts sent to remote Legs. |
 | Context packs / prompts | Built in memory, logged condensed | Daemon, the receiving Leg | **Yes, to the Leg's provider** (e.g. Anthropic) for remote Legs. Local Legs: no. |
-| Leg raw output | `logs/<job>/<session>.ndjson` | Daemon, me | No. |
+| Leg raw output | `logs/jobs/<job>/<session>.ndjson` | Daemon, me | No. |
 | Workspace code | The project folder / worktree | Legs of that job (sandboxed) | Yes, to remote Legs' providers, as they read files. |
 | Secrets | OS keychain, or `secrets.json` (encrypted, 0600) when there's none | Daemon, at process start only | Only to the service they are for. |
 | Resource metrics | Memory only (last hour) | Daemon, paired devices | No. |

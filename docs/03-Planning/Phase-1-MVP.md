@@ -45,12 +45,15 @@ crashes and reboots.
 - [x] `jobs.pause` / `jobs.resume` / `jobs.cancel` on the API; until The Eye exists, a started job stops with an honest reason
 
 ### M1.4 — Legs
-- [ ] `LegAdapter` interface + contract test kit
-- [ ] Claude Code adapter via the Agent SDK ([[ADR-011-Claude-Code-Adapter]]); one config dir per Leg; Oraknid never handles tokens
-- [ ] OpenAI-compatible adapter with Oraknid's minimal tool loop, executed in the sandbox
-- [ ] Leg registry: add, test (`probe`), health checks every 60 s, capability profiles with defaults, learned values and overrides
-- [ ] Quota tracking from `rate_limit_event` and usage fields; "estimated" labelling
-- [ ] Re-check the Anthropic Agent SDK credit status (paused 2026-06-15) and record it here
+- [x] `LegAdapter` interface (`packages/legs/sdk`) and a contract test kit of 8 tests (a turn, a follow-up, interrupt, permission allowed and denied, a usage limit, kill, resume) that both adapters pass
+- [x] Claude Code adapter via the Agent SDK ([[ADR-011-Claude-Code-Adapter]]); one config dir per Leg, which I log into; Oraknid never handles tokens. Tested against a scripted SDK, and live on 2026-10-01 inside bubblewrap: the probe (no tokens) found my Max login and five models with effort levels; a Haiku turn asked permission for its command, which ran in the worktree
+- [~] OpenAI-compatible adapter with Oraknid's tool loop (read, write, edit, list, search, run): files confined to the worktree by real path (symlinks included), `search` and `run_command` inside bubblewrap. Tested against a stand-in server and the real sandbox. **Not yet tried against a real model**: this machine has no Ollama model installed (downloading one is my call). Checking a model's tool-calling in `probe` is left to its profile's known failures for now.
+- [x] Leg registry: add (Claude config dir created for me to log into, API keys straight to the secret store), test, health checks every 60 s, models synced from probes (my hidden models and overrides kept), default profiles per model, learned values and overrides side by side; pause a Leg
+- [~] Quota tracking: `rate_limit_event` windows recorded per account or per model; a rejected account window makes the Leg `rate-limited` until it resets; missing utilization estimated from my window limits and labelled. Claude reports no utilization while a window is open, so the estimate matters. Job quota-share budgets arrive with budgets in M1.7.
+- [x] Anthropic Agent SDK credit re-checked 2026-10-01: **still paused**; `claude -p` and Agent SDK use draw from the plan's own limits
+- [x] From M1.2: toolchain directories (every PATH entry under my home, plus the agent binary's real directory) bound read-only; Ollama `/api/ps` VRAM per loaded model
+- [x] Sessions and attempts tables; a session's raw stream goes to `logs/jobs/<job>/<session>.ndjson`, condensed events (text coalesced per 250 ms) to the bus; recovery kills a crashed session's processes only when pid **and** start time match
+- [~] Learning from outcomes is ready in `packages/core`; The Eye records outcomes in M1.6
 
 ### M1.5 — Silk
 - [ ] Silk store and kinds ([[Silk]])
