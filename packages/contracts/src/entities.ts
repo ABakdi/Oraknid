@@ -270,6 +270,8 @@ export const InboxFilter = z.object({
   jobId: Id.optional(),
   /** Words to find in the title, the detail, the job or the project. */
   q: z.string().max(200).optional(),
+  /** At most this many, open and newest first (Audit 1 → Q1-17). */
+  limit: z.number().int().positive().max(2000).default(500),
 });
 export type InboxFilter = z.infer<typeof InboxFilter>;
 

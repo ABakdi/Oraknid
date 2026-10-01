@@ -101,7 +101,7 @@ export class InboxStore {
       });
     }
     const rank = (i: InboxItem) => (i.state === "open" ? 0 : 2) + (i.kind === "approval" ? 0 : 1);
-    return rows.sort((a, b) => rank(a) - rank(b));
+    return rows.sort((a, b) => rank(a) - rank(b)).slice(0, f.limit ?? 500);
   }
 
   get(id: string) {

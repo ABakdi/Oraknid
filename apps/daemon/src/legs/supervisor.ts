@@ -137,6 +137,9 @@ export class LegSupervisor {
       throw error;
     }
 
+    // Known from the spawn, not the first event: recovery can find it after any crash (Audit 1 → D1-15).
+    this.#recordPid(id, session);
+
     // Killing through the supervisor records the end itself: after a kill nobody may read the stream's last event.
     const supervised: LegSession = {
       ...session,

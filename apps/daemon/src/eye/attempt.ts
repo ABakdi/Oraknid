@@ -320,6 +320,25 @@ export async function runAttempt(
   const asked: string[] = [];
   /** Commands waiting for their result, by tool call id. */
   const pending = new Map<string, string>();
+  /** What every turn's events tell the drift detectors: commands, results, usage, activity. */
+  const watch = (e: LegEvent) => {
+    observed.lastActivityAt = now();
+    if (e.type === "tool.called" && typeof e.input.command === "string")
+      pending.set(e.id, e.input.command);
+    if (e.type === "tool.result" && pending.has(e.id)) {
+      observed.commands.push({
+        command: pending.get(e.id) as string,
+        outputHash: hash(`${e.ok}:${e.output}`),
+      });
+      pending.delete(e.id);
+    }
+    if (e.type === "usage") {
+      sessionTokens = e.usage.inputTokens + e.usage.outputTokens;
+      observed.tokensSinceProgress = Math.max(0, sessionTokens - tokensBaseline);
+      usage = e.usage;
+    }
+  };
+
   let usage = null as UsageSnapshot | null;
 
   const observed: Observed = {
@@ -640,23 +659,7 @@ export async function runAttempt(
     let turns = 0;
     for (;;) {
       if (!session) throw new Error("no session");
-      const end = await nextTurnEnd(session, signal, d.stallCheckMs ?? 30_000, (e) => {
-        observed.lastActivityAt = now();
-        if (e.type === "tool.called" && typeof e.input.command === "string")
-          pending.set(e.id, e.input.command);
-        if (e.type === "tool.result" && pending.has(e.id)) {
-          observed.commands.push({
-            command: pending.get(e.id) as string,
-            outputHash: hash(`${e.ok}:${e.output}`),
-          });
-          pending.delete(e.id);
-        }
-        if (e.type === "usage") {
-          sessionTokens = e.usage.inputTokens + e.usage.outputTokens;
-          observed.tokensSinceProgress = Math.max(0, sessionTokens - tokensBaseline);
-          usage = e.usage;
-        }
-      });
+      const end = await nextTurnEnd(session, signal, d.stallCheckMs ?? 30_000, watch);
       if (!end) {
         // No turn end yet: look for a stall or burn. Waiting for me is neither.
         if (waitingOnOwner > 0) {
@@ -803,7 +806,8 @@ export async function runAttempt(
           contextTokens: usage?.contextTokens,
           contextWindow: usage?.contextWindow,
         });
-        await nextTurnEnd(session as Supervised, signal, 600_000);
+        // The turn being finished is watched like any other (Audit 1 → Q1-23).
+        await nextTurnEnd(session as Supervised, signal, 600_000, watch);
         await handOff(true);
         await closeSession();
         await openSession(
