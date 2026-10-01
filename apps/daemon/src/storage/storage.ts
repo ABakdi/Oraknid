@@ -107,10 +107,12 @@ export async function nightlyBackup(db: Db, dir: string, now = Date.now(), keep 
   // Written aside, checked, then named: a crash never leaves a half backup that counts (Audit 1 → D1-14).
   const tmp = join(dir, `${name}.tmp`);
   await db.$client.backup(tmp);
-  const check = new Database(tmp, { readonly: true });
+  const check = new Database(tmp);
   try {
     const r = check.pragma("quick_check", { simple: true });
     if (r !== "ok") throw new Error(`The nightly backup failed its check: ${String(r)}`);
+    // One self-contained file: no write-ahead log beside it.
+    check.pragma("journal_mode = DELETE");
   } finally {
     check.close();
   }
