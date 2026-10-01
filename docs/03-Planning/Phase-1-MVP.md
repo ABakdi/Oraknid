@@ -89,14 +89,15 @@ crashes and reboots.
 - [~] Moved to M1.9 hardening: summarising shortened Silk entries with `brain.summarize`, and a second reasoning look at tasks without verify commands (accepted after their turn for now)
 
 ### M1.8 — Web UI
-- [ ] Shell: sidebar / bottom tabs, ⌘K palette, live indicator, inhibitor badge, inbox count, dark-first theme
-- [ ] Overview: Legs now, activity stream, problems, resources, totals
-- [ ] Job page: animated Web (React Flow + ELK + Motion), task drawer, tabs, controls, plan editor
-- [ ] Charts ([[ADR-005-Charts-and-Graph-Visualization]])
-- [ ] Projects, New job, Inbox (with interview rounds), Legs, Skills, Logs, Settings
-- [ ] Pairing flow; PWA install; push subscription
-- [ ] Empty, loading and error states for every screen (BR-17)
-- [ ] Check every screen at phone width
+- [x] Shell: sidebar / bottom tabs ("More" for the rest), ⌘K palette (pages, jobs, pause and resume), live indicator, "awake" badge, inbox count, dark-first theme with light and system
+- [x] Overview: Legs now (what each runs, model and effort, every quota window with its reset, context), activity stream, problems, resources (CPU, memory, disk, network, GPU, per process with VRAM), totals, tokens today by Leg
+- [~] Job page: The Web as a live graph (React Flow, ELK in a Web Worker; nodes glide to new places, running tasks pulse, edges into running work animate), task drawer (instructions, scope, checks and their last result, why this model, attempts with rollback, pin, take over / hand back, edit, remove), tabs (Activity, Silk, Inbox, Budget, Stats), controls (pause, resume, redirect, autonomy, cancel with a confirmation). The plan editor edits, adds and removes tasks and their dependencies; drag-to-reorder is not built. Motion was not needed: CSS transitions move the nodes.
+- [x] Charts ([[ADR-005-Charts-and-Graph-Visualization]]): tokens over time stacked by Leg model (The Eye on its own line), success by Leg model, sparklines
+- [x] Projects (with per-project stats and history), New job (one form; Start says why it's disabled), Inbox (approvals, questions, interview rounds, approve-all-like-this), Legs (add and test, login hint, models, profile editor with learned values next to mine), Skills (view, upload, edit with preview, delete), Logs (audit search), Settings (the machine, The Eye Leg, notifications with the routing table and quiet hours, email, push on this device, my rules, devices and pairing, look)
+- [~] Pairing (`oraknid pair`, and `oraknid open` pairs this machine's browser by itself), an installable PWA (manifest and a hand-written service worker), push subscription from Settings. Push on a phone needs the phone to reach the daemon: The Nest (Phase 4). Device tokens are long-lived and revocable rather than short-lived sessions.
+- [x] Empty, loading and error states (BR-17): every empty list says what it is and what to do; errors are sentences
+- [x] Checked by hand on 2026-10-01 against the real daemon and the earlier live job: desktop, and 390 px frames in dark and light; nothing scrolls sideways. That found the graph fitting before its layout, the graph controls ignoring the theme, and activity lines shown twice; all fixed.
+- [~] Not built yet: storage use and pruning, rules per project, editing a job's budget after it starts
 
 ### M1.9 — Dogfood
 - [ ] Run a real job on a real project with the canon-driven skill, from interview to completion

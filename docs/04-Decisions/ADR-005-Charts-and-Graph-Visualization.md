@@ -18,6 +18,10 @@ components.
 - Live updates are batched per animation frame. A relayout only happens
   when the structure changes, not when a state changes.
 
+**As built (2026-10-01, M1.8):** Recharts is pinned at 3.8 by shadcn's
+chart component. Nodes move with a CSS transition on React Flow's
+transforms, which was enough; Motion is not used.
+
 ## Consequences
 - One styling system across charts, graph and the rest of the UI.
 - ELK in a worker keeps large graphs from freezing the UI.

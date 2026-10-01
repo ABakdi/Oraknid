@@ -58,9 +58,12 @@ sandbox limits damage, but it doesn't make that safe.
   name (stops DNS rebinding) or whose `Origin` is another site (stops a
   web page in my browser from calling it).
 - Every client must be a **paired device**. Pairing happens from the
-  local machine: the CLI or UI shows a short code, which the new device
-  enters. Devices hold a key and get short-lived session tokens. Any
-  device can be revoked.
+  local machine: `oraknid pair` (or Settings → Devices) shows a
+  six-digit code, valid five minutes and usable once, which the new
+  device enters; `oraknid open` pairs this machine's browser by itself.
+  A device gets a long-lived token, kept by the daemon only as a hash,
+  and any device can be revoked. The CLI's token is new at every start,
+  in a file only my user can read.
 - Exposing the daemon on the local network (so my phone can reach it
   before The Nest exists) is an explicit setting, served over HTTPS with
   a local certificate.

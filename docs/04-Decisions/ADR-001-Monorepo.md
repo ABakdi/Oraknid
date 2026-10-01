@@ -37,6 +37,12 @@ are pinned in the root `package.json` at scaffold time. Node: the
 current Active LTS at scaffold time (Node 24 until 2026-10-20, then
 Node 26, which becomes LTS on 2026-10-28).
 
+**As built (2026-10-01):** the web app's service worker is written by
+hand (`apps/web/public/sw.js`: shell cache, web push, notification
+clicks) instead of `vite-plugin-pwa`, which brought nothing it needed.
+shadcn/ui components live in `apps/web/src/components/ui/` as vendored
+upstream code and are left out of linting.
+
 ## Consequences
 - Contracts and rules are imported, never copied, so programs can't disagree.
 - Adding a Leg kind means adding a `packages/legs/<kind>` package.

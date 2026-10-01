@@ -15,7 +15,8 @@ Phase 1 (the MVP) is in progress. See [the roadmap](docs/03-Planning/Roadmap.md)
 ## Layout
 
 ```
-apps/daemon/          the service: API, live socket, CLI (`oraknid`)
+apps/daemon/          the service: The Eye, the API, the live socket, the CLI (`oraknid`)
+apps/web/             the web UI (React, shadcn/ui), served by the daemon
 packages/contracts/   every entity, API shape and live frame, defined once (Zod)
 packages/os/          Linux integration: sandbox, sleep lock, secrets, metrics, notifications, service
 packages/core/        pure rules: life cycles, capability profiles
@@ -32,6 +33,7 @@ Needs Linux, Node 22.12+ and pnpm 9.
 ```sh
 pnpm install
 pnpm check                  # lint, typecheck and tests across the workspace
+pnpm --filter @oraknid/web build      # the UI the daemon serves
 pnpm --filter @oraknid/daemon build
 
 # run the daemon from source
@@ -39,6 +41,8 @@ cd apps/daemon
 pnpm exec tsx src/cli.ts doctor
 pnpm exec tsx src/cli.ts start
 pnpm exec tsx src/cli.ts status
+pnpm exec tsx src/cli.ts open    # pairs this browser and opens the UI
+pnpm exec tsx src/cli.ts pair    # a code for a phone or another browser
 pnpm exec tsx src/cli.ts stop
 ```
 
