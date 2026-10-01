@@ -385,12 +385,16 @@ export async function startDaemon(options: DaemonOptions) {
       stopWatchdog();
       bus.publish({ type: "system.stopping", topic: "overview", jobId: null, payload: null });
       metricsLoop.stop();
-      // Jobs reach a safe point and keep their state for the next start.
-      await runner.shutdown();
+      // Nothing may start a run once shutdown begins: timers and watchers go first (Audit 1 → D1-08).
       health.stop();
       clearInterval(mirrorTimer);
       clearInterval(blockedTimer);
       budgets.stop();
+      // Jobs reach a safe point and keep their state for the next start, within systemd's stop timeout.
+      await Promise.race([
+        runner.shutdown(),
+        new Promise((resolve) => setTimeout(resolve, 140_000).unref()),
+      ]);
       notifyRouter.stop();
       audit.stop();
       backups.stop();

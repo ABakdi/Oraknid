@@ -93,6 +93,32 @@ describe("steps", () => {
     expect(runs).toEqual(["a", "b", "b", "c"]);
   });
 
+  it("applies a resume sent while a pause is reaching its safe point, and starts nothing once shutting down", async () => {
+    let slow = true;
+    const e = engine(async (ctx) => {
+      if (ctx.state() === "draft") ctx.setState("planning");
+      await ctx.step("slow", null, async () => {
+        // Reaches its safe point late, ignoring the abort for a moment.
+        if (slow) await new Promise((r) => setTimeout(r, 200));
+        return 1;
+      });
+      ctx.setState("running");
+      ctx.setState("verifying");
+      ctx.setState("completed");
+    });
+    const id = seedJob(db);
+    e.runner.start(id);
+    const pausing = e.runner.pause(id);
+    slow = false;
+    await e.runner.resume(id);
+    await pausing;
+    await until(() => e.jobs.require(id).state === "completed");
+
+    const other = seedJob(db);
+    await e.runner.shutdown();
+    expect(() => e.runner.start(other)).toThrow(/stopping/);
+  });
+
   it("refuses to replay a step with different input", async () => {
     let input = 1;
     const e = engine(async (ctx) => {

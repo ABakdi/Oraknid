@@ -72,6 +72,8 @@ export interface RunnerOptions {
  */
 export class JobRunner {
   readonly #runs = new Map<string, Run>();
+  /** Shutting down: no new run may start (Audit 1 → D1-08). */
+  #closing = false;
 
   constructor(private readonly o: RunnerOptions) {}
 
@@ -81,6 +83,7 @@ export class JobRunner {
 
   /** Starts (or, after recovery, restarts) a job's program. */
   start(jobId: string) {
+    if (this.#closing) throw new Error("Oraknid is stopping; the job goes on at the next start.");
     if (this.#runs.has(jobId)) return;
     const job = this.o.jobs.require(jobId);
     if (isTerminalJob(job.state as JobState)) throw new Error("That job has already ended.");
@@ -105,6 +108,9 @@ export class JobRunner {
   }
 
   async resume(jobId: string) {
+    // A pause still reaching its safe point finishes first; then this resume applies (Audit 1 → Q1-09).
+    const stopping = this.#runs.get(jobId);
+    if (stopping?.stop === "pause") await stopping.done;
     const job = this.o.jobs.require(jobId);
     if (isTerminalJob(job.state as JobState)) throw new Error("That job has already ended.");
     if (job.state !== "paused" && job.state !== "waiting" && job.state !== "blocked") {
@@ -124,6 +130,7 @@ export class JobRunner {
 
   /** The daemon is stopping: every job reaches a safe point and keeps its state for next start. */
   async shutdown() {
+    this.#closing = true;
     await Promise.all([...this.#runs].map(([id, run]) => this.#stop(id, run, "shutdown", null)));
   }
 

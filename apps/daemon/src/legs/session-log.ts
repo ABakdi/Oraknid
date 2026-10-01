@@ -26,7 +26,22 @@ export function readSessionLog(
     closeSync(fd);
   }
   const lastNl = buf.lastIndexOf(10);
-  if (lastNl < 0) return { entries: [], next: after };
+  if (lastNl < 0) {
+    if (after + length >= size) return { entries: [], next: after }; // a line still being written
+    // One line longer than a read: skipped, so the rest of the log stays readable (Audit 1 → Q1-03).
+    const end = nextNewline(file, after + length, size);
+    return {
+      entries: [
+        {
+          at: 0,
+          kind: "result",
+          ok: true,
+          text: `(${end - after} bytes of output, too long to show)`,
+        },
+      ],
+      next: end === size ? size : end + 1,
+    };
+  }
   const entries: SessionLogEntry[] = [];
   for (const line of buf.subarray(0, lastNl).toString("utf8").split("\n")) {
     if (!line.trim()) continue;
@@ -102,4 +117,20 @@ function describeTool(input: unknown): string {
 
 function cut(s: string, max = MAX_OUTPUT): string {
   return s.length > max ? `${s.slice(0, max)}\n… (${s.length - max} more characters)` : s;
+}
+
+/** The offset of the next newline at or after `from`, or the file's size. */
+function nextNewline(file: string, from: number, size: number): number {
+  const chunk = Buffer.alloc(64 * 1024);
+  const fd = openSync(file, "r");
+  try {
+    for (let pos = from; pos < size; pos += chunk.length) {
+      const n = readSync(fd, chunk, 0, Math.min(chunk.length, size - pos), pos);
+      const i = chunk.subarray(0, n).indexOf(10);
+      if (i >= 0) return pos + i;
+    }
+    return size;
+  } finally {
+    closeSync(fd);
+  }
 }
