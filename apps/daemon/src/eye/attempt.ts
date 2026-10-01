@@ -981,6 +981,9 @@ function shouldRotate(u: UsageSnapshot | null, at: number): boolean {
 }
 
 /** Reads events until a turn ends; null when `ms` pass first (time to look for a stall). */
+/** The read in flight on each session's events, kept across calls. */
+const waiting = new WeakMap<AsyncIterator<LegEvent>, Promise<IteratorResult<LegEvent>>>();
+
 async function nextTurnEnd(
   s: Supervised,
   signal: AbortSignal,
@@ -996,8 +999,12 @@ async function nextTurnEnd(
     if (left <= 0) return null;
     let timer: NodeJS.Timeout | undefined;
     let onAbort: (() => void) | undefined;
+    // A read still pending from a call that timed out is reused, never dropped: dropping it
+    // lost the event it later delivered (a turn's end), and the attempt waited for ever.
+    const pending = waiting.get(it) ?? it.next();
+    waiting.set(it, pending);
     const next = await Promise.race([
-      it.next(),
+      pending,
       new Promise<"timeout">((r) => {
         timer = setTimeout(() => r("timeout"), left);
       }),
@@ -1011,6 +1018,7 @@ async function nextTurnEnd(
     });
     if (next === "timeout") return null;
     if (next === "abort") throw signal.reason;
+    waiting.delete(it);
     if (next.done)
       return { type: "turn.ended", reason: "error", text: "", error: "The session ended." };
     onEvent?.(next.value);

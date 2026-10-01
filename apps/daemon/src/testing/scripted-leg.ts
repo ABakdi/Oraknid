@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
@@ -115,7 +115,8 @@ export function scriptedLeg(script: (t: TurnContext) => Action[]) {
               events.push({ type: "tool.result", id, ok: false, output: decision.message });
               continue;
             }
-            const r = spawnSync("/bin/sh", ["-c", a.run], { cwd: s.cwd, encoding: "utf8" });
+            // Asynchronous like a real Leg's tool: other sessions go on meanwhile.
+            const r = await runShell(a.run, s.cwd);
             events.push({
               type: "tool.result",
               id,
@@ -183,4 +184,23 @@ export function scriptedLeg(script: (t: TurnContext) => Action[]) {
     },
   };
   return { adapter, log };
+}
+
+function runShell(
+  command: string,
+  cwd: string,
+): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn("/bin/sh", ["-c", command], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d) => {
+      stdout += d;
+    });
+    child.stderr.on("data", (d) => {
+      stderr += d;
+    });
+    child.on("error", (e) => resolve({ status: null, stdout, stderr: String(e) }));
+    child.on("close", (status) => resolve({ status, stdout, stderr }));
+  });
 }
