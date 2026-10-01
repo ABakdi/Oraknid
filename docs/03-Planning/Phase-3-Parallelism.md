@@ -1,7 +1,7 @@
 # Phase 3 — Parallelism
 
 Touches [[The-Eye]], [[Jobs-and-Projects]], [[Sandboxing]], [[Durability]].
-Written 2026-10-01 as an outline.
+Written 2026-10-01 as an outline; detailed 2026-10-01 with [[ADR-016-Parallel-Work]]. M3.3 is built first: it is the smallest step, and several jobs could already run unlimited.
 
 ## Why
 
@@ -20,9 +20,11 @@ tasks in The Web, and independent jobs, can run together.
 - [ ] Conflicts become a new task (routed like any other), never a silent overwrite
 - [ ] Re-verify after every merge
 
-### M3.3 — Several jobs
-- [ ] Lift BR-19; queue with priorities
-- [ ] Fair sharing of Legs and quota between jobs
+### M3.3 — Several jobs (first)
+- [ ] A running-jobs limit (setting, default 2), enforced by the runner for every start and resume; past it, the job is queued
+- [ ] Priorities: higher first, then oldest; changeable while queued
+- [ ] A per-Leg session limit; a task whose Legs are all busy waits for one without blocking its job
+- [ ] BR-19 replaced; UI: queued badge, priority, the limits in Settings
 
 ## Exit criterion
 

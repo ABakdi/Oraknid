@@ -62,6 +62,7 @@ Nothing is built yet.
 - [[ADR-012-Sleep-Inhibition]] — a `systemd-inhibit` holder process
 - [[ADR-014-Auto-Approval]] — rules first, then a classifier; asked only when it matters
 - [[ADR-015-OpenCode-Adapter]] — OpenCode v2 through a private server per session, every action asked
+- [[ADR-016-Parallel-Work]] — a job queue first, then tasks side by side in their own worktrees
 - [[ADR-013-Model-Aware-Routing]] — route to Leg + model + effort; smallest sufficient model; reserve scarce windows
 
 ## 05 — Checkpoints
