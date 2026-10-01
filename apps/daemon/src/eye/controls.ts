@@ -91,9 +91,11 @@ export async function rollbackTask(d: ControlDeps, taskId: string, attempt: numb
     throw new Error("Pause the job before rolling back.");
   }
   const project = d.db.select().from(projects).where(eq(projects.id, job.projectId)).get();
+  // A task that ran beside others has its own worktree (ADR-016).
+  const tree = t.worktree ?? job.worktree;
   const g = project?.shadow
-    ? shadowRepo(job.worktree)
-    : worktreeGit(project?.workspacePath ?? job.worktree, job.worktree);
+    ? shadowRepo(tree)
+    : worktreeGit(project?.workspacePath ?? job.worktree, tree);
   const result = await rollback(
     g,
     `refs/oraknid/${job.id}/${taskId}/${attempt}`,
