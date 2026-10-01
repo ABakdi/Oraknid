@@ -966,6 +966,44 @@ describe("my controls (M1.8 API)", () => {
     ).rejects.toThrow(/has ended/);
   });
 
+  it("lets me choose which of two ready tasks runs first (Phase 2 → M2.0)", async () => {
+    const TWO: WebPlan = {
+      summary: "Two independent scripts.",
+      tasks: [
+        { ...(HELLO.tasks[0] as WebPlan["tasks"][number]), key: "a", title: "Write hello.sh" },
+        {
+          ...(HELLO.tasks[0] as WebPlan["tasks"][number]),
+          key: "b",
+          title: "Write bye.sh",
+          scope: ["bye.sh"],
+          verify: ["test -f bye.sh"],
+        },
+      ],
+      jobVerify: [],
+    };
+    const { api, id, leg } = await eye(
+      (t) =>
+        task(t) === "Write bye.sh"
+          ? [{ write: "bye.sh", content: "echo bye\n" }, { say: "DONE" }]
+          : good(t),
+      { plan: TWO, autonomy: "supervised" },
+    );
+    await openItem(api, "Approve the plan");
+    const [a, b] = (await api.jobs.get({ id })).tasks;
+    await api.web.edit({
+      jobId: id,
+      edits: [{ op: "order", taskIds: [b?.id as string, a?.id as string] }],
+    });
+    await api.inbox.answer({ id: (await openItem(api, "Approve the plan")).id, answer: "Approve" });
+    await api.inbox.answer({
+      id: (await openItem(api, "Approve the plan, version 2")).id,
+      answer: "Approve",
+    });
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    const order = leg.log.map((t) => task(t)).filter((x, i, all) => x && all.indexOf(x) === i);
+    expect(order).toEqual(["Write bye.sh", "Write hello.sh"]);
+  });
+
   it("refuses to edit a task that is running, saying why", async () => {
     const { api, id } = await eye((t) =>
       task(t) === "Write hello.sh" ? [{ hang: true }] : good(t),

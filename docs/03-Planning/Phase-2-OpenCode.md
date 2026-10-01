@@ -17,8 +17,9 @@ makes fallback and cross-Leg handoff real.
 - [x] Task drawer: the diff of the task's work (its commit once done, its work so far before); its checkpoints are its attempts, each with rollback (Q1-20)
 - [x] Logs: export the audit log as JSON lines and read the daemon's log in the UI; the daemon writes its own log, rotated at 10 MB (Q1-20)
 - [x] Git off the event loop: snapshots, diffs, rollbacks and commits run asynchronously, so a huge work tree can't stall the daemon past its watchdog (D1-05); quick lookups stay synchronous
-- [ ] Plan editor: drag to reorder dependencies (Q1-20)
+- [x] Plan editor: drag (or arrow) the order waiting tasks run in when several are ready; dependencies still come first (Q1-20)
 - [ ] Attempt step keys from a durable attempt id (D1-12)
+- [x] Projects: archive, restore and delete (Core-Entities → Project)
 
 ### M2.1 — OpenCode adapter
 - [ ] Adapter on OpenCode's headless/server interface (see [[Leg-Adapters]])

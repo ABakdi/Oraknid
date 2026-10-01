@@ -1,5 +1,5 @@
 import type { Event, JobView, TaskView } from "@oraknid/contracts";
-import { Ban, Pause, Play, Plus, ShieldAlert, Signpost, Undo2 } from "lucide-react";
+import { Ban, ListOrdered, Pause, Play, Plus, ShieldAlert, Signpost, Undo2 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { Agents } from "@/components/agents";
@@ -8,6 +8,7 @@ import { ErrorNote, Loading, Markdown, PageHeader, Stat, StateBadge } from "@/co
 import { EyeChat } from "@/components/eye-chat";
 import { JobResult } from "@/components/job-result";
 import { JobSettings } from "@/components/job-settings";
+import { OrderDialog } from "@/components/order-dialog";
 import { TaskDiff } from "@/components/task-diff";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -77,6 +78,7 @@ export function JobPage({ id }: { id: string }) {
   const [redirecting, setRedirecting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [ordering, setOrdering] = useState(false);
 
   const modelName = useCallback(
     (modelId: string | null) => {
@@ -203,6 +205,16 @@ export function JobPage({ id }: { id: string }) {
           <Plus className="size-4" />
           {t("Add a task")}
         </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="gap-1"
+          onClick={() => setOrdering(true)}
+          disabled={j.state === "completed" || j.state === "cancelled"}
+        >
+          <ListOrdered className="size-4" />
+          {t("Order")}
+        </Button>
       </div>
 
       <Tabs defaultValue="agents">
@@ -247,6 +259,7 @@ export function JobPage({ id }: { id: string }) {
       />
       <RedirectDialog open={redirecting} onOpenChange={setRedirecting} id={id} />
       <AddTaskDialog open={adding} onOpenChange={setAdding} job={j} />
+      <OrderDialog job={j} open={ordering} onOpenChange={setOrdering} />
       <Dialog open={cancelling} onOpenChange={setCancelling}>
         <DialogContent>
           <DialogHeader>

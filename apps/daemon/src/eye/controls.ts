@@ -127,6 +127,8 @@ export const WebEdit = z.discriminatedUnion("op", [
     requiredCapabilities: z.array(Capability).min(1).default(["implementation"]),
   }),
   z.object({ op: z.literal("remove"), taskId: z.string() }),
+  /** The order unfinished tasks run in, when several are ready at once (Phase 2 → M2.0). */
+  z.object({ op: z.literal("order"), taskIds: z.array(z.string()).min(1) }),
 ]);
 export type WebEdit = z.infer<typeof WebEdit>;
 
@@ -152,7 +154,7 @@ export function editWeb(d: ControlDeps, jobId: string, edits: WebEdit[]) {
     return t;
   };
   d.bus.atomically(() => {
-    let position = all.length;
+    let position = Math.max(-1, ...all.map((t) => t.position)) + 1;
     for (const e of edits) {
       if (e.op === "update") {
         mine(e.taskId);
@@ -183,6 +185,12 @@ export function editWeb(d: ControlDeps, jobId: string, edits: WebEdit[]) {
           .run();
         for (const dep of e.dependsOn)
           d.db.insert(taskEdges).values({ taskId: id, dependsOn: dep }).run();
+      } else if (e.op === "order") {
+        // Listed tasks keep their relative order after everything else; ready work runs top first.
+        for (const taskId of e.taskIds) {
+          mine(taskId);
+          d.db.update(tasks).set({ position: position++ }).where(eq(tasks.id, taskId)).run();
+        }
       } else {
         mine(e.taskId);
         d.db.delete(taskEdges).where(eq(taskEdges.dependsOn, e.taskId)).run();
