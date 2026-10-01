@@ -64,7 +64,13 @@ import {
   takeOver,
   WebEdit,
 } from "../eye/controls.ts";
-import { GlobalPolicy, readGlobalPolicy, writeGlobalPolicy } from "../eye/policy.ts";
+import {
+  GlobalPolicy,
+  readGlobalPolicy,
+  readProjectPolicy,
+  writeGlobalPolicy,
+  writeProjectPolicy,
+} from "../eye/policy.ts";
 import { conversation, talk } from "../eye/talk.ts";
 import type { InboxStore } from "../inbox/store.ts";
 import type { LegRegistry } from "../legs/registry.ts";
@@ -236,6 +242,19 @@ export const router = {
     }),
   },
   projects: {
+    /** My command rules for one project (Approvals → Rules, M1.9). */
+    policy: base
+      .input(z.object({ id: z.string() }))
+      .output(GlobalPolicy)
+      .handler(({ context: c, input }) => readProjectPolicy(c.jobs.db, input.id)),
+    setPolicy: base
+      .input(GlobalPolicy.extend({ id: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          c.projects.require(input.id);
+          writeProjectPolicy(c.jobs.db, c.bus, input.id, { allow: input.allow, deny: input.deny });
+        }),
+      ),
     create: base
       .input(NewProject)
       .output(ProjectView)

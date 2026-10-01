@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Budget, JobView, WebPlan } from "@oraknid/contracts";
+import { decide } from "@oraknid/core";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { RouterClient } from "@orpc/server";
@@ -15,6 +16,7 @@ import { resolvePaths } from "../paths.ts";
 import { fakeOs } from "../testing/fake-os.ts";
 import { type Action, scriptedLeg, type TurnContext } from "../testing/scripted-leg.ts";
 import type { EyeBrain, EyeTriage } from "./brain.ts";
+import { policyFor } from "./policy.ts";
 
 let daemon: Daemon | undefined;
 afterEach(async () => {
@@ -609,6 +611,27 @@ describe("approvals and autonomy (M1.7)", () => {
     );
     await api.policies.update({ allow: ["^nmap "], deny: ["rm -rf build"] });
     expect(await api.policies.get()).toEqual({ allow: ["^nmap "], deny: ["rm -rf build"] });
+  });
+
+  it("puts a project's rules between the job's and the global ones (M1.9)", async () => {
+    const { api, id, d } = await eye(good);
+    const job = await api.jobs.get({ id });
+    await expect(
+      api.projects.setPolicy({ id: job.projectId, allow: [], deny: ["["] }),
+    ).rejects.toThrow("/[/ is not a valid pattern.");
+    await api.policies.update({ allow: ["^nmap "], deny: [] });
+    await api.projects.setPolicy({ id: job.projectId, allow: [], deny: ["^nmap "] });
+    expect(await api.projects.policy({ id: job.projectId })).toEqual({
+      allow: [],
+      deny: ["^nmap "],
+    });
+    const bash = (command: string) => ({ tool: "Bash", command, path: null });
+    expect(decide(bash("nmap localhost"), policyFor(d.db, id, "/w"))).toMatchObject({
+      verdict: "deny",
+      reason: expect.stringContaining("project deny rule"),
+    });
+    await api.jobs.setRules({ id, allow: ["^nmap "], deny: [] });
+    expect(decide(bash("nmap localhost"), policyFor(d.db, id, "/w")).verdict).toBe("allow");
   });
 });
 

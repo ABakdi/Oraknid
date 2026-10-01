@@ -49,6 +49,11 @@ command), The Eye decides by policy:
    says why; Supervised asks me. Commands are parsed as the shell
    parses them, so a heredoc or a loop is one program, not its words.
 
+My allow and deny lists exist at three levels: the job's, the
+project's (on the project page) and the global ones (Settings). The
+most specific level with a matching rule decides; within a level, deny
+beats allow. The never-allowed list stands above them all.
+
 ## The inbox
 
 One list for every approval and question across all jobs, newest and

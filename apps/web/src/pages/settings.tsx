@@ -2,6 +2,7 @@ import type { NotificationSettings, NotifyEvent, Route } from "@oraknid/contract
 import { useState } from "react";
 import { toast } from "sonner";
 import { ErrorNote, Loading, PageHeader } from "@/components/common";
+import { RulesCard } from "@/components/rules-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -465,63 +466,16 @@ function FallbackCard() {
 }
 
 function PolicyCard() {
-  const p = useLive(() => api.policies.get(), { topics: [] });
-  const [allow, setAllow] = useState<string | null>(null);
-  const [deny, setDeny] = useState<string | null>(null);
-  if (!p.data) return <Loading rows={2} />;
-  const lines = (s: string) =>
-    s
-      .split("\n")
-      .map((x) => x.trim())
-      .filter(Boolean);
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t("Commands")}</CardTitle>
-        <CardDescription>
-          {t(
-            "My rules for every job (patterns). A job's own rules win; deny beats allow; the never-allowed list always stands.",
-          )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label>{t("Allow")}</Label>
-          <Textarea
-            rows={4}
-            className="font-mono text-xs"
-            value={allow ?? p.data.allow.join("\n")}
-            onChange={(e) => setAllow(e.target.value)}
-            placeholder="^docker compose "
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label>{t("Deny")}</Label>
-          <Textarea
-            rows={4}
-            className="font-mono text-xs"
-            value={deny ?? p.data.deny.join("\n")}
-            onChange={(e) => setDeny(e.target.value)}
-            placeholder="rm -rf build"
-          />
-        </div>
-        <Button
-          className="sm:col-span-2"
-          onClick={() =>
-            act(
-              () =>
-                api.policies.update({
-                  allow: lines(allow ?? p.data?.allow.join("\n") ?? ""),
-                  deny: lines(deny ?? p.data?.deny.join("\n") ?? ""),
-                }),
-              t("Saved; the next decision uses them."),
-            )
-          }
-        >
-          {t("Save")}
-        </Button>
-      </CardContent>
-    </Card>
+    <RulesCard
+      scope="global"
+      title={t("Commands")}
+      description={t(
+        "My rules for every job (patterns). A job's rules win, then its project's; deny beats allow; the never-allowed list always stands.",
+      )}
+      load={() => api.policies.get()}
+      save={(r) => api.policies.update(r)}
+    />
   );
 }
 

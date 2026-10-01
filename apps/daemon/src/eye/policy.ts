@@ -14,7 +14,7 @@ const KEY = "policy.global";
 export const readGlobalPolicy = (db: Db): GlobalPolicy =>
   readSetting(db, KEY, GlobalPolicy, { allow: [], deny: [] });
 
-export function writeGlobalPolicy(db: Db, bus: EventBus, policy: GlobalPolicy) {
+function validPatterns(policy: GlobalPolicy) {
   for (const src of [...policy.allow, ...policy.deny]) {
     try {
       new RegExp(src);
@@ -22,6 +22,26 @@ export function writeGlobalPolicy(db: Db, bus: EventBus, policy: GlobalPolicy) {
       throw new Error(`/${src}/ is not a valid pattern.`);
     }
   }
+}
+
+/** My rules for one project's jobs, between the job's and the global ones. */
+export const readProjectPolicy = (db: Db, projectId: string): GlobalPolicy =>
+  readSetting(db, `policy.project.${projectId}`, GlobalPolicy, { allow: [], deny: [] });
+
+export function writeProjectPolicy(db: Db, bus: EventBus, projectId: string, policy: GlobalPolicy) {
+  validPatterns(policy);
+  writeSetting(db, `policy.project.${projectId}`, GlobalPolicy, policy);
+  bus.publish({
+    type: "policy.updated",
+    topic: "overview",
+    jobId: null,
+    payload: { level: "project", projectId, ...policy },
+    actor: "owner",
+  });
+}
+
+export function writeGlobalPolicy(db: Db, bus: EventBus, policy: GlobalPolicy) {
+  validPatterns(policy);
   writeSetting(db, KEY, GlobalPolicy, policy);
   bus.publish({
     type: "policy.updated",
@@ -42,6 +62,7 @@ export function policyFor(db: Db, jobId: string, worktree: string): PolicyContex
   const global = readGlobalPolicy(db);
   const rules: RuleLevel[] = [
     { level: "job", allow: job?.allowRules ?? [], deny: job?.denyRules ?? [] },
+    { level: "project", ...(job ? readProjectPolicy(db, job.projectId) : { allow: [], deny: [] }) },
     { level: "global", allow: global.allow, deny: global.deny },
   ];
   return {

@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Link } from "wouter";
 import { LegComparison, TokensChart } from "@/components/charts";
 import { Empty, ErrorNote, Loading, PageHeader, Stat, StateBadge } from "@/components/common";
+import { RulesCard } from "@/components/rules-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -123,6 +124,15 @@ function ProjectStats({ id }: { id: string }) {
           )}
         </CardContent>
       </Card>
+      <RulesCard
+        scope={id}
+        title={t("Commands in this project")}
+        description={t(
+          "Patterns for this project's jobs: a job's own rules win, these come next, then the global ones.",
+        )}
+        load={() => api.projects.policy({ id })}
+        save={(r) => api.projects.setPolicy({ id, ...r })}
+      />
       {s.data.byLeg.length ? (
         <Card>
           <CardHeader>
