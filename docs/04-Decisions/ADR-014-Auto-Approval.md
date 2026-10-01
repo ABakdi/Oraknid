@@ -31,8 +31,12 @@ A command's verdict comes from four layers, in order:
      to the model.
    - The model: the cheapest healthy Leg with the `classify` strength
      is asked, with the task, the command and the sandbox's limits, for
-     `{ decision: "allow" | "ask", reason }`. Its answer is cached per
-     job for the same set of programs.
+     `{ decision: "allow" | "ask", reason }`. Its "allow" is cached per
+     job for that exact command ([[Audit-1]] S1-07: per set of programs
+     was too wide). The command reaches it as JSON data, and it reads no
+     files.
+   - Fetching and running code, or running inline code, is always
+     classified at Standard, even with every program on the allow list.
    - If no Leg can classify, the command asks me (fail safe).
 
 Supervised keeps asking about every unknown program (no auto approval).

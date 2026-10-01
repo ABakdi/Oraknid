@@ -22,7 +22,13 @@ sandbox limits damage, but it doesn't make that safe.
 - Leg processes run inside a sandbox limited to the worktree, their own
   config directory, and read-only system paths ([[Sandboxing]]).
 - Network is allowed (Legs need their APIs). Per-job network limits are
-  a later hardening item.
+  a later hardening item (Phase 2).
+- **Nothing a Leg can write is trusted by Oraknid's own tools** (BR-22,
+  [[Audit-1]]): git calls on a worktree use the main repo's records,
+  never the worktree's `.git`, with fsmonitor and hooks off; shadow repos
+  live in Oraknid's data folder; links in the Silk mirror are never
+  followed; checks run with a throwaway home.
+- Oraknid's data folder is mine alone (0700).
 
 ## Command allow/deny list
 
@@ -33,9 +39,15 @@ sandbox limits damage, but it doesn't make that safe.
   force-pushes, and so on) and gate `git push`, merges, publishing,
   deploys and system installs.
 - The allow list names ordinary development programs (shells, git, the
-  package managers, test runners, coreutils). A command runs without
-  asking only if every program in it is on the list; otherwise it asks
-  (Supervised and Standard) or runs in the sandbox (Full).
+  package managers, test runners, coreutils). What else a command runs
+  is decided by auto approval ([[ADR-014-Auto-Approval]]); at Supervised
+  it asks me.
+- Global options are taken out before the lists are read, so `git -C .
+  push` is a push. Fetching and running code (`npx <package>`, `dlx`,
+  `pip install`) or inline code (`node -e`, `python -c`) gets a look at
+  Standard.
+- Checks (verify commands) obey the same lists: a never-allowed or
+  gated check is a failed check, never run.
 - Editable globally, per project and per job. More specific wins. Deny
   beats allow at the same level.
 
@@ -46,8 +58,12 @@ sandbox limits damage, but it doesn't make that safe.
   prompt, with an instruction not to follow it.
 - A task whose context contains untrusted content can't trigger a gated
   action without an approval, whatever the autonomy level or waivers.
-- Job inputs are marked untrusted when I create the job.
-- MCP tools that write externally are always `external-write` gated.
+- Job inputs are marked untrusted when I create the job, and a task
+  becomes untrusted once it reads from the web (WebFetch, WebSearch,
+  `curl`, `wget`).
+- MCP tools are always `external-write` gated (waivable per job).
+- The classifier and the second look get the command or a Leg's report
+  as JSON data, never as instructions; the classifier reads no files.
 - Suspicious content (instructions aimed at the agent) is flagged in
   the UI.
 
@@ -60,10 +76,12 @@ sandbox limits damage, but it doesn't make that safe.
 - Every client must be a **paired device**. Pairing happens from the
   local machine: `oraknid pair` (or Settings → Devices) shows a
   six-digit code, valid five minutes and usable once, which the new
-  device enters; `oraknid open` pairs this machine's browser by itself.
+  device enters; five wrong codes cancel every open one; `oraknid open` pairs this machine's browser by itself.
   A device gets a long-lived token, kept by the daemon only as a hash,
   and any device can be revoked. The CLI's token is new at every start,
-  in a file only my user can read.
+  in a file only my user can read. A token in the address is accepted
+  only by the live socket. Secrets are scrubbed from events, logs, Silk
+  and inbox text.
 - Exposing the daemon on the local network (so my phone can reach it
   before The Nest exists) is an explicit setting, served over HTTPS with
   a local certificate.

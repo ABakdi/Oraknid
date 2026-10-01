@@ -27,5 +27,6 @@ or audit that produced them.
 | BR-19 | **One job at a time (MVP)** | Until the parallelism phase, at most one job is `running`. Others wait in `draft` or `paused`. |
 | BR-20 | **Provider terms are respected** | Oraknid doesn't help get around a provider's usage limits or terms. Several accounts per provider are supported only within what that provider allows (see [[ADR-009-Multiple-Accounts-Per-Provider]]). |
 | BR-21 | **Smallest sufficient model** | Each task goes to the cheapest Leg model and effort level expected to do it reliably. Strong models and their scarce windows are saved for work that needs them. A failure steps up, and a success is remembered so similar tasks start low (see [[ADR-013-Model-Aware-Routing]]). |
+| BR-22 | **A Leg's folder is untrusted** | Nothing a Leg can write (its worktree, the Silk mirror in it) may make Oraknid run a command, follow a link, or treat text as mine. Oraknid's own tools read it as data ([[Audit-1]]). |
 
 Related: [[Core-Entities]] · [[Product-Requirements]] · [[Approvals-and-Autonomy]] · [[Durability]]

@@ -11,8 +11,12 @@
   The Eye (never by a Leg) through a temporary index, and never pushed.
 - Job end: the branch stays for review. Merging into the work branch is
   the gated `merge` action. Removing the worktree happens on my request.
-- Non-git projects: a shadow repo `.oraknid/shadow.git` with
+- Non-git projects: a shadow repo in Oraknid's data folder
+  (`shadow/<hash of the path>.git`, out of every Leg's reach) with
   `--work-tree` set to the project. The job works in place.
+- Oraknid's git calls on a worktree pass `--git-dir` (the main repo's
+  `worktrees/<job>`) and `--work-tree`, with `core.fsmonitor=false`,
+  `core.hooksPath=/dev/null` and `core.fsync=committed` ([[Audit-1]]).
 
 ## The bwrap wrapper
 
@@ -38,7 +42,8 @@ bwrap --unshare-all --share-net --die-with-parent --new-session \
   arrives with the job settings.
 - The **Leg home** holds the Leg's config dir (e.g. `CLAUDE_CONFIG_DIR`),
   so its login and sessions persist across sessions.
-- Verification commands run in the same wrapper, without the Leg home.
+- Verification commands run in the same wrapper, with a throwaway home
+  instead of the Leg's, after the command policy has allowed them.
 - Network is shared. Localhost model servers are reachable.
 
 ## Command policy

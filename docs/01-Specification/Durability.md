@@ -71,6 +71,12 @@ pack.
 Pausing never runs verification, never replans, and never touches
 side effects.
 
+After [[Audit-1]]: a pause, a restart or a crash never counts as a
+failed attempt; the attempt cut short by a crash is closed as abandoned
+at the next start, and the next attempt builds its handoff from that
+session's log. A message to The Eye left without a reply is handled at
+the next start. Shutdown stops every timer first and starts no new run.
+
 ## Watchdog
 
 - systemd restarts the daemon if it dies (`Restart=always`), and

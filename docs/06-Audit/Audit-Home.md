@@ -6,7 +6,7 @@ or documented.
 
 | Audit | Before | Opened | Findings | Fixed | Documented | Status |
 | :-- | :-- | :-- | :-- | :-- | :-- | :-- |
-| *None yet. The first one runs before `v0.1.0` ([[Phase-1-MVP]] M1.9).* | | | | | | |
+| [[Audit-1]] | `v0.1.0` | 2026-10-01 | 61 | 54 | 5 | 2 open: S1-02 (my decision), U1-04 (my check) |
 
 **Planned angles for the first audit:** security (`S1-`: sandbox
 escapes, command filter bypasses, prompt injection, API auth),

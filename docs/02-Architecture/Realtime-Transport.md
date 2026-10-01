@@ -21,4 +21,8 @@ missing, it sends a `snapshot` instead.
 **Auth:** the WebSocket upgrade requires a paired device's session token
 (see [[Security]]).
 
+A job's state, its tasks' states and its sessions' starts and ends also
+reach `overview` subscribers as a hint to reload, at most 4/s per
+client, never stored or replayed ([[Audit-1]] Q1-05).
+
 Related: [[ADR-004-Realtime-Transport]] · [[Web-UI]] · [[API-Contract]]
