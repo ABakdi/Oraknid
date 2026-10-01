@@ -104,7 +104,7 @@ crashes and reboots.
 - [~] Pause/resume mid-task and `kill -9` the daemon mid-task, on a real Claude job: completed, every step once, the Leg process gone with the daemon; two bugs found and fixed (B1-02, B1-03 in [[Checkpoint-1]]). A reboot mid-job is still to try.
 - [ ] Hit a Claude quota window during a job and watch fallback or blocked → automatic resume
 - [x] Take the first checkpoint ([[Checkpoint-1]])
-- [~] Audit before `v0.1.0` ([[Audit-1]]): 61 findings, 54 fixed, 5 documented; open: S1-02 (my decision on the Leg's config dir) and U1-04 (my check at phone width)
+- [x] Audit before `v0.1.0` ([[Audit-1]]): 61 findings, 56 fixed, 5 documented; closed 2026-10-01
 - Moved to Phase 2 by Audit 1: git off the event loop (D1-05), attempt step keys (D1-12), the job settings tab, diff, checkpoint list, log export and drag-to-reorder (Q1-20), a per-job network allow list (S1-10)
 
 ## Exit criterion
