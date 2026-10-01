@@ -78,7 +78,7 @@ export async function handBack(d: ControlDeps, taskId: string, finished: boolean
 }
 
 /** Puts the job's worktree back to a task's checkpoint; only while the job isn't running. */
-export function rollbackTask(d: ControlDeps, taskId: string, attempt: number) {
+export async function rollbackTask(d: ControlDeps, taskId: string, attempt: number) {
   const t = task(d, taskId);
   const job = d.db.select().from(jobs).where(eq(jobs.id, t.jobId)).get();
   if (!job?.worktree) throw new Error("That job has no worktree yet.");
@@ -94,7 +94,7 @@ export function rollbackTask(d: ControlDeps, taskId: string, attempt: number) {
   const g = project?.shadow
     ? shadowRepo(job.worktree)
     : worktreeGit(project?.workspacePath ?? job.worktree, job.worktree);
-  const result = rollback(
+  const result = await rollback(
     g,
     `refs/oraknid/${job.id}/${taskId}/${attempt}`,
     d.tmpDir,

@@ -11,14 +11,14 @@ table is the summary and is kept in step with the contracts.
 | Projects | `projects.create` / `list` (M1.6) · `policy` / `setPolicy` (M1.9) | Creating a project in a folder that isn't a git repo asks: `initGit: true` or a shadow repo. |
 | Jobs | `jobs.create` / `start` / `get` / `list` / `pause` / `resume` / `cancel` (M1.6) · `setAutonomy` / `setWaivers` / `setRules` / `redirect` (M1.7) · `setBudget` (M1.9) · `talk` / `conversation` · `result` / `merge` / `openFolder` (Checkpoint 1) | A job's view carries its tasks, worktree and branch. `talk` returns at once; The Eye's reply arrives as `eye.replied`. `merge` returns `{ok, commit}` or `{ok: false, reason, conflicts}`. |
 | Web | `web.edit` (add, update, remove tasks) | Plan editing; an edit that breaks The Web's rules is refused and undone. |
-| Tasks | `tasks.pin` / `takeOver` / `handBack` / `rollback` / `attempts` | |
+| Tasks | `tasks.pin` / `takeOver` / `handBack` / `rollback` / `attempts` · `diff` (M2.0) | `diff`: the task's commit once done, else its work since before its first attempt. |
 | Sessions | `sessions.list({jobId})` / `sessions.log({id, after})` (Checkpoint 1) | Each Leg session of a job and its log as readable lines, from a byte offset. |
 | Legs | `legs.list` / `get` / `create` / `test` / `update` / `pause` / `resume` / `remove` / `setModelHidden` / `setProfile` | Creating tests the Leg at once. A Leg's view carries its models with effective profiles, quota windows, VRAM and a setup hint. |
 | Silk | `silk.list` / `add` / `edit` / `importMirror` | Editing supersedes. `importMirror` looks for hand edits now. |
 | Inbox | `inbox.list` / `inbox.answer` | `list` filters by state, kind, project, job and words (`q`); each item names its project, job and task. An approval takes only one of its options; the answering device is recorded. |
 | Skills | `skills.list` / `get` / `upload` / `edit` / `remove` | Built-ins are read-only; an upload says what front matter it ignored. |
 | Stats | `stats.summary` / `tokens` / `activity` | Totals and charts per job, project or everything. |
-| Logs | `audit.search` | Filters: job, type or prefix, actor, text. |
+| Logs | `audit.search` · `logs.tail` (M2.0) | Filters: job, type or prefix, actor, text. `logs.tail`: the daemon log's last lines. The audit export is built in the UI from `audit.search` pages. |
 | Secrets | `secrets.unlock` | Opens the encrypted-file store when there is no keychain. |
 | Metrics | `metrics.recent` | Samples since a time, up to the last hour. |
 | Notifications | `notifications.get` / `update` / `configureEmail` / `test` / `vapidPublicKey` / `subscribe` / `unsubscribe` | Per-channel switches, SMTP setup (password to the secret store), web push. |
@@ -26,9 +26,7 @@ table is the summary and is kept in step with the contracts.
 | Storage | `storage.usage` / `storage.prune` (M1.9) | |
 
 **Not built yet** (Audit 1 → Q1-15), with where they land: `projects.get`
-/ `archive` / `delete`, `jobs.export`, `tasks.diff` and the checkpoint
-list, `logs.tail` / `export` (Phase 2, with the job settings tab and the
-log screens); a general `settings.get` / `update` when a second setting
+/ `archive` / `delete`, `jobs.export` (Phase 2); a general `settings.get` / `update` when a second setting
 needs it.
 
 Mutating procedures are not idempotent by a client `requestId` yet: they

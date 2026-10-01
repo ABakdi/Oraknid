@@ -88,11 +88,11 @@ const MAX_DIFF = 200_000;
  * A task's work as a patch (Web-UI → Task drawer; Phase 2 → M2.0): its
  * commit once done, or what changed since before its first attempt.
  */
-export function taskDiff(
+export async function taskDiff(
   db: Db,
   taskId: string,
   tmpDir: string,
-): { text: string; from: "commit" | "work" | "none"; truncated: boolean } {
+): Promise<{ text: string; from: "commit" | "work" | "none"; truncated: boolean }> {
   const task = db.select().from(tasks).where(eq(tasks.id, taskId)).get();
   if (!task) throw new Error(`No task ${taskId}.`);
   const { job, project } = load(db, task.jobId);
@@ -102,9 +102,9 @@ export function taskDiff(
     : shadowRepo(job.worktree);
   const base = `refs/oraknid/${job.id}/${task.id}/base`;
   const text = task.commit
-    ? commitPatch(g, task.commit)
+    ? await commitPatch(g, task.commit)
     : hasRef(g, base)
-      ? diffSince(g, base, tmpDir)
+      ? await diffSince(g, base, tmpDir)
       : "";
   const from = task.commit ? "commit" : text ? "work" : "none";
   return {

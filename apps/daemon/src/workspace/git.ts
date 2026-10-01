@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   appendFileSync,
@@ -50,6 +50,40 @@ export function git(g: Git, args: string[], env: Record<string, string> = {}): s
   if (r.status !== 0)
     throw new GitError(`git ${args.join(" ")} failed: ${(r.stderr || r.stdout || "").trim()}`);
   return r.stdout;
+}
+
+/**
+ * The same, off the event loop: for the slow ones (a snapshot's `add -A`,
+ * a commit's), so a huge work tree can't stall the daemon past its
+ * watchdog (Phase 2 → M2.0, Audit 1 → D1-05).
+ */
+export function gitAsync(
+  g: Git,
+  args: string[],
+  env: Record<string, string> = {},
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("git", [...SAFE, ...g.base, ...args], {
+      cwd: g.cwd,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...env },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const out: Buffer[] = [];
+    const err: Buffer[] = [];
+    child.stdout.on("data", (d: Buffer) => out.push(d));
+    child.stderr.on("data", (d: Buffer) => err.push(d));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      const stdout = Buffer.concat(out).toString("utf8");
+      if (code === 0) resolve(stdout);
+      else
+        reject(
+          new GitError(
+            `git ${args.join(" ")} failed: ${(Buffer.concat(err).toString("utf8") || stdout).trim()}`,
+          ),
+        );
+    });
+  });
 }
 
 const ok = (g: Git, args: string[]) =>
@@ -211,18 +245,18 @@ export function createWorktree(
 }
 
 /** A tree object of the work tree as it is now, untracked files included, without touching the index. */
-function snapshotTree(g: Git, tmpDir: string): string {
+async function snapshotTree(g: Git, tmpDir: string): Promise<string> {
   mkdirSync(tmpDir, { recursive: true });
   const index = join(tmpDir, `index-${process.pid}-${Date.now()}`);
   const env = { GIT_INDEX_FILE: index };
   try {
-    if (ok(g, ["rev-parse", "--verify", "HEAD"])) git(g, ["read-tree", "HEAD"], env);
+    if (ok(g, ["rev-parse", "--verify", "HEAD"])) await gitAsync(g, ["read-tree", "HEAD"], env);
     // Oraknid's own folder (Silk mirror, trash, worktrees) is never part of a checkpoint.
     // A nested repo with no commit can't be added: it is left out, not a reason to fail (Audit 1 → D1-16).
     const skip: string[] = [];
     for (;;) {
       try {
-        git(
+        await gitAsync(
           g,
           ["add", "-A", "--", ".", ":(exclude).oraknid", ...skip.map((p) => `:(exclude)${p}`)],
           env,
@@ -236,15 +270,20 @@ function snapshotTree(g: Git, tmpDir: string): string {
         skip.push(nested.replace(/\/$/, ""));
       }
     }
-    return git(g, ["write-tree"], env).trim();
+    return (await gitAsync(g, ["write-tree"], env)).trim();
   } finally {
     rmSync(index, { force: true });
   }
 }
 
 /** Records the work tree on a private ref; my branch, HEAD and index are untouched. */
-export function checkpoint(g: Git, ref: string, message: string, tmpDir: string): string {
-  const tree = snapshotTree(g, tmpDir);
+export async function checkpoint(
+  g: Git,
+  ref: string,
+  message: string,
+  tmpDir: string,
+): Promise<string> {
+  const tree = await snapshotTree(g, tmpDir);
   const parent = ok(g, ["rev-parse", "--verify", "HEAD"])
     ? ["-p", git(g, ["rev-parse", "HEAD"]).trim()]
     : [];
@@ -256,40 +295,40 @@ export function checkpoint(g: Git, ref: string, message: string, tmpDir: string)
 export const hasRef = (g: Git, ref: string) => ok(g, ["rev-parse", "--verify", "--quiet", ref]);
 
 /** Paths that differ between a checkpoint and the work tree now. */
-export function changedSince(g: Git, ref: string, tmpDir: string): string[] {
-  const tree = snapshotTree(g, tmpDir);
-  return git(g, ["diff", "--name-only", `${ref}^{tree}`, tree])
+export async function changedSince(g: Git, ref: string, tmpDir: string): Promise<string[]> {
+  const tree = await snapshotTree(g, tmpDir);
+  return (await gitAsync(g, ["diff", "--name-only", `${ref}^{tree}`, tree]))
     .split("\n")
     .filter(Boolean);
 }
 
-export function diffStatSince(g: Git, ref: string, tmpDir: string): string {
-  const tree = snapshotTree(g, tmpDir);
-  return git(g, ["diff", "--stat", `${ref}^{tree}`, tree]);
+export async function diffStatSince(g: Git, ref: string, tmpDir: string): Promise<string> {
+  const tree = await snapshotTree(g, tmpDir);
+  return gitAsync(g, ["diff", "--stat", `${ref}^{tree}`, tree]);
 }
 
 /** The patch from a checkpoint to the work tree now. */
-export function diffSince(g: Git, ref: string, tmpDir: string): string {
-  const tree = snapshotTree(g, tmpDir);
-  return git(g, ["diff", "--no-color", "--stat", "--patch", `${ref}^{tree}`, tree]);
+export async function diffSince(g: Git, ref: string, tmpDir: string): Promise<string> {
+  const tree = await snapshotTree(g, tmpDir);
+  return gitAsync(g, ["diff", "--no-color", "--stat", "--patch", `${ref}^{tree}`, tree]);
 }
 
 /** One commit's patch. */
-export function commitPatch(g: Git, commit: string): string {
-  return git(g, ["show", "--no-color", "--format=%s%n", "--stat", "--patch", commit]);
+export function commitPatch(g: Git, commit: string): Promise<string> {
+  return gitAsync(g, ["show", "--no-color", "--format=%s%n", "--stat", "--patch", commit]);
 }
 
 /**
  * Puts the work tree back to a checkpoint. Files created since are moved
  * to `.oraknid/trash/<time>/`, never deleted (Drift-Control → Rollback).
  */
-export function rollback(
+export async function rollback(
   g: Git,
   ref: string,
   tmpDir: string,
   trashRoot: string,
-): { restored: string[]; trashed: string[] } {
-  const now = snapshotTree(g, tmpDir);
+): Promise<{ restored: string[]; trashed: string[] }> {
+  const now = await snapshotTree(g, tmpDir);
   const lines = git(g, ["diff", "--name-status", "--no-renames", `${ref}^{tree}`, now])
     .split("\n")
     .filter(Boolean);
@@ -314,10 +353,10 @@ export function rollback(
 }
 
 /** A task's verified work, as a commit on the job branch. */
-export function commitAll(g: Git, message: string): string | null {
-  git(g, ["add", "-A", "."]);
+export async function commitAll(g: Git, message: string): Promise<string | null> {
+  await gitAsync(g, ["add", "-A", "."]);
   if (ok(g, ["diff", "--cached", "--quiet"])) return null;
-  git(g, ["commit", "-q", "--no-verify", "-m", message], authorEnv());
+  await gitAsync(g, ["commit", "-q", "--no-verify", "-m", message], authorEnv());
   return git(g, ["rev-parse", "HEAD"]).trim();
 }
 

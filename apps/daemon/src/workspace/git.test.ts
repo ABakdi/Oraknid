@@ -33,7 +33,7 @@ function repo(branch = "master", commit = true) {
 }
 
 describe("branches (BR-14)", () => {
-  it("uses the repo's own branches, falling back to main and dev", () => {
+  it("uses the repo's own branches, falling back to main and dev", async () => {
     const r = repo("master");
     expect(detectBranches(r)).toEqual({ release: "master", work: "dev" });
     sh(r, "branch", "develop");
@@ -46,7 +46,7 @@ describe("branches (BR-14)", () => {
 });
 
 describe("worktrees", () => {
-  it("makes a job worktree on its own branch from the work branch, and keeps .oraknid out of git", () => {
+  it("makes a job worktree on its own branch from the work branch, and keeps .oraknid out of git", async () => {
     const r = repo("master");
     const wt = createWorktree(r, "01J9Z3K8W2Q4V6X8Y0A1B2C3D4", "add-login", detectBranches(r));
     expect(wt.branch).toBe("oraknid/add-login-b2c3d4");
@@ -58,7 +58,7 @@ describe("worktrees", () => {
     expect(sh(r, "status", "--porcelain")).toBe("");
   });
 
-  it("gives a repo with no commit an empty first one", () => {
+  it("gives a repo with no commit an empty first one", async () => {
     const r = repo("main", false);
     const wt = createWorktree(r, "01J9Z3K8W2Q4V6X8Y0A1B2C3D5", "x", detectBranches(r));
     expect(existsSync(wt.path)).toBe(true);
@@ -67,58 +67,61 @@ describe("worktrees", () => {
 });
 
 describe("checkpoints", () => {
-  it("records the work tree on a private ref without touching HEAD, the branch or the index", () => {
+  it("records the work tree on a private ref without touching HEAD, the branch or the index", async () => {
     const r = repo();
     const g = { cwd: r, base: [] };
     writeFileSync(join(r, "a.txt"), "two\n");
     writeFileSync(join(r, "new.txt"), "new\n");
     const head = sh(r, "rev-parse", "HEAD");
     const status = sh(r, "status", "--porcelain");
-    checkpoint(g, "refs/oraknid/j/t/1", "checkpoint 1", join(r, ".git", "oraknid-tmp"));
+    await checkpoint(g, "refs/oraknid/j/t/1", "checkpoint 1", join(r, ".git", "oraknid-tmp"));
     expect(sh(r, "rev-parse", "HEAD")).toBe(head);
     expect(sh(r, "status", "--porcelain")).toBe(status);
     expect(sh(r, "show", "refs/oraknid/j/t/1:new.txt")).toBe("new");
   });
 
-  it("lists what changed since a checkpoint, and rolls back to it, trashing new files", () => {
+  it("lists what changed since a checkpoint, and rolls back to it, trashing new files", async () => {
     const r = repo();
     const g = { cwd: r, base: [] };
     const tmp = join(r, ".git", "oraknid-tmp");
-    checkpoint(g, "refs/oraknid/j/t/1", "c1", tmp);
+    await checkpoint(g, "refs/oraknid/j/t/1", "c1", tmp);
     writeFileSync(join(r, "a.txt"), "broken\n");
     mkdirSync(join(r, "src"));
     writeFileSync(join(r, "src", "junk.ts"), "x");
-    expect(changedSince(g, "refs/oraknid/j/t/1", tmp).sort()).toEqual(["a.txt", "src/junk.ts"]);
+    expect((await changedSince(g, "refs/oraknid/j/t/1", tmp)).sort()).toEqual([
+      "a.txt",
+      "src/junk.ts",
+    ]);
 
     const trash = join(r, ".oraknid", "trash");
-    const result = rollback(g, "refs/oraknid/j/t/1", tmp, trash);
+    const result = await rollback(g, "refs/oraknid/j/t/1", tmp, trash);
     expect(result).toEqual({ restored: ["a.txt"], trashed: ["src/junk.ts"] });
     expect(readFileSync(join(r, "a.txt"), "utf8")).toBe("one\n");
     expect(existsSync(join(r, "src", "junk.ts"))).toBe(false);
-    expect(changedSince(g, "refs/oraknid/j/t/1", tmp)).toEqual([]);
+    expect(await changedSince(g, "refs/oraknid/j/t/1", tmp)).toEqual([]);
     // Only the trash is new (this test repo does not exclude .oraknid); a.txt is back as it was.
     expect(sh(r, "status", "--porcelain")).toBe("?? .oraknid/");
   });
 
-  it("commits a task's verified work on the job branch", () => {
+  it("commits a task's verified work on the job branch", async () => {
     const r = repo();
     writeFileSync(join(r, "b.txt"), "b\n");
-    expect(commitAll({ cwd: r, base: [] }, "feat: add b")).toMatch(/^[0-9a-f]{40}$/);
+    expect(await commitAll({ cwd: r, base: [] }, "feat: add b")).toMatch(/^[0-9a-f]{40}$/);
     expect(sh(r, "log", "-1", "--format=%s %an")).toBe("feat: add b Me");
-    expect(commitAll({ cwd: r, base: [] }, "nothing")).toBeNull();
+    expect(await commitAll({ cwd: r, base: [] }, "nothing")).toBeNull();
   });
 });
 
 describe("shadow repo for a folder without git", () => {
-  it("checkpoints and rolls back without making my folder a repo", () => {
+  it("checkpoints and rolls back without making my folder a repo", async () => {
     const dir = mkdtempSync(join(tmpdir(), "oraknid-plain-"));
     writeFileSync(join(dir, "notes.md"), "v1\n");
     const g = shadowRepo(dir);
     const tmp = join(dir, ".oraknid", "tmp");
-    checkpoint(g, "refs/oraknid/j/t/1", "c1", tmp);
+    await checkpoint(g, "refs/oraknid/j/t/1", "c1", tmp);
     writeFileSync(join(dir, "notes.md"), "v2\n");
-    expect(changedSince(g, "refs/oraknid/j/t/1", tmp)).toEqual(["notes.md"]);
-    rollback(g, "refs/oraknid/j/t/1", tmp, join(dir, ".oraknid", "trash"));
+    expect(await changedSince(g, "refs/oraknid/j/t/1", tmp)).toEqual(["notes.md"]);
+    await rollback(g, "refs/oraknid/j/t/1", tmp, join(dir, ".oraknid", "trash"));
     expect(readFileSync(join(dir, "notes.md"), "utf8")).toBe("v1\n");
     expect(existsSync(join(dir, ".git"))).toBe(false);
     expect(git(g, ["rev-parse", "--git-dir"]).trim()).toBe(join(dir, ".oraknid", "shadow.git"));
@@ -126,7 +129,7 @@ describe("shadow repo for a folder without git", () => {
 });
 
 describe("a work tree is the Leg's (Audit 1 → S1-01)", () => {
-  it("never follows a rewritten .git file, nor runs an fsmonitor found in a repo", () => {
+  it("never follows a rewritten .git file, nor runs an fsmonitor found in a repo", async () => {
     const r = repo("master");
     const wt = createWorktree(r, "01J9Z3K8W2Q4V6X8Y0A1B2C3E1", "x", detectBranches(r));
     const marker = join(tmpdir(), `oraknid-pwned-${Date.now()}`);
@@ -136,17 +139,17 @@ describe("a work tree is the Leg's (Audit 1 → S1-01)", () => {
     sh(evil, "config", "core.fsmonitor", `touch ${marker}; false`);
     writeFileSync(join(wt.path, ".git"), `gitdir: ${join(evil, ".git")}\n`);
     const g = worktreeGit(r, wt.path);
-    checkpoint(g, "refs/oraknid/j/t/1", "c1", join(r, ".oraknid", "tmp"));
+    await checkpoint(g, "refs/oraknid/j/t/1", "c1", join(r, ".oraknid", "tmp"));
     expect(existsSync(marker)).toBe(false);
     expect(git(g, ["rev-parse", "--abbrev-ref", "HEAD"]).trim()).toBe(wt.branch);
     // Even a repo of my own with an fsmonitor set runs nothing through Oraknid.
     sh(r, "config", "core.fsmonitor", `touch ${marker}; false`);
-    checkpoint(g, "refs/oraknid/j/t/2", "c2", join(r, ".oraknid", "tmp"));
+    await checkpoint(g, "refs/oraknid/j/t/2", "c2", join(r, ".oraknid", "tmp"));
     expect(existsSync(marker)).toBe(false);
     expect(() => worktreeGit(r, join(r, "elsewhere"))).toThrow(/is not a worktree/);
   });
 
-  it("keeps shadow repos in Oraknid's data folder, and resets one moved from the old place", () => {
+  it("keeps shadow repos in Oraknid's data folder, and resets one moved from the old place", async () => {
     const data = mkdtempSync(join(tmpdir(), "oraknid-data-"));
     const dir = mkdtempSync(join(tmpdir(), "oraknid-plain-"));
     writeFileSync(join(dir, "notes.md"), "v1\n");
@@ -169,20 +172,20 @@ describe("a work tree is the Leg's (Audit 1 → S1-01)", () => {
 });
 
 describe("what a crash or a Leg leaves in a worktree (Audit 1 → D1-10, D1-16)", () => {
-  it("checkpoints around a nested repo with no commit", () => {
+  it("checkpoints around a nested repo with no commit", async () => {
     const r = repo("master");
     const wt = createWorktree(r, "01J9Z3K8W2Q4V6X8Y0A1B2C3E2", "x", detectBranches(r));
     sh(wt.path, "init", "-q", "vendor/lib");
     writeFileSync(join(wt.path, "b.txt"), "two\n");
     const g = worktreeGit(r, wt.path);
     const tmp = join(r, ".oraknid", "tmp");
-    checkpoint(g, "refs/oraknid/j/t/1", "c1", tmp);
+    await checkpoint(g, "refs/oraknid/j/t/1", "c1", tmp);
     expect(git(g, ["ls-tree", "-r", "--name-only", "refs/oraknid/j/t/1"]).split("\n")).toContain(
       "b.txt",
     );
   });
 
-  it("sets aside a folder a crash left that isn't a worktree, and makes it again", () => {
+  it("sets aside a folder a crash left that isn't a worktree, and makes it again", async () => {
     const r = repo("master");
     const id = "01J9Z3K8W2Q4V6X8Y0A1B2C3E3";
     const half = join(r, ".oraknid", "worktrees", id);

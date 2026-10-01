@@ -215,6 +215,8 @@ export async function runAttempt(
     reasons: pick.reasons,
     excluded: routed.excluded,
   };
+  // My messages from the moment the task shows as running reach this attempt (Talking to The Eye).
+  const guidanceAtStart = guidanceMark();
   const attemptId = newId(now());
   d.bus.atomically(() => {
     d.db
@@ -255,9 +257,9 @@ export async function runAttempt(
   // outside it is still seen (Audit 1 → D1-06).
   const scopeBase = `refs/oraknid/${job.id}/${taskId}/base`;
   try {
-    checkpoint(ws.g, ckpt, `oraknid: before ${task.title} (attempt ${attemptNo})`, ws.tmpDir);
+    await checkpoint(ws.g, ckpt, `oraknid: before ${task.title} (attempt ${attemptNo})`, ws.tmpDir);
     if (!hasRef(ws.g, scopeBase))
-      checkpoint(ws.g, scopeBase, `oraknid: before ${task.title}`, ws.tmpDir);
+      await checkpoint(ws.g, scopeBase, `oraknid: before ${task.title}`, ws.tmpDir);
   } catch (error) {
     // No attempt or task is left looking alive by a checkpoint that failed (Audit 1 → Q1-13).
     d.db
@@ -296,7 +298,7 @@ export async function runAttempt(
         body: handoffFromLog({
           goal: task.instructions,
           logFile: log,
-          diffStat: safeDiffStat(ws, `refs/oraknid/${job.id}/${taskId}/${attemptNo - 1}`),
+          diffStat: await safeDiffStat(ws, `refs/oraknid/${job.id}/${taskId}/${attemptNo - 1}`),
         }),
         authoredBy: "eye",
       });
@@ -311,7 +313,7 @@ export async function runAttempt(
   let waitingOnOwner = 0;
   let level = task.escalation;
   // Only messages written after this attempt began: older ones are in Silk, in its context pack.
-  let guidanceSeen = guidanceMark();
+  let guidanceSeen = guidanceAtStart;
   // Typed by assertion: they change inside closures, which narrowing cannot follow.
   let session = null as Supervised | null;
   let sessionLog: string | null = null;
@@ -492,7 +494,7 @@ export async function runAttempt(
         ? handoffFromLog({
             goal: task.instructions,
             logFile: sessionLog,
-            diffStat: safeDiffStat(ws, ckpt),
+            diffStat: await safeDiffStat(ws, ckpt),
           })
         : "No session ran yet.";
     }
@@ -576,7 +578,7 @@ export async function runAttempt(
     switch (next.step) {
       case "correct": {
         if (drift.code === "D1") {
-          const outside = changedSince(ws.g, scopeBase, ws.tmpDir).filter(
+          const outside = (await changedSince(ws.g, scopeBase, ws.tmpDir)).filter(
             (p) => !inTaskScope(p, task.scope),
           );
           restorePaths(ws.g, scopeBase, outside, ws.trash);
@@ -613,7 +615,7 @@ export async function runAttempt(
         throw new EndAttempt({ kind: "retry", reason: `reassigning after ${drift.code}` });
       case "kill":
         await closeSession("kill");
-        rollback(ws.g, ckpt, ws.tmpDir, ws.trash);
+        await rollback(ws.g, ckpt, ws.tmpDir, ws.trash);
         d.db
           .update(tasks)
           .set({ avoid: [...new Set([...task.avoid, leg.legModelId])] })
@@ -711,7 +713,7 @@ export async function runAttempt(
         continue;
       }
 
-      observed.changedPaths = changedSince(ws.g, scopeBase, ws.tmpDir);
+      observed.changedPaths = await changedSince(ws.g, scopeBase, ws.tmpDir);
       let verified = task.verify.length === 0;
       let failure = "";
       if (task.verify.length) {
@@ -749,7 +751,7 @@ export async function runAttempt(
             cwd: ws.cwd,
             task: { title: task.title, instructions: task.instructions, kind: task.kind },
             report: end.text,
-            changes: diffStatSince(ws.g, ckpt, ws.tmpDir),
+            changes: await diffStatSince(ws.g, ckpt, ws.tmpDir),
           });
           verified = review.accepted;
           event("task.evaluated", { accepted: review.accepted, reason: review.reason });
@@ -771,7 +773,7 @@ export async function runAttempt(
       const drifts = detect(observed, now(), DEFAULT_THRESHOLDS);
       if (verified && !drifts.some((x) => x.code === "D1")) {
         await closeSession();
-        const commit = commitAll(
+        const commit = await commitAll(
           ws.g,
           `${PREFIX[task.kind as TaskKind]}: ${task.title.charAt(0).toLowerCase()}${task.title.slice(1)}`,
         );
@@ -780,7 +782,7 @@ export async function runAttempt(
           taskId,
           kind: "progress",
           title: `Done: ${task.title}`,
-          body: `${task.verify.length ? `Verified by ${task.verify.map((v) => `\`${v}\``).join(", ")}` : "No verify command (a planning task)"} on ${leg.legName} · ${leg.model}${pick.effort ? ` (${pick.effort})` : ""}.${commit ? ` Commit ${commit.slice(0, 10)}.` : ""}\n\n${diffStatSince(ws.g, ckpt, ws.tmpDir).trim() || "No file changes."}`,
+          body: `${task.verify.length ? `Verified by ${task.verify.map((v) => `\`${v}\``).join(", ")}` : "No verify command (a planning task)"} on ${leg.legName} · ${leg.model}${pick.effort ? ` (${pick.effort})` : ""}.${commit ? ` Commit ${commit.slice(0, 10)}.` : ""}\n\n${(await diffStatSince(ws.g, ckpt, ws.tmpDir)).trim() || "No file changes."}`,
           authoredBy: "eye",
         });
         d.db.update(tasks).set({ escalation: 0 }).where(eq(tasks.id, taskId)).run();
@@ -857,9 +859,9 @@ export async function runAttempt(
 }
 
 /** What changed since a checkpoint, or nothing when git can't tell. */
-function safeDiffStat(ws: { g: Git; tmpDir: string }, since: string): string {
+async function safeDiffStat(ws: { g: Git; tmpDir: string }, since: string): Promise<string> {
   try {
-    return diffStatSince(ws.g, since, ws.tmpDir);
+    return await diffStatSince(ws.g, since, ws.tmpDir);
   } catch {
     return "";
   }

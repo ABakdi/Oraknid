@@ -13,10 +13,10 @@ makes fallback and cross-Leg handoff real.
 ## Milestones
 
 ### M2.0 — Carried over from Audit 1
-- [ ] Job settings tab: waivers, the job's own rules, autonomy and budget in one place (Q1-20)
-- [ ] Task drawer: the diff of the task's work and its checkpoints, each with rollback (Q1-20)
-- [ ] Logs: export the audit log and read the daemon's log in the UI (Q1-20)
-- [ ] Git off the event loop: Oraknid's git calls run asynchronously, so a huge snapshot can't stall the daemon past its watchdog (D1-05)
+- [x] Job settings tab: waivers and the job's own rules; autonomy stays in the header and the budget in its tab (Q1-20)
+- [x] Task drawer: the diff of the task's work (its commit once done, its work so far before); its checkpoints are its attempts, each with rollback (Q1-20)
+- [x] Logs: export the audit log as JSON lines and read the daemon's log in the UI; the daemon writes its own log, rotated at 10 MB (Q1-20)
+- [x] Git off the event loop: snapshots, diffs, rollbacks and commits run asynchronously, so a huge work tree can't stall the daemon past its watchdog (D1-05); quick lookups stay synchronous
 - [ ] Plan editor: drag to reorder dependencies (Q1-20)
 - [ ] Attempt step keys from a durable attempt id (D1-12)
 
