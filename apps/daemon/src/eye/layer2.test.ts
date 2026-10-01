@@ -213,7 +213,9 @@ describe("skills library over the API", () => {
     });
     try {
       // biome-ignore lint/suspicious/noExplicitAny: a test client
-      const api: any = createORPCClient(new RPCLink({ url: `${d.url}/api` }));
+      const api: any = createORPCClient(
+        new RPCLink({ url: `${d.url}/api`, headers: { authorization: `Bearer ${d.cliToken}` } }),
+      );
       expect((await api.skills.list()).map((s: { name: string }) => s.name)).toEqual([
         "canon-driven-development",
       ]);

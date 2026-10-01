@@ -31,6 +31,7 @@ import { ORPCError, os } from "@orpc/server";
 import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { AuditQuery, searchAudit } from "../audit/audit.ts";
+import type { Devices } from "../auth/devices.ts";
 import { jobs as jobsTable, taskEdges, tasks as tasksTable } from "../db/schema.ts";
 import { runDoctor } from "../doctor.ts";
 import type { JobStore } from "../engine/jobs.ts";
@@ -67,6 +68,7 @@ export interface ApiContext {
   inbox: InboxStore;
   projects: Projects;
   skills: SkillStore;
+  devices: Devices;
 }
 
 const base = os.$context<ApiContext>();
@@ -236,6 +238,35 @@ export const router = {
         ),
       ),
     ),
+  },
+  devices: {
+    /** A short code for a new device to enter (Security → pairing). */
+    pairStart: base
+      .output(z.object({ code: z.string(), expiresAt: z.number() }))
+      .handler(({ context: c }) => c.devices.startPairing()),
+    /** The only procedure that needs no token: the code is the proof. */
+    pairComplete: base
+      .input(z.object({ code: z.string().regex(/^\d{6}$/), name: z.string().min(1).max(60) }))
+      .output(z.object({ deviceId: z.string(), token: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.devices.completePairing(input.code, input.name)),
+      ),
+    list: base
+      .output(
+        z.array(
+          z.object({
+            id: z.string(),
+            name: z.string(),
+            pairedAt: z.number(),
+            lastSeenAt: z.number().nullable(),
+            revokedAt: z.number().nullable(),
+          }),
+        ),
+      )
+      .handler(({ context: c }) => c.devices.list()),
+    revoke: base
+      .input(z.object({ id: z.string() }))
+      .handler(({ context: c, input }) => guard(() => c.devices.revoke(input.id))),
   },
   audit: {
     search: base

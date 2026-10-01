@@ -1,0 +1,1 @@
+ALTER TABLE `devices` ADD `token_hash` text DEFAULT '' NOT NULL;

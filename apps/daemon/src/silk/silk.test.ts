@@ -30,7 +30,12 @@ async function start() {
     os: fakeOs().os,
     adapters: {},
   });
-  const api = createORPCClient<RouterClient<Router>>(new RPCLink({ url: `${daemon.url}/api` }));
+  const api = createORPCClient<RouterClient<Router>>(
+    new RPCLink({
+      url: `${daemon.url}/api`,
+      headers: { authorization: `Bearer ${daemon.cliToken}` },
+    }),
+  );
   const jobId = seedJob(daemon.db, "running", workspace);
   const mirror = join(workspace, ".oraknid", "silk");
   return { d: daemon, api, jobId, workspace, mirror };

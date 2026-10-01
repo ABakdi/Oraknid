@@ -119,7 +119,12 @@ async function eye(
     brain,
     stallCheckMs: 100,
   });
-  const api = createORPCClient<RouterClient<Router>>(new RPCLink({ url: `${daemon.url}/api` }));
+  const api = createORPCClient<RouterClient<Router>>(
+    new RPCLink({
+      url: `${daemon.url}/api`,
+      headers: { authorization: `Bearer ${daemon.cliToken}` },
+    }),
+  );
   const legIds: string[] = [];
   for (const name of o.legs ?? ["Claude A"])
     legIds.push((await api.legs.create({ kind: "claude-code", name, config: {} })).id);

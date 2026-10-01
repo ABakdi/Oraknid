@@ -92,7 +92,7 @@ program
       process.exitCode = 1;
       return;
     }
-    const s = await api(info.url).system.status();
+    const s = await api(info).system.status();
     console.log(`Oraknid ${s.version} — running`);
     console.log(`  url      ${info.url}`);
     console.log(`  pid      ${s.pid}`);
@@ -118,8 +118,23 @@ program
   .action(async () => {
     const info = await findRunning();
     if (!info) fail("Oraknid is not running. Start it with: oraknid start");
-    spawn("xdg-open", [info.url], { detached: true, stdio: "ignore" }).unref();
+    // The browser on this machine pairs itself with a fresh code in the address.
+    const { code } = await api(info).devices.pairStart();
+    spawn("xdg-open", [`${info.url}/#pair=${code}`], { detached: true, stdio: "ignore" }).unref();
     console.log(`Opening ${info.url}`);
+  });
+
+program
+  .command("pair")
+  .description("show a code to pair a browser or phone with this Oraknid")
+  .action(async () => {
+    const info = await findRunning();
+    if (!info) fail("Oraknid is not running. Start it with: oraknid start");
+    const { code, expiresAt } = await api(info).devices.pairStart();
+    console.log(`Pairing code: ${code}`);
+    console.log(
+      `Enter it in Oraknid on the new device within ${Math.round((expiresAt - Date.now()) / 60_000)} minutes, or open ${info.url}/#pair=${code}`,
+    );
   });
 
 program
@@ -128,7 +143,7 @@ program
   .action(async () => {
     const running = await findRunning();
     const checks = running
-      ? await api(running.url).system.doctor()
+      ? await api(running).system.doctor()
       : runDoctor(paths, {
           sandbox: createBwrapSandbox().status(),
           secrets: await createKeychainStore().probe(),
@@ -179,20 +194,25 @@ await program.parseAsync();
 
 // ── helpers ─────────────────────────────────────────────────────────
 
-function api(url: string) {
-  return createORPCClient<RouterClient<Router>>(new RPCLink({ url: `${url}/api` }));
+function api(info: { url: string; token?: string }) {
+  return createORPCClient<RouterClient<Router>>(
+    new RPCLink({
+      url: `${info.url}/api`,
+      headers: { authorization: `Bearer ${info.token ?? ""}` },
+    }),
+  );
 }
 
-function readRuntime(): RuntimeInfo | undefined {
+function readRuntime(): (RuntimeInfo & { token?: string }) | undefined {
   try {
-    return JSON.parse(readFileSync(paths.runtimeFile, "utf8")) as RuntimeInfo;
+    return JSON.parse(readFileSync(paths.runtimeFile, "utf8")) as RuntimeInfo & { token?: string };
   } catch {
     return undefined;
   }
 }
 
 /** The daemon counts as running only if its pid is alive and it answers. */
-async function findRunning(): Promise<RuntimeInfo | undefined> {
+async function findRunning(): Promise<(RuntimeInfo & { token?: string }) | undefined> {
   const info = readRuntime();
   if (!info || !isAlive(info.pid)) return undefined;
   try {

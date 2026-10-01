@@ -35,7 +35,12 @@ async function start(leg = fakeLeg()) {
     adapters: { "claude-code": leg.adapter, "openai-compatible": leg.adapter },
     healthIntervalMs: 60_000,
   });
-  const api = createORPCClient<RouterClient<Router>>(new RPCLink({ url: `${daemon.url}/api` }));
+  const api = createORPCClient<RouterClient<Router>>(
+    new RPCLink({
+      url: `${daemon.url}/api`,
+      headers: { authorization: `Bearer ${daemon.cliToken}` },
+    }),
+  );
   return { d: daemon, api, leg, dir, store: fake.store };
 }
 

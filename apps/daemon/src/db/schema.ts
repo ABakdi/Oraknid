@@ -323,6 +323,8 @@ export const devices = sqliteTable("devices", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   publicKey: text("public_key").notNull(),
+  /** sha256 of the device's token; the token itself is never stored. */
+  tokenHash: text("token_hash").notNull().default(""),
   pairedAt: integer("paired_at").notNull(),
   lastSeenAt: integer("last_seen_at"),
   revokedAt: integer("revoked_at"),

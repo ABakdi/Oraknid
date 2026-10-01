@@ -28,11 +28,18 @@ beforeEach(async () => {
 afterEach(() => daemon.close());
 
 const client = () =>
-  createORPCClient<RouterClient<Router>>(new RPCLink({ url: `${daemon.url}/api` }));
+  createORPCClient<RouterClient<Router>>(
+    new RPCLink({
+      url: `${daemon.url}/api`,
+      headers: { authorization: `Bearer ${daemon.cliToken}` },
+    }),
+  );
 
 /** Collects frames from a live socket so tests can wait for them in order. */
 function connect(headers: Record<string, string> = {}) {
-  const ws = new WebSocket(`${daemon.url.replace("http", "ws")}/live`, { headers });
+  const ws = new WebSocket(`${daemon.url.replace("http", "ws")}/live?token=${daemon.cliToken}`, {
+    headers,
+  });
   const frames: ServerFrame[] = [];
   const waiters: (() => void)[] = [];
   ws.on("message", (d) => {

@@ -1,7 +1,8 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { LegKind } from "@oraknid/contracts";
 import { scrubSecrets } from "@oraknid/core";
 import { createClaudeCodeAdapter } from "@oraknid/leg-claude-code";
@@ -13,6 +14,7 @@ import express from "express";
 import { z } from "zod";
 import { router } from "./api/router.ts";
 import { startAuditExport } from "./audit/audit.ts";
+import { Devices, tokenOf } from "./auth/devices.ts";
 import { closeDatabase, openDatabase } from "./db/open.ts";
 import { jobs as jobsTable } from "./db/schema.ts";
 import { SideEffects } from "./engine/effects.ts";
@@ -177,6 +179,7 @@ export async function startDaemon(options: DaemonOptions) {
   });
   const sandboxStatus = os.sandbox.status();
 
+  const devices = new Devices(db, bus, now);
   const app = express();
   app.disable("x-powered-by");
   const server = createServer(app);
@@ -196,10 +199,20 @@ export async function startDaemon(options: DaemonOptions) {
     res.status(403).json({ message: "Oraknid only accepts requests from this machine for now." });
   });
 
+  // Every client is a paired device, or the CLI (Security → The daemon's own surface).
+  app.use("/api", (req, res, next) => {
+    if (req.path === "/devices/pairComplete") return next();
+    if (devices.identify(tokenOf(req.headers, req.originalUrl))) return next();
+    res.status(401).json({
+      message: "Pair this device first: run `oraknid pair` on the machine running Oraknid.",
+    });
+  });
+
   const live = attachLive({
     server,
     bus,
-    allow: (req) => isLocalRequest(req, port),
+    allow: (req) =>
+      isLocalRequest(req, port) && devices.identify(tokenOf(req.headers, req.url)) !== null,
     ...(options.heartbeatMs ? { heartbeatMs: options.heartbeatMs } : {}),
   });
 
@@ -298,6 +311,7 @@ export async function startDaemon(options: DaemonOptions) {
         inbox,
         projects: projectsService,
         skills,
+        devices,
       },
     });
     if (!matched) next();
@@ -306,6 +320,13 @@ export async function startDaemon(options: DaemonOptions) {
   app.get("/health", (_req, res) => {
     res.json({ ok: true, version: VERSION });
   });
+
+  // The web UI (apps/web), when it has been built: static files, and the app for every other path.
+  const web = webDist();
+  if (web) {
+    app.use(express.static(web, { index: false, maxAge: "1h" }));
+    app.get(/^\/(?!api\/|live$).*/, (_req, res) => res.sendFile(join(web, "index.html")));
+  }
 
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -318,7 +339,12 @@ export async function startDaemon(options: DaemonOptions) {
   url = `http://${host}:${port}`;
 
   const info: RuntimeInfo = { pid: process.pid, url, version: VERSION, startedAt };
-  if (options.writeRuntimeFile) writeFileSync(paths.runtimeFile, `${JSON.stringify(info)}\n`);
+  // Readable by my user only: it holds the CLI's token.
+  if (options.writeRuntimeFile) {
+    writeFileSync(paths.runtimeFile, `${JSON.stringify({ ...info, token: devices.cliToken })}\n`, {
+      mode: 0o600,
+    });
+  }
 
   bus.publish({
     type: "system.started",
@@ -382,6 +408,8 @@ export async function startDaemon(options: DaemonOptions) {
     skills,
     budgets,
     projects: projectsService,
+    devices,
+    cliToken: devices.cliToken,
     inbox,
     effects,
     recovery,
@@ -390,4 +418,16 @@ export async function startDaemon(options: DaemonOptions) {
 }
 
 export type Daemon = Awaited<ReturnType<typeof startDaemon>>;
+
+/** apps/web/dist, found from this module (src/ or dist/), if it was built. */
+function webDist(): string | null {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 5; i++) {
+    const candidate = join(dir, "web", "dist");
+    if (existsSync(join(candidate, "index.html"))) return candidate;
+    dir = dirname(dir);
+  }
+  return null;
+}
+
 export { DEFAULT_PORT };

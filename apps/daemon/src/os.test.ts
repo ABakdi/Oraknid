@@ -31,7 +31,12 @@ async function start(opts: { keychain?: boolean } = {}) {
     os: fake.os,
     metricsIntervalMs: 50,
   });
-  const api = createORPCClient<RouterClient<Router>>(new RPCLink({ url: `${daemon.url}/api` }));
+  const api = createORPCClient<RouterClient<Router>>(
+    new RPCLink({
+      url: `${daemon.url}/api`,
+      headers: { authorization: `Bearer ${daemon.cliToken}` },
+    }),
+  );
   return { d: daemon, api, ...fake };
 }
 
@@ -233,7 +238,7 @@ describe("notifications", () => {
 describe("metrics", () => {
   it("streams samples to metrics subscribers and keeps recent ones", async () => {
     const { d, api } = await start();
-    const ws = new WebSocket(`${d.url.replace("http", "ws")}/live`);
+    const ws = new WebSocket(`${d.url.replace("http", "ws")}/live?token=${d.cliToken}`);
     const frames: ServerFrame[] = [];
     ws.on("message", (m) => frames.push(JSON.parse(m.toString())));
     await new Promise((r) => ws.once("open", r));
