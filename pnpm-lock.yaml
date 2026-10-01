@@ -53,6 +53,9 @@ importers:
       '@oraknid/os':
         specifier: workspace:^
         version: link:../../packages/os
+      '@oraknid/tunnel':
+        specifier: workspace:^
+        version: link:../../packages/tunnel
       '@orpc/client':
         specifier: 1.15.4
         version: 1.15.4
@@ -87,6 +90,9 @@ importers:
         specifier: 4.6.5
         version: 4.6.5
     devDependencies:
+      '@oraknid/nest':
+        specifier: workspace:^
+        version: link:../nest
       '@types/better-sqlite3':
         specifier: 9.6.0
         version: 9.6.0

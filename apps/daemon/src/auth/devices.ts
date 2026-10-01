@@ -62,11 +62,19 @@ export class Devices {
       throw new Error("That code is wrong or has expired. Ask for a new one with: oraknid pair");
     }
     this.#failures = 0;
+    return this.create(name, "");
+  }
+
+  /**
+   * A new device and its token. With a public key, it can also reach me
+   * through The Nest (Nest-Protocol).
+   */
+  create(name: string, publicKey: string): { deviceId: string; token: string } {
     const token = randomBytes(32).toString("hex");
     const id = newId(this.now());
     this.db
       .insert(devices)
-      .values({ id, name, publicKey: "", tokenHash: sha256(token), pairedAt: this.now() })
+      .values({ id, name, publicKey, tokenHash: sha256(token), pairedAt: this.now() })
       .run();
     this.bus.publish({
       type: "device.paired",
@@ -76,6 +84,12 @@ export class Devices {
       actor: "owner",
     });
     return { deviceId: id, token };
+  }
+
+  /** A paired, unrevoked device's public key for The Nest, or null. */
+  publicKeyOf(id: string): string | null {
+    const d = this.db.select().from(devices).where(eq(devices.id, id)).get();
+    return d && !d.revokedAt && d.publicKey ? d.publicKey : null;
   }
 
   /** Who a token belongs to: "cli", a device id, or null. */

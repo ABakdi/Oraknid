@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { dirname, join } from "node:path";
@@ -37,6 +37,7 @@ import { LegLogins } from "./legs/login.ts";
 import { LegRegistry } from "./legs/registry.ts";
 import { LegSupervisor } from "./legs/supervisor.ts";
 import { attachLive } from "./live/server.ts";
+import { NestLink } from "./nest/link.ts";
 import { Notifications } from "./notify/notifications.ts";
 import { startNotificationRouter } from "./notify/router.ts";
 import { linuxOs, type OsDeps } from "./os/context.ts";
@@ -215,6 +216,19 @@ export async function startDaemon(options: DaemonOptions) {
   const sandboxStatus = os.sandbox.status();
 
   const devices = new Devices(db, bus, now);
+  // The link to The Nest (Phase 4): connects once configured and listening.
+  const nest = new NestLink({
+    db,
+    bus,
+    secrets,
+    devices,
+    dataDir: paths.dataDir,
+    localUrl: () => url,
+    remoteUi: () => {
+      const file = webRemote();
+      return file ? readFileSync(file, "utf8") : null;
+    },
+  });
   const app = express();
   app.disable("x-powered-by");
   const server = createServer(app);
@@ -342,6 +356,7 @@ export async function startDaemon(options: DaemonOptions) {
         registry,
         health,
         logins,
+        nest,
         silk,
         inbox,
         projects: projectsService,
@@ -377,6 +392,7 @@ export async function startDaemon(options: DaemonOptions) {
   });
   port = (server.address() as AddressInfo).port;
   url = `http://${host}:${port}`;
+  void nest.connect().catch((err) => console.error("nest link failed", err));
 
   const info: RuntimeInfo = { pid: process.pid, url, version: VERSION, startedAt };
   // Readable by my user only: it holds the CLI's token.
@@ -420,6 +436,7 @@ export async function startDaemon(options: DaemonOptions) {
       audit.stop();
       backups.stop();
       logins.stopAll();
+      nest.stop();
       await supervisor.killAll();
       await inhibit.stop();
       await live.close();
@@ -465,6 +482,17 @@ export async function startDaemon(options: DaemonOptions) {
 }
 
 export type Daemon = Awaited<ReturnType<typeof startDaemon>>;
+
+/** The remote UI, one self-contained page (apps/web/dist-remote), if it was built. */
+function webRemote(): string | null {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 5; i++) {
+    const candidate = join(dir, "web", "dist-remote", "index.html");
+    if (existsSync(candidate)) return candidate;
+    dir = dirname(dir);
+  }
+  return null;
+}
 
 /** apps/web/dist, found from this module (src/ or dist/), if it was built. */
 function webDist(): string | null {

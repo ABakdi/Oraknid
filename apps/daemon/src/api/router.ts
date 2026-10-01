@@ -79,6 +79,7 @@ import type { InboxStore } from "../inbox/store.ts";
 import type { LegLogins } from "../legs/login.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import { readSessionLog } from "../legs/session-log.ts";
+import type { NestLink } from "../nest/link.ts";
 import type { Notifications } from "../notify/notifications.ts";
 import type { Secrets } from "../os/secrets.ts";
 import type { Paths } from "../paths.ts";
@@ -118,6 +119,8 @@ export interface ApiContext {
   health: { check(id: string): Promise<void> };
   /** Logging Claude Code Legs in from the UI. */
   logins: LegLogins;
+  /** The link to The Nest (Phase 4). */
+  nest: NestLink;
   silk: SilkStore;
   inbox: InboxStore;
   projects: Projects;
@@ -453,6 +456,37 @@ export const router = {
       .handler(({ context: c, input }) =>
         guard(() => editWeb(controls(c), input.jobId, input.edits)),
       ),
+  },
+  /** Reaching me away from home through The Nest (Phase 4, Nest-Protocol). */
+  nest: {
+    status: base
+      .output(
+        z.object({
+          configured: z.boolean(),
+          url: z.string().nullable(),
+          daemonId: z.string().nullable(),
+          connected: z.boolean(),
+          publicKey: z.string().nullable(),
+          error: z.string().nullable(),
+        }),
+      )
+      .handler(({ context: c }) => c.nest.status()),
+    configure: base
+      .input(
+        z.object({
+          url: z.url(),
+          secret: z.string().min(16),
+          daemonId: z.string().min(1).optional(),
+        }),
+      )
+      .handler(({ context: c, input }) =>
+        guard(() => c.nest.configure(input.url, input.secret, input.daemonId)),
+      ),
+    /** A device for away: its link carries its keys in the fragment, never through The Nest. */
+    pairAway: base
+      .input(z.object({ name: z.string().min(1).max(60) }))
+      .output(z.object({ link: z.string(), deviceId: z.string() }))
+      .handler(({ context: c, input }) => guard(() => c.nest.pairAway(input.name))),
   },
   devices: {
     /** A short code for a new device to enter (Security → pairing). */

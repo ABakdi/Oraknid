@@ -23,5 +23,8 @@
     "tsdown": "0.23.0",
     "vite": "8.3.1",
     "vitest": "5.0.3"
+  },
+  "exports": {
+    "./relay": "./src/relay.ts"
   }
 }

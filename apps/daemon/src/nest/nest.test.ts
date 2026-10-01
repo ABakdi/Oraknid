@@ -1,0 +1,137 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createNest } from "@oraknid/nest/relay";
+import { DeviceEnd, type KeyPair, ready } from "@oraknid/tunnel";
+import { createORPCClient } from "@orpc/client";
+import { RPCLink } from "@orpc/client/fetch";
+import type { RouterClient } from "@orpc/server";
+import { afterEach, describe, expect, it } from "vitest";
+import WebSocket from "ws";
+import type { Router } from "../api/router.ts";
+import { type Daemon, startDaemon } from "../daemon.ts";
+import { resolvePaths } from "../paths.ts";
+import { fakeOs } from "../testing/fake-os.ts";
+
+let daemon: Daemon | undefined;
+let nest: ReturnType<typeof createNest> | undefined;
+afterEach(async () => {
+  await daemon?.close();
+  await nest?.close();
+  daemon = undefined;
+  nest = undefined;
+});
+
+interface Bundle {
+  nest: string;
+  daemon: string;
+  daemonPublicKey: string;
+  deviceId: string;
+  keys: KeyPair;
+  token: string;
+}
+
+/** A phone away from home: it opens the tunnel through The Nest, as the loader does. */
+async function phone(b: Bundle) {
+  await ready();
+  const ws = new WebSocket(`${b.nest.replace(/^http/, "ws")}/device?daemon=${b.daemon}`);
+  await new Promise((r, e) => {
+    ws.once("open", r);
+    ws.once("error", e);
+  });
+  const end = new DeviceEnd({
+    deviceId: b.deviceId,
+    keys: b.keys,
+    daemonPublicKey: b.daemonPublicKey,
+  });
+  const inbox: Record<string, unknown>[] = [];
+  const opened = new Promise<void>((resolve, reject) => {
+    ws.on("message", (data) => {
+      try {
+        const r = end.receive(String(data));
+        for (const f of r.replies) ws.send(f);
+        inbox.push(...(r.messages as Record<string, unknown>[]));
+        if (end.ready) resolve();
+      } catch (e) {
+        reject(e);
+      }
+    });
+  });
+  ws.send(end.hello());
+  await opened;
+  const wait = async (pred: (m: Record<string, unknown>) => boolean) => {
+    const until = Date.now() + 3000;
+    for (;;) {
+      const i = inbox.findIndex(pred);
+      if (i >= 0) return inbox.splice(i, 1)[0] as Record<string, unknown>;
+      if (Date.now() > until) throw new Error(`nothing came: ${JSON.stringify(inbox)}`);
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  };
+  return { ws, end, send: (m: unknown) => ws.send(end.seal(m)), wait };
+}
+
+describe("away from home, through The Nest (Phase 4)", () => {
+  it("pairs a phone for away and reaches the API and the live socket end to end", async () => {
+    nest = createNest({ daemons: new Map([["home-1", "a-long-daemon-secret"]]) });
+    await new Promise<void>((r) => nest?.server.listen(0, "127.0.0.1", () => r()));
+    const nestUrl = `http://127.0.0.1:${(nest.server.address() as { port: number }).port}`;
+    const dir = mkdtempSync(join(tmpdir(), "oraknid-nest-"));
+    daemon = await startDaemon({
+      paths: resolvePaths({ ORAKNID_DATA_DIR: dir, ORAKNID_CONFIG_DIR: dir }),
+      port: 0,
+      dbFile: ":memory:",
+      os: fakeOs({ keychain: true }).os,
+    });
+    const api = createORPCClient<RouterClient<Router>>(
+      new RPCLink({
+        url: `${daemon.url}/api`,
+        headers: { authorization: `Bearer ${daemon.cliToken}` },
+      }),
+    );
+    await api.nest.configure({ url: nestUrl, secret: "a-long-daemon-secret", daemonId: "home-1" });
+    const end = Date.now() + 3000;
+    while (!(await api.nest.status()).connected && Date.now() < end)
+      await new Promise((r) => setTimeout(r, 20));
+    expect((await api.nest.status()).connected).toBe(true);
+
+    const { link } = await api.nest.pairAway({ name: "My phone, away" });
+    expect(link.startsWith(`${nestUrl}/#oraknid=`)).toBe(true);
+    const b = JSON.parse(
+      Buffer.from(link.split("#oraknid=")[1] as string, "base64url").toString(),
+    ) as Bundle;
+    const p = await phone(b);
+
+    p.send({
+      t: "req",
+      id: 1,
+      method: "POST",
+      path: "/api/system/status",
+      headers: { authorization: `Bearer ${b.token}` },
+      body: "{}",
+    });
+    const res = await p.wait((m) => m.t === "res" && m.id === 1);
+    expect(res.status).toBe(200);
+    expect(JSON.parse(String(res.body)).json.pid).toBe(process.pid);
+
+    // Another device's token can't ride this device's tunnel.
+    p.send({
+      t: "req",
+      id: 2,
+      method: "POST",
+      path: "/api/system/status",
+      headers: { authorization: `Bearer ${daemon.cliToken}` },
+      body: "{}",
+    });
+    expect((await p.wait((m) => m.t === "res" && m.id === 2)).status).toBe(401);
+
+    p.send({ t: "live-open", token: b.token });
+    const hello = await p.wait((m) => m.t === "live" && String(m.frame).includes('"hello"'));
+    expect(String(hello.frame)).toContain('"type":"hello"');
+
+    // A revoked device is refused at its next handshake.
+    await api.devices.revoke({ id: b.deviceId });
+    p.ws.close();
+    await expect(phone(b)).rejects.toThrow(/isn't paired, or was revoked/);
+  });
+});

@@ -23,6 +23,7 @@
     "@oraknid/leg-opencode": "workspace:^",
     "@oraknid/leg-sdk": "workspace:^",
     "@oraknid/os": "workspace:^",
+    "@oraknid/tunnel": "workspace:^",
     "@orpc/client": "1.15.4",
     "@orpc/server": "1.15.4",
     "better-sqlite3": "13.0.3",
@@ -36,6 +37,7 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@oraknid/nest": "workspace:^",
     "@types/better-sqlite3": "9.6.0",
     "@types/express": "5.0.6",
     "@types/ws": "8.18.2",
