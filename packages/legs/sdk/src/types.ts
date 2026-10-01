@@ -1,0 +1,142 @@
+import type { LegKind } from "@oraknid/contracts";
+import type { Sandbox } from "@oraknid/os";
+
+// The uniform interface over every backend (docs/02-Architecture/Leg-Adapters.md).
+
+export interface LegConfig {
+  id: string;
+  name: string;
+  kind: LegKind;
+  /** Kind-specific settings; never secrets (BR-13). */
+  config: Record<string, unknown>;
+}
+
+/** One model a Leg offers (ADR-013). */
+export interface ModelOffer {
+  model: string;
+  displayName: string;
+  effortLevels: string[];
+  contextWindow: number | null;
+}
+
+export interface ProbeResult {
+  ok: boolean;
+  /** What was found, or exactly what failed (BR-17). */
+  detail: string;
+  models: ModelOffer[];
+  features: {
+    resume: boolean;
+    /** Edits files and runs commands itself (an agent) or not (a bare model). */
+    tools: boolean;
+    usage: "reported" | "estimated";
+    quotaWindows: boolean;
+  };
+}
+
+export interface PermissionRequest {
+  tool: string;
+  input: Record<string, unknown>;
+  /** The shell command, when the tool runs one. */
+  command: string | null;
+  /** The file path, when the tool touches one. */
+  path: string | null;
+}
+
+export type PermissionDecision = { allow: true } | { allow: false; message: string };
+
+export interface UsageSnapshot {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  /** Tokens in the context right now, when known. */
+  contextTokens: number | null;
+  contextWindow: number | null;
+  /** True when counted by Oraknid rather than reported by the backend. */
+  estimated: boolean;
+}
+
+export interface QuotaReport {
+  /** As the provider names it: "five_hour", "seven_day_opus"… */
+  window: string;
+  /** Account-wide or for one model (ADR-013). */
+  scope: "account" | "model";
+  status: "allowed" | "warning" | "rejected";
+  utilization: number | null;
+  resetsAt: number | null;
+}
+
+export type TurnEnd = "completed" | "interrupted" | "error" | "max_turns" | "rate-limited";
+export type SessionEnd = "completed" | "killed" | "crashed" | "rate-limited";
+
+export type LegEvent =
+  | { type: "turn.started" }
+  | { type: "text.delta"; text: string }
+  | { type: "tool.called"; id: string; tool: string; input: Record<string, unknown> }
+  | { type: "tool.result"; id: string; ok: boolean; output: string }
+  | { type: "question"; text: string }
+  | { type: "permission.requested"; request: PermissionRequest; decision: PermissionDecision }
+  | { type: "usage"; usage: UsageSnapshot }
+  | { type: "rate_limit"; quota: QuotaReport }
+  | { type: "turn.ended"; reason: TurnEnd; text: string; error: string | null }
+  | { type: "session.ended"; reason: SessionEnd; error: string | null };
+
+export interface SandboxPlan {
+  sandbox: Sandbox;
+  /** The Leg's own home (its config dir lives here or is listed in `writable`). */
+  home: string;
+  writable: string[];
+  readonly: string[];
+  env: Record<string, string>;
+}
+
+export interface SessionStart {
+  leg: LegConfig;
+  model: string;
+  effort: string | null;
+  /** The worktree. */
+  cwd: string;
+  /** The context pack (Silk): the session's standing instructions. */
+  systemPrompt: string;
+  /** The first message. */
+  prompt: string;
+  /** A native session to continue (only when the adapter supports resume). */
+  resumeFrom: string | null;
+  /** null runs unsandboxed: only when I chose that for the job, or in tests. */
+  sandbox: SandboxPlan | null;
+  /** The Leg's secret (e.g. an API key), resolved from the store at start (BR-13). */
+  credential: string | null;
+  onPermission: (request: PermissionRequest) => Promise<PermissionDecision>;
+}
+
+export interface LegSession {
+  /** The backend's own session id, once known (for resume). */
+  nativeSessionId(): string | null;
+  /** The process to measure and to kill on recovery, when there is one. */
+  pid(): number | null;
+  /** A follow-up turn. */
+  send(message: string): Promise<void>;
+  /** Every event of the session, in order; ends when the session ends. */
+  events(): AsyncIterable<LegEvent>;
+  /** Ends the current turn at a safe point (BR-7). */
+  interrupt(): Promise<void>;
+  /** Terminates the process tree or aborts the stream (ladder step 4). */
+  kill(): Promise<void>;
+  usage(): UsageSnapshot;
+}
+
+export interface LegAdapter {
+  kind: LegKind;
+  probe(leg: LegConfig, sandbox: SandboxPlan | null): Promise<ProbeResult>;
+  start(start: SessionStart): Promise<LegSession>;
+}
+
+export const emptyUsage = (estimated = false): UsageSnapshot => ({
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+  contextTokens: null,
+  contextWindow: null,
+  estimated,
+});
