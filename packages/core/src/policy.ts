@@ -30,14 +30,24 @@ export interface PolicyRequest {
   path: string | null;
 }
 
+/** My own rules at one level (job, project, global): regex sources matched against commands. */
+export interface RuleLevel {
+  level: "job" | "project" | "global";
+  allow: string[];
+  deny: string[];
+}
+
 export interface PolicyContext {
   worktree: string;
   autonomy: Autonomy;
   /** Gates I waived for this job. */
   waived: ReadonlySet<GatedAction>;
-  /** Extra patterns (regex sources) from my settings, most specific last. */
-  allow?: string[];
-  deny?: string[];
+  /**
+   * My rules, most specific level first. The first level with a matching
+   * rule decides; within a level, deny beats allow. The shipped
+   * never-allowed list stays absolute whatever I write here.
+   */
+  rules?: RuleLevel[];
 }
 
 export type PolicyVerdict =
@@ -145,21 +155,56 @@ export function programsOf(command: string): string[] {
 const insideTree = (worktree: string, path: string) =>
   path === worktree || path.startsWith(worktree.endsWith("/") ? worktree : `${worktree}/`);
 
+/** A rule I wrote that isn't a valid regex matches nothing, rather than breaking every decision. */
+function safeTest(src: string, text: string): boolean {
+  try {
+    return new RegExp(src).test(text);
+  } catch {
+    return false;
+  }
+}
+
+/** What my rules say about a command: the first level with a match decides; deny beats allow within it. */
+function mine(command: string, rules: RuleLevel[]): PolicyVerdict | null {
+  for (const level of rules) {
+    const denied = level.deny.find((src) => safeTest(src, command));
+    if (denied)
+      return {
+        verdict: "deny",
+        reason: `matches my ${level.level} deny rule /${denied}/`,
+        drift: "D7",
+      };
+    const allowed = level.allow.find((src) => safeTest(src, command));
+    if (allowed)
+      return { verdict: "allow", reason: `matches my ${level.level} allow rule /${allowed}/` };
+  }
+  return null;
+}
+
+/** A rule that allows exactly the programs of a command (for "allow this for the job"). */
+export function allowRuleFor(command: string): string {
+  const programs = [...new Set(programsOf(command))].map((p) =>
+    p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+  );
+  return `^\\s*(${programs.join("|")})(\\s|$)`;
+}
+
 export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
   const command = r.command ?? "";
+  const own = command ? mine(command, ctx.rules ?? []) : null;
+
   if (command) {
-    for (const src of ctx.deny ?? []) {
-      if (new RegExp(src).test(command))
-        return { verdict: "deny", reason: `matches my deny rule /${src}/`, drift: "D7" };
-    }
     for (const d of DEFAULT_DENY) {
       if (d.pattern.test(command))
         return { verdict: "deny", reason: `never allowed: it ${d.why}`, drift: "D7" };
     }
+    if (own?.verdict === "deny") return own;
     for (const g of GATED) {
       if (!g.pattern.test(command)) continue;
       if (ctx.waived.has(g.action))
         return { verdict: "allow", reason: `${g.action} waived for this job` };
+      // An allow rule of mine is a waiver for exactly what it matches.
+      if (own?.verdict === "allow") return own;
       if (ctx.autonomy === "full" && !ALWAYS_GATED.has(g.action)) {
         return { verdict: "allow", reason: `${g.action} allowed at Full autonomy` };
       }
@@ -180,10 +225,7 @@ export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
   }
 
   if (SHELL_TOOLS.has(r.tool)) {
-    for (const src of ctx.allow ?? []) {
-      if (new RegExp(src).test(command))
-        return { verdict: "allow", reason: `matches my allow rule /${src}/` };
-    }
+    if (own?.verdict === "allow") return own;
     const unknown = programsOf(command).filter((p) => !ALLOWED_PROGRAMS.has(p));
     if (unknown.length === 0)
       return { verdict: "allow", reason: "every program is on the allow list" };

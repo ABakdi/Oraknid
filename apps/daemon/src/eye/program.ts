@@ -130,6 +130,8 @@ export function eyeProgram(d: EyeDeps): JobProgram {
     if (ctx.state() === "planning") ctx.setState("running");
 
     for (;;) {
+      // Asked every time, before any work: approved passes through, denied stops (never skipped on a resume).
+      await approvePlanIfSupervised(d, ctx);
       await runTasks(d, ctx, where);
       if (ctx.state() === "cancelled") return;
 
@@ -293,6 +295,39 @@ async function runTasks(
         return;
     }
   }
+}
+
+/** Supervised: I approve the plan before work starts, and each replan (Approvals → Autonomy levels). */
+async function approvePlanIfSupervised(d: EyeDeps, ctx: JobContext) {
+  const job = d.db.select().from(jobs).where(eq(jobs.id, ctx.jobId)).get();
+  if (job?.autonomy !== "supervised") return;
+  const version = job.webVersion;
+  const summary = d.silk
+    .current(job.id)
+    .filter(
+      (e) =>
+        e.kind === "decision" && (e.title === "The plan" || e.title.startsWith("Plan, version")),
+    )
+    .at(-1);
+  const pending = taskRows(d.db, job.id).filter((t) => t.state !== "done" && t.state !== "skipped");
+  await ctx.effect(
+    {
+      key: `plan:${version}`,
+      action: "plan.approve",
+      payload: { version, tasks: pending.length },
+      gated: true,
+      title: version === 1 ? "Approve the plan" : `Approve the plan, version ${version}`,
+      describe: `${summary?.body.split("\n\n")[0] ?? ""}\n\n${pending
+        .map(
+          (t) =>
+            `- **${t.title}** (${t.kind}, ${t.difficulty}) — may change ${t.scope.join(", ") || "nothing"}; done when ${
+              t.verify.map((v) => `\`${v}\``).join(", ") || "reviewed"
+            }`,
+        )
+        .join("\n")}`,
+    },
+    async () => true,
+  );
 }
 
 function setTask(

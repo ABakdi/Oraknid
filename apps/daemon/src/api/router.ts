@@ -1,4 +1,5 @@
 import {
+  Autonomy,
   ChannelTestResult,
   DoctorCheck,
   EmailSettings,
@@ -32,6 +33,7 @@ import { runDoctor } from "../doctor.ts";
 import type { JobStore } from "../engine/jobs.ts";
 import type { JobRunner } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
+import { GlobalPolicy, readGlobalPolicy, writeGlobalPolicy } from "../eye/policy.ts";
 import type { InboxStore } from "../inbox/store.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { Notifications } from "../notify/notifications.ts";
@@ -65,6 +67,17 @@ export interface ApiContext {
 }
 
 const base = os.$context<ApiContext>();
+
+const GatedActionSchema = z.enum([
+  "send",
+  "push",
+  "merge",
+  "deploy",
+  "delete",
+  "spend",
+  "external-write",
+  "install",
+]);
 
 /** Errors carry a sentence for the UI (BR-17). */
 const userError = (message: string) => new ORPCError("BAD_REQUEST", { message });
@@ -150,6 +163,12 @@ export const router = {
       ),
     list: base.output(z.array(ProjectView)).handler(({ context: c }) => c.projects.list()),
   },
+  policies: {
+    get: base.output(GlobalPolicy).handler(({ context: c }) => readGlobalPolicy(c.jobs.db)),
+    update: base
+      .input(GlobalPolicy)
+      .handler(({ context: c, input }) => guard(() => writeGlobalPolicy(c.jobs.db, c.bus, input))),
+  },
   settings: {
     /** The Leg model The Eye borrows for reasoning (first-run setup); null lets routing choose. */
     setEyeLeg: base
@@ -182,6 +201,63 @@ export const router = {
         .all()
         .map((j) => jobView(c, j.id)),
     ),
+    /** Changeable while the job runs: the next decision uses it. */
+    setAutonomy: base
+      .input(z.object({ id: z.string(), autonomy: Autonomy }))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          c.jobs.require(input.id);
+          c.jobs.db
+            .update(jobsTable)
+            .set({ autonomy: input.autonomy })
+            .where(eq(jobsTable.id, input.id))
+            .run();
+          c.bus.publish({
+            type: "job.autonomy",
+            topic: `job:${input.id}`,
+            jobId: input.id,
+            payload: { autonomy: input.autonomy },
+          });
+        }),
+      ),
+    /** Waive gates for this job; audited (Approvals → Overrides). */
+    setWaivers: base
+      .input(z.object({ id: z.string(), waived: z.array(GatedActionSchema) }))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          c.jobs.require(input.id);
+          c.jobs.db
+            .update(jobsTable)
+            .set({ waived: input.waived })
+            .where(eq(jobsTable.id, input.id))
+            .run();
+          c.bus.publish({
+            type: "policy.waived",
+            topic: `job:${input.id}`,
+            jobId: input.id,
+            payload: { waived: input.waived },
+          });
+        }),
+      ),
+    setRules: base
+      .input(z.object({ id: z.string(), allow: z.array(z.string()), deny: z.array(z.string()) }))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          c.jobs.require(input.id);
+          for (const src of [...input.allow, ...input.deny]) new RegExp(src);
+          c.jobs.db
+            .update(jobsTable)
+            .set({ allowRules: input.allow, denyRules: input.deny })
+            .where(eq(jobsTable.id, input.id))
+            .run();
+          c.bus.publish({
+            type: "policy.updated",
+            topic: `job:${input.id}`,
+            jobId: input.id,
+            payload: { level: "job", allow: input.allow, deny: input.deny },
+          });
+        }),
+      ),
     pause: base
       .input(z.object({ id: z.string(), reason: z.string().optional() }))
       .handler(({ context: c, input }) =>

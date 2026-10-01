@@ -413,3 +413,135 @@ describe("after a restart", () => {
     expect(d.inbox.get(mine)?.state).toBe("open");
   });
 });
+
+describe("approvals and autonomy (M1.7)", () => {
+  const firstOpen = async (api: Awaited<ReturnType<typeof eye>>["api"]) => {
+    const end = Date.now() + 5000;
+    for (;;) {
+      const [item] = await api.inbox.list({ state: "open" });
+      if (item) return item;
+      if (Date.now() > end) throw new Error("nothing in the inbox");
+      await new Promise((r) => setTimeout(r, 20));
+    }
+  };
+
+  it("Supervised: waits for my approval of the plan, then goes on as soon as I answer", async () => {
+    const { api, id } = await eye(good, { autonomy: "supervised" });
+    const item = await firstOpen(api);
+    expect(item.title).toBe("Approve the plan");
+    expect(item.detail).toContain(
+      "**Write hello.sh** (implement, low) — may change hello.sh; done when `sh hello.sh | grep -qx hi`",
+    );
+    expect((await api.jobs.get({ id })).state).toBe("waiting");
+    await api.inbox.answer({ id: item.id, answer: "Approve" });
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+  });
+
+  it("Supervised: a plan I deny is never run", async () => {
+    const { api, id, leg } = await eye(good, { autonomy: "supervised" });
+    const item = await firstOpen(api);
+    await api.inbox.answer({ id: item.id, answer: "Deny" });
+    const job = await until(api, id, ["blocked", "completed"]);
+    expect([job.state, job.blockedReason]).toEqual(["blocked", 'I denied "plan.approve".']);
+    expect(leg.log).toEqual([]);
+  });
+
+  it("'Approve all like this' waives the gate for the rest of the job, audited", async () => {
+    const { api, id, d } = await eye((t) =>
+      task(t) === "Write hello.sh" && t.turn === 1
+        ? [
+            { write: "hello.sh", content: "echo hi\n" },
+            { run: "git push origin HEAD:refs/heads/x 2>/dev/null; true" },
+            { say: "DONE" },
+          ]
+        : task(t) === "Test hello.sh" && t.turn === 1
+          ? [
+              { write: "test.sh", content: 'test "$(sh hello.sh)" = hi\n' },
+              { run: "git push origin HEAD:refs/heads/y 2>/dev/null; true" },
+              { say: "DONE" },
+            ]
+          : good(t),
+    );
+    const item = await firstOpen(api);
+    expect(item.options).toContain("Approve all like this for this job");
+    await api.inbox.answer({ id: item.id, answer: "Approve all like this for this job" });
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    // The second push needed no approval.
+    expect((await api.inbox.list({})).filter((i) => i.kind === "approval")).toHaveLength(1);
+    expect(
+      d.bus.since(0, [`job:${id}`], 1000).find((e) => e.type === "policy.waived")?.payload,
+    ).toEqual({ gated: "push" });
+  });
+
+  it("a change of autonomy applies to the next decision", async () => {
+    const { api, id } = await eye((t) =>
+      task(t) === "Write hello.sh" && t.turn === 1
+        ? [
+            { write: "hello.sh", content: "echo hi\n" },
+            { run: "nmap --version >/dev/null 2>&1; true" },
+            { say: "DONE" },
+          ]
+        : good(t),
+    );
+    await firstOpen(api);
+    await api.jobs.setAutonomy({ id, autonomy: "full" });
+    // The open question still needs an answer; the next unknown program will not ask.
+    const [item] = await api.inbox.list({ state: "open" });
+    await api.inbox.answer({ id: item?.id as string, answer: "Approve" });
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+  });
+
+  it("Supervised: a replan waits for my approval too, and is not skipped on resume", async () => {
+    const plan: WebPlan = {
+      ...HELLO,
+      tasks: [HELLO.tasks[0] as WebPlan["tasks"][number]],
+      jobVerify: ["test -f NOTES.md"],
+    };
+    const replan: WebPlan = {
+      summary: "Add the missing notes.",
+      tasks: [
+        {
+          key: "fix1",
+          title: "Write NOTES.md",
+          instructions: "x",
+          kind: "mechanical",
+          dependsOn: [],
+          scope: ["NOTES.md"],
+          verify: ["test -f NOTES.md"],
+          requiredCapabilities: ["docs"],
+          difficulty: "low",
+        },
+      ],
+      jobVerify: [],
+    };
+    const { api, id, leg } = await eye(
+      (t) =>
+        task(t) === "Write NOTES.md"
+          ? [{ write: "NOTES.md", content: "n\n" }, { say: "DONE" }]
+          : good(t),
+      { plan, replan, autonomy: "supervised" },
+    );
+    await api.inbox.answer({ id: (await firstOpen(api)).id, answer: "Approve" });
+    const end = Date.now() + 5000;
+    let second: Awaited<ReturnType<typeof firstOpen>> | undefined;
+    while (!second && Date.now() < end) {
+      second = (await api.inbox.list({ state: "open" })).find(
+        (i) => i.title === "Approve the plan, version 2",
+      );
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(second?.detail).toContain("**Write NOTES.md**");
+    expect(leg.log.some((t) => task(t) === "Write NOTES.md")).toBe(false);
+    await api.inbox.answer({ id: second?.id as string, answer: "Approve" });
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+  });
+
+  it("refuses a rule that is not a valid pattern", async () => {
+    const { api } = await eye(good);
+    await expect(api.policies.update({ allow: ["("], deny: [] })).rejects.toThrow(
+      "/(/ is not a valid pattern.",
+    );
+    await api.policies.update({ allow: ["^nmap "], deny: ["rm -rf build"] });
+    expect(await api.policies.get()).toEqual({ allow: ["^nmap "], deny: ["rm -rf build"] });
+  });
+});

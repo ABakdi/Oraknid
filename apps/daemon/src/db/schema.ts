@@ -70,6 +70,9 @@ export const jobs = sqliteTable(
     unsandboxed: integer("unsandboxed", { mode: "boolean" }).notNull().default(false),
     /** Gates I waived for this job (Approvals → Overrides). */
     waived: json<string[]>("waived").notNull().default([]),
+    /** My command rules for this job: regex sources (Security → allow/deny list). */
+    allowRules: json<string[]>("allow_rules").notNull().default([]),
+    denyRules: json<string[]>("deny_rules").notNull().default([]),
     /** A job blocked on quota resumes on its own at this time (Jobs-and-Projects → Blocked). */
     blockedUntil: integer("blocked_until"),
     /** Job-level verification rounds so far (each failed round replans). */

@@ -274,6 +274,7 @@ export class JobRunner {
             const id = effects.requestApproval(
               row,
               spec.describe ?? `${row.action} ${JSON.stringify(row.payload)}`,
+              spec.title,
             );
             throw new AwaitingOwner(id, `Waiting for my approval: ${row.action}`);
           }

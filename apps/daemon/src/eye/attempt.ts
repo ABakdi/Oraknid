@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Autonomy, Difficulty, TaskKind } from "@oraknid/contracts";
 import {
+  allowRuleFor,
   buildContextPack,
   claimsDone,
   correctivePrompt,
@@ -47,6 +48,11 @@ import {
   rollback,
 } from "../workspace/git.ts";
 import { waitForAnswer } from "./approvals.ts";
+import { approveAllLikeThis, policyFor } from "./policy.ts";
+
+/** The third answer to a Leg's permission request (Approvals → The inbox). */
+export const ALL_LIKE_THIS = "Approve all like this for this job";
+
 import { runVerify } from "./verify.ts";
 
 export type TaskRow = typeof tasks.$inferSelect;
@@ -235,7 +241,7 @@ export async function runAttempt(
     d.bus.publish({ type, topic: `job:${job.id}`, jobId: job.id, payload: { taskId, ...payload } });
 
   const onPermission = async (r: PermissionRequest): Promise<PermissionDecision> => {
-    const v = decide(r, { worktree: ws.cwd, autonomy: job.autonomy, waived: new Set(job.waived) });
+    const v = decide(r, policyFor(d.db, job.id, ws.cwd));
     if (v.verdict === "allow") return { allow: true };
     if (v.verdict === "deny") {
       observed.forbidden.push(`tried \`${r.command ?? r.tool}\` (${v.reason})`);
@@ -254,7 +260,7 @@ export async function runAttempt(
       raisedBy: { legId: leg.legId },
       title: `${leg.legName} wants to ${r.command ? `run \`${r.command.slice(0, 80)}\`` : `use ${r.tool}`}`,
       detail: `Task: ${task.title}\nWhy it asks: ${v.reason}.\n\n${r.command ? `\`\`\`\n${r.command}\n\`\`\`` : JSON.stringify(r.input)}`,
-      options: ["Approve", "Deny"],
+      options: ["Approve", "Deny", ALL_LIKE_THIS],
       defaultOption: null,
     });
     asked.push(itemId);
@@ -267,6 +273,15 @@ export async function runAttempt(
       return { allow: false, message: "Oraknid is pausing this session." };
     }
     observed.lastActivityAt = now();
+    if (answer === ALL_LIKE_THIS) {
+      approveAllLikeThis(
+        d.db,
+        d.bus,
+        job.id,
+        v.gated ? { gated: v.gated } : { allowRule: allowRuleFor(r.command ?? r.tool) },
+      );
+      return { allow: true };
+    }
     if (answer === "Approve") return { allow: true };
     deniedGates.add(key);
     return { allow: false, message: "I denied it. Find another way, or say what you need." };

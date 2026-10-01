@@ -120,6 +120,12 @@ export async function startDaemon(options: DaemonOptions) {
   // My answer to "import my edits?" goes back to Silk.
   bus.subscribe((e) => {
     if (e.type !== "inbox.answered") return;
+    // A job waiting for me goes on as soon as I answer (Approvals → The inbox).
+    if (e.jobId && jobsStore.get(e.jobId)?.state === "waiting") {
+      void runner
+        .resume(e.jobId)
+        .catch((error) => console.error("resume after answer failed", error));
+    }
     const { id, answer } = e.payload as { id: string; answer: string };
     try {
       silk.answerImport(id, answer);

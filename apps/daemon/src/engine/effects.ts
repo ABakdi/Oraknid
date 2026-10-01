@@ -19,6 +19,8 @@ export interface EffectSpec {
   gated?: boolean;
   /** What the approval shows me, in plain words. */
   describe?: string;
+  /** The approval's title, when the action's name says too little. */
+  title?: string;
 }
 
 /** After a crash: did this action happen in the outside world? */
@@ -126,14 +128,14 @@ export class SideEffects {
   }
 
   /** Asks me to approve a gated action, once. Returns the inbox item. */
-  requestApproval(row: EffectRow, describe: string): string {
+  requestApproval(row: EffectRow, describe: string, title?: string): string {
     if (row.inboxItemId) return row.inboxItemId;
     const id = this.inbox.open({
       kind: "approval",
       jobId: row.jobId,
       taskId: row.taskId,
       raisedBy: "eye",
-      title: `Approve: ${row.action}`,
+      title: title ?? `Approve: ${row.action}`,
       detail: describe,
       options: ["Approve", "Deny"],
       defaultOption: null,

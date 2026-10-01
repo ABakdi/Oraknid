@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { claimsDone, DEFAULT_THRESHOLDS, detect, nextEscalation, type Observed } from "./drift.ts";
-import { decide, type PolicyContext, programsOf } from "./policy.ts";
+import { allowRuleFor, decide, type PolicyContext, programsOf } from "./policy.ts";
 
 const ctx = (over: Partial<PolicyContext> = {}): PolicyContext => ({
   worktree: "/w",
@@ -58,8 +58,43 @@ describe("permission policy", () => {
       reason: expect.stringContaining("nmap"),
     });
     expect(decide(bash("nmap 10.0.0.1"), ctx({ autonomy: "full" })).verdict).toBe("allow");
-    expect(decide(bash("nmap 10.0.0.1"), ctx({ allow: ["^nmap "] })).verdict).toBe("allow");
-    expect(decide(bash("rm -rf build"), ctx({ deny: ["rm -rf build"] })).verdict).toBe("deny");
+    expect(
+      decide(bash("nmap 10.0.0.1"), ctx({ rules: [{ level: "job", allow: ["^nmap "], deny: [] }] }))
+        .verdict,
+    ).toBe("allow");
+    expect(
+      decide(
+        bash("rm -rf build"),
+        ctx({ rules: [{ level: "global", allow: [], deny: ["rm -rf build"] }] }),
+      ).verdict,
+    ).toBe("deny");
+  });
+
+  it("lets the most specific level decide, deny beating allow within a level, and keeps the never-allowed list absolute", () => {
+    const rules = [
+      { level: "job" as const, allow: ["^make deploy-staging"], deny: [] },
+      { level: "global" as const, allow: [], deny: ["deploy"] },
+    ];
+    expect(decide(bash("make deploy-staging"), ctx({ rules })).verdict).toBe("allow");
+    expect(decide(bash("make deploy-prod"), ctx({ rules })).verdict).toBe("deny");
+    expect(
+      decide(bash("make x"), ctx({ rules: [{ level: "job", allow: ["make"], deny: ["make"] }] }))
+        .verdict,
+    ).toBe("deny");
+    expect(
+      decide(bash("sudo make"), ctx({ rules: [{ level: "job", allow: ["sudo"], deny: [] }] }))
+        .verdict,
+    ).toBe("deny");
+    // A broken rule of mine breaks nothing.
+    expect(
+      decide(bash("ls"), ctx({ rules: [{ level: "job", allow: ["("], deny: ["["] }] })).verdict,
+    ).toBe("allow");
+  });
+
+  it("writes an allow rule for exactly a command's programs", () => {
+    const rule = allowRuleFor("nmap -p 80 localhost | grep open");
+    expect(new RegExp(rule).test("nmap localhost")).toBe(true);
+    expect(new RegExp(rule).test("curl x")).toBe(false);
   });
 
   it("allows edits inside the worktree and asks about edits outside", () => {

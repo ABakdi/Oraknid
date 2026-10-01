@@ -56,11 +56,14 @@ export class InboxStore {
     return id;
   }
 
+  /** Open first, approvals before questions (they block work), newest first (Approvals → The inbox). */
   list(state?: string): InboxItem[] {
     const q = this.db.select().from(inboxItems);
-    return (state ? q.where(eq(inboxItems.state, state)) : q)
+    const rows = (state ? q.where(eq(inboxItems.state, state)) : q)
       .orderBy(desc(inboxItems.id))
       .all() as InboxItem[];
+    const rank = (i: InboxItem) => (i.state === "open" ? 0 : 2) + (i.kind === "approval" ? 0 : 1);
+    return rows.sort((a, b) => rank(a) - rank(b));
   }
 
   get(id: string) {
