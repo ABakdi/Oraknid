@@ -1,0 +1,1 @@
+ALTER TABLE `tasks` ADD `limited_kinds` text DEFAULT '[]' NOT NULL;

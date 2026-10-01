@@ -28,6 +28,7 @@ import type {
 } from "@oraknid/leg-sdk";
 import type { Sandbox } from "@oraknid/os";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import type { Db } from "../db/open.ts";
 import { attempts, sessions, tasks } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
@@ -36,6 +37,7 @@ import type { InboxStore } from "../inbox/store.ts";
 import { sandboxPlan } from "../legs/plan.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor, Supervised } from "../legs/supervisor.ts";
+import { readSetting } from "../settings.ts";
 import { handoffFromLog } from "../silk/handoff.ts";
 import type { SilkStore } from "../silk/store.ts";
 import {
@@ -48,6 +50,10 @@ import {
   rollback,
 } from "../workspace/git.ts";
 import { waitForAnswer } from "./approvals.ts";
+
+/** The providers (Leg kinds) for which I allowed same-provider fallback (ADR-009). */
+export const SAME_PROVIDER_FALLBACK = "fallback.sameProvider";
+
 import { approveAllLikeThis, policyFor } from "./policy.ts";
 
 /** The third answer to a Leg's permission request (Approvals → The inbox). */
@@ -134,7 +140,19 @@ export async function runAttempt(
   const now = d.now;
 
   // ── Route ───────────────────────────────────────────────────────
-  const candidates = candidatesFor(d.registry, job.allowedLegIds);
+  // ADR-009: after a usage limit, another account of the same provider is not a fallback unless I allowed it.
+  const sameProvider = new Set(readSetting(d.db, SAME_PROVIDER_FALLBACK, z.array(z.string()), []));
+  // Entries are "kind:legId": the account that hit the limit may come back after its reset; others may not.
+  const limited = task.limitedKinds
+    .map((e) => e.split(":") as [string, string])
+    .filter(([k]) => !sameProvider.has(k));
+  const blockedKinds = new Set(limited.map(([k]) => k));
+  const limitedLegs = new Set(limited.map(([, id]) => id));
+  const all = candidatesFor(d.registry, job.allowedLegIds);
+  const candidates = all.filter(
+    (c) => !blockedKinds.has(d.registry.require(c.legId).kind) || limitedLegs.has(c.legId),
+  );
+  const heldBack = all.length - candidates.length;
   const estimatedTokens = 20_000 + Math.ceil(task.instructions.length / 4);
   const routed = route(
     {
@@ -156,11 +174,14 @@ export async function runAttempt(
       .map((l) => l.limitedUntil)
       .filter((t): t is number => !!t && t > now())
       .sort((a, b) => a - b)[0];
+    const resets = until ? ` until ${new Date(until).toISOString()}` : "";
     return {
       kind: "blocked",
-      reason: until
-        ? `All allowed Legs are out of quota until ${new Date(until).toISOString()}.`
-        : `No Leg can take "${task.title}": ${routed.excluded.map((e) => e.why).join(" ") || "there are no Legs."}`,
+      reason: heldBack
+        ? `"${task.title}" hit a usage limit on ${[...blockedKinds].join(", ")}; other accounts of the same provider are not used as fallback (ADR-009). It waits${resets}, for another provider, or for my setting.`
+        : until
+          ? `All allowed Legs are out of quota${resets}.`
+          : `No Leg can take "${task.title}": ${routed.excluded.map((e) => e.why).join(" ") || "there are no Legs."}`,
       until: until ?? null,
     };
   }
@@ -527,7 +548,15 @@ export async function runAttempt(
         await closeSession();
         d.db
           .update(tasks)
-          .set({ avoid: [...new Set([...task.avoid, leg.legModelId])] })
+          .set({
+            avoid: [...new Set([...task.avoid, leg.legModelId])],
+            limitedKinds: [
+              ...new Set([
+                ...task.limitedKinds,
+                `${d.registry.require(leg.legId).kind}:${leg.legId}`,
+              ]),
+            ],
+          })
           .where(eq(tasks.id, taskId))
           .run();
         finish("reassigned", false);

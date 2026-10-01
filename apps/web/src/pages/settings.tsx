@@ -45,6 +45,7 @@ export function SettingsPage() {
       <SystemCard />
       <EyeCard />
       <NotificationsCard />
+      <FallbackCard />
       <PolicyCard />
       <DevicesCard />
       <ThemeCard />
@@ -404,6 +405,63 @@ function fromBase64Url(s: string): Uint8Array<ArrayBuffer> {
   const out = new Uint8Array(new ArrayBuffer(b.length));
   for (let i = 0; i < b.length; i++) out[i] = b.charCodeAt(i);
   return out;
+}
+
+const PROVIDERS = [
+  {
+    kind: "claude-code",
+    name: "Claude Code",
+    terms: "https://code.claude.com/docs/en/legal-and-compliance",
+  },
+  { kind: "opencode", name: "OpenCode", terms: null },
+  { kind: "antigravity", name: "Antigravity", terms: "https://antigravity.google/terms" },
+];
+
+/** ADR-009: off by default; turning it on is audited. */
+function FallbackCard() {
+  const on = useLive(() => api.settings.sameProviderFallback(), {
+    topics: ["overview"],
+    refreshOn: (e) => e.type === "policy.same-provider-fallback",
+  });
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("Same-provider fallback")}</CardTitle>
+        <CardDescription>
+          {t(
+            "When one account hits its usage limit, may Oraknid move the task to another of my accounts with the same provider? Off, it waits for the reset or uses another provider. Providers' terms may treat rotating accounts to get around limits as circumvention: read them before turning this on.",
+          )}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {PROVIDERS.map((p) => (
+          <div key={p.kind} className="flex items-center gap-2 text-sm">
+            <Switch
+              id={`fb-${p.kind}`}
+              checked={(on.data ?? []).includes(p.kind)}
+              onCheckedChange={(v) =>
+                act(
+                  () => api.settings.setSameProviderFallback({ kind: p.kind, enabled: v }),
+                  v ? t("On, and recorded in the audit log.") : t("Off."),
+                )
+              }
+            />
+            <Label htmlFor={`fb-${p.kind}`}>{p.name}</Label>
+            {p.terms ? (
+              <a
+                href={p.terms}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-primary underline underline-offset-2"
+              >
+                {t("terms")}
+              </a>
+            ) : null}
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
 }
 
 function PolicyCard() {

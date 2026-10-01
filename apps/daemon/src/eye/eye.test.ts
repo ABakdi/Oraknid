@@ -86,6 +86,7 @@ async function eye(
     budget?: Budget;
     interview?: (answers: string[]) => import("@oraknid/contracts").InterviewRound;
     inputs?: { kind: "file" | "folder" | "link"; ref: string; untrusted: boolean }[];
+    sameProviderFallback?: boolean;
     files?: Record<string, string>;
   } = {},
 ) {
@@ -142,6 +143,8 @@ async function eye(
     unsandboxed: false,
     ...(o.budget ? { budget: o.budget } : {}),
   });
+  if (o.sameProviderFallback)
+    await api.settings.setSameProviderFallback({ kind: "claude-code", enabled: true });
   await api.jobs.start({ id });
   return { d: daemon, api, id, workspace, leg, plans, legIds };
 }
@@ -235,7 +238,33 @@ describe("The Eye, end to end", () => {
     );
   });
 
-  it("moves a task to another Leg when one hits its usage limit, and keeps the first one out until it resets", async () => {
+  it("does not fall back to another account of the same provider unless I allow it (ADR-009)", async () => {
+    const resetsAt = Date.now() + 3600_000;
+    const { api, id } = await eye(
+      (t) =>
+        t.leg === "Claude A"
+          ? [
+              {
+                rateLimit: {
+                  window: "five_hour",
+                  scope: "account",
+                  status: "rejected",
+                  utilization: 1,
+                  resetsAt,
+                },
+              },
+            ]
+          : good(t),
+      { legs: ["Claude A", "Claude B"] },
+    );
+    const job = await until(api, id, ["blocked", "completed"]);
+    expect(job.state).toBe("blocked");
+    expect(job.blockedReason).toMatch(
+      /other accounts of the same provider are not used as fallback \(ADR-009\)/,
+    );
+  });
+
+  it("moves a task to another account when I allowed same-provider fallback, and keeps the first one out until it resets", async () => {
     const resetsAt = Date.now() + 3600_000;
     const { api, id, legIds } = await eye(
       (t) =>
@@ -252,7 +281,7 @@ describe("The Eye, end to end", () => {
               },
             ]
           : good(t),
-      { legs: ["Claude A", "Claude B"] },
+      { legs: ["Claude A", "Claude B"], sameProviderFallback: true },
     );
     const job = await until(api, id, ["completed", "blocked"]);
     expect(job.state).toBe("completed");

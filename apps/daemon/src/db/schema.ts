@@ -122,6 +122,8 @@ export const tasks = sqliteTable(
     /** Escalation state across attempts (Drift-Control, ADR-013). */
     stepUp: integer("step_up").notNull().default(0),
     avoid: json<string[]>("avoid").notNull().default([]),
+    /** Providers (Leg kinds) that hit a usage limit on this task (ADR-009). */
+    limitedKinds: json<string[]>("limited_kinds").notNull().default([]),
     escalation: integer("escalation").notNull().default(0),
   },
   (t) => [index("tasks_job").on(t.jobId), index("tasks_state").on(t.state)],

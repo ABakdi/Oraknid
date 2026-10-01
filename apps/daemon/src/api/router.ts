@@ -43,6 +43,7 @@ import { runDoctor } from "../doctor.ts";
 import type { JobStore } from "../engine/jobs.ts";
 import type { JobRunner } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
+import { SAME_PROVIDER_FALLBACK } from "../eye/attempt.ts";
 import {
   editWeb,
   handBack,
@@ -58,7 +59,7 @@ import type { LegRegistry } from "../legs/registry.ts";
 import type { Notifications } from "../notify/notifications.ts";
 import type { Secrets } from "../os/secrets.ts";
 import type { Paths } from "../paths.ts";
-import { writeSetting } from "../settings.ts";
+import { readSetting, writeSetting } from "../settings.ts";
 import type { SilkStore } from "../silk/store.ts";
 import type { SkillStore } from "../skills/store.ts";
 import { VERSION } from "../version.ts";
@@ -383,6 +384,29 @@ export const router = {
       .handler(({ context: c, input }) => guard(() => writeGlobalPolicy(c.jobs.db, c.bus, input))),
   },
   settings: {
+    /** ADR-009: which providers may fall back to another of my accounts after a usage limit. Audited. */
+    sameProviderFallback: base
+      .output(z.array(z.string()))
+      .handler(({ context: c }) =>
+        readSetting(c.jobs.db, SAME_PROVIDER_FALLBACK, z.array(z.string()), []),
+      ),
+    setSameProviderFallback: base
+      .input(z.object({ kind: z.string(), enabled: z.boolean() }))
+      .handler(({ context: c, input }) => {
+        const now = new Set(
+          readSetting(c.jobs.db, SAME_PROVIDER_FALLBACK, z.array(z.string()), []),
+        );
+        if (input.enabled) now.add(input.kind);
+        else now.delete(input.kind);
+        writeSetting(c.jobs.db, SAME_PROVIDER_FALLBACK, z.array(z.string()), [...now]);
+        c.bus.publish({
+          type: "policy.same-provider-fallback",
+          topic: "overview",
+          jobId: null,
+          payload: input,
+          actor: "owner",
+        });
+      }),
     /** The Leg model The Eye borrows for reasoning (first-run setup); null lets routing choose. */
     setEyeLeg: base
       .input(z.object({ legModelId: z.string().nullable() }))
