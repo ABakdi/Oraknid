@@ -254,7 +254,11 @@ export async function runAttempt(
 
   const escalations: string[] = [];
   const started = now();
-  const tokensAtStart = 0;
+  /** Tokens of the current session when progress was last made or a drift was acted on (D6 counts from here). */
+  let tokensBaseline = 0;
+  let sessionTokens = 0;
+  /** Waiting for my answer is not a stall (Audit 1 → Q1-02). */
+  let waitingOnOwner = 0;
   let level = task.escalation;
   // Only messages written after this attempt began: older ones are in Silk, in its context pack.
   let guidanceSeen = guidanceMark();
@@ -315,11 +319,14 @@ export async function runAttempt(
     asked.push(itemId);
     event("task.waiting", { itemId, reason: v.reason });
     let answer: string;
+    waitingOnOwner++;
     try {
       answer = await waitForAnswer(d.inbox, d.bus, itemId, signal);
     } catch {
       // Paused or stopped while waiting: a permission hook always answers; the attempt stops anyway.
       return { allow: false, message: "Oraknid is pausing this session." };
+    } finally {
+      waitingOnOwner--;
     }
     observed.lastActivityAt = now();
     if (answer === ALL_LIKE_THIS) {
@@ -363,6 +370,9 @@ export async function runAttempt(
 
   const openSession = async (prompt: string) => {
     observed.lastActivityAt = now();
+    // A new session counts its tokens from zero.
+    sessionTokens = 0;
+    tokensBaseline = 0;
     session = await d.supervisor.start({
       legId: leg.legId,
       legModelId: leg.legModelId,
@@ -425,6 +435,8 @@ export async function runAttempt(
       options: ["Retry", "Take it over", "Skip it", "Cancel the job"],
       defaultOption: "Retry",
     });
+    // Withdrawn if the attempt stops before I answer (Audit 1 → D1-07).
+    asked.push(itemId);
     const answer = await waitForAnswer(d.inbox, d.bus, itemId, signal);
     if (answer === "Take it over") throw new EndAttempt({ kind: "owner-held" });
     if (answer === "Skip it") throw new EndAttempt({ kind: "skipped" });
@@ -461,10 +473,15 @@ export async function runAttempt(
     escalations.push(`${drift.code}:${next.step}`);
     d.db.update(tasks).set({ escalation: level }).where(eq(tasks.id, taskId)).run();
     event("task.drift", { code: drift.code, evidence: drift.evidence, step: next.step, level });
-    // Detections are consumed: the same evidence doesn't trigger twice.
+    // Detections are consumed: the same evidence doesn't trigger twice (Audit 1 → Q1-01).
     observed.forbidden = [];
     observed.gateBypass = [];
     observed.falseClaim = null;
+    observed.commands = [];
+    observed.verifyFailures = [];
+    tokensBaseline = sessionTokens;
+    observed.tokensSinceProgress = 0;
+    observed.lastActivityAt = now();
 
     switch (next.step) {
       case "correct": {
@@ -564,12 +581,17 @@ export async function runAttempt(
           pending.delete(e.id);
         }
         if (e.type === "usage") {
-          observed.tokensSinceProgress = e.usage.inputTokens + e.usage.outputTokens - tokensAtStart;
+          sessionTokens = e.usage.inputTokens + e.usage.outputTokens;
+          observed.tokensSinceProgress = Math.max(0, sessionTokens - tokensBaseline);
           usage = e.usage;
         }
       });
       if (!end) {
-        // No turn end yet: look for a stall or burn.
+        // No turn end yet: look for a stall or burn. Waiting for me is neither.
+        if (waitingOnOwner > 0) {
+          observed.lastActivityAt = now();
+          continue;
+        }
         const drifts = detect(observed, now(), DEFAULT_THRESHOLDS);
         if (drifts.length) await escalate(drifts);
         continue;

@@ -41,6 +41,8 @@ export function startBudgetWatch(o: {
   intervalMs?: number;
 }) {
   const { db, bus } = o;
+  /** Hard limits being acted on now, so a check meanwhile doesn't pause and ask twice. */
+  const pausing = new Set<string>();
 
   const check = async (jobId: string) => {
     const job = db.select().from(jobs).where(eq(jobs.id, jobId)).get();
@@ -50,34 +52,53 @@ export function startBudgetWatch(o: {
       wallClockMs: job.startedAt ? o.now() - job.startedAt : 0,
       money: 0,
     };
-    const findings = checkBudget(job.budget as Budget, use, new Set(job.budgetFlags));
+    const flags = new Set(job.budgetFlags);
+    const findings = checkBudget(job.budget as Budget, use, flags).filter(
+      (f) => !(f.kind === "reached" && f.hard && pausing.has(`${jobId}:${f.dimension}`)),
+    );
     if (findings.length === 0) return;
-    db.update(jobs)
-      .set({
-        budgetFlags: [...job.budgetFlags, ...findings.map((f) => `${f.dimension}:${f.kind}`)],
-      })
-      .where(eq(jobs.id, jobId))
-      .run();
+    // A hard limit is marked reached only once the job is paused and asked: a crash in between
+    // means the next check finds it again, instead of letting the job run past it (Audit 1 → D1-04).
+    const settled = findings.filter((f) => !(f.kind === "reached" && f.hard));
+    if (settled.length)
+      db.update(jobs)
+        .set({
+          budgetFlags: [...job.budgetFlags, ...settled.map((f) => `${f.dimension}:${f.kind}`)],
+        })
+        .where(eq(jobs.id, jobId))
+        .run();
     for (const f of findings) {
       const type =
         f.kind === "warning" ? "budget.warning" : f.hard ? "budget.reached" : "budget.alarm";
       bus.publish({ type, topic: `job:${jobId}`, jobId, payload: { ...f } });
       bus.publish({ type, topic: "overview", jobId, payload: { ...f } });
       if (f.kind === "reached" && f.hard) {
-        await o.runner.pause(jobId, f.message);
-        const itemId = o.inbox.open({
-          kind: "question",
-          jobId,
-          raisedBy: "eye",
-          title: `Raise the ${f.dimension === "wallClockMs" ? "time" : f.dimension} budget of "${job.title}"?`,
-          detail: f.message,
-          options: [RAISE_HALF, RAISE_DOUBLE, KEEP_PAUSED],
-          defaultOption: RAISE_HALF,
-        });
-        db.update(jobs)
-          .set({ budgetQuestion: `${itemId}:${f.dimension}` })
-          .where(eq(jobs.id, jobId))
-          .run();
+        const key = `${jobId}:${f.dimension}`;
+        pausing.add(key);
+        try {
+          await o.runner.pause(jobId, f.message);
+          bus.atomically(() => {
+            const itemId = o.inbox.open({
+              kind: "question",
+              jobId,
+              raisedBy: "eye",
+              title: `Raise the ${f.dimension === "wallClockMs" ? "time" : f.dimension} budget of "${job.title}"?`,
+              detail: f.message,
+              options: [RAISE_HALF, RAISE_DOUBLE, KEEP_PAUSED],
+              defaultOption: RAISE_HALF,
+            });
+            const now = db.select().from(jobs).where(eq(jobs.id, jobId)).get();
+            db.update(jobs)
+              .set({
+                budgetQuestion: `${itemId}:${f.dimension}`,
+                budgetFlags: [...(now?.budgetFlags ?? []), `${f.dimension}:reached`],
+              })
+              .where(eq(jobs.id, jobId))
+              .run();
+          });
+        } finally {
+          pausing.delete(key);
+        }
       }
     }
   };

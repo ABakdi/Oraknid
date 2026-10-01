@@ -502,7 +502,16 @@ describe("after a restart", () => {
     d.runner.start(id);
     await until(api, id, ["completed"]);
     expect(d.inbox.get(stale)?.state).toBe("withdrawn");
-    expect(d.inbox.get(mine)?.state).toBe("open");
+    // The cleanup leaves The Eye's own question alone; only the job's end withdraws it (Q1-12).
+    const types = d.bus
+      .since(0, ["inbox", `job:${id}`], 5000)
+      .filter(
+        (e) =>
+          (e.type === "inbox.withdrawn" && (e.payload as { id: string }).id === mine) ||
+          (e.type === "job.state" && (e.payload as { to: string }).to === "completed"),
+      )
+      .map((e) => e.type);
+    expect(types.slice(-2)).toEqual(["job.state", "inbox.withdrawn"]);
   });
 });
 
