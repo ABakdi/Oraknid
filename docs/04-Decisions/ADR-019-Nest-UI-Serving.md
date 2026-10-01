@@ -1,6 +1,6 @@
 # ADR-019 — Where my phone gets the web UI from, when away from home
 
-**Status:** Proposed · 2026-10-01 · [[Phase-4-The-Nest]] · waiting for my decision
+**Status:** Accepted · 2026-10-02 · [[Phase-4-The-Nest]] · my decision: the recommended option
 
 ## Context
 Away from home, the browser loads the UI from The Nest's address. A web
@@ -21,7 +21,7 @@ UI, it could read what the UI decrypts, and the end-to-end encryption
 3. **A native app** (later, if ever): the strongest, but a second
    client to build.
 
-## Proposed decision
+## Decision
 Option 1. The first visit to The Nest's address happens during local
 pairing, so the service worker is installed while I'm at home, and it
 refuses any UI code the daemon didn't sign.

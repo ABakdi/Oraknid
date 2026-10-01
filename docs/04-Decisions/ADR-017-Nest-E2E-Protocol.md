@@ -1,6 +1,6 @@
 # ADR-017 — End-to-end encryption between my devices and the daemon
 
-**Status:** Proposed · 2026-10-01 · [[Phase-4-The-Nest]] · waiting for my decision
+**Status:** Accepted · 2026-10-02 · [[Phase-4-The-Nest]] · my decision: the recommended option
 
 ## Context
 The Nest relays my devices' traffic to the daemon at home. It must see
@@ -23,7 +23,7 @@ locally first ([[Security]]); the `devices` table already has a
    session relayed by The Nest. Browsers can't speak raw TLS over a
    WebSocket, so it doesn't fit a web UI.
 
-## Proposed decision
+## Decision
 Option 1. Forward secrecy comes from fresh ephemeral keys per
 connection, signed by the paired long-term keys. Revoking a device
 removes its key, so The Nest can't replay or forge it.

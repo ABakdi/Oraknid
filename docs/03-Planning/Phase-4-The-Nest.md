@@ -10,9 +10,9 @@ I want to approve and answer from anywhere, without opening ports at home.
 ## Milestones
 
 ### M4.1 — Decide the open questions
-- [~] ADR: E2E protocol ([[ADR-017-Nest-E2E-Protocol]], proposed: libsodium kx + secretstream)
-- [~] ADR: hosting and deploy shape ([[ADR-018-Nest-Hosting]], proposed: a VPS with Docker Compose and Caddy)
-- [~] ADR: where the UI is served from ([[ADR-019-Nest-UI-Serving]], proposed: a UI signed by the daemon, checked by a service worker)
+- [x] ADR: E2E protocol ([[ADR-017-Nest-E2E-Protocol]]: libsodium kx + secretstream)
+- [x] ADR: hosting and deploy shape ([[ADR-018-Nest-Hosting]]: a VPS with Docker Compose and Caddy)
+- [x] ADR: where the UI is served from ([[ADR-019-Nest-UI-Serving]]: a UI signed by the daemon, checked by a service worker)
 
 ### M4.2 — Relay
 - [ ] `apps/nest`: Express + WebSocket relay, outbound daemon connection, reconnect

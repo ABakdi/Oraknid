@@ -1,6 +1,6 @@
 # ADR-018 — Where The Nest runs, and how it is deployed
 
-**Status:** Proposed · 2026-10-01 · [[Phase-4-The-Nest]] · waiting for my decision
+**Status:** Accepted · 2026-10-02 · [[Phase-4-The-Nest]] · my decision: the recommended option
 
 ## Context
 The Nest is self-hosted, publicly reachable over TLS, stores no job
@@ -18,7 +18,7 @@ data, and only relays. It needs a domain name and a certificate.
    third party's tunnel in front of everything, which The Nest exists to
    avoid.
 
-## Proposed decision
+## Decision
 Option 1, with rate limiting and connection caps in The Nest itself
 (it's on the internet), and only device and daemon identities stored.
 
