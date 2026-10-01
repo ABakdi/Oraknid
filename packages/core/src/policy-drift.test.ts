@@ -120,6 +120,13 @@ describe("permission policy", () => {
     expect(decide({ tool: "Read", command: null, path: "/etc/hosts" }, ctx()).verdict).toBe(
       "allow",
     );
+    // `..` is resolved first (Audit 1 → S1-05).
+    expect(
+      decide({ tool: "Write", command: null, path: "/w/../home/me/.claude/settings.json" }, ctx()),
+    ).toMatchObject({ verdict: "ask" });
+    expect(decide({ tool: "Edit", command: null, path: "/w/src/../a.ts" }, ctx()).verdict).toBe(
+      "allow",
+    );
   });
 
   it("auto approval (ADR-014): sandbox-only programs pass, reaching out goes to the classifier", () => {

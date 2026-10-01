@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { dirname, join } from "node:path";
@@ -92,7 +92,9 @@ export async function startDaemon(options: DaemonOptions) {
   const startedAt = now();
   const os = linuxOs(options.os);
 
-  mkdirSync(paths.dataDir, { recursive: true });
+  // Job contents, logs and Silk are mine alone (Audit 1 → S1-12).
+  mkdirSync(paths.dataDir, { recursive: true, mode: 0o700 });
+  chmodSync(paths.dataDir, 0o700);
   setShadowRoot(join(paths.dataDir, "shadow"));
   const db = await openDatabase({ file: options.dbFile ?? paths.db, backupsDir: paths.backups });
   const secrets = new Secrets(paths.dataDir, os.keychain);
@@ -208,7 +210,8 @@ export async function startDaemon(options: DaemonOptions) {
   // Every client is a paired device, or the CLI (Security → The daemon's own surface).
   app.use("/api", (req, res, next) => {
     if (req.path === "/devices/pairComplete") return next();
-    if (devices.identify(tokenOf(req.headers, req.originalUrl))) return next();
+    // A token in the address only for the live socket, which cannot send headers (Audit 1 → S1-14).
+    if (devices.identify(tokenOf(req.headers))) return next();
     res.status(401).json({
       message: "Pair this device first: run `oraknid pair` on the machine running Oraknid.",
     });

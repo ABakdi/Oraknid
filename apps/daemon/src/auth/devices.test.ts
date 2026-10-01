@@ -71,6 +71,25 @@ describe("paired devices", () => {
     await expect(client(paired.token).system.status()).rejects.toThrow();
   });
 
+  it("cancels every open code after five wrong ones, so codes can't be guessed (Audit 1 → S1-04)", async () => {
+    const { d, client } = await start();
+    const { code } = await client(d.cliToken).devices.pairStart();
+    const wrong = code === "000000" ? "000001" : "000000";
+    for (let i = 0; i < 4; i++)
+      await expect(client().devices.pairComplete({ code: wrong, name: "x" })).rejects.toThrow(
+        /wrong or has expired/,
+      );
+    await expect(client().devices.pairComplete({ code: wrong, name: "x" })).rejects.toThrow(
+      /Too many wrong codes/,
+    );
+    await expect(client().devices.pairComplete({ code, name: "Mine" })).rejects.toThrow();
+    // A new code works, and a good code resets the count.
+    const fresh = await client(d.cliToken).devices.pairStart();
+    expect(
+      (await client().devices.pairComplete({ code: fresh.code, name: "Mine" })).token,
+    ).toBeTruthy();
+  });
+
   it("refuses the live socket without a valid token", async () => {
     const { d } = await start();
     const bad = new WebSocket(`${d.url.replace("http", "ws")}/live?token=nope`);

@@ -5,6 +5,8 @@ import { devices } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 
+const MAX_FAILURES = 5;
+
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
 /**
@@ -19,6 +21,8 @@ export class Devices {
   readonly cliToken = randomBytes(32).toString("hex");
   readonly #codes = new Map<string, number>();
   readonly #seen = new Map<string, number>();
+  /** Wrong codes since the last good one (Audit 1 → S1-04). */
+  #failures = 0;
 
   constructor(
     private readonly db: Db,
@@ -38,8 +42,26 @@ export class Devices {
   completePairing(code: string, name: string): { deviceId: string; token: string } {
     const exp = this.#codes.get(code);
     this.#codes.delete(code);
-    if (!exp || exp < this.now())
+    if (!exp || exp < this.now()) {
+      // Guessing a six-digit code is hopeless: five wrong codes cancel every open one.
+      if (++this.#failures >= MAX_FAILURES) {
+        const open = this.#codes.size;
+        this.#codes.clear();
+        this.#failures = 0;
+        this.bus.publish({
+          type: "device.pairing-locked",
+          topic: "overview",
+          jobId: null,
+          payload: { openCodes: open },
+          actor: "eye",
+        });
+        throw new Error(
+          "Too many wrong codes: every open code was cancelled. Ask for a new one with: oraknid pair",
+        );
+      }
       throw new Error("That code is wrong or has expired. Ask for a new one with: oraknid pair");
+    }
+    this.#failures = 0;
     const token = randomBytes(32).toString("hex");
     const id = newId(this.now());
     this.db
@@ -113,7 +135,7 @@ export class Devices {
 /** The token a request carries: a Bearer header, or `?token=` (a browser cannot set headers on a WebSocket). */
 export function tokenOf(
   headers: Record<string, string | string[] | undefined>,
-  url: string | undefined,
+  url?: string,
 ): string | undefined {
   const auth = headers.authorization;
   if (typeof auth === "string" && auth.startsWith("Bearer ")) return auth.slice(7);

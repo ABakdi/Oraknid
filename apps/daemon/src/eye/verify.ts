@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { PolicyVerdict } from "@oraknid/core";
 import type { SandboxPlan } from "@oraknid/leg-sdk";
 
@@ -60,18 +63,20 @@ function runOne(
   o: { timeoutMs?: number; signal?: AbortSignal },
 ): Promise<VerifyResult> {
   const started = Date.now();
-  const wrapped = plan
-    ? plan.sandbox.wrap({
-        command: "/bin/sh",
-        args: ["-c", command],
-        cwd,
-        // Without the Leg's home (Sandboxing): a check needs only the worktree.
-        writable: [cwd],
-        readonly: plan.readonly,
-        home: plan.home,
-        env: { ...plan.env, CI: "1" },
-      })
-    : { command: "/bin/sh", args: ["-c", command] };
+  // Without the Leg's home (Sandboxing): a throwaway one, gone after the check.
+  const home = plan ? mkdtempSync(join(tmpdir(), "oraknid-check-")) : null;
+  const wrapped =
+    plan && home
+      ? plan.sandbox.wrap({
+          command: "/bin/sh",
+          args: ["-c", command],
+          cwd,
+          writable: [cwd, home],
+          readonly: plan.readonly,
+          home,
+          env: { ...plan.env, CI: "1" },
+        })
+      : { command: "/bin/sh", args: ["-c", command] };
   return new Promise((resolve) => {
     const child = spawn(wrapped.command, wrapped.args, {
       cwd,
@@ -87,6 +92,7 @@ function runOne(
     child.stdout.on("data", add);
     child.stderr.on("data", add);
     const finish = (exitCode: number | null, extra = "") => {
+      if (home) rmSync(home, { recursive: true, force: true });
       const output = `${out}${extra}`.slice(-TAIL);
       const ok = exitCode === 0;
       resolve({

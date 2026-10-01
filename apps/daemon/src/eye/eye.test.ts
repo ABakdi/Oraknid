@@ -966,6 +966,7 @@ describe("auto approval (ADR-014, Checkpoint 1)", () => {
         task(t) === "Write hello.sh" && t.turn === 1
           ? [
               { run: "curl --version >/dev/null; true" },
+              { run: "curl --version >/dev/null; true" },
               { run: "curl --help >/dev/null; true" },
               { run: "scp --help >/dev/null 2>&1; true" },
               { write: "hello.sh", content: "echo hi\n" },
@@ -992,12 +993,16 @@ describe("auto approval (ADR-014, Checkpoint 1)", () => {
     );
     await api.inbox.answer({ id: item?.id as string, answer: "Deny" });
     expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
-    // curl was judged once, then the cached yes applied.
-    expect(asked.filter((c) => c.startsWith("curl"))).toHaveLength(1);
+    // The same command was judged once, then the cached yes applied; another curl is judged anew (S1-07).
+    expect(asked.filter((c) => c.startsWith("curl"))).toEqual([
+      "curl --version >/dev/null; true",
+      "curl --help >/dev/null; true",
+    ]);
     const auto = d.bus.since(0, [`job:${id}`], 2000).filter((e) => e.type === "policy.auto");
     expect(auto.map((e) => (e.payload as { cached: boolean }).cached)).toEqual([
       false,
       true,
+      false,
       false,
     ]);
   });

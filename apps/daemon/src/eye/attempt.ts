@@ -756,7 +756,7 @@ export async function runAttempt(
   }
 }
 
-/** Per job, the classifier's verdict for a set of programs (ADR-014: cached). */
+/** Per job, the classifier's "allow" for one exact command (ADR-014: cached; per command since Audit 1 → S1-07). */
 const verdicts = new Map<string, Map<string, { decision: "allow" | "ask"; reason: string }>>();
 
 async function classify(
@@ -767,7 +767,8 @@ async function classify(
   r: PermissionRequest,
   v: Extract<PolicyVerdict, { verdict: "classify" }>,
 ): Promise<Exclude<PolicyVerdict, { verdict: "classify" }>> {
-  const key = [...new Set(v.programs)].sort().join(" ");
+  // The whole command, not its programs: allowing one `curl` must not allow every other.
+  const key = (r.command ?? r.tool).trim().replace(/\s+/g, " ");
   const cache = verdicts.get(jobId) ?? new Map();
   verdicts.set(jobId, cache);
   let verdict = cache.get(key);

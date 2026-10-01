@@ -1,3 +1,4 @@
+import { posix } from "node:path";
 import type { Autonomy } from "@oraknid/contracts";
 import { programsIn } from "./shell.ts";
 
@@ -167,8 +168,12 @@ export function programsOf(command: string): string[] {
   return programsIn(command);
 }
 
-const insideTree = (worktree: string, path: string) =>
-  path === worktree || path.startsWith(worktree.endsWith("/") ? worktree : `${worktree}/`);
+/** `..` and `.` are resolved first: `<worktree>/../x` is outside (Audit 1 → S1-05). */
+const insideTree = (worktree: string, path: string) => {
+  const p = posix.resolve(worktree, path);
+  const w = posix.resolve(worktree);
+  return p === w || p.startsWith(`${w}/`);
+};
 
 /** A rule I wrote that isn't a valid regex matches nothing, rather than breaking every decision. */
 function safeTest(src: string, text: string): boolean {
