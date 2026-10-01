@@ -18,15 +18,23 @@ export const OpenAICompatibleLegConfig = z.object({
   commandTimeoutMs: z.number().int().positive().optional(),
 });
 
-/** An OpenCode Leg (ADR-015): one provider, never a Claude subscription. */
+/**
+ * An OpenCode Leg (ADR-015). With no provider, it uses OpenCode's own free
+ * models (OpenCode Zen), as the installed OpenCode does: no account, no key.
+ * Never a Claude subscription.
+ */
 export const OpenCodeLegConfig = z.object({
   binary: z.string().min(1).default("opencode"),
-  /** The provider's id inside OpenCode, e.g. "openrouter". */
-  providerID: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, "lowercase letters, digits and dashes"),
+  /** Another provider's id inside OpenCode, e.g. "openrouter"; empty for the free models. */
+  providerID: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]*$/, "lowercase letters, digits and dashes")
+    .optional(),
   /** The AI SDK package; OpenAI-compatible by default. */
   package: z.string().min(1).default("@opencode/ai/providers/openai-compatible"),
   baseURL: z.url().optional(),
-  models: z.array(z.string().min(1)).min(1),
+  /** The provider's models; for the free models, found by the test. */
+  models: z.array(z.string().min(1)).default([]),
   contextWindow: z.number().int().positive().optional(),
 });
 

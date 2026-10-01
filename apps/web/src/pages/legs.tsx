@@ -264,6 +264,7 @@ function AddLeg({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boole
   const [providerID, setProviderID] = useState("openrouter");
   const [ocBaseURL, setOcBaseURL] = useState("https://openrouter.ai/api/v1");
   const [models, setModels] = useState("");
+  const [ownProvider, setOwnProvider] = useState(false);
   const [name, setName] = useState("");
   const [binary, setBinary] = useState("claude");
   const [configDir, setConfigDir] = useState("");
@@ -287,17 +288,23 @@ function AddLeg({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boole
             ? await api.legs.create({
                 kind,
                 name,
-                config: {
-                  binary: "opencode",
-                  providerID,
-                  package: "@opencode/ai/providers/openai-compatible",
-                  ...(ocBaseURL ? { baseURL: ocBaseURL } : {}),
-                  models: models
-                    .split(/[\s,]+/)
-                    .map((m) => m.trim())
-                    .filter(Boolean),
-                },
-                ...(secret ? { secret } : {}),
+                config: ownProvider
+                  ? {
+                      binary: "opencode",
+                      providerID,
+                      package: "@opencode/ai/providers/openai-compatible",
+                      ...(ocBaseURL ? { baseURL: ocBaseURL } : {}),
+                      models: models
+                        .split(/[\s,]+/)
+                        .map((m) => m.trim())
+                        .filter(Boolean),
+                    }
+                  : {
+                      binary: "opencode",
+                      package: "@opencode/ai/providers/openai-compatible",
+                      models: [],
+                    },
+                ...(ownProvider && secret ? { secret } : {}),
               })
             : await api.legs.create({
                 kind,
@@ -371,7 +378,7 @@ function AddLeg({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boole
                   kind === "claude-code"
                     ? t("Claude — personal")
                     : kind === "opencode"
-                      ? t("OpenCode — OpenRouter")
+                      ? t("OpenCode — free models")
                       : t("Ollama on this machine")
                 }
               />
@@ -403,49 +410,63 @@ function AddLeg({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boole
             ) : kind === "opencode" ? (
               <>
                 <div className="rounded-md border px-3 py-2 text-xs text-muted-foreground">
-                  {t(
-                    "OpenCode runs with one provider's API key, never a Claude subscription (Anthropic's terms). Each Leg keeps its own OpenCode data.",
-                  )}
+                  {ownProvider
+                    ? t(
+                        "OpenCode with another provider's API key. Never a Claude subscription (Anthropic's terms).",
+                      )
+                    : t(
+                        "OpenCode's own free models, as your installed OpenCode uses them: no account, no key. The test lists them. Free models may use what they are sent to improve; see OpenCode Zen's terms.",
+                      )}
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="op">{t("Provider id")}</Label>
-                    <Input
-                      id="op"
-                      className="font-mono"
-                      value={providerID}
-                      onChange={(e) => setProviderID(e.target.value.toLowerCase())}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="ou">{t("Endpoint (OpenAI-compatible)")}</Label>
-                    <Input
-                      id="ou"
-                      className="font-mono"
-                      value={ocBaseURL}
-                      onChange={(e) => setOcBaseURL(e.target.value)}
-                    />
-                  </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <Switch id="own" checked={ownProvider} onCheckedChange={setOwnProvider} />
+                  <Label htmlFor="own" className="font-normal">
+                    {t("Use another provider, with its API key")}
+                  </Label>
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="om">{t("Models, by their id at the provider")}</Label>
-                  <Input
-                    id="om"
-                    className="font-mono"
-                    value={models}
-                    onChange={(e) => setModels(e.target.value)}
-                    placeholder="qwen/qwen3-coder, deepseek/deepseek-chat"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="ok">{t("API key")}</Label>
-                  <Input
-                    id="ok"
-                    type="password"
-                    value={secret}
-                    onChange={(e) => setSecret(e.target.value)}
-                  />
-                </div>
+                {ownProvider ? (
+                  <>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="op">{t("Provider id")}</Label>
+                        <Input
+                          id="op"
+                          className="font-mono"
+                          value={providerID}
+                          onChange={(e) => setProviderID(e.target.value.toLowerCase())}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="ou">{t("Endpoint (OpenAI-compatible)")}</Label>
+                        <Input
+                          id="ou"
+                          className="font-mono"
+                          value={ocBaseURL}
+                          onChange={(e) => setOcBaseURL(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="om">{t("Models, by their id at the provider")}</Label>
+                      <Input
+                        id="om"
+                        className="font-mono"
+                        value={models}
+                        onChange={(e) => setModels(e.target.value)}
+                        placeholder="qwen/qwen3-coder, deepseek/deepseek-chat"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="ok">{t("API key")}</Label>
+                      <Input
+                        id="ok"
+                        type="password"
+                        value={secret}
+                        onChange={(e) => setSecret(e.target.value)}
+                      />
+                    </div>
+                  </>
+                ) : null}
               </>
             ) : (
               <>

@@ -48,8 +48,9 @@ windows:
    the one command to log it in with the official binary. A Leg is one
    account: one login covers all its models, and it lasts. My own
    `~/.claude` is never a Leg's config directory: the sandbox can write
-   there ([[Audit-1]] S1-02). For OpenCode: a provider id, its
-   OpenAI-compatible endpoint, the models and the API key; the Leg keeps
+   there ([[Audit-1]] S1-02). For OpenCode: nothing by default:
+   it uses OpenCode's own free models, with no account or key; or a
+   provider id, its endpoint, the models and the API key. The Leg keeps
    its own OpenCode data under its home ([[ADR-015-OpenCode-Adapter]]).
 3. **Test.** Oraknid runs a tiny health prompt, reads the model and
    context window, and reports usage support. A failed test says

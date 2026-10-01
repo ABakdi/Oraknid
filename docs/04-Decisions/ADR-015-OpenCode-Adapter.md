@@ -59,8 +59,14 @@ provider). What matters for an unattended, sandboxed Leg:
 - **Resume**: prompting an existing session id continues it with its
   history, inside the same Leg's data dir.
 - **Terms**: an OpenCode Leg never uses a Claude subscription
-  (Anthropic's terms); it uses API keys of other providers, or local
-  models.
+  (Anthropic's terms).
+- **Free by default** (changed 2026-10-02, my decision): an OpenCode
+  Leg with no provider uses **OpenCode Zen's free models**, as my
+  installed OpenCode does, with no account and no key (Zen's public key
+  is `public`). The test lists them from Zen's public model list (ids
+  ending in `-free`, and `big-pickle`). Another provider with its API
+  key stays possible. Checked for real: a free model wrote a file
+  through the adapter (`ORAKNID_LIVE=1`).
 
 ## Consequences
 - A session costs one OpenCode start (about a second).

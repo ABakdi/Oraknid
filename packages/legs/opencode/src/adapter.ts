@@ -43,11 +43,24 @@ export interface OpenCodeConfig {
   home: string | null;
 }
 
+/** OpenCode's own free models: no account, no key (its public key is "public"). */
+export const ZEN_URL = "https://opencode.ai/zen/v1";
+export const ZEN_KEY = "public";
+
+/** The free models of OpenCode Zen, by their id. */
+export const isFreeZenModel = (id: string) => id.endsWith("-free") || id === "big-pickle";
+
 export const readConfig = (leg: LegConfig): OpenCodeConfig => ({
   binary: String(leg.config.binary ?? "opencode"),
-  providerID: String(leg.config.providerID ?? "provider"),
+  // No provider of mine: OpenCode Zen's free models, as OpenCode itself uses them.
+  providerID: String(leg.config.providerID ?? "zen"),
   package: String(leg.config.package ?? "@opencode/ai/providers/openai-compatible"),
-  baseURL: typeof leg.config.baseURL === "string" ? leg.config.baseURL : null,
+  baseURL:
+    typeof leg.config.baseURL === "string"
+      ? leg.config.baseURL
+      : leg.config.providerID
+        ? null
+        : ZEN_URL,
   models: Array.isArray(leg.config.models) ? leg.config.models.map(String) : [],
   contextWindow: typeof leg.config.contextWindow === "number" ? leg.config.contextWindow : null,
   home: typeof leg.config.home === "string" ? leg.config.home : null,
@@ -75,9 +88,9 @@ const TOOL_NAMES: Record<string, string> = {
 };
 
 /** The config OpenCode gets, whole, from the environment: no file of mine or the repo's counts. */
-export function configContent(cfg: OpenCodeConfig): string {
+export function configContent(cfg: OpenCodeConfig, models = cfg.models): string {
   return JSON.stringify({
-    model: cfg.models[0] ? `${cfg.providerID}/${cfg.models[0]}` : undefined,
+    model: models[0] ? `${cfg.providerID}/${models[0]}` : undefined,
     update: "disable",
     providers: {
       [cfg.providerID]: {
@@ -85,7 +98,7 @@ export function configContent(cfg: OpenCodeConfig): string {
         package: cfg.package,
         ...(cfg.baseURL ? { settings: { baseURL: cfg.baseURL } } : {}),
         models: Object.fromEntries(
-          cfg.models.map((m) => [
+          models.map((m) => [
             m,
             cfg.contextWindow ? { limit: { context: cfg.contextWindow, output: 8192 } } : {},
           ]),
@@ -115,6 +128,7 @@ async function startServer(
   plan: SandboxPlan | null,
   cwd: string,
   key: string | null,
+  models: string[] = cfg.models,
 ): Promise<Server> {
   const home = plan?.home ?? cfg.home ?? join(tmpdir(), `oraknid-opencode-${leg.id}`);
   // Its own world: home, temp and every XDG dir (ADR-015: XDG alone still reads ~/.claude).
@@ -136,7 +150,7 @@ async function startServer(
     OPENCODE_DISABLE_PROJECT_CONFIG: "1",
     OPENCODE_DISABLE_MODELS_FETCH: "1",
     OPENCODE_DISABLE_AUTOUPDATE: "1",
-    OPENCODE_CONFIG_CONTENT: configContent(cfg),
+    OPENCODE_CONFIG_CONTENT: configContent(cfg, models),
     ...(key ? { ORAKNID_PROVIDER_KEY: key } : {}),
   };
   const args = ["serve", "--stdio", "--port", "0"];
@@ -266,7 +280,23 @@ export function createOpenCodeAdapter(): LegAdapter {
         effortLevels: [],
         contextWindow: cfg.contextWindow,
       }));
-      if (!cfg.models.length)
+      if (!cfg.models.length && cfg.baseURL === ZEN_URL) {
+        // OpenCode's free models, as Zen lists them today.
+        try {
+          const res = await fetch(`${ZEN_URL}/models`, { signal: AbortSignal.timeout(10_000) });
+          const list = ((await res.json()) as { data?: { id: string }[] }).data ?? [];
+          for (const m of list.filter((x) => isFreeZenModel(x.id)))
+            models.push({ model: m.id, displayName: m.id, effortLevels: [], contextWindow: null });
+        } catch (error) {
+          return {
+            ok: false,
+            detail: `OpenCode's free models could not be listed: ${(error as Error).message}`,
+            models,
+            features,
+          };
+        }
+      }
+      if (!models.length)
         return { ok: false, detail: "Name at least one model of the provider.", models, features };
       let server: Server | null = null;
       try {
@@ -275,7 +305,7 @@ export function createOpenCodeAdapter(): LegAdapter {
         const version = String(info.version ?? "?").replace(/^v/, "");
         return {
           ok: true,
-          detail: `OpenCode ${version}${version === TESTED_VERSION ? "" : ` (tested with ${TESTED_VERSION}; its API may differ)`}, provider ${cfg.providerID}.`,
+          detail: `OpenCode ${version}${version === TESTED_VERSION ? "" : ` (tested with ${TESTED_VERSION}; its API may differ)`}, ${cfg.baseURL === ZEN_URL ? `its free models (${models.length}), no account needed` : `provider ${cfg.providerID}`}.`,
           models,
           features,
         };
@@ -288,7 +318,15 @@ export function createOpenCodeAdapter(): LegAdapter {
 
     async start(s: SessionStart): Promise<LegSession> {
       const cfg = readConfig(s.leg);
-      const server = await startServer(cfg, s.leg, s.sandbox, s.cwd, s.credential);
+      const free = cfg.baseURL === ZEN_URL;
+      const server = await startServer(
+        cfg,
+        s.leg,
+        s.sandbox,
+        s.cwd,
+        s.credential ?? (free ? ZEN_KEY : null),
+        cfg.models.length ? cfg.models : [s.model],
+      );
       const events = new Channel<LegEvent>();
       const abort = new AbortController();
       let usage: UsageSnapshot = { ...emptyUsage(), contextWindow: cfg.contextWindow };
