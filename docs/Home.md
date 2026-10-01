@@ -61,6 +61,7 @@ Nothing is built yet.
 - [[ADR-011-Claude-Code-Adapter]] — the Agent SDK, `canUseTool`, one config dir per account
 - [[ADR-012-Sleep-Inhibition]] — a `systemd-inhibit` holder process
 - [[ADR-014-Auto-Approval]] — rules first, then a classifier; asked only when it matters
+- [[ADR-015-OpenCode-Adapter]] — OpenCode v2 through a private server per session, every action asked
 - [[ADR-013-Model-Aware-Routing]] — route to Leg + model + effort; smallest sufficient model; reserve scarce windows
 
 ## 05 — Checkpoints

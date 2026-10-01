@@ -94,16 +94,18 @@ The adapter is therefore a **minimal agent loop owned by Oraknid**:
 
 ## OpenCode — Phase 2
 
-`opencode serve` per Leg (password-protected, on localhost, inside the
-sandbox) and `@opencode-ai/sdk`: `session.create`, `prompt_async`,
-`session.abort` (interrupt), `event.subscribe` (SSE: `message.part.delta`,
-`permission.asked`, `session.idle`, `session.error`…),
-`permission.reply`. Usage comes from `step_finish` parts (`tokens`,
-`cost`). Rate limits show up as session `retry` status and `ApiError`
-429s. There's no subscription-window API. Accounts: separate
-`XDG_DATA_HOME` / `XDG_CONFIG_HOME` per Leg (to be confirmed in Phase 2).
+OpenCode **v2** (2.0.20, checked 2026-10-01) through a private
+`opencode serve --stdio` per session, inside the sandbox, over its HTTP
+API and SSE event stream ([[ADR-015-OpenCode-Adapter]]): `POST
+/api/session`, `POST …/prompt`, `POST …/interrupt`, `GET /api/event`,
+`POST …/permission/{id}/reply`. Turns end with
+`session.execution.*`; usage per step from `session.step.ended`; a rate
+limit is a `session.retry.scheduled` with `provider.rate-limit`. Each
+Leg has its own `HOME`, `TMPDIR` and XDG dirs, project config is
+ignored, and every action is asked for. There's no subscription-window
+API.
 **OpenCode may not use a Claude subscription** under Anthropic's terms.
-OpenCode Legs use other providers or local models.
+OpenCode Legs use other providers' API keys or local models.
 
 ## Antigravity — Phase 5
 
