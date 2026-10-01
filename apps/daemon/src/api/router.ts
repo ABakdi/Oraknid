@@ -76,6 +76,7 @@ import {
 } from "../eye/policy.ts";
 import { conversation, talk } from "../eye/talk.ts";
 import type { InboxStore } from "../inbox/store.ts";
+import type { LegLogins } from "../legs/login.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import { readSessionLog } from "../legs/session-log.ts";
 import type { Notifications } from "../notify/notifications.ts";
@@ -115,6 +116,8 @@ export interface ApiContext {
   runner: JobRunner;
   registry: LegRegistry;
   health: { check(id: string): Promise<void> };
+  /** Logging Claude Code Legs in from the UI. */
+  logins: LegLogins;
   silk: SilkStore;
   inbox: InboxStore;
   projects: Projects;
@@ -742,6 +745,24 @@ export const router = {
       ),
   },
   legs: {
+    /** Starts the official sign-in for a Claude Code Leg; the UI shows the link. */
+    loginStart: base
+      .input(z.object({ id: z.string() }))
+      .output(z.object({ url: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.logins.start(c.registry.require(input.id))),
+      ),
+    /** The code shown after signing in; the Leg is tested again. */
+    loginFinish: base
+      .input(z.object({ id: z.string(), code: z.string().min(1).max(2000) }))
+      .output(z.object({ ok: z.boolean(), detail: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(async () => {
+          const r = await c.logins.finish(c.registry.require(input.id), input.code);
+          if (r.ok) await c.health.check(input.id);
+          return r;
+        }),
+      ),
     list: base
       .output(z.array(LegView))
       .handler(({ context: c }) => c.registry.all().map((l) => c.registry.view(l))),

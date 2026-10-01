@@ -137,7 +137,8 @@ export class LegRegistry {
           .set({
             config: { ...config, configDir: dir },
             health: "unavailable",
-            healthDetail: `Moved to a config folder of its own; log it in once: CLAUDE_CONFIG_DIR="${dir}" ${String(config.binary ?? "claude")} — then /login.`,
+            healthDetail:
+              "Moved to a config folder of its own; log it in once with Log in on its card.",
           })
           .where(eq(legs.id, leg.id))
           .run();
@@ -371,7 +372,7 @@ export class LegRegistry {
       })),
       setupHint:
         kind === "claude-code" && leg.health === "unavailable"
-          ? `Log this account in: CLAUDE_CONFIG_DIR="${String(config.configDir)}" ${String(config.binary ?? "claude")} — then /login. Oraknid never handles the login itself.`
+          ? "Log this account in: press Log in on its card and sign in on Claude's own page. Oraknid never sees the password."
           : null,
     };
   }

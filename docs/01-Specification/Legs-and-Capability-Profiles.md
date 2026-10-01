@@ -44,8 +44,10 @@ windows:
 1. Pick the kind.
 2. Fill in the kind's fields (binary path, config directory, endpoint,
    model). Secrets go to the keychain (BR-13). For Claude Code, an empty
-   config directory is created under Oraknid's data, and the Leg shows
-   the one command to log it in with the official binary. A Leg is one
+   config directory is created under Oraknid's data, and I log it in from
+   its card: **Log in** opens Claude's own sign-in page, and I paste the
+   code it shows back into the page. Oraknid runs the official
+   `claude auth login` for that folder and never sees the password. A Leg is one
    account: one login covers all its models, and it lasts. My own
    `~/.claude` is never a Leg's config directory: the sandbox can write
    there ([[Audit-1]] S1-02). For OpenCode: nothing by default:

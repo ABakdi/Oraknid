@@ -33,6 +33,7 @@ import { forgetGuidance, resumeConversations } from "./eye/talk.ts";
 import { isLocalRequest } from "./http/guard.ts";
 import { InboxStore } from "./inbox/store.ts";
 import { startHealthChecks } from "./legs/health.ts";
+import { LegLogins } from "./legs/login.ts";
 import { LegRegistry } from "./legs/registry.ts";
 import { LegSupervisor } from "./legs/supervisor.ts";
 import { attachLive } from "./live/server.ts";
@@ -112,6 +113,7 @@ export async function startDaemon(options: DaemonOptions) {
     opencode: createOpenCodeAdapter(),
   };
   const registry = new LegRegistry(db, bus, secrets, paths.legs, now);
+  const logins = new LegLogins(paths.legs);
   // No Leg keeps my own ~/.claude as its config folder (Audit 1 → S1-02).
   registry.ownConfigFolders();
   const supervisor = new LegSupervisor({
@@ -339,6 +341,7 @@ export async function startDaemon(options: DaemonOptions) {
         runner,
         registry,
         health,
+        logins,
         silk,
         inbox,
         projects: projectsService,
@@ -416,6 +419,7 @@ export async function startDaemon(options: DaemonOptions) {
       notifyRouter.stop();
       audit.stop();
       backups.stop();
+      logins.stopAll();
       await supervisor.killAll();
       await inhibit.stop();
       await live.close();

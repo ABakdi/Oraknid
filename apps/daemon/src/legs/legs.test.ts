@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createORPCClient } from "@orpc/client";
@@ -81,9 +81,7 @@ describe("adding Legs", () => {
     });
     expect(leg.health).toBe("unavailable");
     expect(leg.healthDetail).toMatch(/not logged in/);
-    expect(leg.setupHint).toMatch(
-      /^Log this account in: CLAUDE_CONFIG_DIR=".*claude-config" claude/,
-    );
+    expect(leg.setupHint).toMatch(/^Log this account in: press Log in on its card/);
   });
 
   it("keeps an API key in the secret store only, and removes it with the Leg", async () => {
@@ -358,5 +356,45 @@ describe("a Leg's own config folder (Audit 1 → S1-02)", () => {
     );
     expect(moved?.healthDetail).toMatch(/log it in once/);
     expect(d.registry.ownConfigFolders()).toEqual([]);
+  });
+});
+
+describe("logging a Claude Code Leg in from the web (2026-10-02)", () => {
+  it("shows the official sign-in link, passes back my code, and says when it worked", async () => {
+    const { api } = await start();
+    const bin = join(mkdtempSync(join(tmpdir(), "oraknid-fake-claude-")), "claude");
+    // Stands in for the official binary: a link with escapes around it, then a code on stdin.
+    writeFileSync(
+      bin,
+      `#!/bin/sh
+if [ "$1 $2" = "auth status" ]; then
+  if [ -f "$CLAUDE_CONFIG_DIR/.credentials.json" ]; then echo '{"loggedIn":true,"email":"me@example.com"}'; else echo '{"loggedIn":false}'; fi
+  exit 0
+fi
+printf 'If the browser did not open, visit: \\033]8;;https://claude.com/cai/oauth/authorize?code=true&state=s1\\007https://claude.com/cai/oauth/authorize?code=true&state=s1\\033]8;;\\007\\n'
+printf 'Paste code here if prompted > '
+read code
+if [ "$code" = "good-code" ]; then echo '{}' > "$CLAUDE_CONFIG_DIR/.credentials.json"; echo "Login successful."; exit 0; fi
+echo "Invalid code."; exit 1
+`,
+      { mode: 0o755 },
+    );
+    const leg = await api.legs.create({
+      kind: "claude-code",
+      name: "Claude B",
+      config: { binary: bin },
+    });
+    const first = await api.legs.loginStart({ id: leg.id });
+    expect(first.url).toBe("https://claude.com/cai/oauth/authorize?code=true&state=s1");
+    expect(await api.legs.loginFinish({ id: leg.id, code: "wrong" })).toEqual({
+      ok: false,
+      detail: "Invalid code.",
+    });
+    await api.legs.loginStart({ id: leg.id });
+    expect(await api.legs.loginFinish({ id: leg.id, code: " good-code " })).toEqual({
+      ok: true,
+      detail: "Logged in as me@example.com.",
+    });
+    await expect(api.legs.loginFinish({ id: leg.id, code: "again" })).rejects.toThrow(/expired/);
   });
 });
