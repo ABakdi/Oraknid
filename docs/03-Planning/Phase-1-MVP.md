@@ -56,10 +56,11 @@ crashes and reboots.
 - [~] Learning from outcomes is ready in `packages/core`; The Eye records outcomes in M1.6
 
 ### M1.5 — Silk
-- [ ] Silk store and kinds ([[Silk]])
-- [ ] Handoffs (from the Leg, or reconstructed from the event log + diff)
-- [ ] Context pack builder with a token cap
-- [ ] Markdown mirror + hand-edit import ([[ADR-007-Silk-Storage]])
+- [x] Silk store and kinds ([[Silk]]): entries are added or superseded, never edited in place; only I can supersede an entry I wrote; `silk.list` / `add` / `edit` / `importMirror` on the API
+- [~] Handoffs: rebuilt from the session's raw log and `git diff --stat` (commands run, failed ones as traps, the last words) with the same headings a Leg is asked for. Asking the outgoing Leg for its own (`HANDOFF_REQUEST`) happens when The Eye rotates sessions in M1.6.
+- [~] Context pack builder with a token cap: the spec's order, superseded entries out, issues near the task's scope only; over the cap, the oldest entries shrink to their titles (mine stay whole) and then the digest is trimmed. Summarising shrunk entries into a new entry with a cheap Leg needs The Eye's brain (M1.6).
+- [x] Markdown mirror + hand-edit import ([[ADR-007-Silk-Storage]]): written atomically after every change; a hand edit is noticed within 30 s (or on `silk.importMirror`), asked about once in the inbox, left untouched until I answer, then imported as my entries or replaced by Oraknid's version
+- [x] `inbox.list` / `inbox.answer` on the API, early, so the import question can be answered before M1.7
 
 ### M1.6 — The Eye
 - [ ] `EyeBrain` interface + `PoolLegBrain` ([[ADR-008-Eye-Brain]]); first-run Eye Leg choice

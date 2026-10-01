@@ -12,6 +12,7 @@ durable step engine runs on the same database ([[ADR-003-Job-Execution-Engine]])
 | `legs`, `capability_profiles`, `leg_observations` | The pool and what was learned. |
 | (quota windows) | Stored as JSON on `legs` (account-wide windows) and `leg_models` (per-model windows), with `limited_until` on the Leg. |
 | `silk_entries` | Silk. |
+| `silk_mirror` | What Oraknid last wrote to each mirror file (hash), and the open import question. |
 | `skills`, `skill_versions` | The library. |
 | `inbox_items` | Approvals and questions. |
 | `steps` | The step journal: `(job_id, step_key)` PK, status, input hash, output. |

@@ -58,9 +58,11 @@ specific task:
 6. A small workspace digest of the files in scope.
 
 The pack has a token cap: by default 15% of the receiving Leg's context
-window. If it goes over, older and less relevant entries are summarised
-by a cheap Leg, and the summary is stored as a new entry that supersedes
-the ones it covers.
+window. If it goes over, the least important and oldest entries are cut
+to their titles first (entries I wrote stay whole), then the digest is
+trimmed. The task itself is never cut. Shortened entries are then
+summarised by a cheap Leg, and the summary is stored as a new entry that
+supersedes the ones it covers (from M1.6).
 
 ## Storage and mirror
 
@@ -75,19 +77,28 @@ every change, a readable markdown mirror is written to
   architecture.md
   progress.md
   issues.md
+  facts.md
   handoffs/<task-id>.md
   interview.md
 ```
 
+Each entry is a `## Title` section followed by a marker
+`<!-- silk:<id> by:<author> -->`, so Oraknid can tell which entry a
+section is.
+
 Legs can read the mirror like any file. I can read it, and I can
 commit it if I want it in the repo's history. If I edit the mirror by
-hand, The Eye notices the change and asks whether to import it as
-`owner` entries. The mirror never overwrites the database without that
-confirmation.
+hand, Oraknid notices within 30 s and asks once, in the inbox, whether
+to import it. A changed section supersedes its entry, and a new section
+becomes a new entry, all marked `owner`. A removed section deletes
+nothing: Silk only grows. Until I answer, that file is not rewritten;
+if I discard, Oraknid's version is put back. The mirror never changes
+the database without my confirmation.
 
 ## Editing
 
-In the UI I can add, edit or supersede any entry. My entries are
-marked `owner` and are never superseded automatically.
+In the UI I can add, edit or supersede any entry. Editing writes a new
+entry of mine that supersedes the old one. My entries are marked
+`owner`, and only I can supersede them.
 
 Related: [[The-Eye]] · [[Budgets-and-Quotas]] · [[ADR-007-Silk-Storage]] · [[Business-Rules]]

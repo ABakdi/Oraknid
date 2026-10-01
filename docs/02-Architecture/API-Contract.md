@@ -14,8 +14,8 @@ table is the summary and is kept in step with the contracts.
 | Web | `web.get` / `web.edit` (add, remove, reorder, rewrite tasks) | Plan editing. |
 | Tasks | `tasks.get` / `tasks.pin` (to a Leg) / `tasks.takeOver` / `tasks.handBack` / `tasks.rollback` / `tasks.diff` | |
 | Legs | `legs.list` / `get` / `create` / `test` / `update` / `pause` / `resume` / `remove` / `setModelHidden` / `setProfile` | Creating tests the Leg at once. A Leg's view carries its models with effective profiles (defaults, learned, my overrides), quota windows, VRAM, and a setup hint (e.g. how to log in). |
-| Silk | `silk.list` / `silk.add` / `silk.edit` / `silk.supersede` / `silk.importMirror` | |
-| Inbox | `inbox.list` / `inbox.answer` | Approvals, questions, interview rounds. |
+| Silk | `silk.list` / `silk.add` / `silk.edit` / `silk.importMirror` | Editing supersedes. `importMirror` looks for hand edits now. |
+| Inbox | `inbox.list` / `inbox.answer` | Approvals, questions, interview rounds. (A first version exists since M1.5.) |
 | Skills | `skills.list` / `get` / `upload` / `edit` / `delete` | |
 | Logs | `audit.search` / `logs.tail` / `logs.export` | |
 | Secrets | `secrets.unlock` | Opens the encrypted-file store when there is no keychain. |
