@@ -468,6 +468,7 @@ export const router = {
           connected: z.boolean(),
           publicKey: z.string().nullable(),
           error: z.string().nullable(),
+          loaderHash: z.string().nullable(),
         }),
       )
       .handler(({ context: c }) => c.nest.status()),

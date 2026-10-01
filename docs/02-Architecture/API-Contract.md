@@ -24,6 +24,7 @@ table is the summary and is kept in step with the contracts.
 | Notifications | `notifications.get` / `update` / `configureEmail` / `test` / `vapidPublicKey` / `subscribe` / `unsubscribe` | Per-channel switches, SMTP setup (password to the secret store), web push. |
 | Settings | `settings.setEyeLeg` · `maxRunningJobs` / `setMaxRunningJobs` (M3.3) · `maxTasksPerJob` / `setMaxTasksPerJob` (M3.1) · `sameProviderFallback` / `setSameProviderFallback` (ADR-009) · `policies.get` / `update` | |
 | Storage | `storage.usage` / `storage.prune` (M1.9) | |
+| The Nest | `nest.status` / `nest.configure` / `nest.pairAway` (Phase 4) | Reaching me away from home ([[Nest-Protocol]]). `pairAway` returns a link whose keys are in the fragment. |
 
 **Not built yet** (Audit 1 → Q1-15), with where they land: `projects.get`, `jobs.export` (Phase 2); a general `settings.get` / `update` when a second setting
 needs it.

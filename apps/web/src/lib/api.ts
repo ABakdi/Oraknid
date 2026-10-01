@@ -2,11 +2,12 @@ import type { Router } from "@oraknid/daemon/src/api/router.ts";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { RouterClient } from "@orpc/server";
+import { remote, remoteFetch } from "./remote";
 import { store } from "./store";
 
-/** This device's token (Security → pairing). */
+/** This device's token (Security → pairing); away from home, the loader holds it. */
 export const auth = {
-  token: () => store.get("token"),
+  token: () => (remote() ? "remote" : store.get("token")),
   set: (token: string | null) => store.set("token", token),
 };
 
@@ -18,13 +19,15 @@ export const setOnUnauthorized = (fn: () => void) => {
 
 export const api: RouterClient<Router> = createORPCClient(
   new RPCLink({
-    url: `${location.origin}/api`,
+    // Inside the loader's frame the origin is opaque: any base will do, only the path travels.
+    url: remote() ? "http://oraknid.remote/api" : `${location.origin}/api`,
     headers: () => {
       const token = auth.token();
       return token ? { authorization: `Bearer ${token}` } : {};
     },
     fetch: async (request, init) => {
-      const res = await fetch(request, init);
+      const t = remote();
+      const res = t ? await remoteFetch(t, request as Request) : await fetch(request, init);
       if (res.status === 401) onUnauthorized();
       return res;
     },

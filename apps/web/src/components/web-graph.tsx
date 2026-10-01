@@ -11,6 +11,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import ELK from "elkjs/lib/elk-api.js";
+import elkWorkerSource from "elkjs/lib/elk-worker.min.js?raw";
 import { memo, useEffect, useMemo, useState } from "react";
 import { StateBadge } from "@/components/common";
 import { t } from "@/lib/i18n";
@@ -20,8 +21,12 @@ type Task = JobView["tasks"][number];
 type TaskNode = Node<{ task: Task; leg: string | null; onOpen: (id: string) => void }, "task">;
 
 // In a Web Worker, so a large Web never freezes the UI (ADR-005).
+// Away from home the UI is one self-contained page: its worker comes from a Blob instead.
 const elk = new ELK({
-  workerFactory: () => new Worker(new URL("elkjs/lib/elk-worker.min.js", import.meta.url)),
+  workerFactory: () =>
+    import.meta.env.MODE === "remote"
+      ? new Worker(URL.createObjectURL(new Blob([elkWorkerSource], { type: "text/javascript" })))
+      : new Worker(new URL("elkjs/lib/elk-worker.min.js", import.meta.url)),
 });
 const W = 220;
 const H = 76;

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { Route, Switch } from "wouter";
+import { Route, Router, Switch } from "wouter";
+import { useHashLocation } from "wouter/use-hash-location";
 import { Shell } from "@/components/shell";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { api, auth, setOnUnauthorized } from "@/lib/api";
 import { live } from "@/lib/live";
+import { remote } from "@/lib/remote";
 import { ThemeProvider } from "@/lib/theme";
 import { InboxPage } from "@/pages/inbox";
 import { JobPage } from "@/pages/job";
@@ -47,34 +49,37 @@ export function App() {
     if (paired) live.start();
   }, [paired]);
 
+  // Away from home the page is the loader's frame (about:srcdoc): routes live in the hash.
   return (
-    <ThemeProvider>
-      <TooltipProvider delayDuration={300}>
-        {paired ? (
-          <Shell>
-            <Switch>
-              <Route path="/" component={OverviewPage} />
-              <Route path="/jobs" component={JobsPage} />
-              <Route path="/jobs/new" component={NewJobPage} />
-              <Route path="/jobs/:id">{(p) => <JobPage id={p.id} />}</Route>
-              <Route path="/projects" component={ProjectsPage} />
-              <Route path="/inbox">{() => <InboxPage />}</Route>
-              <Route path="/inbox/:id">{(p) => <InboxPage focus={p.id} />}</Route>
-              <Route path="/legs" component={LegsPage} />
-              <Route path="/skills" component={SkillsPage} />
-              <Route path="/logs" component={LogsPage} />
-              <Route path="/settings" component={SettingsPage} />
-              <Route>
-                <OverviewPage />
-              </Route>
-            </Switch>
-          </Shell>
-        ) : (
-          <PairPage onPaired={() => setPaired(true)} />
-        )}
-        <Toaster position="top-center" />
-      </TooltipProvider>
-    </ThemeProvider>
+    <Router hook={remote() ? useHashLocation : undefined}>
+      <ThemeProvider>
+        <TooltipProvider delayDuration={300}>
+          {paired ? (
+            <Shell>
+              <Switch>
+                <Route path="/" component={OverviewPage} />
+                <Route path="/jobs" component={JobsPage} />
+                <Route path="/jobs/new" component={NewJobPage} />
+                <Route path="/jobs/:id">{(p) => <JobPage id={p.id} />}</Route>
+                <Route path="/projects" component={ProjectsPage} />
+                <Route path="/inbox">{() => <InboxPage />}</Route>
+                <Route path="/inbox/:id">{(p) => <InboxPage focus={p.id} />}</Route>
+                <Route path="/legs" component={LegsPage} />
+                <Route path="/skills" component={SkillsPage} />
+                <Route path="/logs" component={LogsPage} />
+                <Route path="/settings" component={SettingsPage} />
+                <Route>
+                  <OverviewPage />
+                </Route>
+              </Switch>
+            </Shell>
+          ) : (
+            <PairPage onPaired={() => setPaired(true)} />
+          )}
+          <Toaster position="top-center" />
+        </TooltipProvider>
+      </ThemeProvider>
+    </Router>
   );
 }
 

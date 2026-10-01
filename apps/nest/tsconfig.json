@@ -1,5 +1,5 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "lib": ["ES2023", "DOM"] },
-  "include": ["src", "tsdown.config.ts", "loader.vite.config.ts"]
+  "include": ["src", "loader", "tsdown.config.ts", "loader.vite.config.ts"]
 }

@@ -1,6 +1,7 @@
 import type { NotificationSettings, NotifyEvent, Route } from "@oraknid/contracts";
 import { useState } from "react";
 import { toast } from "sonner";
+import { AwayCard } from "@/components/away-card";
 import { ErrorNote, Loading, PageHeader } from "@/components/common";
 import { RulesCard } from "@/components/rules-card";
 import { StorageCard } from "@/components/storage-card";
@@ -51,6 +52,7 @@ export function SettingsPage() {
       <FallbackCard />
       <PolicyCard />
       <DevicesCard />
+      <AwayCard />
       <StorageCard />
       <ThemeCard />
     </div>

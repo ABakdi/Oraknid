@@ -1,0 +1,11 @@
+# TLS by Caddy, automatically (ADR-018). WebSockets pass through as they are.
+{$NEST_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy nest:8080
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		Referrer-Policy "no-referrer"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+}

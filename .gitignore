@@ -7,3 +7,7 @@ dist/
 .turbo/
 coverage/
 *.tsbuildinfo
+
+# Build output of the remote UI and of The Nest's loader
+dist-remote/
+apps/nest/public/

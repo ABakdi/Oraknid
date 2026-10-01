@@ -15,13 +15,14 @@ I want to approve and answer from anywhere, without opening ports at home.
 - [x] ADR: where the UI is served from ([[ADR-019-Nest-UI-Serving]]: a UI signed by the daemon, checked by a service worker)
 
 ### M4.2 — Relay
-- [ ] `apps/nest`: Express + WebSocket relay, outbound daemon connection, reconnect
-- [ ] Device ↔ daemon E2E; The Nest sees only ciphertext
-- [ ] Deploy files in `deploy/` (compose, proxy, TLS)
+- [x] `apps/nest`: Express + WebSocket relay, the daemon's outbound connection with reconnects, limits per address and per daemon
+- [x] Device ↔ daemon E2E (`packages/tunnel`, libsodium); The Nest sees only ciphertext; tested end to end through a real Nest and in Chrome with the loader
+- [x] Deploy files in `deploy/nest/` (Dockerfile, Compose, Caddy for TLS, a guide); the image built and ran 2026-10-02
+- [x] Pairing a device for away from Settings, by a QR code or link whose keys stay in the fragment; the loader's fingerprint shown at home
 
 ### M4.3 — Remote use
 - [ ] Web push through The Nest
-- [ ] Mobile pass of every screen over the relay
+- [ ] Mobile pass of every screen over the relay (needs my VPS and domain)
 
 ## Exit criterion
 

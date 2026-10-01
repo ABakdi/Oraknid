@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DaemonEnd, type KeyPair, newKeyPair, ready } from "@oraknid/tunnel";
@@ -44,6 +45,8 @@ export interface NestStatus {
   connected: boolean;
   publicKey: string | null;
   error: string | null;
+  /** The fingerprint of the loader built with this Oraknid, to compare with The Nest's page. */
+  loaderHash: string | null;
 }
 
 export class NestLink {
@@ -66,6 +69,8 @@ export class NestLink {
       localUrl: () => string;
       /** The remote UI, one self-contained page, when it was built. */
       remoteUi: () => string | null;
+      /** The loader's script as built here, when it was. */
+      loaderScript?: () => Buffer | null;
     },
   ) {}
 
@@ -96,6 +101,10 @@ export class NestLink {
       connected: this.#connected,
       publicKey: c ? (await this.keys()).publicKey : null,
       error: this.#error,
+      loaderHash: (() => {
+        const script = this.o.loaderScript?.();
+        return script ? createHash("sha256").update(script).digest("hex").slice(0, 32) : null;
+      })(),
     };
   }
 

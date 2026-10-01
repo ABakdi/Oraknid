@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+**/dist-remote
+apps/nest/public
+.turbo
+**/.turbo
+coverage
+.git
+docs/.obsidian

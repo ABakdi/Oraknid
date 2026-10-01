@@ -1,0 +1,31 @@
+# The Nest on a small VPS (ADR-018): the relay, and Caddy in front of it for TLS.
+# 1. Point your domain (NEST_DOMAIN) at this machine.
+# 2. Copy .env.example to .env and fill it in.
+# 3. docker compose up -d --build   (run from this folder)
+services:
+  nest:
+    build:
+      context: ../..
+      dockerfile: deploy/nest/Dockerfile
+    restart: unless-stopped
+    environment:
+      NEST_DAEMONS: ${NEST_DAEMONS}
+    expose:
+      - "8080"
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      NEST_DOMAIN: ${NEST_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - nest
+volumes:
+  caddy-data:
+  caddy-config:

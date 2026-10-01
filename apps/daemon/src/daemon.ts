@@ -1,5 +1,13 @@
 import { spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { dirname, join } from "node:path";
@@ -227,6 +235,10 @@ export async function startDaemon(options: DaemonOptions) {
     remoteUi: () => {
       const file = webRemote();
       return file ? readFileSync(file, "utf8") : null;
+    },
+    loaderScript: () => {
+      const file = nestLoader();
+      return file ? readFileSync(file) : null;
     },
   });
   const app = express();
@@ -482,6 +494,20 @@ export async function startDaemon(options: DaemonOptions) {
 }
 
 export type Daemon = Awaited<ReturnType<typeof startDaemon>>;
+
+/** The Nest's loader script as built in this checkout (apps/nest/public/assets), if it was. */
+function nestLoader(): string | null {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 5; i++) {
+    const assets = join(dir, "nest", "public", "assets");
+    if (existsSync(assets)) {
+      const js = readdirSync(assets).find((f) => f.endsWith(".js"));
+      if (js) return join(assets, js);
+    }
+    dir = dirname(dir);
+  }
+  return null;
+}
 
 /** The remote UI, one self-contained page (apps/web/dist-remote), if it was built. */
 function webRemote(): string | null {
