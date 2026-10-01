@@ -18,7 +18,7 @@ makes fallback and cross-Leg handoff real.
 - [x] Logs: export the audit log as JSON lines and read the daemon's log in the UI; the daemon writes its own log, rotated at 10 MB (Q1-20)
 - [x] Git off the event loop: snapshots, diffs, rollbacks and commits run asynchronously, so a huge work tree can't stall the daemon past its watchdog (D1-05); quick lookups stay synchronous
 - [x] Plan editor: drag (or arrow) the order waiting tasks run in when several are ready; dependencies still come first (Q1-20)
-- [ ] Attempt step keys from a durable attempt id (D1-12)
+- [x] An attempt's outcome recorded but not applied before a crash is replayed, not run again (D1-12); the few duplicated Silk entries on replay stay documented in [[Audit-1]]
 - [x] Projects: archive, restore and delete (Core-Entities → Project)
 
 ### M2.1 — OpenCode adapter

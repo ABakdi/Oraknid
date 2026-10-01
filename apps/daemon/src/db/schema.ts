@@ -97,6 +97,8 @@ export const tasks = sqliteTable(
       .notNull()
       .references(() => jobs.id),
     /** The commit of its work, once done (the task drawer's diff). */
+    /** The attempt whose outcome was last applied: one recorded but not applied is replayed (Audit 1 → D1-12). */
+    settledAttempt: integer("settled_attempt").notNull().default(0),
     commit: text("commit"),
     title: text("title").notNull(),
     instructions: text("instructions").notNull(),

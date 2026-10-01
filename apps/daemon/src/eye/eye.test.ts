@@ -11,7 +11,7 @@ import { and, eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Router } from "../api/router.ts";
 import { type Daemon, startDaemon } from "../daemon.ts";
-import { eyeMessages, jobs, legs, silkEntries } from "../db/schema.ts";
+import { eyeMessages, jobs, legs, silkEntries, tasks } from "../db/schema.ts";
 import { resolvePaths } from "../paths.ts";
 import { fakeOs } from "../testing/fake-os.ts";
 import { type Action, scriptedLeg, type TurnContext } from "../testing/scripted-leg.ts";
@@ -1596,5 +1596,25 @@ describe("archiving and deleting a project (Phase 2 → M2.0)", () => {
     const { projectId } = await api.jobs.get({ id });
     await expect(api.projects.delete({ id: projectId })).rejects.toThrow(/cancel it first/);
     await api.jobs.cancel({ id });
+  });
+});
+
+describe("an attempt's recorded outcome survives a crash (Audit 1 → D1-12)", () => {
+  it("replays an outcome that was recorded but not applied, without running the task again", async () => {
+    const { api, id, d, leg } = await eye(good);
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    const [t1] = (await api.jobs.get({ id })).tasks;
+    const before = leg.log.filter((t) => task(t) === "Write hello.sh").length;
+    // As after a crash between the journal's record and the task's update.
+    d.db
+      .update(tasks)
+      .set({ state: "ready", settledAttempt: 0 })
+      .where(eq(tasks.id, t1?.id as string))
+      .run();
+    d.db.update(jobs).set({ state: "running" }).where(eq(jobs.id, id)).run();
+    d.runner.start(id);
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    expect((await api.jobs.get({ id })).tasks[0]?.state).toBe("done");
+    expect(leg.log.filter((t) => task(t) === "Write hello.sh").length).toBe(before);
   });
 });

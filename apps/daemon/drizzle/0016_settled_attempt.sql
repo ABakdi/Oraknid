@@ -1,0 +1,1 @@
+ALTER TABLE `tasks` ADD `settled_attempt` integer DEFAULT 0 NOT NULL;

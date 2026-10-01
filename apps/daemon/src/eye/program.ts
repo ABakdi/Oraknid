@@ -4,7 +4,7 @@ import { decide, type GatedAction, readyTasks, skillExcerpt, suspicious } from "
 import type { Sandbox } from "@oraknid/os";
 import { and, asc, count, eq, inArray } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
-import { attempts, jobs, projects, taskEdges, tasks } from "../db/schema.ts";
+import { attempts, jobs, projects, steps, taskEdges, tasks } from "../db/schema.ts";
 import { AwaitingOwner } from "../engine/effects.ts";
 import type { JobContext, JobProgram } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
@@ -269,7 +269,22 @@ async function runTasks(
     if (failures >= (d.maxAttempts ?? 8)) {
       throw new Error(`"${task.title}" failed ${failures} attempts. Look at it, then resume.`);
     }
-    const attemptNo = task.attemptCount + 1;
+    // An outcome recorded in the journal but not applied before a crash is replayed, not run again
+    // (Audit 1 → D1-12): the task's work and my decision on it are never lost or done twice.
+    let attemptNo = task.attemptCount + 1;
+    if (task.attemptCount > task.settledAttempt) {
+      const recorded = d.db
+        .select({ status: steps.status })
+        .from(steps)
+        .where(
+          and(
+            eq(steps.jobId, job.id),
+            eq(steps.stepKey, `task:${task.id}:attempt:${task.attemptCount}`),
+          ),
+        )
+        .get();
+      if (recorded?.status === "done") attemptNo = task.attemptCount;
+    }
     const attemptJob: AttemptJob = {
       id: job.id,
       title: job.title,
@@ -315,6 +330,9 @@ async function runTasks(
         return result;
       },
     );
+    // Applied first, then marked settled: a crash in between applies it again, which changes nothing.
+    const settle = () =>
+      d.db.update(tasks).set({ settledAttempt: attemptNo }).where(eq(tasks.id, task.id)).run();
     switch (outcome.kind) {
       case "done":
         if (outcome.commit)
@@ -342,8 +360,10 @@ async function runTasks(
         break;
       case "cancel-job":
         ctx.setState("cancelled", outcome.reason);
+        settle();
         return;
     }
+    settle();
   }
 }
 
