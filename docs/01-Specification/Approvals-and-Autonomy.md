@@ -41,6 +41,9 @@ command), The Eye decides by policy:
 1. Denied by the deny list → deny, and count it as drift D7.
 2. Inside the sandbox scope and on the allow list → approve.
 3. A gated action → becomes an approval in the inbox, and the Leg waits.
+   If the attempt ends first (pause, reassignment, a crash), the
+   approval is withdrawn: my inbox never holds a question nobody waits
+   for.
 4. Unknown → depends on autonomy level: Supervised and Standard ask me,
    Full approves when it's in scope and not gated.
 

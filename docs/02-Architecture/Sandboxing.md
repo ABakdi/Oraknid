@@ -4,9 +4,11 @@
 
 ## Worktrees
 
-- Job start: `git worktree add .oraknid/worktrees/<job> -b oraknid/<job-slug> <work branch>`.
-- Checkpoints: commits on `refs/oraknid/<job>/<task>/<n>`, made by The
-  Eye (never by a Leg), with `--no-verify`, and never pushed.
+- Job start: `git worktree add .oraknid/worktrees/<job> -b oraknid/<job-slug>-<last 6 of the job id> <work branch>`.
+  The work branch is made from the release branch if it doesn't exist;
+  a repo with no commit gets an empty first one.
+- Checkpoints: commits on `refs/oraknid/<job>/<task>/<attempt>`, made by
+  The Eye (never by a Leg) through a temporary index, and never pushed.
 - Job end: the branch stays for review. Merging into the work branch is
   the gated `merge` action. Removing the worktree happens on my request.
 - Non-git projects: a shadow repo `.oraknid/shadow.git` with

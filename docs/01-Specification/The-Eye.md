@@ -49,7 +49,9 @@ flowchart TD
 ## Planning
 
 The Eye asks the Eye Leg for a plan as **structured output** (a JSON
-Web validated against the contracts schema). The input is the goal, the
+Web validated against the contracts schema and The Web's rules: unique
+keys, existing dependencies, no cycles, verify commands and relative
+scopes). A plan that fails is sent back once with the exact problems. The input is the goal, the
 skill, the Silk summary and a workspace digest (tree, key files,
 existing tests). The plan has to give every task `scope`, `verify[]`
 and `requiredCapabilities`. A task without a verify command is only

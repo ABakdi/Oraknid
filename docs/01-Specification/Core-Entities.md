@@ -49,6 +49,10 @@ erDiagram
 | `state` | See below. |
 | `pauseReason`, `blockedReason` | Written in my language, shown in the UI. |
 | `resumeState` | The active state a `paused`, `waiting` or `blocked` job returns to. |
+| `worktree`, `branch` | Where the job works (Sandboxing). |
+| `verify`, `verifyRound` | Job-level checks (the skill's, mine, the plan's); rounds of verification so far. |
+| `blockedUntil` | When a job blocked on quota resumes on its own. |
+| `waived`, `unsandboxed` | Gates I waived; whether I chose to run it without the sandbox. |
 | `createdAt`, `startedAt`, `finishedAt` | |
 
 **States:**
@@ -95,6 +99,10 @@ a version number that increases on every plan change.
 | `state` | `pending` · `ready` · `assigned` · `running` · `verifying` · `done` · `failed` · `skipped` · `paused` |
 | `difficulty` | `low` · `medium` · `high`, estimated at planning, revised after failures. |
 | `assignedLegId`, `assignedModelId`, `effort`, `attemptCount` | |
+| `routing` | Why the router chose its Leg model: score, reasons, what it left out. |
+| `stepUp`, `avoid`, `escalation` | Escalation state across attempts (ADR-013, Drift-Control). |
+| `pinnedModelId`, `ownerHeld` | I pinned it to a Leg model; I took it over (BR-18). |
+| `position`, `planKey` | Plan order, and the plan's own key for the task. |
 | `budget` | Optional per-task limits. |
 
 ## Attempt and Session

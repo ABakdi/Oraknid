@@ -63,15 +63,19 @@ crashes and reboots.
 - [x] `inbox.list` / `inbox.answer` on the API, early, so the import question can be answered before M1.7
 
 ### M1.6 — The Eye
-- [ ] `EyeBrain` interface + `PoolLegBrain` ([[ADR-008-Eye-Brain]]); first-run Eye Leg choice
-- [ ] Planning to a validated Web; replans that keep done tasks
-- [ ] Model-aware routing ([[ADR-013-Model-Aware-Routing]]): Leg models discovered by `probe`, difficulty estimates, per-model windows, scarce-window reservation, step up / start lower
-- [ ] Fallback + `blocked` until reset with an automatic resume
-- [ ] Self-prompting loop
-- [ ] Verifier: runs `verify[]` in the sandbox; job-level verification
-- [ ] Drift detectors D1–D8 and the escalation ladder ([[Drift-Control]])
-- [ ] Git checkpoints and rollback
-- [ ] Session rotation at the context threshold (BR-3)
+- [~] `EyeBrain` interface + `PoolLegBrain` ([[ADR-008-Eye-Brain]]): `plan`, `replan`, `summarize`; a short read-only session, JSON validated by schema **and** by The Web's rules, one retry with the exact problems. The Eye Leg is a setting (`settings.setEyeLeg`); asking for it at first run is the UI's job (M1.8). `evaluate` (a second look at tasks without verify commands) and `interviewRound` arrive with M1.7.
+- [x] Planning to a validated Web (unique keys, existing dependencies, no cycles, verify commands and relative scopes); replans add tasks and never touch done ones
+- [x] Model-aware routing ([[ADR-013-Model-Aware-Routing]]): difficulty fit, capability, past success, quota cost per window, scarce-window reservation, step-ups (effort, then strength), avoidance of models that failed the task; every exclusion says why; the choice is recorded on the task
+- [x] Fallback to another Leg on a usage limit (with a handoff); `blocked` until the earliest reset when none is left, resumed on its own (checked every 30 s)
+- [x] Self-prompting: after each turn The Eye runs the checks and sends the exact failure back
+- [x] Verifier runs `verify[]` in the sandbox (private `/tmp`, no Leg home), stops at the first failure, fingerprints failures for D3; job-level verification, with a replan when it fails
+- [x] Drift detectors D1–D8 and the ladder ([[Drift-Control]]): out-of-scope edits reverted (only those), false claims corrected with the failure, stalls watched every 30 s, a refused gated action tried again counts as D8; step up, reassign, kill with rollback, then ask me (retry with guidance, take over, skip, cancel)
+- [x] Git checkpoints on private refs through a temporary index (my branch, HEAD and index untouched), rollback to the trash, `.oraknid/` never in a checkpoint; a verified task is one commit on the job branch; a folder without git gets a shadow repo
+- [x] Session rotation at 60% of the context window, with a handoff asked of the Leg (rebuilt from its log if it can't answer)
+- [x] Projects and jobs on the API (`projects.create/list`, `jobs.create/start/get/list`); the canon-driven skill is seeded as the built-in, jobs pin its version
+- [x] Learning: every attempt's outcome updates the Leg model's observed record
+- [~] Task leases are not needed while one job runs one task at a time; they return with Phase 3. Summarising shortened Silk entries with `brain.summarize` is wired in M1.7 with budgets.
+- [x] Found live (2026-10-01): `sh` and `[` were not on the allow list, so an agent checking its own script had to ask; approvals of an attempt that ended were left open in the inbox — both fixed with tests
 
 ### M1.7 — Approvals, budgets, skills
 - [ ] Autonomy levels, gated actions, permission policy, inbox ([[Approvals-and-Autonomy]])

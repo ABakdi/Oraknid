@@ -29,8 +29,13 @@ sandbox limits damage, but it doesn't make that safe.
 - Evaluated on every command a Leg wants to run (through the adapter's
   permission hook) and on every command The Eye runs.
 - Shipped defaults deny destructive and escalating patterns (`rm -rf /`,
-  `sudo`, `chmod -R 777`, `curl … | sh`, writes to `~/.ssh`, and so on)
-  and gate `git push`, publishing and deploy commands.
+  `sudo`, `chmod -R 777`, `curl … | sh`, writes to `~/.ssh`,
+  force-pushes, and so on) and gate `git push`, merges, publishing,
+  deploys and system installs.
+- The allow list names ordinary development programs (shells, git, the
+  package managers, test runners, coreutils). A command runs without
+  asking only if every program in it is on the list; otherwise it asks
+  (Supervised and Standard) or runs in the sandbox (Full).
 - Editable globally, per project and per job. More specific wins. Deny
   beats allow at the same level.
 
