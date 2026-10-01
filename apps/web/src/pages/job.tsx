@@ -2,6 +2,7 @@ import type { Event, JobView, TaskView } from "@oraknid/contracts";
 import { Ban, Pause, Play, Plus, ShieldAlert, Signpost, Undo2 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
+import { Agents } from "@/components/agents";
 import { LegComparison, TokensChart } from "@/components/charts";
 import { ErrorNote, Loading, Markdown, PageHeader, Stat, StateBadge } from "@/components/common";
 import { Badge } from "@/components/ui/badge";
@@ -189,14 +190,18 @@ export function JobPage({ id }: { id: string }) {
         </Button>
       </div>
 
-      <Tabs defaultValue="activity">
+      <Tabs defaultValue="agents">
         <TabsList className="w-full justify-start overflow-x-auto">
+          <TabsTrigger value="agents">{t("Agents")}</TabsTrigger>
           <TabsTrigger value="activity">{t("Activity")}</TabsTrigger>
           <TabsTrigger value="silk">{t("Silk")}</TabsTrigger>
           <TabsTrigger value="inbox">{t("Inbox")}</TabsTrigger>
           <TabsTrigger value="budget">{t("Budget")}</TabsTrigger>
           <TabsTrigger value="stats">{t("Stats")}</TabsTrigger>
         </TabsList>
+        <TabsContent value="agents">
+          <Agents jobId={id} />
+        </TabsContent>
         <TabsContent value="activity">
           <Activity jobId={id} />
         </TabsContent>

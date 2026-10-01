@@ -323,3 +323,42 @@ export const Device = z.object({
   revokedAt: Timestamp.nullable(),
 });
 export type Device = z.infer<typeof Device>;
+
+// ── Agent sessions (Checkpoint 1 → F1-3) ───────────────────────────
+
+/** One Leg session of a job: a task's attempt, or one of The Eye's reasoning calls. */
+export const SessionView = z.object({
+  id: Id,
+  jobId: Id.nullable(),
+  taskId: Id.nullable(),
+  taskTitle: z.string().nullable(),
+  /** "task", or The Eye's call ("plan", "interview", "classify"…). */
+  purpose: z.string(),
+  legId: Id,
+  legName: z.string(),
+  model: z.string(),
+  effort: z.string().nullable(),
+  startedAt: Timestamp,
+  endedAt: Timestamp.nullable(),
+  endReason: z.string().nullable(),
+  tokens: z.number().int().nonnegative(),
+});
+export type SessionView = z.infer<typeof SessionView>;
+
+/** A readable line of a session's log: text is joined, tools are summarised. */
+export const SessionLogEntry = z.object({
+  at: Timestamp,
+  kind: z.enum(["text", "tool", "result", "permission", "question", "turn", "end"]),
+  text: z.string(),
+  tool: z.string().optional(),
+  ok: z.boolean().optional(),
+});
+export type SessionLogEntry = z.infer<typeof SessionLogEntry>;
+
+export const SessionLogPage = z.object({
+  entries: z.array(SessionLogEntry),
+  /** Pass back as `after` to read only what came since. */
+  next: z.number().int().nonnegative(),
+  live: z.boolean(),
+});
+export type SessionLogPage = z.infer<typeof SessionLogPage>;

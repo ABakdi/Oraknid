@@ -924,3 +924,38 @@ describe("auto approval (ADR-014, Checkpoint 1)", () => {
     ]);
   });
 });
+
+describe("each agent's output (Checkpoint 1 → F1-3)", () => {
+  it("lists a job's sessions and reads what each said and did, from where I left off", async () => {
+    const { api, id } = await eye((t) =>
+      task(t) === "Write hello.sh" && t.turn === 1
+        ? [
+            { say: "Writing the script now." },
+            { write: "hello.sh", content: "echo hi\n" },
+            { run: "sh hello.sh" },
+            { say: "DONE" },
+          ]
+        : good(t),
+    );
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    const sessions = await api.sessions.list({ jobId: id });
+    const hello = sessions.find((s) => s.taskTitle === "Write hello.sh");
+    expect(hello).toMatchObject({
+      purpose: "task",
+      legName: "Claude A",
+      endedAt: expect.any(Number),
+    });
+    const page = await api.sessions.log({ id: hello?.id as string, after: 0 });
+    expect(page.live).toBe(false);
+    const kinds = page.entries.map((e) => e.kind);
+    expect(kinds).toContain("tool");
+    expect(page.entries.find((e) => e.kind === "text")?.text).toContain("Writing the script now.");
+    expect(page.entries.some((e) => e.kind === "tool" && e.text.includes("sh hello.sh"))).toBe(
+      true,
+    );
+    // Reading again from `next` gives nothing new.
+    expect((await api.sessions.log({ id: hello?.id as string, after: page.next })).entries).toEqual(
+      [],
+    );
+  });
+});

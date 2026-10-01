@@ -18,6 +18,8 @@ import {
   ProjectView,
   PushSubscriptionInput,
   QuietHours,
+  SessionLogPage,
+  SessionView,
   SilkEntry,
   SilkKind,
   SystemStatus,
@@ -30,13 +32,16 @@ import {
   type ServiceManager,
 } from "@oraknid/os";
 import { ORPCError, os } from "@orpc/server";
-import { asc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { AuditQuery, searchAudit } from "../audit/audit.ts";
 import type { Devices } from "../auth/devices.ts";
 import {
   attempts as attemptsTable,
   jobs as jobsTable,
+  legModels,
+  legs as legsTable,
+  sessions as sessionsTable,
   taskEdges,
   tasks as tasksTable,
 } from "../db/schema.ts";
@@ -57,6 +62,7 @@ import {
 import { GlobalPolicy, readGlobalPolicy, writeGlobalPolicy } from "../eye/policy.ts";
 import type { InboxStore } from "../inbox/store.ts";
 import type { LegRegistry } from "../legs/registry.ts";
+import { readSessionLog } from "../legs/session-log.ts";
 import type { Notifications } from "../notify/notifications.ts";
 import type { Secrets } from "../os/secrets.ts";
 import type { Paths } from "../paths.ts";
@@ -643,6 +649,55 @@ export const router = {
     answer: base
       .input(z.object({ id: z.string(), answer: z.string().min(1) }))
       .handler(({ context: c, input }) => guard(() => c.inbox.answer(input.id, input.answer))),
+  },
+  /** Each agent's sessions and what they did (Checkpoint 1 → F1-3). */
+  sessions: {
+    list: base
+      .input(z.object({ jobId: z.string() }))
+      .output(z.array(SessionView))
+      .handler(({ context: c, input }) =>
+        c.jobs.db
+          .select({
+            s: sessionsTable,
+            taskTitle: tasksTable.title,
+            legName: legsTable.name,
+            model: legModels.displayName,
+          })
+          .from(sessionsTable)
+          .innerJoin(legsTable, eq(legsTable.id, sessionsTable.legId))
+          .innerJoin(legModels, eq(legModels.id, sessionsTable.legModelId))
+          .leftJoin(tasksTable, eq(tasksTable.id, sessionsTable.taskId))
+          .where(eq(sessionsTable.jobId, input.jobId))
+          .orderBy(desc(sessionsTable.startedAt), desc(sessionsTable.id))
+          .all()
+          .map(({ s, taskTitle, legName, model }) => ({
+            id: s.id,
+            jobId: s.jobId,
+            taskId: s.taskId,
+            taskTitle,
+            purpose: s.attemptId?.startsWith("eye:") ? s.attemptId.slice(4) : "task",
+            legId: s.legId,
+            legName,
+            model,
+            effort: s.effort,
+            startedAt: s.startedAt,
+            endedAt: s.endedAt,
+            endReason: s.endReason,
+            tokens: s.inputTokens + s.outputTokens + s.cacheWriteTokens,
+          })),
+      ),
+    log: base
+      .input(z.object({ id: z.string(), after: z.number().int().nonnegative().default(0) }))
+      .output(SessionLogPage)
+      .handler(({ context: c, input }) => {
+        const s = c.jobs.db
+          .select()
+          .from(sessionsTable)
+          .where(eq(sessionsTable.id, input.id))
+          .get();
+        if (!s) throw new ORPCError("NOT_FOUND", { message: "No such session." });
+        return { ...readSessionLog(s.logFile, input.after), live: s.endedAt === null };
+      }),
   },
   metrics: {
     recent: base
