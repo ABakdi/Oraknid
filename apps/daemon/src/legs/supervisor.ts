@@ -119,13 +119,31 @@ export class LegSupervisor {
       onPermission: req.onPermission,
     });
 
-    this.#live.set(id, { id, legId: leg.id, label: `${leg.name} · ${model.displayName}`, session });
+    // Killing through the supervisor records the end itself: after a kill nobody may read the stream's last event.
+    const supervised: LegSession = {
+      ...session,
+      kill: async () => {
+        await session.kill();
+        this.#end(id, "killed", null);
+        this.#live.delete(id);
+      },
+    };
+    this.#live.set(id, {
+      id,
+      legId: leg.id,
+      label: `${leg.name} · ${model.displayName}`,
+      session: supervised,
+    });
     this.#publish(req, leg.id, "session.started", {
       sessionId: id,
       model: model.model,
       effort: req.effort,
     });
-    return { id, session, events: this.#pump(id, req, leg.id, model.id, session, logFile) };
+    return {
+      id,
+      session: supervised,
+      events: this.#pump(id, req, leg.id, model.id, session, logFile),
+    };
   }
 
   /** Tees the session's events: log, database, bus, then the caller. */

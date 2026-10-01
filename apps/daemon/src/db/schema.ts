@@ -15,6 +15,8 @@ const json = <T>(name: string) => text(name, { mode: "json" }).$type<T>();
 
 export const projects = sqliteTable("projects", {
   id: text("id").primaryKey(),
+  /** A shadow repo holds checkpoints when the folder is not a git repo. */
+  shadow: integer("shadow", { mode: "boolean" }).notNull().default(false),
   name: text("name").notNull(),
   workspacePath: text("workspace_path").notNull().unique(),
   isGitRepo: integer("is_git_repo", { mode: "boolean" }).notNull(),
@@ -60,6 +62,18 @@ export const jobs = sqliteTable(
     pauseReason: text("pause_reason"),
     blockedReason: text("blocked_reason"),
     webVersion: integer("web_version").notNull().default(0),
+    /** The job's worktree and branch (Sandboxing → Worktrees). */
+    worktree: text("worktree"),
+    branch: text("branch"),
+    /** Job-level verification commands. */
+    verify: json<string[]>("verify").notNull().default([]),
+    unsandboxed: integer("unsandboxed", { mode: "boolean" }).notNull().default(false),
+    /** Gates I waived for this job (Approvals → Overrides). */
+    waived: json<string[]>("waived").notNull().default([]),
+    /** A job blocked on quota resumes on its own at this time (Jobs-and-Projects → Blocked). */
+    blockedUntil: integer("blocked_until"),
+    /** Job-level verification rounds so far (each failed round replans). */
+    verifyRound: integer("verify_round").notNull().default(0),
     /** The active state a paused or waiting job returns to. */
     resumeState: text("resume_state"),
     createdAt: integer("created_at").notNull(),
@@ -90,6 +104,19 @@ export const tasks = sqliteTable(
     attemptCount: integer("attempt_count").notNull().default(0),
     budget: json<unknown>("budget"),
     leaseUntil: integer("lease_until"),
+    /** Plan order, and the plan's own key for the task. */
+    position: integer("position").notNull().default(0),
+    planKey: text("plan_key"),
+    /** Why the router chose its Leg model, for the UI. */
+    routing: json<unknown>("routing"),
+    /** I pinned it to a Leg model. */
+    pinnedModelId: text("pinned_model_id"),
+    /** I took it over: Oraknid leaves its scope alone (BR-18). */
+    ownerHeld: integer("owner_held", { mode: "boolean" }).notNull().default(false),
+    /** Escalation state across attempts (Drift-Control, ADR-013). */
+    stepUp: integer("step_up").notNull().default(0),
+    avoid: json<string[]>("avoid").notNull().default([]),
+    escalation: integer("escalation").notNull().default(0),
   },
   (t) => [index("tasks_job").on(t.jobId), index("tasks_state").on(t.state)],
 );

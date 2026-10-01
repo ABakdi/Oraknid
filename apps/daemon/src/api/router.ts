@@ -3,12 +3,16 @@ import {
   DoctorCheck,
   EmailSettings,
   InboxItem,
+  JobView,
   LegView,
   MetricsSample,
+  NewJob,
   NewLeg,
+  NewProject,
   NotificationChannel,
   NotificationSettings,
   ProfileOverrides,
+  ProjectView,
   PushSubscriptionInput,
   SilkEntry,
   SilkKind,
@@ -21,7 +25,9 @@ import {
   type ServiceManager,
 } from "@oraknid/os";
 import { ORPCError, os } from "@orpc/server";
+import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
+import { jobs as jobsTable, taskEdges, tasks as tasksTable } from "../db/schema.ts";
 import { runDoctor } from "../doctor.ts";
 import type { JobStore } from "../engine/jobs.ts";
 import type { JobRunner } from "../engine/runner.ts";
@@ -31,8 +37,11 @@ import type { LegRegistry } from "../legs/registry.ts";
 import type { Notifications } from "../notify/notifications.ts";
 import type { Secrets } from "../os/secrets.ts";
 import type { Paths } from "../paths.ts";
+import { writeSetting } from "../settings.ts";
 import type { SilkStore } from "../silk/store.ts";
+import type { SkillStore } from "../skills/store.ts";
 import { VERSION } from "../version.ts";
+import type { Projects } from "../workspace/projects.ts";
 
 export interface ApiContext {
   startedAt: number;
@@ -51,12 +60,44 @@ export interface ApiContext {
   health: { check(id: string): Promise<void> };
   silk: SilkStore;
   inbox: InboxStore;
+  projects: Projects;
+  skills: SkillStore;
 }
 
 const base = os.$context<ApiContext>();
 
 /** Errors carry a sentence for the UI (BR-17). */
 const userError = (message: string) => new ORPCError("BAD_REQUEST", { message });
+
+function jobView(c: ApiContext, id: string): JobView {
+  const job = c.jobs.require(id);
+  const edges = c.jobs.db.select().from(taskEdges).all();
+  const tasks = c.jobs.db
+    .select()
+    .from(tasksTable)
+    .where(eq(tasksTable.jobId, id))
+    .orderBy(asc(tasksTable.position))
+    .all()
+    .map((t) => ({
+      id: t.id,
+      jobId: t.jobId,
+      title: t.title,
+      instructions: t.instructions,
+      dependsOn: edges.filter((e) => e.taskId === t.id).map((e) => e.dependsOn),
+      kind: t.kind,
+      scope: t.scope,
+      verify: t.verify,
+      requiredCapabilities: t.requiredCapabilities,
+      difficulty: t.difficulty,
+      state: t.state,
+      assignedLegId: t.assignedLegId,
+      assignedModelId: t.assignedModelId,
+      effort: t.effort,
+      attemptCount: t.attemptCount,
+      budget: null,
+    }));
+  return JobView.parse({ ...job, tasks, worktree: job.worktree, branch: job.branch });
+}
 
 /** Turns a refusal (an illegal move, an unknown job) into a sentence for the UI. */
 async function guard<T>(fn: () => Promise<T> | T): Promise<T> {
@@ -100,8 +141,47 @@ export const router = {
       }
     }),
   },
+  projects: {
+    create: base
+      .input(NewProject)
+      .output(ProjectView)
+      .handler(({ context: c, input }) =>
+        guard(() => ({ ...c.projects.create(input), jobCount: 0 })),
+      ),
+    list: base.output(z.array(ProjectView)).handler(({ context: c }) => c.projects.list()),
+  },
+  settings: {
+    /** The Leg model The Eye borrows for reasoning (first-run setup); null lets routing choose. */
+    setEyeLeg: base
+      .input(z.object({ legModelId: z.string().nullable() }))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          if (input.legModelId && !c.registry.model(input.legModelId))
+            throw new Error(`No Leg model ${input.legModelId}.`);
+          writeSetting(c.jobs.db, "eye.legModelId", z.string().nullable(), input.legModelId);
+        }),
+      ),
+  },
   jobs: {
-    // Creating jobs arrives with The Eye (M1.6) and the job form (M1.8).
+    create: base
+      .input(NewJob)
+      .output(z.object({ id: z.string() }))
+      .handler(({ context: c, input }) => guard(() => ({ id: c.projects.createJob(input) }))),
+    start: base
+      .input(z.object({ id: z.string() }))
+      .handler(({ context: c, input }) => guard(() => c.runner.start(input.id))),
+    get: base
+      .input(z.object({ id: z.string() }))
+      .output(JobView)
+      .handler(({ context: c, input }) => guard(() => jobView(c, input.id))),
+    list: base.output(z.array(JobView)).handler(({ context: c }) =>
+      c.jobs.db
+        .select({ id: jobsTable.id })
+        .from(jobsTable)
+        .orderBy(asc(jobsTable.id))
+        .all()
+        .map((j) => jobView(c, j.id)),
+    ),
     pause: base
       .input(z.object({ id: z.string(), reason: z.string().optional() }))
       .handler(({ context: c, input }) =>

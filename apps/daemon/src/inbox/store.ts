@@ -67,6 +67,21 @@ export class InboxStore {
     return this.db.select().from(inboxItems).where(eq(inboxItems.id, id)).get();
   }
 
+  /** Takes back a question nobody needs answered any more (the attempt that asked has ended). */
+  withdraw(id: string) {
+    this.bus.atomically(() => {
+      const item = this.get(id);
+      if (!item || item.state !== "open") return;
+      this.db.update(inboxItems).set({ state: "withdrawn" }).where(eq(inboxItems.id, id)).run();
+      this.bus.publish({
+        type: "inbox.withdrawn",
+        topic: "inbox",
+        jobId: item.jobId,
+        payload: { id },
+      });
+    });
+  }
+
   answer(id: string, answer: string, deviceId: string | null = null) {
     this.bus.atomically(() => {
       const item = this.get(id);

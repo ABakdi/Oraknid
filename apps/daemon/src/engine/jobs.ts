@@ -10,7 +10,7 @@ export type JobRow = typeof jobs.$inferSelect;
 /** Job state changes: checked against the life cycle, committed with their event. */
 export class JobStore {
   constructor(
-    private readonly db: Db,
+    readonly db: Db,
     private readonly bus: EventBus,
     private readonly now: () => number = Date.now,
   ) {}

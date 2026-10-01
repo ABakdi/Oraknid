@@ -167,6 +167,9 @@ describe("sessions", () => {
     // Its process is measured.
     expect(d.supervisor.watched().map((w) => w.id)).toEqual([s.id]);
     await s.session.kill();
+    // Killed by its owner: recorded as killed, not left for recovery to call a crash.
+    expect(d.db.select().from(sessions).get()).toMatchObject({ endReason: "killed" });
+    expect(d.supervisor.watched()).toEqual([]);
   });
 
   it("marks the Leg rate-limited until its window resets, and refuses new sessions meanwhile", async () => {

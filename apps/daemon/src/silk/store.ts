@@ -93,15 +93,15 @@ export class SilkStore {
     return current(this.all(jobId));
   }
 
-  /** The mirror lives in the job's workspace. (Worktrees take over in M1.6.) */
+  /** The mirror lives in the job's worktree, or its project folder before there is one. */
   mirrorDir(jobId: string): string | null {
     const row = this.db
-      .select({ path: projects.workspacePath })
+      .select({ path: projects.workspacePath, worktree: jobs.worktree })
       .from(jobs)
       .innerJoin(projects, eq(jobs.projectId, projects.id))
       .where(eq(jobs.id, jobId))
       .get();
-    return row ? join(row.path, ".oraknid", "silk") : null;
+    return row ? join(row.worktree ?? row.path, ".oraknid", "silk") : null;
   }
 
   /**

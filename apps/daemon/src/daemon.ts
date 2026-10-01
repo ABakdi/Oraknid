@@ -7,7 +7,9 @@ import { createClaudeCodeAdapter } from "@oraknid/leg-claude-code";
 import { createOpenAICompatibleAdapter } from "@oraknid/leg-openai-compatible";
 import type { LegAdapter } from "@oraknid/leg-sdk";
 import { RPCHandler } from "@orpc/server/node";
+import { eq } from "drizzle-orm";
 import express from "express";
+import { z } from "zod";
 import { router } from "./api/router.ts";
 import { closeDatabase, openDatabase } from "./db/open.ts";
 import { jobs as jobsTable } from "./db/schema.ts";
@@ -17,6 +19,8 @@ import { StepJournal } from "./engine/journal.ts";
 import { recover } from "./engine/recovery.ts";
 import { type JobProgram, JobRunner } from "./engine/runner.ts";
 import { EventBus } from "./events/bus.ts";
+import { type EyeBrain, PoolLegBrain } from "./eye/brain.ts";
+import { eyeProgram } from "./eye/program.ts";
 import { isLocalRequest } from "./http/guard.ts";
 import { InboxStore } from "./inbox/store.ts";
 import { startHealthChecks } from "./legs/health.ts";
@@ -29,8 +33,11 @@ import { countActiveJobs, createInhibitController } from "./os/inhibit-controlle
 import { startMetricsLoop } from "./os/metrics-loop.ts";
 import { Secrets } from "./os/secrets.ts";
 import { DEFAULT_HOST, DEFAULT_PORT, type Paths } from "./paths.ts";
+import { readSetting } from "./settings.ts";
 import { SilkStore } from "./silk/store.ts";
+import { SkillStore } from "./skills/store.ts";
 import { VERSION } from "./version.ts";
+import { Projects } from "./workspace/projects.ts";
 
 export interface DaemonOptions {
   paths: Paths;
@@ -46,17 +53,17 @@ export interface DaemonOptions {
   /** OS pieces to replace (tests). */
   os?: Partial<OsDeps>;
   metricsIntervalMs?: number;
-  /** What runs a job. The Eye takes this over in M1.6. */
+  /** What runs a job: The Eye, unless a test replaces it. */
   program?: JobProgram;
+  /** The Eye's reasoning (tests replace it). */
+  brain?: EyeBrain;
+  stallCheckMs?: number;
   /** Leg adapters by kind (tests replace them). */
   adapters?: Partial<Record<LegKind, LegAdapter>>;
   healthIntervalMs?: number;
 }
 
-/** Until The Eye exists (M1.6), a started job stops with an honest reason. */
-const notYet: JobProgram = async () => {
-  throw new Error("Oraknid cannot plan jobs yet: The Eye arrives in milestone M1.6.");
-};
+export const EYE_LEG_SETTING = "eye.legModelId";
 
 export interface RuntimeInfo {
   pid: number;
@@ -100,6 +107,16 @@ export async function startDaemon(options: DaemonOptions) {
   const inbox = new InboxStore(db, bus, now);
   const effects = new SideEffects(db, bus, inbox, now);
   const silk = new SilkStore(db, bus, inbox, now);
+  const skills = new SkillStore(db, now);
+  skills.seedBuiltIns();
+  const projectsService = new Projects(db, bus, skills, now);
+  const brain =
+    options.brain ??
+    new PoolLegBrain({
+      registry,
+      supervisor,
+      pinnedModelId: () => readSetting(db, EYE_LEG_SETTING, z.string().nullable(), null),
+    });
   // My answer to "import my edits?" goes back to Silk.
   bus.subscribe((e) => {
     if (e.type !== "inbox.answered") return;
@@ -116,7 +133,23 @@ export async function startDaemon(options: DaemonOptions) {
     effects,
     inbox,
     bus,
-    program: options.program ?? notYet,
+    program:
+      options.program ??
+      eyeProgram({
+        db,
+        bus,
+        silk,
+        inbox,
+        skills,
+        registry,
+        supervisor,
+        sandbox: os.sandbox,
+        brain,
+        legsDir: paths.legs,
+        tmpDir: join(paths.dataDir, "tmp"),
+        now,
+        ...(options.stallCheckMs ? { stallCheckMs: options.stallCheckMs } : {}),
+      }),
   });
   const recovery = await recover({
     db,
@@ -177,6 +210,17 @@ export async function startDaemon(options: DaemonOptions) {
     if (e.type === "job.state") void inhibit.reconcile();
   });
 
+  // A job blocked on quota resumes on its own once the window resets (Jobs-and-Projects → Blocked).
+  const blockedTimer = setInterval(() => {
+    for (const j of db.select().from(jobsTable).where(eq(jobsTable.state, "blocked")).all()) {
+      if (j.blockedUntil && j.blockedUntil <= now()) {
+        db.update(jobsTable).set({ blockedUntil: null }).where(eq(jobsTable.id, j.id)).run();
+        void runner.resume(j.id).catch((e) => console.error("auto-resume failed", e));
+      }
+    }
+  }, 30_000);
+  blockedTimer.unref();
+
   // Hand edits to the mirror are noticed within 30 s.
   const mirrorTimer = setInterval(() => {
     for (const { id } of db.select({ id: jobsTable.id }).from(jobsTable).all()) {
@@ -219,6 +263,8 @@ export async function startDaemon(options: DaemonOptions) {
         health,
         silk,
         inbox,
+        projects: projectsService,
+        skills,
       },
     });
     if (!matched) next();
@@ -264,6 +310,7 @@ export async function startDaemon(options: DaemonOptions) {
       await runner.shutdown();
       health.stop();
       clearInterval(mirrorTimer);
+      clearInterval(blockedTimer);
       await supervisor.killAll();
       await inhibit.stop();
       await live.close();
@@ -295,6 +342,8 @@ export async function startDaemon(options: DaemonOptions) {
     supervisor,
     health,
     silk,
+    skills,
+    projects: projectsService,
     inbox,
     effects,
     recovery,

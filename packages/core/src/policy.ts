@@ -90,8 +90,8 @@ export const GATED: { action: GatedAction; pattern: RegExp }[] = [
 
 /** Programs a coding task normally runs. Anything else is unknown. */
 const ALLOWED_PROGRAMS = new Set(
-  `git node npm npx pnpm yarn bun deno tsc tsx vitest jest eslint biome prettier python python3 pip pytest uv cargo rustc go make cmake
-   ls cat head tail wc grep rg find fd sed awk sort uniq cut tr xargs diff patch echo printf test true false pwd cd mkdir touch cp mv rm ln
+  `sh bash dash zsh [ git node npm npx pnpm yarn bun deno tsc tsx vitest jest eslint biome prettier python python3 pip pytest uv cargo rustc go make cmake
+   ls cat head tail wc grep rg find fd sed awk sort uniq cut tr xargs diff patch echo printf test true false pwd cd mkdir mktemp touch cp mv rm ln
    chmod which env date basename dirname realpath readlink jq sleep tee stat file du df`.split(
     /\s+/,
   ),
@@ -125,11 +125,21 @@ const SHELL_TOOLS = new Set(["Bash", "run_command"]);
 
 /** The programs a command line runs: the first word of every piece between ; && || | ( ). */
 export function programsOf(command: string): string[] {
-  return command
-    .split(/;|&&|\|\||\||\(|\)|`|\$\(/)
-    .map((part) => part.trim().replace(/^(\w+=\S*\s+)*/, ""))
-    .filter(Boolean)
-    .map((part) => (part.split(/\s+/)[0] ?? "").replace(/^.*\//, ""));
+  return (
+    command
+      .split(/;|&&|\|\||\||\(|\)|`|\$\(/)
+      .map((part) =>
+        part
+          .trim()
+          .replace(/^["']+/, "")
+          .trim()
+          .replace(/^(\w+=\S*\s+)*/, ""),
+      )
+      .map((part) => part.split(/\s+/)[0] ?? "")
+      // What's left of a quoted string or a test (`" = "hi" ]`) is not a program.
+      .filter((word) => /^[\w./[][\w./+-]*$/.test(word))
+      .map((word) => word.replace(/^.*\//, ""))
+  );
 }
 
 const insideTree = (worktree: string, path: string) =>

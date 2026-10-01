@@ -78,11 +78,6 @@ export function chooseEffort(
   return levels[Math.min(levels.length - 1, at + stepUp)] ?? null;
 }
 
-/** How strong a model and effort are together, to compare against step-ups. */
-const tierOf = (c: RouteCandidate, effort: string | null) =>
-  RANK[c.profile.maxDifficulty] * 3 +
-  Math.max(0, c.effortLevels.indexOf(effort ?? "")) / Math.max(1, c.effortLevels.length - 1);
-
 export function route(task: RouteTask, candidates: RouteCandidate[], o: RouteOptions): RouteResult {
   const scarceBelow = o.scarceBelow ?? 0.25;
   const now = o.now ?? Date.now();
