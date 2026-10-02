@@ -156,6 +156,14 @@ export function createClaudeCodeAdapter(deps: { query?: QueryFn } = {}): LegAdap
       });
       try {
         const [models, account] = await Promise.all([q.supportedModels(), q.accountInfo()]);
+        // Answering is not being logged in: an account with neither email nor plan is logged out.
+        if (!account.email && !account.subscriptionType && !account.apiKeySource)
+          return {
+            ok: false,
+            detail: "Not logged in: press Log in on its card.",
+            models: [],
+            features,
+          };
         return {
           ok: true,
           detail: `Signed in${account.email ? ` as ${account.email}` : ""}${
@@ -322,7 +330,13 @@ export function createClaudeCodeAdapter(deps: { query?: QueryFn } = {}): LegAdap
             } else if (m.subtype === "error_max_turns") reason = "max_turns";
             else if (m.subtype !== "success" || m.is_error) {
               reason = "error";
-              error = "errors" in m && Array.isArray(m.errors) ? m.errors.join("; ") : m.subtype;
+              // A "success" that is an error carries its reason in the result text ("Not logged in…").
+              error =
+                "errors" in m && Array.isArray(m.errors) && m.errors.length
+                  ? m.errors.join("; ")
+                  : m.subtype === "success" && m.result
+                    ? m.result
+                    : m.subtype;
             }
             const text = m.subtype === "success" ? m.result || turnText : turnText;
             events.push({ type: "turn.ended", reason, text, error });

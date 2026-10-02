@@ -2,7 +2,7 @@ import type { Options } from "@anthropic-ai/claude-agent-sdk";
 import { emptyUsage, type SessionStart } from "@oraknid/leg-sdk";
 import { legContract, readUntil } from "@oraknid/leg-sdk/contract";
 import { describe, expect, it } from "vitest";
-import { createClaudeCodeAdapter, toRequest } from "./adapter.ts";
+import { createClaudeCodeAdapter, type QueryFn, toRequest } from "./adapter.ts";
 import { fakeQuery } from "./fake-query.ts";
 
 const leg = {
@@ -99,6 +99,16 @@ describe("Claude Code adapter", () => {
       ["opus", ["low", "medium", "high"]],
       ["haiku", []],
     ]);
+  });
+
+  it("says a logged-out account is not logged in, even though Claude Code answers (seen live)", async () => {
+    const logged = fakeQuery("reply");
+    const out: QueryFn = (params) => {
+      const q = logged(params);
+      return Object.assign(q, { accountInfo: async () => ({}) });
+    };
+    const p = await createClaudeCodeAdapter({ query: out }).probe(leg, null);
+    expect(p).toMatchObject({ ok: false, detail: "Not logged in: press Log in on its card." });
   });
 
   it("refuses to probe a Leg with no config directory, and says what to do", async () => {
