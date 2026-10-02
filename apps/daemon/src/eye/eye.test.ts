@@ -107,6 +107,10 @@ async function eye(
     ) => { accepted: boolean; reason: string; missing: string[] };
     repair?: (command: string) => { broken: boolean; command: string; reason: string };
     pickSkill?: (skills: { id: string; name: string }[]) => { skillId: string; reason: string };
+    helper?: (prompt: string) => {
+      reply: string;
+      actions: { name: string; input: Record<string, unknown>; summary: string }[];
+    };
     /** Leave the job a draft: the test starts it. */
     draft?: boolean;
     /** The machine's memory use, as a share. */
@@ -132,6 +136,7 @@ async function eye(
       return o.replan;
     },
     summarize: async () => ({ title: "s", body: "s" }),
+    helperTurn: async ({ prompt }) => o.helper?.(prompt) ?? { reply: "ok", actions: [] },
     pickSkill: async ({ skills }) =>
       o.pickSkill?.(skills) ?? { skillId: skills[0]?.id ?? "", reason: "the first fits" },
     repairCheck: async ({ command }) =>
@@ -1054,6 +1059,91 @@ describe("the interview (M1.7)", () => {
     const silk = await api.silk.list({ jobId: id });
     expect(silk.find((e) => e.kind === "interview-answer")?.body).toContain("**My answer:** 1. hi");
     await expect(api.jobs.draftTalk({ id, text: "more" })).rejects.toThrow(/has started/);
+  });
+
+  it("the helper does what I ask through the API, and asks me before starting a job (ADR-024)", async () => {
+    const parent = mkdtempSync(join(tmpdir(), "oraknid-helper-"));
+    let turn = 0;
+    const { api } = await eye(good, {
+      draft: true,
+      plan: { ...HELLO, tasks: [HELLO.tasks[0] as WebPlan["tasks"][number]], jobVerify: [] },
+      helper: (prompt) => {
+        turn++;
+        if (turn === 1)
+          return {
+            reply: "Making the project.",
+            actions: [
+              {
+                name: "create_project",
+                input: { source: { kind: "new-folder", parent, name: "hello" } },
+                summary: "A new folder, hello",
+              },
+            ],
+          };
+        const project = /- hello \(id (\w+)\)/.exec(prompt)?.[1];
+        const draft = /"Say hi" \(id (\w+)\) draft/.exec(prompt)?.[1];
+        if (turn === 2)
+          return {
+            reply: "A draft for it.",
+            actions: [
+              {
+                name: "create_draft",
+                input: { projectId: project, goal: "Say hi" },
+                summary: "A draft: Say hi",
+              },
+              { name: "no_such_thing", input: {}, summary: "nonsense" },
+            ],
+          };
+        return {
+          reply: "Start it? Confirm below.",
+          actions: [{ name: "start_job", input: { jobId: draft }, summary: "Start Say hi" }],
+        };
+      },
+    });
+    const settle = async (n: number) => {
+      const end = Date.now() + 5000;
+      for (;;) {
+        const c = await api.helper.conversation();
+        if (c.length >= n && !(await api.helper.thinking())) return c;
+        if (Date.now() > end) throw new Error(JSON.stringify(c));
+        await new Promise((r) => setTimeout(r, 20));
+      }
+    };
+    await api.helper.send({
+      text: "Make me a project called hello in my scratch folder, and a job that says hi",
+    });
+    // It goes on by itself: the project, then (seeing its id) the draft, in one exchange.
+    const one = await settle(3);
+    expect(one[1]?.actions[0]).toMatchObject({
+      name: "create_project",
+      state: "done",
+      link: "/projects",
+    });
+    expect(one[2]?.actions[0]).toMatchObject({ name: "create_draft", state: "done" });
+    expect(one[2]?.actions[0]?.link).toMatch(/^\/new\//);
+    expect(one[2]?.actions[1]).toMatchObject({
+      state: "failed",
+      result: 'No action "no_such_thing".',
+    });
+    const two = one;
+    await api.helper.send({ text: "start it" });
+    const three = await settle(5);
+    expect(three[4]?.actions[0]).toMatchObject({ name: "start_job", state: "proposed" });
+    // Nothing started until I confirm.
+    const jobId = String(two[2]?.actions[0]?.link ?? "")
+      .split("/")
+      .at(-1) as string;
+    expect((await api.jobs.get({ id: jobId })).state).toBe("draft");
+    const done = await api.helper.decide({
+      messageId: three[4]?.id as string,
+      index: 0,
+      confirm: true,
+    });
+    expect(done).toMatchObject({ state: "done", link: `/jobs/${jobId}` });
+    expect((await until(api, jobId, ["completed", "blocked"])).state).toBe("completed");
+    await expect(
+      api.helper.decide({ messageId: three[4]?.id as string, index: 0, confirm: true }),
+    ).rejects.toThrow(/already settled/);
   });
 
   it("deletes a draft I don't want, with all it had", async () => {

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
+import { HelperButton } from "@/components/helper";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -186,6 +187,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </nav>
         <main className="min-w-0 flex-1 overflow-y-auto px-3 pb-24 pt-4 md:px-6 md:pb-8">
           {children}
+          <HelperButton />
         </main>
       </div>
 

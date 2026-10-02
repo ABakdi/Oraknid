@@ -74,6 +74,8 @@ export interface EyeBrain {
     goal: string;
     skills: { id: string; name: string; description: string }[];
   }): Promise<SkillPick>;
+  /** The Oraknid helper's turn (ADR-024): a reply to me, and the actions to take. */
+  helperTurn(input: { cwd: string; prompt: string }): Promise<HelperTurn>;
   /** Several Silk entries in one shorter entry. */
   summarize(input: {
     jobId: string;
@@ -108,6 +110,23 @@ export const Evaluation = z.object({
   missing: z.array(z.string()).default([]),
 });
 export type Evaluation = z.infer<typeof Evaluation>;
+
+export const HelperTurn = z.object({
+  /** To me, in a few sentences, markdown. */
+  reply: z.string().min(1),
+  actions: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        input: z.record(z.string(), z.unknown()).default({}),
+        /** In plain words, what it does. */
+        summary: z.string().min(1),
+      }),
+    )
+    .max(5)
+    .default([]),
+});
+export type HelperTurn = z.infer<typeof HelperTurn>;
 
 export const SkillPick = z.object({
   skillId: z.string().min(1),
@@ -177,6 +196,7 @@ const KIND_OF: Record<string, DecisionKind> = {
   "repair-check": "judging",
   classify: "quick",
   "pick-skill": "quick",
+  helper: "quick",
   triage: "quick",
   summarize: "quick",
 };
@@ -379,6 +399,11 @@ ${i.criteria ? `# The method's own checks\nThe result must pass every one of the
     return this.#ask(i.jobId, i.cwd, "medium", ["review"], Evaluation, prompt, "evaluate");
   }
 
+  helperTurn(i: { cwd: string; prompt: string }) {
+    // Not a job's: its session belongs to none (an empty job id).
+    return this.#ask("", i.cwd, "medium", ["planning"], HelperTurn, i.prompt, "helper");
+  }
+
   pickSkill(i: {
     jobId: string;
     cwd: string;
@@ -561,7 +586,7 @@ When the message mixes several, pick what matters most and say in "reply" what y
       legId: pick.candidate.legId,
       legModelId: pick.candidate.legModelId,
       effort: pick.effort,
-      jobId,
+      jobId: jobId || null,
       taskId: null,
       attemptId: `eye:${call}`,
       cwd,
@@ -577,6 +602,14 @@ When the message mixes several, pick what matters most and say in "reply" what y
     });
     // One iterator for the whole conversation: leaving a for-await would close the stream.
     const events = session.events[Symbol.asyncIterator]();
+    // A call that hangs doesn't hold its caller forever: its session is killed past its limit.
+    const limitMs = LIMIT_MS[call] ?? 15 * 60_000;
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      void session.session.kill().catch(() => {});
+    }, limitMs);
+    timer.unref();
     try {
       let lastError = "";
       for (let tries = 0; tries < 2; tries++) {
@@ -592,10 +625,14 @@ When the message mixes several, pick what matters most and say in "reply" what y
             break;
           }
         }
+        if (timedOut)
+          throw new BrainFailed(
+            `The Eye's reasoning on ${pick.candidate.legName} took longer than ${Math.round(limitMs / 60_000)} min and was stopped.`,
+          );
         const parsed = parseJson(text, schema);
         const problems = parsed.ok ? check(parsed.value) : [];
         if (parsed.ok && problems.length === 0) {
-          if (!only) this.o.answered?.(jobId, call, model);
+          if (!only && jobId) this.o.answered?.(jobId, call, model);
           return { value: parsed.value, model, ms: Date.now() - started, firstTry: tries === 0 };
         }
         lastError = parsed.ok ? problems.join(" ") : parsed.error;
@@ -607,10 +644,19 @@ When the message mixes several, pick what matters most and say in "reply" what y
         `The Eye's reasoning gave no valid answer twice (${call}): ${lastError}`,
       );
     } finally {
+      clearTimeout(timer);
       await this.o.supervisor.close(session);
     }
   }
 }
+
+/** How long a reasoning call may take, by call; the rest get 15 minutes. */
+const LIMIT_MS: Record<string, number> = {
+  helper: 3 * 60_000,
+  classify: 3 * 60_000,
+  triage: 3 * 60_000,
+  "pick-skill": 3 * 60_000,
+};
 
 function planPrompt(i: PlanInput, extra: string | null): string {
   return [

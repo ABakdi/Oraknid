@@ -12,6 +12,8 @@ import {
   EyeMessage,
   EyeModels,
   FoundAgent,
+  HelperAction,
+  HelperMessage,
   InboxFilter,
   InboxItem,
   JobResult,
@@ -90,6 +92,7 @@ import {
   writeProjectPolicy,
 } from "../eye/policy.ts";
 import { conversation, talk } from "../eye/talk.ts";
+import type { Helper } from "../helper/service.ts";
 import type { InboxStore } from "../inbox/store.ts";
 import { discoverAgents } from "../legs/discover.ts";
 import type { LegLogins } from "../legs/login.ts";
@@ -152,6 +155,8 @@ export interface ApiContext {
   chats: Chats;
   /** GitHub through my token (ADR-023). */
   github: GitHub;
+  /** The Oraknid helper (ADR-024). */
+  helper: Helper;
   devices: Devices;
   brain: EyeBrain;
   /** Opens a folder on this machine (xdg-open). */
@@ -385,6 +390,25 @@ export const router = {
       .input(z.object({ id: z.string() }))
       .output(z.object({ jobs: z.number(), folder: z.string() }))
       .handler(({ context: c, input }) => guard(() => c.projects.remove(input.id, c.paths.logs))),
+  },
+  /** The Oraknid helper: what I ask in words, done through this API (ADR-024). */
+  helper: {
+    conversation: base
+      .output(z.array(HelperMessage))
+      .handler(({ context: c }) => c.helper.conversation()),
+    thinking: base.output(z.boolean()).handler(({ context: c }) => c.helper.thinking()),
+    send: base
+      .input(z.object({ text: z.string().min(1).max(8000) }))
+      .handler(({ context: c, input }) => guard(() => c.helper.send(input.text))),
+    decide: base
+      .input(
+        z.object({ messageId: z.string(), index: z.number().int().min(0), confirm: z.boolean() }),
+      )
+      .output(HelperAction)
+      .handler(({ context: c, input }) =>
+        guard(() => c.helper.decide(input.messageId, input.index, input.confirm)),
+      ),
+    clear: base.handler(({ context: c }) => guard(() => c.helper.clear())),
   },
   /** GitHub through a token I paste (ADR-023). */
   github: {

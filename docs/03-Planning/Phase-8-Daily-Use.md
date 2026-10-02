@@ -43,7 +43,8 @@ to a model or to ask Oraknid to do things for me.
 - [x] Chats kept, renamed, deleted
 
 ### M8.7 — The Oraknid helper
-- [ ] A floating chat at the bottom left that does things for me through Oraknid's own API: creating a project or a draft, changing settings, finding things; it asks what it needs, and asks before starting a job, creating a repo or deleting ([[ADR-024-Oraknid-Helper]])
+- [x] A floating chat at the bottom left that does things for me through Oraknid's own API: creating a project or a draft, changing settings, finding things; it asks what it needs, and asks before starting a job, creating a repo or deleting ([[ADR-024-Oraknid-Helper]])
+- [ ] Checked live 2026-10-02: from one sentence it made a project from a new folder, a draft in it, and proposed the start, which ran on my Confirm. Still to add: more of the API as actions (Chats, GitHub repos list, inbox answers)
 
 ## Exit criterion
 

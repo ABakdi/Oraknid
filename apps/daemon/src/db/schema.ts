@@ -45,6 +45,16 @@ export const skills = sqliteTable(
   (t) => [primaryKey({ columns: [t.id, t.version] })],
 );
 
+/** The Oraknid helper's conversation (ADR-024): what I asked, what it said and did. */
+export const helperMessages = sqliteTable("helper_messages", {
+  id: text("id").primaryKey(),
+  author: text("author", { enum: ["owner", "helper"] }).notNull(),
+  text: text("text").notNull(),
+  /** Its actions: done, failed, or waiting for my Confirm. */
+  actions: json<unknown[]>("actions").notNull(),
+  at: integer("at").notNull(),
+});
+
 /** Chats with my models (ADR-025): talk and research, attached projects read-only. */
 export const chats = sqliteTable("chats", {
   id: text("id").primaryKey(),

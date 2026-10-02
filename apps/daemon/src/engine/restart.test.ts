@@ -41,6 +41,7 @@ const brain = {
   summarize: async () => ({ title: "s", body: "s" }),
   repairCheck: async ({ command }) => ({ broken: false, command, reason: "kept" }),
   pickSkill: async ({ skills }) => ({ skillId: skills[0]?.id ?? "", reason: "first" }),
+  helperTurn: async () => ({ reply: "ok", actions: [] }),
   evaluate: async () => ({ accepted: true, reason: "ok", missing: [] }),
   triage: async () => {
     throw new Error("unused");

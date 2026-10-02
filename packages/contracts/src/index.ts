@@ -2,6 +2,7 @@ export * from "./chats.ts";
 export * from "./common.ts";
 export * from "./entities.ts";
 export * from "./events.ts";
+export * from "./helper.ts";
 export * from "./jobs.ts";
 export * from "./legs.ts";
 export * from "./live.ts";

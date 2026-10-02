@@ -41,6 +41,7 @@ import { startBudgetWatch } from "./eye/budgets.ts";
 import { EyeDecisions } from "./eye/decisions.ts";
 import { eyeProgram } from "./eye/program.ts";
 import { forgetGuidance, resumeConversations } from "./eye/talk.ts";
+import { Helper } from "./helper/service.ts";
 import { isLocalRequest } from "./http/guard.ts";
 import { InboxStore } from "./inbox/store.ts";
 import { startHealthChecks } from "./legs/health.ts";
@@ -227,6 +228,22 @@ export async function startDaemon(options: DaemonOptions) {
         now,
         ...(options.stallCheckMs ? { stallCheckMs: options.stallCheckMs } : {}),
       }),
+  });
+  // The Oraknid helper: what I ask in words, through Oraknid's own services (ADR-024).
+  const helper = new Helper({
+    db,
+    bus,
+    brain,
+    projects: projectsService,
+    github,
+    registry,
+    skills,
+    runner,
+    tools: toolRegistry,
+    drafts: { db, bus, silk, skills, brain, now },
+    logsDir: paths.logs,
+    workDir: join(paths.dataDir, "helper"),
+    now,
   });
   // Notifications start before recovery, so "Oraknid recovered" and its questions reach me (Audit 1 → D1-03).
   let url = "";
@@ -416,6 +433,7 @@ export async function startDaemon(options: DaemonOptions) {
         decisions,
         chats,
         github,
+        helper,
         devices,
         brain,
         openPath:

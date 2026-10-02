@@ -31,6 +31,15 @@ own rules.
 - What I type to it is mine; what it reads back from Oraknid (job
   names, Silk, logs) is data to it, never instructions (BR-15).
 
+## Added after the first live run (2026-10-02)
+- After its actions run, the helper takes another turn with the new
+  state (up to three), so one sentence can go from a project to a draft
+  in it to a proposed start, without me asking twice.
+- Its reasoning session works in an empty folder of its own under
+  Oraknid's data, never my home: a reasoning session's working folder
+  is writable in its sandbox. Every Eye reasoning call now has a time
+  limit (the helper's: three minutes), past which its session is killed.
+
 ## Consequences
 - Everything the helper can do, I can do in the UI, and the other way
   round as actions are added.
