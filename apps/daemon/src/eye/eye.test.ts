@@ -12,7 +12,15 @@ import { and, eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Router } from "../api/router.ts";
 import { type Daemon, startDaemon } from "../daemon.ts";
-import { eyeMessages, jobs, legs, sessions, silkEntries, tasks } from "../db/schema.ts";
+import {
+  eyeMessages,
+  jobs,
+  legs,
+  sessions,
+  sideEffects,
+  silkEntries,
+  tasks,
+} from "../db/schema.ts";
 import { resolvePaths } from "../paths.ts";
 import { fakeOs } from "../testing/fake-os.ts";
 import { type Action, scriptedLeg, type TurnContext } from "../testing/scripted-leg.ts";
@@ -314,6 +322,14 @@ describe("The Eye, end to end", () => {
                   args: { to: "boss@example.com" },
                 },
               },
+              // The same message again: never sent twice (BR-6).
+              {
+                mcp: {
+                  server: "oraknid-email",
+                  tool: "send_email",
+                  args: { to: "boss@example.com" },
+                },
+              },
               { write: "hello.sh", content: "echo hi\n" },
               { say: "DONE" },
             ]
@@ -351,6 +367,15 @@ describe("The Eye, end to end", () => {
     expect(leg.mcpResults[0]?.text).toContain("<untrusted source=");
     expect(leg.mcpResults[1]?.isError).toBe(false);
     expect(leg.mcpResults[1]?.text).toContain("sent to boss@example.com (1 sent)");
+    expect(leg.mcpResults[2]).toMatchObject({ isError: true });
+    expect(leg.mcpResults[2]?.text).toMatch(/already made in this job/);
+    expect(
+      d.db
+        .select()
+        .from(sideEffects)
+        .all()
+        .map((e) => [e.action, e.state]),
+    ).toEqual([["email.send_email", "performed"]]);
     const calls = d.bus
       .since(0, [`job:${id}`], 500)
       .filter((e) => e.type === "tool.called")
@@ -358,6 +383,7 @@ describe("The Eye, end to end", () => {
     expect(calls).toMatchObject([
       { tool: "email", name: "list_messages", allowed: true },
       { tool: "email", name: "send_email", allowed: true },
+      { tool: "email", name: "send_email", allowed: false },
     ]);
     expect((calls[0] as { flags?: string[] }).flags?.length).toBeGreaterThan(0);
   });

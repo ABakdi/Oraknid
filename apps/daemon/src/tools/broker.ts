@@ -32,7 +32,13 @@ export interface BrokerHooks {
   done(
     tool: ToolRow,
     name: string,
-    o: { allowed: boolean; ok: boolean; bytes: number; flags: string[] },
+    o: {
+      allowed: boolean;
+      ok: boolean;
+      bytes: number;
+      flags: string[];
+      args: Record<string, unknown>;
+    },
   ): void;
 }
 
@@ -51,6 +57,7 @@ interface Rpc {
   method?: string;
   params?: { name?: string; arguments?: Record<string, unknown> };
   result?: { content?: { type: string; text?: string }[]; isError?: boolean };
+  error?: { message?: string };
 }
 
 export class McpBroker {
@@ -136,7 +143,7 @@ export class McpBroker {
 
 /** Moves JSON-RPC lines between the Leg and the server, judging each tools/call on the way. */
 function relay(row: ToolRow, client: Socket, child: ChildProcess, hooks: BrokerHooks) {
-  const calls = new Map<number | string, string>();
+  const calls = new Map<number | string, { name: string; args: Record<string, unknown> }>();
   const toClient = (m: unknown) => {
     if (!client.destroyed) client.write(`${JSON.stringify(m)}\n`);
   };
@@ -149,9 +156,10 @@ function relay(row: ToolRow, client: Socket, child: ChildProcess, hooks: BrokerH
     }
     if (m.method === "tools/call" && m.id !== undefined) {
       const name = String(m.params?.name ?? "");
-      const verdict = await hooks.decide(row, name, m.params?.arguments ?? {});
+      const args = m.params?.arguments ?? {};
+      const verdict = await hooks.decide(row, name, args);
       if (!verdict.allow) {
-        hooks.done(row, name, { allowed: false, ok: false, bytes: 0, flags: [] });
+        hooks.done(row, name, { allowed: false, ok: false, bytes: 0, flags: [], args });
         toClient({
           jsonrpc: "2.0",
           id: m.id,
@@ -159,7 +167,7 @@ function relay(row: ToolRow, client: Socket, child: ChildProcess, hooks: BrokerH
         });
         return;
       }
-      calls.set(m.id, name);
+      calls.set(m.id, { name, args });
     }
     child.stdin?.write(`${line}\n`);
   });
@@ -170,16 +178,18 @@ function relay(row: ToolRow, client: Socket, child: ChildProcess, hooks: BrokerH
     } catch {
       return;
     }
-    const name = m.id !== undefined ? calls.get(m.id) : undefined;
-    if (name !== undefined && m.id !== undefined) {
+    const call = m.id !== undefined ? calls.get(m.id) : undefined;
+    if (call !== undefined && m.id !== undefined) {
+      const { name, args } = call;
       calls.delete(m.id);
       const content = m.result?.content ?? [];
       const text = content.map((c) => c.text ?? "").join("\n");
       hooks.done(row, name, {
         allowed: true,
-        ok: !m.result?.isError,
+        ok: !m.error && !m.result?.isError,
         bytes: text.length,
         flags: row.untrusted ? suspicious(text) : [],
+        args,
       });
       // What came from outside is data, never instructions (BR-15).
       if (row.untrusted && m.result)

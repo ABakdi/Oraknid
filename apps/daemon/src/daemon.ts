@@ -209,6 +209,7 @@ export async function startDaemon(options: DaemonOptions) {
         sandbox: os.sandbox,
         brain,
         tools: { registry: toolRegistry, broker },
+        effects,
         legsDir: paths.legs,
         tmpDir: join(paths.dataDir, "tmp"),
         now,

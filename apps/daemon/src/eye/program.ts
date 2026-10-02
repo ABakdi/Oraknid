@@ -14,6 +14,7 @@ import { and, asc, count, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "../db/open.ts";
 import { attempts, jobs, projects, steps, taskEdges, tasks } from "../db/schema.ts";
+import type { SideEffects } from "../engine/effects.ts";
 import { AwaitingOwner } from "../engine/effects.ts";
 import type { JobContext, JobProgram } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
@@ -55,6 +56,8 @@ export interface EyeDeps {
   brain: EyeBrain;
   /** Tools for skills (ADR-021). */
   tools?: { registry: ToolRegistry; broker: McpBroker };
+  /** The outbox, for a tool's sends (BR-6). */
+  effects?: SideEffects;
   legsDir: string;
   tmpDir: string;
   now: () => number;
@@ -414,6 +417,7 @@ async function runTask(
           now: d.now,
           brain: d.brain,
           ...(d.tools ? { tools: d.tools } : {}),
+          ...(d.effects ? { effects: d.effects } : {}),
           ...(d.stallCheckMs ? { stallCheckMs: d.stallCheckMs } : {}),
         },
         attemptJob,

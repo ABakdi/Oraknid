@@ -21,7 +21,8 @@ A job can be any goal a skill describes, not just software. Email first.
 ### M6.3 — The email flow (reference)
 - [x] read → classify → draft → approve → send → log: the built-in `email-triage` skill
 - [x] Every send is an approval (tested end to end with a stand-in mail server)
-- [ ] Side-effect reconciliation checks the Sent folder
+- [x] Every send goes through the outbox (BR-6): the same message is never sent twice in a job, and one caught mid-way by a crash is asked of me ("did it go out?") before anything else
+- [ ] An automatic Sent-folder check for that question (a tool-declared confirming read)
 - [ ] On my real inbox: set up an email MCP server in Settings → Tools and run the skill
 
 ## Exit criterion

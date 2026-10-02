@@ -47,6 +47,12 @@ server (stdio, JSON-RPC). Three things matter:
   without asking: the broker decides, so I'm never asked twice.
 - Every call, its verdict and its result size go to the job's events
   (audit).
+- **A send is a side effect** (BR-6, added 2026-10-02): written to the
+  outbox as `performing` before it reaches the server and `performed`
+  when it answers. The same send (same tool, same arguments) is refused
+  once made, so a resumed Leg can't send a message twice; one caught
+  mid-way by a crash is reconciled like any action, which for now means
+  I'm asked whether it went out.
 - **Adapters** pass the bridge as an MCP server: Claude Code through
   the SDK's `mcpServers`, OpenCode through its config's `mcp`,
   Antigravity through `mcp_config.json` in the Leg's home (unverified,

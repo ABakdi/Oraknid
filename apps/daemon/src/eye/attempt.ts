@@ -32,6 +32,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "../db/open.ts";
 import { attempts, jobs, sessions, tasks } from "../db/schema.ts";
+import { SideEffects } from "../engine/effects.ts";
 import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 import type { InboxStore } from "../inbox/store.ts";
@@ -42,7 +43,7 @@ import { readSetting } from "../settings.ts";
 import { handoffFromLog } from "../silk/handoff.ts";
 import type { SilkStore } from "../silk/store.ts";
 import type { BrokerSession, McpBroker } from "../tools/broker.ts";
-import type { ToolRegistry } from "../tools/registry.ts";
+import type { ToolRegistry, ToolRow } from "../tools/registry.ts";
 import {
   changedSince,
   checkpoint,
@@ -84,6 +85,8 @@ export interface AttemptDeps {
   brain?: EyeBrain;
   /** Tools for skills (ADR-021): the job's MCP servers, run by the daemon. */
   tools?: { registry: ToolRegistry; broker: McpBroker };
+  /** The outbox: a tool's sends happen at most once (BR-6). */
+  effects?: SideEffects;
   /** Session rotation (BR-3): share of the context window. */
   rotateAt?: number;
   /** How often to look for a stall while waiting for a Leg. */
@@ -491,15 +494,55 @@ export async function runAttempt(
   let toolsOpen = null as BrokerSession | null;
   const openTools = async () => {
     if (toolsOpen || !toolRows.length || !d.tools) return toolsOpen;
+    /** A send's place in the outbox: the same message, to the same place, is one action. */
+    const sendSpec = (tool: ToolRow, name: string, args: Record<string, unknown>) => ({
+      key: `mcp:${tool.name}:${name}:${hash(JSON.stringify(args))}`,
+      taskId,
+    });
     toolsOpen = await d.tools.broker.open(toolRows, {
-      decide: (tool, name, args) =>
-        onPermission({
+      decide: async (tool, name, args) => {
+        const sends = tool.sends.includes(name) && d.effects;
+        const spec = sendSpec(tool, name, args);
+        if (sends) {
+          // At most once (BR-6): a send already made, or caught mid-way by a crash, isn't made again.
+          const before = d.effects?.get(SideEffects.keyOf(job.id, spec));
+          if (before?.state === "performed" || before?.state === "confirmed")
+            return {
+              allow: false,
+              message: `This exact ${name} was already made in this job; Oraknid doesn't repeat it.`,
+            };
+          if (before?.state === "performing")
+            return {
+              allow: false,
+              message: `An identical ${name} was interrupted mid-way; the owner is asked whether it happened before it is tried again.`,
+            };
+        }
+        const v = await onPermission({
           tool: `mcp__${tool.name}__${name}`,
           input: args,
           command: null,
           path: null,
-        }),
+        });
+        if (v.allow && sends && d.effects) {
+          const row = d.effects.intend(job.id, {
+            ...spec,
+            action: `${tool.name}.${name}`,
+            payload: { tool: tool.name, name, args },
+          });
+          d.effects.set(row.idempotencyKey, "performing");
+        }
+        return v;
+      },
       done: (tool, name, o) => {
+        if (o.allowed && tool.sends.includes(name) && d.effects) {
+          const key = SideEffects.keyOf(job.id, sendSpec(tool, name, o.args));
+          if (d.effects.get(key)?.state === "performing")
+            d.effects.set(
+              key,
+              o.ok ? "performed" : "failed",
+              o.ok ? { result: { bytes: o.bytes } } : { problem: "the tool said it failed" },
+            );
+        }
         event("tool.called", {
           tool: tool.name,
           name,
