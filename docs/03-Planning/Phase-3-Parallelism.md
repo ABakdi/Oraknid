@@ -31,4 +31,11 @@ tasks in The Web, and independent jobs, can run together.
 Two jobs and four parallel tasks run together, merge cleanly or raise
 conflicts as tasks, and the machine stays responsive.
 
+**Met 2026-10-02**: two jobs of three independent scripts each, on
+OpenCode's free models and an Antigravity Leg (two tasks a job, two
+sessions a Leg): four tasks ran at once, all six were verified and
+merged cleanly into their job branches, both jobs completed in about
+six minutes. The machine peaked at a load of 3.3 on 12 cores with over
+16 GB free.
+
 Related: [[Roadmap]] · [[ADR-003-Job-Execution-Engine]]
