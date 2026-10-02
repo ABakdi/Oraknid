@@ -9,6 +9,7 @@ import { EyeChat } from "@/components/eye-chat";
 import { JobResult } from "@/components/job-result";
 import { JobSettings } from "@/components/job-settings";
 import { OrderDialog } from "@/components/order-dialog";
+import { PlanComparisonCard } from "@/components/plan-comparison";
 import { TaskDiff } from "@/components/task-diff";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -219,6 +220,7 @@ export function JobPage({ id }: { id: string }) {
       ) : null}
 
       {j.state === "completed" ? <JobResult jobId={id} /> : null}
+      <PlanComparisonCard jobId={id} />
       <EyeChat jobId={id} />
 
       <WebGraph tasks={j.tasks} legName={legName} onOpen={setOpen} />

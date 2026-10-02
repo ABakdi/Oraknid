@@ -7,6 +7,7 @@ import {
   EmailSettings,
   Event,
   EyeMessage,
+  EyeModels,
   InboxFilter,
   InboxItem,
   JobResult,
@@ -19,6 +20,8 @@ import {
   NewTool,
   NotificationChannel,
   NotificationSettings,
+  PlanComparison,
+  PlanOutcome,
   ProfileOverrides,
   ProjectView,
   PruneRequest,
@@ -70,6 +73,7 @@ import {
   takeOver,
   WebEdit,
 } from "../eye/controls.ts";
+import type { EyeDecisions } from "../eye/decisions.ts";
 import {
   GlobalPolicy,
   readGlobalPolicy,
@@ -131,6 +135,8 @@ export interface ApiContext {
   skills: SkillStore;
   /** Tools for skills (ADR-021). */
   tools: ToolRegistry;
+  /** The Eye's decision models and plan comparisons (ADR-022). */
+  decisions: EyeDecisions;
   devices: Devices;
   brain: EyeBrain;
   /** Opens a folder on this machine (xdg-open). */
@@ -638,6 +644,19 @@ export const router = {
           });
         }),
       ),
+    /** The Eye's Leg, a model per kind of decision, and the shadow planner (ADR-022). */
+    eyeModels: base.output(EyeModels).handler(({ context: c }) => c.decisions.models()),
+    setEyeModels: base
+      .input(EyeModels)
+      .output(EyeModels)
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          for (const id of Object.values(input))
+            if (id && !c.registry.model(id)) throw new Error(`No Leg model ${id}.`);
+          c.decisions.setModels(input);
+          return c.decisions.models();
+        }),
+      ),
     setEyeLeg: base
       .input(z.object({ legModelId: z.string().nullable() }))
       .handler(({ context: c, input }) =>
@@ -684,6 +703,16 @@ export const router = {
         .all()
         .map((j) => jobView(c, j.id)),
     ),
+    /** Its plans and their shadows', side by side, and how the plans that ran fared (ADR-022). */
+    planComparisons: base
+      .input(z.object({ id: z.string() }))
+      .output(z.object({ comparisons: z.array(PlanComparison), outcome: PlanOutcome }))
+      .handler(({ context: c, input }) =>
+        guard(() => ({
+          comparisons: c.decisions.comparisons(input.id),
+          outcome: c.decisions.outcome(input.id),
+        })),
+      ),
     /** Where the work is and what it holds (Checkpoint 1 → F1-5). */
     result: base
       .input(z.object({ id: z.string() }))

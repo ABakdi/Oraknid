@@ -153,12 +153,60 @@ const PLAN_RULES = `Rules for the plan:
 - "jobVerify": commands that prove the whole goal is met.
 - Follow the job's method (the skill), e.g. write the canon before code when it says so.`;
 
+/** The kinds of The Eye's calls, each with its own optional model (ADR-022). */
+export type DecisionKind = "planning" | "judging" | "quick";
+const KIND_OF: Record<string, DecisionKind> = {
+  plan: "planning",
+  replan: "planning",
+  interview: "planning",
+  evaluate: "judging",
+  "repair-check": "judging",
+  classify: "quick",
+  triage: "quick",
+  summarize: "quick",
+};
+
+export interface EyePins {
+  planning?: string | null;
+  judging?: string | null;
+  quick?: string | null;
+  /** Plans every job too, in the background, never used (ADR-022). */
+  shadow?: string | null;
+}
+
+/** One plan The Eye asked for, kept to compare models (ADR-022). */
+export interface PlanRecord {
+  jobId: string;
+  /** The real plan and its shadow share one id. */
+  pairId: string;
+  call: "plan" | "replan";
+  role: "primary" | "shadow";
+  model: string;
+  plan: WebPlan | null;
+  error: string | null;
+  ms: number;
+  firstTry: boolean;
+}
+
 export interface PoolLegBrainOptions {
   registry: LegRegistry;
   supervisor: LegSupervisor;
   /** My chosen Eye Leg model, if any (first-run setup). */
   pinnedModelId: () => string | null;
+  /** A model per kind of decision, and the shadow planner (ADR-022). */
+  pins?: () => EyePins;
+  /** Every plan and its shadow, for the comparison. */
+  record?: (r: PlanRecord) => void;
+  /** Which model answered a call, for the job's events. */
+  answered?: (jobId: string, call: string, model: string) => void;
   moneyAllowed?: boolean;
+}
+
+interface Answer<T> {
+  value: T;
+  model: string;
+  ms: number;
+  firstTry: boolean;
 }
 
 /** v1 brain: borrows a Leg from the pool (ADR-008). */
@@ -166,16 +214,87 @@ export class PoolLegBrain implements EyeBrain {
   constructor(private readonly o: PoolLegBrainOptions) {}
 
   plan(i: PlanInput) {
-    return this.#ask(
+    return this.#planned(i, "plan", ["planning", "architecture"], planPrompt(i, null));
+  }
+
+  /** A plan, kept with its shadow's when I chose one (ADR-022). */
+  async #planned(
+    i: PlanInput,
+    call: "plan" | "replan",
+    capabilities: Capability[],
+    prompt: string,
+  ): Promise<WebPlan> {
+    const pairId = `${i.jobId}:${call}:${Date.now()}`;
+    const a = await this.#run(
       i.jobId,
       i.cwd,
       "high",
-      ["planning", "architecture"],
+      capabilities,
       WebPlan,
-      planPrompt(i, null),
-      "plan",
+      prompt,
+      call,
       validateWeb,
     );
+    this.o.record?.({
+      jobId: i.jobId,
+      pairId,
+      call,
+      role: "primary",
+      model: a.model,
+      plan: a.value,
+      error: null,
+      ms: a.ms,
+      firstTry: a.firstTry,
+    });
+    const shadow = this.o.pins?.().shadow;
+    if (shadow && this.o.record) {
+      // In the background: the job never waits for its shadow.
+      const started = Date.now();
+      void this.#run(
+        i.jobId,
+        i.cwd,
+        "high",
+        capabilities,
+        WebPlan,
+        prompt,
+        call,
+        validateWeb,
+        shadow,
+      )
+        .then((b) =>
+          this.o.record?.({
+            jobId: i.jobId,
+            pairId,
+            call,
+            role: "shadow",
+            model: b.model,
+            plan: b.value,
+            error: null,
+            ms: b.ms,
+            firstTry: b.firstTry,
+          }),
+        )
+        .catch((error) =>
+          this.o.record?.({
+            jobId: i.jobId,
+            pairId,
+            call,
+            role: "shadow",
+            model: this.#modelName(shadow),
+            plan: null,
+            error: error instanceof Error ? error.message : String(error),
+            ms: Date.now() - started,
+            firstTry: false,
+          }),
+        );
+    }
+    return a.value;
+  }
+
+  #modelName(legModelId: string): string {
+    const m = this.o.registry.model(legModelId);
+    if (!m) return legModelId;
+    return `${this.o.registry.require(m.legId).name} · ${m.model}`;
   }
 
   replan(i: PlanInput & { failure: string; done: string[] }) {
@@ -185,16 +304,7 @@ Failure:
 ${i.failure.slice(-4000)}
 \`\`\`
 Plan ONLY the new tasks needed to fix this. Do not repeat done work. Use new task keys.`;
-    return this.#ask(
-      i.jobId,
-      i.cwd,
-      "high",
-      ["debugging", "planning"],
-      WebPlan,
-      planPrompt(i, extra),
-      "replan",
-      validateWeb,
-    );
+    return this.#planned(i, "replan", ["debugging", "planning"], planPrompt(i, extra));
   }
 
   interviewRound(i: {
@@ -330,7 +440,12 @@ When the message mixes several, pick what matters most and say in "reply" what y
   }
 
   /** Picks the Leg model: mine if I pinned one, else the best router choice for the call. */
-  #choose(difficulty: Difficulty, capabilities: Capability[]) {
+  #choose(
+    difficulty: Difficulty,
+    capabilities: Capability[],
+    pinned: string | null,
+    fallback = true,
+  ) {
     const candidates: RouteCandidate[] = [];
     for (const leg of this.o.registry.all()) {
       const view = this.o.registry.view(leg);
@@ -348,7 +463,6 @@ When the message mixes several, pick what matters most and say in "reply" what y
         });
       }
     }
-    const pinned = this.o.pinnedModelId();
     const task = {
       kind: "plan" as const,
       difficulty,
@@ -360,7 +474,7 @@ When the message mixes several, pick what matters most and say in "reply" what y
       moneyAllowed: this.o.moneyAllowed ?? false,
     });
     // My Eye Leg unavailable: the next best Leg with planning strength, said so in the stream (The-Eye → The Eye Leg).
-    if (pinned && r.ranked.length === 0)
+    if (pinned && r.ranked.length === 0 && fallback)
       r = route(task, candidates, { moneyAllowed: this.o.moneyAllowed ?? false });
     const best = r.ranked[0];
     if (!best) {
@@ -379,10 +493,33 @@ When the message mixes several, pick what matters most and say in "reply" what y
     schema: z.ZodType<T>,
     prompt: string,
     call: string,
-    /** Rules beyond the schema (e.g. The Web's): problems in words, empty when fine. */
     check: (value: T) => string[] = () => [],
   ): Promise<T> {
-    const pick = this.#choose(difficulty, capabilities);
+    return (await this.#run(jobId, cwd, difficulty, capabilities, schema, prompt, call, check))
+      .value;
+  }
+
+  /**
+   * One reasoning call. `only` asks exactly that model, with no fallback
+   * (a shadow); otherwise the call's kind picks its model (ADR-022).
+   */
+  async #run<T>(
+    jobId: string,
+    cwd: string,
+    difficulty: Difficulty,
+    capabilities: Capability[],
+    schema: z.ZodType<T>,
+    prompt: string,
+    call: string,
+    /** Rules beyond the schema (e.g. The Web's): problems in words, empty when fine. */
+    check: (value: T) => string[] = () => [],
+    only?: string,
+  ): Promise<Answer<T>> {
+    const kind = KIND_OF[call];
+    const pin = only ?? (kind ? this.o.pins?.()[kind] : null) ?? this.o.pinnedModelId();
+    const pick = this.#choose(difficulty, capabilities, pin, !only);
+    const started = Date.now();
+    const model = `${pick.candidate.legName} · ${pick.candidate.model}`;
     const jsonSchema = JSON.stringify(z.toJSONSchema(schema));
     const session = await this.o.supervisor.start({
       legId: pick.candidate.legId,
@@ -421,7 +558,10 @@ When the message mixes several, pick what matters most and say in "reply" what y
         }
         const parsed = parseJson(text, schema);
         const problems = parsed.ok ? check(parsed.value) : [];
-        if (parsed.ok && problems.length === 0) return parsed.value;
+        if (parsed.ok && problems.length === 0) {
+          if (!only) this.o.answered?.(jobId, call, model);
+          return { value: parsed.value, model, ms: Date.now() - started, firstTry: tries === 0 };
+        }
         lastError = parsed.ok ? problems.join(" ") : parsed.error;
         await session.session.send(
           `That answer was not valid: ${lastError}\nReply again with only the corrected \`\`\`json block.`,

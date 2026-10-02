@@ -18,9 +18,16 @@ profile. I can change it any time in Settings, or per job.
   activity stream.
 - Reasoning calls are small and stateless. Each one gets a context
   pack from Silk, never a long conversation (BR-2, BR-3).
-- The Eye's reasoning sits behind an `EyeBrain` interface. Dedicated
-  decision models (Jev, Kev) plug in there in a later phase
-  ([[ADR-008-Eye-Brain]]).
+- The Eye's reasoning sits behind an `EyeBrain` interface
+  ([[ADR-008-Eye-Brain]]). Its calls are of three kinds, each of which
+  can have its own model in Settings → The Eye: **planning** (plans,
+  replans, interviews), **judging** (reviews, check repairs) and
+  **quick** (command checks, my messages, summaries). Unset, a kind uses
+  the Eye Leg, then the pool ([[ADR-022-Eye-Decision-Models]]).
+- A **shadow planner** can also plan every job, in the background,
+  never used: the job page shows its plans beside the ones that ran,
+  with their measures and how the real ones fared, so I can judge a
+  dedicated decision model (Jev, Kev, a local one) on my own jobs.
 
 ## The loop
 

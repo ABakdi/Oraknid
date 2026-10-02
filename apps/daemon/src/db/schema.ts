@@ -43,6 +43,25 @@ export const skills = sqliteTable(
   (t) => [primaryKey({ columns: [t.id, t.version] })],
 );
 
+/** Every plan The Eye asked for and its shadow's, to compare models (ADR-022). */
+export const eyePlans = sqliteTable(
+  "eye_plans",
+  {
+    id: text("id").primaryKey(),
+    jobId: text("job_id").notNull(),
+    pairId: text("pair_id").notNull(),
+    call: text("call", { enum: ["plan", "replan"] }).notNull(),
+    role: text("role", { enum: ["primary", "shadow"] }).notNull(),
+    model: text("model").notNull(),
+    plan: json<unknown>("plan"),
+    error: text("error"),
+    ms: integer("ms").notNull(),
+    firstTry: integer("first_try", { mode: "boolean" }).notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("eye_plans_job").on(t.jobId)],
+);
+
 /** Tools for skills: MCP servers the daemon runs for a job's sessions (ADR-021). */
 export const tools = sqliteTable("tools", {
   id: text("id").primaryKey(),

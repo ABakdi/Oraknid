@@ -48,3 +48,54 @@ export const InterviewRound = z.object({
   open: z.array(z.string()),
 });
 export type InterviewRound = z.infer<typeof InterviewRound>;
+
+// Comparing The Eye's decision models (ADR-022).
+
+/** The Eye's models: its Leg, one per kind of decision, and a shadow planner. Ids of Leg models. */
+export const EyeModels = z.object({
+  leg: z.string().nullable(),
+  planning: z.string().nullable(),
+  judging: z.string().nullable(),
+  quick: z.string().nullable(),
+  shadow: z.string().nullable(),
+});
+export type EyeModels = z.infer<typeof EyeModels>;
+
+export const PlanMeasures = z.object({
+  tasks: z.number().int(),
+  /** Share of tasks with at least one check. */
+  withChecks: z.number(),
+  checksPerTask: z.number(),
+  /** The longest chain of dependencies, in tasks. */
+  depth: z.number().int(),
+  kinds: z.record(z.string(), z.number().int()),
+});
+export type PlanMeasures = z.infer<typeof PlanMeasures>;
+
+export const PlanComparison = z.object({
+  pairId: z.string(),
+  call: z.enum(["plan", "replan"]),
+  at: z.number(),
+  plans: z.array(
+    z.object({
+      role: z.enum(["primary", "shadow"]),
+      model: z.string(),
+      error: z.string().nullable(),
+      ms: z.number(),
+      firstTry: z.boolean(),
+      measures: PlanMeasures.nullable(),
+      titles: z.array(z.string()),
+    }),
+  ),
+});
+export type PlanComparison = z.infer<typeof PlanComparison>;
+
+/** How the plans that ran fared on the job. */
+export const PlanOutcome = z.object({
+  tasksDone: z.number().int(),
+  tasksTotal: z.number().int(),
+  attempts: z.number().int(),
+  checksRepaired: z.number().int(),
+  replans: z.number().int(),
+});
+export type PlanOutcome = z.infer<typeof PlanOutcome>;

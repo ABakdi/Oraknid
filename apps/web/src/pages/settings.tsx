@@ -1,4 +1,4 @@
-import type { NotificationSettings, NotifyEvent, Route } from "@oraknid/contracts";
+import type { EyeModels, NotificationSettings, NotifyEvent, Route } from "@oraknid/contracts";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AwayCard } from "@/components/away-card";
@@ -124,41 +124,73 @@ function SystemCard() {
   );
 }
 
+const EYE_ROWS: [keyof EyeModels, string, string][] = [
+  ["leg", "The Eye's Leg", "Every decision, unless one below is set."],
+  ["planning", "Planning", "Plans, replans and interviews."],
+  ["judging", "Judging", "Reviews of work without checks, and repairs of wrong checks."],
+  ["quick", "Quick calls", "Command checks, your messages to The Eye, summaries."],
+  [
+    "shadow",
+    "Shadow planner",
+    "Also plans every job, in the background, never used: to compare it with the plan that runs. A free model costs nothing.",
+  ],
+];
+
 function EyeCard() {
   const legs = useLive(() => api.legs.list(), { topics: ["overview"] });
-  const [choice, setChoice] = useState<string>("auto");
+  const saved = useLive(() => api.settings.eyeModels(), {
+    topics: ["overview"],
+    refreshOn: (e) => e.type === "settings.updated",
+  });
+  const [draft, setDraft] = useState<EyeModels | null>(null);
+  if (!saved.data) return <Loading rows={2} />;
+  const value = draft ?? saved.data;
   return (
     <Card>
       <CardHeader>
         <CardTitle>{t("The Eye")}</CardTitle>
         <CardDescription>
           {t(
-            "The Leg model The Eye borrows to plan, judge and interview. Without one, routing picks the strongest available.",
+            "The models The Eye borrows to decide. Unset, routing picks the strongest available; a model that isn't available falls back the same way.",
           )}
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-wrap gap-2">
-        <Select value={choice} onValueChange={setChoice}>
-          <SelectTrigger className="w-72">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="auto">{t("Let routing choose")}</SelectItem>
-            {(legs.data ?? []).flatMap((l) =>
-              l.models.map((m) => (
-                <SelectItem key={m.id} value={m.id}>
-                  {l.name} · {m.model}
-                </SelectItem>
-              )),
-            )}
-          </SelectContent>
-        </Select>
+      <CardContent className="space-y-3">
+        {EYE_ROWS.map(([key, label, hint]) => (
+          <div key={key} className="grid gap-1.5 sm:grid-cols-[10rem_1fr] sm:items-center">
+            <Label htmlFor={`eye-${key}`}>{t(label)}</Label>
+            <div className="min-w-0 space-y-1">
+              <Select
+                value={value[key] ?? "auto"}
+                onValueChange={(v) => setDraft({ ...value, [key]: v === "auto" ? null : v })}
+              >
+                <SelectTrigger id={`eye-${key}`} className="w-full sm:w-80">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">
+                    {key === "shadow" ? t("None") : t("Let routing choose")}
+                  </SelectItem>
+                  {(legs.data ?? []).flatMap((l) =>
+                    l.models.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {l.name} · {m.model}
+                      </SelectItem>
+                    )),
+                  )}
+                </SelectContent>
+              </Select>
+              <div className="text-xs text-muted-foreground">{t(hint)}</div>
+            </div>
+          </div>
+        ))}
         <Button
+          disabled={!draft}
           onClick={() =>
-            act(
-              () => api.settings.setEyeLeg({ legModelId: choice === "auto" ? null : choice }),
-              t("Saved."),
-            )
+            act(async () => {
+              await api.settings.setEyeModels(value);
+              setDraft(null);
+            }, t("Saved."))
           }
         >
           {t("Save")}

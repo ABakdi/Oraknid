@@ -46,6 +46,7 @@ Nothing is built yet.
 - [[Phase-4-The-Nest]]
 - [[Phase-5-Antigravity]]
 - [[Phase-6-Non-Coding-Skills]]
+- [[Phase-7-Eye-Decision-Models]]
 
 ## 04 — Decisions
 - [[ADR-001-Monorepo]] — one pnpm + Turborepo monorepo with the canon inside
@@ -66,6 +67,7 @@ Nothing is built yet.
 - [[ADR-017-Nest-E2E-Protocol]] · [[ADR-018-Nest-Hosting]] · [[ADR-019-Nest-UI-Serving]] — The Nest: libsodium E2E, a VPS with Compose and Caddy, a UI signed by the daemon
 - [[ADR-020-Antigravity-Adapter]] — Antigravity through its official headless CLI, approvals by allow list and replay
 - [[ADR-021-Tools-Broker]] — tools for skills: MCP servers the daemon runs, judged call by call
+- [[ADR-022-Eye-Decision-Models]] — a model per kind of Eye decision, and shadow plans to compare
 - [[ADR-013-Model-Aware-Routing]] — route to Leg + model + effort; smallest sufficient model; reserve scarce windows
 
 ## 05 — Checkpoints

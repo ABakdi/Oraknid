@@ -37,6 +37,7 @@ import { EventBus } from "./events/bus.ts";
 import { forgetJob } from "./eye/attempt.ts";
 import { type EyeBrain, PoolLegBrain } from "./eye/brain.ts";
 import { startBudgetWatch } from "./eye/budgets.ts";
+import { EyeDecisions } from "./eye/decisions.ts";
 import { eyeProgram } from "./eye/program.ts";
 import { forgetGuidance, resumeConversations } from "./eye/talk.ts";
 import { isLocalRequest } from "./http/guard.ts";
@@ -153,12 +154,23 @@ export async function startDaemon(options: DaemonOptions) {
   // Tools for skills: MCP servers the daemon runs, never the Legs (ADR-021).
   const toolRegistry = new ToolRegistry(db, bus, secrets, now);
   const broker = new McpBroker({ registry: toolRegistry, sandbox: os.sandbox });
+  // A model per kind of decision, and the shadow planner (ADR-022).
+  const decisions = new EyeDecisions(db, bus, now);
   const brain =
     options.brain ??
     new PoolLegBrain({
       registry,
       supervisor,
       pinnedModelId: () => readSetting(db, EYE_LEG_SETTING, z.string().nullable(), null),
+      pins: () => decisions.pins(),
+      record: (r) => decisions.record(r),
+      answered: (jobId, call, model) =>
+        bus.publish({
+          type: "eye.answered",
+          topic: `job:${jobId}`,
+          jobId,
+          payload: { call, model },
+        }),
     });
   // My answer to "import my edits?" goes back to Silk.
   bus.subscribe((e) => {
@@ -382,6 +394,7 @@ export async function startDaemon(options: DaemonOptions) {
         projects: projectsService,
         skills,
         tools: toolRegistry,
+        decisions,
         devices,
         brain,
         openPath:

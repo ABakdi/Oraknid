@@ -1,6 +1,6 @@
 import type { PlannedTask, WebPlan } from "@oraknid/contracts";
 import { describe, expect, it } from "vitest";
-import { inScope, readyTasks, scopesOverlap, validateWeb } from "./web.ts";
+import { inScope, planMeasures, readyTasks, scopesOverlap, validateWeb } from "./web.ts";
 
 const t = (over: Partial<PlannedTask>): PlannedTask => ({
   key: "t1",
@@ -89,5 +89,33 @@ describe("scopes that may overlap (ADR-016)", () => {
     expect(scopesOverlap([], ["a"])).toBe(true);
     expect(scopesOverlap(["src/a*.ts"], ["src/b.ts"])).toBe(true);
     expect(scopesOverlap(["./docs/x.md"], ["docs/x.md"])).toBe(true);
+  });
+});
+
+describe("planMeasures", () => {
+  it("counts tasks, checks, kinds and the longest chain", () => {
+    const t = (key: string, dependsOn: string[], verify: string[], kind = "implement") => ({
+      key,
+      title: key,
+      instructions: "x",
+      kind: kind as "implement",
+      dependsOn,
+      scope: [],
+      verify,
+      requiredCapabilities: [],
+      difficulty: "low" as const,
+    });
+    const m = planMeasures({
+      summary: "s",
+      tasks: [t("a", [], ["x", "y"]), t("b", ["a"], ["z"], "test"), t("c", ["b"], [], "research")],
+      jobVerify: [],
+    });
+    expect(m).toEqual({
+      tasks: 3,
+      withChecks: 2 / 3,
+      checksPerTask: 1,
+      depth: 3,
+      kinds: { implement: 1, test: 1, research: 1 },
+    });
   });
 });

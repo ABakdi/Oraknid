@@ -6,7 +6,7 @@ import { type Daemon, startDaemon } from "../daemon.ts";
 import { resolvePaths } from "../paths.ts";
 import { fakeOs } from "../testing/fake-os.ts";
 import { type Action, scriptedLeg } from "../testing/scripted-leg.ts";
-import { PoolLegBrain } from "./brain.ts";
+import { type EyePins, type PlanRecord, PoolLegBrain } from "./brain.ts";
 
 let daemon: Daemon | undefined;
 afterEach(async () => {
@@ -28,11 +28,17 @@ const task = (key: string, deps: string[] = []) => ({
 const answer = (tasks: unknown[]) =>
   `\`\`\`json\n${JSON.stringify({ summary: "s", tasks, jobVerify: [] })}\n\`\`\``;
 
-async function brainWith(replies: string[]) {
+async function brainWith(
+  replies: string[],
+  o: { pins?: (ids: Record<string, string>) => EyePins } = {},
+) {
   const sent: string[] = [];
+  const models: string[] = [];
+  const records: PlanRecord[] = [];
   const leg = scriptedLeg((t): Action[] => {
     sent.push(t.message);
-    return [{ say: replies[t.turn - 1] ?? "" }];
+    models.push(t.model);
+    return [{ say: replies[t.turn - 1] ?? replies[0] ?? "" }];
   });
   const dir = mkdtempSync(join(tmpdir(), "oraknid-brain-"));
   daemon = await startDaemon({
@@ -42,16 +48,21 @@ async function brainWith(replies: string[]) {
     os: fakeOs({ keychain: true }).os,
     adapters: { "claude-code": leg.adapter },
   });
-  await daemon.registry.create({
+  const created = await daemon.registry.create({
     kind: "claude-code",
     name: "Claude",
     config: { binary: "claude" },
   });
   await daemon.health.checkAll();
+  const ids = Object.fromEntries(
+    daemon.registry.view(daemon.registry.require(created.id)).models.map((m) => [m.model, m.id]),
+  );
   const brain = new PoolLegBrain({
     registry: daemon.registry,
     supervisor: daemon.supervisor,
     pinnedModelId: () => null,
+    pins: () => o.pins?.(ids) ?? {},
+    record: (r) => records.push(r),
   });
   const input = {
     jobId: "01J9Z3K8W2Q4V6X8Y0A1B2C3D4",
@@ -62,7 +73,7 @@ async function brainWith(replies: string[]) {
     digest: "",
     verify: [],
   };
-  return { brain, input, sent };
+  return { brain, input, sent, models, records };
 }
 
 describe("The Eye's brain", () => {
@@ -90,5 +101,29 @@ describe("The Eye's brain", () => {
     await expect(brain.plan(input)).rejects.toThrow(
       "The Eye's reasoning gave no valid answer twice (plan): it was not JSON.",
     );
+  });
+
+  it("asks each kind of decision of its own model (ADR-022)", async () => {
+    const { brain, input, models } = await brainWith([answer([task("t1")])], {
+      pins: (ids) => ({ planning: ids.haiku ?? null }),
+    });
+    await brain.plan(input);
+    expect(models).toEqual(["haiku"]);
+  });
+
+  it("has the shadow plan the same job in the background, and keeps both (ADR-022)", async () => {
+    const { brain, input, models, records } = await brainWith([answer([task("t1")])], {
+      pins: (ids) => ({ planning: ids.opus ?? null, shadow: ids.sonnet ?? null }),
+    });
+    const plan = await brain.plan(input);
+    expect(plan.tasks).toHaveLength(1);
+    const end = Date.now() + 5000;
+    while (records.length < 2 && Date.now() < end) await new Promise((r) => setTimeout(r, 20));
+    expect(models).toEqual(["opus", "sonnet"]);
+    expect(records.map((r) => [r.role, r.model, r.firstTry])).toEqual([
+      ["primary", "Claude · opus", true],
+      ["shadow", "Claude · sonnet", true],
+    ]);
+    expect(records[0]?.pairId).toBe(records[1]?.pairId);
   });
 });

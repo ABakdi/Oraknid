@@ -1,4 +1,4 @@
-import type { WebPlan } from "@oraknid/contracts";
+import type { PlanMeasures, WebPlan } from "@oraknid/contracts";
 
 /** Task kinds that may have no verify command; they get a second reasoning look instead. */
 const UNVERIFIED_OK = new Set(["plan", "research"]);
@@ -135,4 +135,32 @@ export function scopesOverlap(a: string[], b: string[]): boolean {
   const within = (x: string[], y: string[]) =>
     x.length <= y.length && x.every((s, i) => s === y[i]);
   return ra.some((x) => rb.some((y) => within(x, y) || within(y, x)));
+}
+
+/** What a plan looks like, to compare The Eye's models on the same job (ADR-022). */
+export function planMeasures(plan: WebPlan): PlanMeasures {
+  const tasks = plan.tasks;
+  const byKey = new Map(tasks.map((t) => [t.key, t]));
+  const depthOf = new Map<string, number>();
+  const depth = (key: string, seen = new Set<string>()): number => {
+    const known = depthOf.get(key);
+    if (known !== undefined) return known;
+    // A circle can't be planned; it counts once rather than forever.
+    if (seen.has(key)) return 0;
+    seen.add(key);
+    const deps = byKey.get(key)?.dependsOn ?? [];
+    const d = 1 + Math.max(0, ...deps.map((k) => depth(k, seen)));
+    depthOf.set(key, d);
+    return d;
+  };
+  const kinds: Record<string, number> = {};
+  for (const t of tasks) kinds[t.kind] = (kinds[t.kind] ?? 0) + 1;
+  const checks = tasks.reduce((n, t) => n + t.verify.length, 0);
+  return {
+    tasks: tasks.length,
+    withChecks: tasks.length ? tasks.filter((t) => t.verify.length > 0).length / tasks.length : 0,
+    checksPerTask: tasks.length ? checks / tasks.length : 0,
+    depth: Math.max(0, ...tasks.map((t) => depth(t.key))),
+    kinds,
+  };
 }
