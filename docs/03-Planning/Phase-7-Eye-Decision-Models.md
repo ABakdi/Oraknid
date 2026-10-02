@@ -21,7 +21,8 @@ it ([[ADR-022-Eye-Decision-Models]]).
 - [x] A **shadow** model plans each job too, in the background, never used
 - [x] Both plans kept with their measures: valid on the first try, tasks, checks per task, depth, time
 - [x] The job page shows them side by side, with how the plan that ran fared (tasks done, attempts, checks repaired, replans)
-- [ ] A real comparison on one of my jobs (a free model as shadow)
+- [x] A real comparison on one of my jobs (2026-10-02, OpenCode's free models): big-pickle planned, mimo-v2.6-flash as shadow. First run, the shadow's plan was refused, wrapped in a copy of the schema; The Eye now unwraps that. Second run, both valid on the first try, same two tasks, the shadow with 2.5 checks a task against 1, in 16 s against 24 s
+- [ ] The exit criterion with a dedicated decision model of my choice planning a whole job
 
 ## Exit criterion
 
