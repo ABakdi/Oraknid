@@ -30,8 +30,10 @@ them, show how they are doing, and give me a terminal to them.
 - [x] Off by default (Settings), audited
 
 Tested against a stand-in SSH server (setup, discovery, documents,
-host key change, monitor, removal, a job with a server) and a real
-local terminal; the real server waits for its key.
+host key change, monitor, removal, a job with a server), a real local
+terminal, and a real Debian server: setup, its state document,
+oraknid-monitor readings (after making its numbers plain for mawk) and
+a terminal to it.
 
 ## Exit criterion
 

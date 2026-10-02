@@ -19,12 +19,13 @@ cpu() { awk '/^cpu /{print $2+$3+$4+$5+$6+$7+$8, $5+$6}' /proc/stat; }
 a=$(cpu); sleep 1; b=$(cpu)
 cpu_pct=$(printf '%s %s\\n' "$a" "$b" | awk '{t=$3-$1; i=$4-$2; if (t>0) printf "%.1f", (t-i)*100/t; else print 0}')
 load1=$(cut -d' ' -f1 /proc/loadavg)
-mem_total=$(awk '/^MemTotal:/{print $2*1024}' /proc/meminfo)
-mem_avail=$(awk '/^MemAvailable:/{print $2*1024}' /proc/meminfo)
-mem_used=$((mem_total - mem_avail))
+# Plain integers: mawk (Debian's awk) prints big numbers in e-notation, and %d can overflow.
+mem_total=$(awk '/^MemTotal:/{printf "%.0f", $2*1024}' /proc/meminfo)
+mem_avail=$(awk '/^MemAvailable:/{printf "%.0f", $2*1024}' /proc/meminfo)
+mem_used=$(awk -v t="$mem_total" -v a="$mem_avail" 'BEGIN{printf "%.0f", t-a}')
 set -- $(df -P -B1 / | awk 'NR==2{print $2, $3}')
 disk_total=\${1:-0}; disk_used=\${2:-0}
-net=$(awk -F'[: ]+' 'NR>2 && $2!="lo"{rx+=$3; tx+=$11} END{printf "%d %d", rx, tx}' /proc/net/dev)
+net=$(awk -F'[: ]+' 'NR>2 && $2!="lo"{rx+=$3; tx+=$11} END{printf "%.0f %.0f", rx, tx}' /proc/net/dev)
 rx=\${net% *}; tx=\${net#* }
 conns=$( (ss -tnH state established 2>/dev/null || true) | wc -l)
 uptime_s=$(cut -d. -f1 /proc/uptime)
