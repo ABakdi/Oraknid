@@ -144,6 +144,21 @@ describe("routing: who is out, and why", () => {
     ]);
   });
 
+  it("lets the strongest available model try when none is rated for the task (seen live)", () => {
+    const r = route(task({ difficulty: "high" }), [claude("haiku"), local()], {
+      moneyAllowed: false,
+    });
+    expect(r.ranked.length).toBe(2);
+    expect(r.ranked[0]?.reasons[0]).toBe(
+      "nothing rated for high tasks is available; the strongest that is takes it",
+    );
+    // And when one is rated for it, the weaker ones never are.
+    const fit = route(task({ difficulty: "high" }), [claude("haiku"), claude("opus")], {
+      moneyAllowed: false,
+    });
+    expect(fit.ranked.map((x) => x.candidate.model)).toEqual(["opus"]);
+  });
+
   it("honours a pin, even on a model weaker than the task", () => {
     const r = route(task({ difficulty: "high", pinnedModelId: "m-haiku" }), pool(), {
       moneyAllowed: false,

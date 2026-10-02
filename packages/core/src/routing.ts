@@ -45,6 +45,8 @@ export interface RouteOptions {
   /** The job's quota-share budget: the share (0–1) of any window it may push a Leg to. */
   quotaShare?: { limit: number; hard: boolean } | null;
   now?: number;
+  /** Internal: nothing was strong enough, so the strongest available may take it. */
+  stretch?: boolean;
 }
 
 export interface Route {
@@ -90,6 +92,7 @@ export function route(task: RouteTask, candidates: RouteCandidate[], o: RouteOpt
     Math.min(2, RANK[task.difficulty] + Math.floor(task.stepUp / 2))
   ] as Difficulty;
 
+  let tooWeak = 0;
   for (const c of candidates) {
     const out = (why: string) =>
       excluded.push({ legModelId: c.legModelId, why: `${c.legName} · ${c.model}: ${why}` });
@@ -131,10 +134,12 @@ export function route(task: RouteTask, candidates: RouteCandidate[], o: RouteOpt
 
     // Difficulty fit: too weak is out; far too strong is penalised (BR-21).
     const gap = RANK[c.profile.maxDifficulty] - RANK[difficulty];
-    if (gap < 0 && !task.pinnedModelId) {
+    if (gap < 0 && !task.pinnedModelId && !o.stretch) {
       out(`made for ${c.profile.maxDifficulty} tasks; this one is ${difficulty}.`);
+      tooWeak++;
       continue;
     }
+    if (gap < 0 && o.stretch) score -= 2 * -gap;
     const window = c.profile.contextWindow;
     if (window && task.estimatedTokens * 1.2 > window) {
       out(`its context window (${window}) is too small for this task.`);
@@ -204,5 +209,15 @@ export function route(task: RouteTask, candidates: RouteCandidate[], o: RouteOpt
   }
 
   const ranked = routes.sort((a, b) => b.score - a.score);
+  // When every Leg that could take it is rated for easier work, the strongest of them tries it
+  // rather than the job blocking (seen live: free models only, and a plan to make).
+  if (!ranked.length && tooWeak > 0 && !o.stretch) {
+    const stretched = route(task, candidates, { ...o, stretch: true });
+    for (const r of stretched.ranked)
+      r.reasons.unshift(
+        `nothing rated for ${difficulty} tasks is available; the strongest that is takes it`,
+      );
+    return { ranked: stretched.ranked, excluded };
+  }
   return { ranked, excluded };
 }
