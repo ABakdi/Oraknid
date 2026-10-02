@@ -64,6 +64,7 @@ import { McpBroker } from "./tools/broker.ts";
 import { ToolRegistry } from "./tools/registry.ts";
 import { VERSION } from "./version.ts";
 import { setShadowRoot } from "./workspace/git.ts";
+import { GitHub } from "./workspace/github.ts";
 import { Projects } from "./workspace/projects.ts";
 
 export interface DaemonOptions {
@@ -80,6 +81,8 @@ export interface DaemonOptions {
   /** OS pieces to replace (tests). */
   os?: Partial<OsDeps>;
   metricsIntervalMs?: number;
+  /** GitHub's addresses, for tests against a stand-in. */
+  github?: { api?: string; web?: string };
   /** What runs a job: The Eye, unless a test replaces it. */
   program?: JobProgram;
   /** The Eye's reasoning (tests replace it). */
@@ -155,6 +158,8 @@ export async function startDaemon(options: DaemonOptions) {
   // Tools for skills: MCP servers the daemon runs, never the Legs (ADR-021).
   const toolRegistry = new ToolRegistry(db, bus, secrets, now);
   const broker = new McpBroker({ registry: toolRegistry, sandbox: os.sandbox });
+  // GitHub through a token I paste (ADR-023).
+  const github = new GitHub(secrets, options.github ?? {});
   // Chats with my models: talk and research (ADR-025).
   const chats = new Chats({ db, bus, registry, supervisor, dataDir: paths.dataDir, now });
   // A model per kind of decision, and the shadow planner (ADR-022).
@@ -410,6 +415,7 @@ export async function startDaemon(options: DaemonOptions) {
         tools: toolRegistry,
         decisions,
         chats,
+        github,
         devices,
         brain,
         openPath:

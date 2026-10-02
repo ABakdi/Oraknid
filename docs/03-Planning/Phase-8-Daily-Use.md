@@ -24,7 +24,7 @@ to a model or to ask Oraknid to do things for me.
 - [ ] Add a skill from the project settings without leaving them; upload a `.md` file as well as pasting
 
 ### M8.3 — Repositories
-- [ ] Settings → GitHub: a token I paste (keychain), checked, with the account it belongs to ([[ADR-023-GitHub-By-Token]])
+- [x] Settings → GitHub: a token I paste (keychain), checked, with the account it belongs to ([[ADR-023-GitHub-By-Token]])
 - [ ] New project from a new GitHub repo (created, cloned) or an existing one (listed, cloned)
 - [ ] Pushing stays a gated action (BR-5); the token never reaches a Leg
 - [ ] Other remotes (GitLab, any git URL) — last

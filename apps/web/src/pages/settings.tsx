@@ -3,6 +3,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { AwayCard } from "@/components/away-card";
 import { ErrorNote, Loading, PageHeader } from "@/components/common";
+import { GitHubCard } from "@/components/github-card";
 import { RulesCard } from "@/components/rules-card";
 import { StorageCard } from "@/components/storage-card";
 import { ToolsCard } from "@/components/tools-card";
@@ -53,6 +54,7 @@ export function SettingsPage() {
       <FallbackCard />
       <PolicyCard />
       <ToolsCard />
+      <GitHubCard />
       <DevicesCard />
       <AwayCard />
       <StorageCard />

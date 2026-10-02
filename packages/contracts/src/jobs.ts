@@ -15,6 +15,42 @@ export const NewProject = z.object({
 });
 export type NewProject = z.infer<typeof NewProject>;
 
+const FolderName = z
+  .string()
+  .regex(/^[A-Za-z0-9._-]{1,100}$/, "letters, digits, dots, dashes and underscores")
+  .refine((n) => n !== "." && n !== "..", "a folder name");
+
+/** Where a new project comes from (Jobs-and-Projects → Starting work, ADR-023). */
+export const ProjectSource = z.discriminatedUnion("kind", [
+  /** A folder I have, a repo or not. */
+  z.object({ kind: z.literal("folder"), path: z.string().min(1), initGit: z.boolean().optional() }),
+  /** A new empty folder, made a git repo. */
+  z.object({ kind: z.literal("new-folder"), parent: z.string().min(1), name: FolderName }),
+  /** A new repo on my GitHub account, then cloned. */
+  z.object({
+    kind: z.literal("github-new"),
+    parent: z.string().min(1),
+    name: FolderName,
+    private: z.boolean().default(true),
+    description: z.string().default(""),
+  }),
+  /** One of my GitHub repos, cloned. */
+  z.object({
+    kind: z.literal("github-clone"),
+    parent: z.string().min(1),
+    fullName: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
+  }),
+  /** Any git URL (a public one, for now), cloned. */
+  z.object({ kind: z.literal("git-url"), parent: z.string().min(1), url: z.string().min(1) }),
+]);
+export type ProjectSource = z.infer<typeof ProjectSource>;
+
+export const NewProjectFrom = z.object({
+  name: z.string().min(1).optional(),
+  source: ProjectSource,
+});
+export type NewProjectFrom = z.infer<typeof NewProjectFrom>;
+
 export const DEFAULT_BUDGET: Budget = {
   tokens: null,
   quotaShare: null,

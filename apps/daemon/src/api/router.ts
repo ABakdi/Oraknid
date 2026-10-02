@@ -21,6 +21,7 @@ import {
   NewJob,
   NewLeg,
   NewProject,
+  NewProjectFrom,
   NewTool,
   NotificationChannel,
   NotificationSettings,
@@ -102,8 +103,10 @@ import type { SkillStore } from "../skills/store.ts";
 import { pruneLogs, storageUsage } from "../storage/storage.ts";
 import type { ToolRegistry } from "../tools/registry.ts";
 import { VERSION } from "../version.ts";
+import type { GitHub } from "../workspace/github.ts";
 import type { Projects } from "../workspace/projects.ts";
 import { jobResult, mergeJob, taskDiff } from "../workspace/result.ts";
+import { projectFrom } from "../workspace/sources.ts";
 import {
   Activity,
   activity,
@@ -145,6 +148,8 @@ export interface ApiContext {
   decisions: EyeDecisions;
   /** Chats with my models (ADR-025). */
   chats: Chats;
+  /** GitHub through my token (ADR-023). */
+  github: GitHub;
   devices: Devices;
   brain: EyeBrain;
   /** Opens a folder on this machine (xdg-open). */
@@ -344,6 +349,13 @@ export const router = {
       .handler(({ context: c, input }) =>
         guard(() => ({ ...c.projects.create(input), jobCount: 0 })),
       ),
+    /** A new project from a folder, a new empty one, a new GitHub repo or a cloned one (Phase 8). */
+    createFrom: base
+      .input(NewProjectFrom)
+      .output(ProjectView)
+      .handler(({ context: c, input }) =>
+        guard(async () => ({ ...(await projectFrom(c, input)), jobCount: 0 })),
+      ),
     list: base.output(z.array(ProjectView)).handler(({ context: c }) => c.projects.list()),
     /** Hidden from the lists, kept for stats; or back again. */
     archive: base
@@ -356,6 +368,59 @@ export const router = {
       .input(z.object({ id: z.string() }))
       .output(z.object({ jobs: z.number(), folder: z.string() }))
       .handler(({ context: c, input }) => guard(() => c.projects.remove(input.id, c.paths.logs))),
+  },
+  /** GitHub through a token I paste (ADR-023). */
+  github: {
+    status: base
+      .output(
+        z.object({
+          connected: z.boolean(),
+          login: z.string().nullable(),
+          error: z.string().nullable(),
+        }),
+      )
+      .handler(({ context: c }) => c.github.status()),
+    setToken: base
+      .input(z.object({ token: z.string().min(10) }))
+      .output(z.object({ login: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(async () => {
+          const login = await c.github.setToken(input.token);
+          c.bus.publish({
+            type: "github.connected",
+            topic: "overview",
+            jobId: null,
+            payload: { login },
+            actor: "owner",
+          });
+          return { login };
+        }),
+      ),
+    removeToken: base.handler(({ context: c }) =>
+      guard(async () => {
+        await c.github.removeToken();
+        c.bus.publish({
+          type: "github.disconnected",
+          topic: "overview",
+          jobId: null,
+          payload: {},
+          actor: "owner",
+        });
+      }),
+    ),
+    repos: base
+      .output(
+        z.array(
+          z.object({
+            fullName: z.string(),
+            name: z.string(),
+            private: z.boolean(),
+            description: z.string().nullable(),
+            updatedAt: z.string(),
+          }),
+        ),
+      )
+      .handler(({ context: c }) => guard(() => c.github.repos())),
   },
   /** Chats with my models: talk and research (ADR-025). */
   chats: {
