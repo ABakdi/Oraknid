@@ -3,6 +3,7 @@ import { Bot, Plus, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Empty, ErrorNote, Loading, PageHeader, StateBadge } from "@/components/common";
+import { FindAgents } from "@/components/find-agents";
 import { LegLogin } from "@/components/leg-login";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -82,12 +83,17 @@ export function LegsPage() {
       <PageHeader
         title={t("Legs")}
         sub={t("Agent accounts and local models Oraknid can hand work to.")}
-        actions={add}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <FindAgents />
+            {add}
+          </div>
+        }
       />
       {(legs.data ?? []).length === 0 ? (
-        <Empty title={t("No Legs yet")} action={add}>
+        <Empty title={t("No Legs yet")} action={<FindAgents />}>
           {t(
-            "Add a Claude Code account or an OpenAI-compatible server (Ollama, LM Studio, llama.cpp, vLLM). Any number of each; none is required.",
+            "Let Oraknid find the agents on this machine, or add one by hand: a Claude Code or Antigravity account, OpenCode, or an OpenAI-compatible server (Ollama, LM Studio, llama.cpp, vLLM). Any number of each; none is required.",
           )}
         </Empty>
       ) : null}

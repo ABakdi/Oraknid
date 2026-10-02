@@ -8,6 +8,7 @@ import {
   Event,
   EyeMessage,
   EyeModels,
+  FoundAgent,
   InboxFilter,
   InboxItem,
   JobResult,
@@ -83,6 +84,7 @@ import {
 } from "../eye/policy.ts";
 import { conversation, talk } from "../eye/talk.ts";
 import type { InboxStore } from "../inbox/store.ts";
+import { discoverAgents } from "../legs/discover.ts";
 import type { LegLogins } from "../legs/login.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import { readSessionLog } from "../legs/session-log.ts";
@@ -866,6 +868,10 @@ export const router = {
       ),
   },
   legs: {
+    /** Agents and model servers found on this machine, ready to add (Legs → Finding agents). */
+    discover: base
+      .output(z.array(FoundAgent))
+      .handler(({ context: c }) => guard(() => discoverAgents(c.registry.all()))),
     /** Starts the official sign-in for a Claude Code Leg; the UI shows the link. */
     loginStart: base
       .input(z.object({ id: z.string() }))

@@ -39,6 +39,24 @@ windows:
   Leg model is only eligible while **all** the windows that apply to it
   have room.
 
+### Finding agents on this machine
+
+**Find agents on this machine** (Legs page) lists what Oraknid can
+drive here, so I don't type paths and ports (added 2026-10-02):
+
+- the `claude`, `opencode` and `agy` programs, on my `PATH` or where
+  their installers put them, with their versions;
+- model servers answering on their usual local ports: Ollama (11434),
+  LM Studio (1234), llama.cpp (8080) and vLLM (8000), with their
+  models.
+
+Each comes with a suggested name and **Create**; **Create all** adds
+every one not yet a Leg. One already used by a Leg is marked so, and
+can still be created again (another account). Nothing is added without
+my click, and nothing of mine is borrowed: a created Claude Code or
+Antigravity Leg still logs in from its own card. Oraknid only looks; it
+installs nothing.
+
 ### Adding a Leg
 
 1. Pick the kind.

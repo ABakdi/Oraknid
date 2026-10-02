@@ -112,3 +112,20 @@ export const ProfileOverrides = ProfileSettings.partial().extend({
   strengths: Strengths.optional(),
 });
 export type ProfileOverrides = z.infer<typeof ProfileOverrides>;
+
+/** An agent or model server found on this machine, ready to become a Leg (Legs → Finding agents). */
+export const FoundAgent = z.object({
+  kind: LegKind,
+  /** What it is, e.g. "Claude Code 2.4.1", "Ollama, 3 models". */
+  label: z.string(),
+  /** Where: the program's path or the server's address. */
+  where: z.string(),
+  detail: z.string(),
+  /** The name a new Leg gets, unique among my Legs. */
+  suggestedName: z.string(),
+  /** What `legs.create` takes for it. */
+  config: z.record(z.string(), z.unknown()),
+  /** Legs already using it (another account can still be added). */
+  usedBy: z.array(z.string()),
+});
+export type FoundAgent = z.infer<typeof FoundAgent>;
