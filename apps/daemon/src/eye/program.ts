@@ -5,6 +5,7 @@ import {
   type GatedAction,
   readyTasks,
   scopesOverlap,
+  skillChecks,
   skillExcerpt,
   suspicious,
 } from "@oraknid/core";
@@ -24,6 +25,8 @@ import type { LegSupervisor } from "../legs/supervisor.ts";
 import { MAX_TASKS_PER_JOB, readSetting } from "../settings.ts";
 import type { SilkStore } from "../silk/store.ts";
 import type { SkillStore } from "../skills/store.ts";
+import type { McpBroker } from "../tools/broker.ts";
+import type { ToolRegistry } from "../tools/registry.ts";
 import {
   createTaskWorktree,
   createWorktree,
@@ -50,6 +53,8 @@ export interface EyeDeps {
   supervisor: LegSupervisor;
   sandbox: Sandbox;
   brain: EyeBrain;
+  /** Tools for skills (ADR-021). */
+  tools?: { registry: ToolRegistry; broker: McpBroker };
   legsDir: string;
   tmpDir: string;
   now: () => number;
@@ -380,6 +385,8 @@ async function runTask(
     waived: job.waived as GatedAction[],
     unsandboxed: job.unsandboxed,
     skillBody: d.skills.version(job.skillId, job.skillVersion)?.body ?? "",
+    tools: job.tools,
+    skillChecks: skillChecks(d.skills.version(job.skillId, job.skillVersion)?.body ?? ""),
     inputs: renderInputs(job.inputs as JobInput[], where.projectPath),
   };
   // Beside other tasks, it works in a worktree of its own, branched from the job branch (ADR-016).
@@ -406,6 +413,7 @@ async function runTask(
           legsDir: d.legsDir,
           now: d.now,
           brain: d.brain,
+          ...(d.tools ? { tools: d.tools } : {}),
           ...(d.stallCheckMs ? { stallCheckMs: d.stallCheckMs } : {}),
         },
         attemptJob,

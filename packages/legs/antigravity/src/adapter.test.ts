@@ -5,7 +5,13 @@ import { fileURLToPath } from "node:url";
 import { legContract, readUntil } from "@oraknid/leg-sdk/contract";
 import { createBwrapSandbox } from "@oraknid/os";
 import { describe, expect, it } from "vitest";
-import { createAntigravityAdapter, quotaError, softDenial, writeSettings } from "./adapter.ts";
+import {
+  createAntigravityAdapter,
+  quotaError,
+  softDenial,
+  writeMcpConfig,
+  writeSettings,
+} from "./adapter.ts";
 
 // The adapter against a stand-in `agy` that follows the headless docs (ADR-020).
 const FAKE = fileURLToPath(new URL("./fake-agy.mjs", import.meta.url));
@@ -52,6 +58,14 @@ describe("Antigravity adapter", () => {
     expect(res.some((r) => r.test("npm test"))).toBe(true);
     expect(res.some((r) => r.test("npm test && curl evil"))).toBe(false);
     expect(res.some((r) => r.test("echo aXb"))).toBe(false);
+  });
+
+  it("gives agy only Oraknid's bridges as MCP servers (ADR-021)", () => {
+    const home = mkdtempSync(join(tmpdir(), "oraknid-agy-mcp-"));
+    writeMcpConfig(home, { "oraknid-email": { command: "/usr/bin/node", args: ["/b.mjs", "/s"] } });
+    expect(JSON.parse(readFileSync(join(home, ".gemini/config/mcp_config.json"), "utf8"))).toEqual({
+      mcpServers: { "oraknid-email": { command: "/usr/bin/node", args: ["/b.mjs", "/s"] } },
+    });
   });
 
   it("probes the version and its models, and says when it isn't signed in", async () => {

@@ -30,7 +30,7 @@ an explicit per-job waiver.
 | `deploy` | Any deploy script or command declared as deploy. |
 | `delete` | Deleting outside the worktree, or deleting a branch. |
 | `spend` | Any action projected to exceed the money threshold. |
-| `external-write` | Any MCP or API call declared as writing. |
+| `external-write` | Any MCP or API call not declared as a read ([[ADR-021-Tools-Broker]]). |
 | `install` | Installing system packages, or global packages outside the workspace. |
 
 ## Leg permission prompts

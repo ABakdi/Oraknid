@@ -16,7 +16,9 @@ export type Action =
   | { say: string }
   | { rateLimit: QuotaReport }
   /** Keep the turn open until interrupted or killed. */
-  | { hang: true };
+  | { hang: true }
+  /** Calls a job's tool through the bridge it was given (ADR-021), like a real Leg's MCP client. */
+  | { mcp: { server: string; tool: string; args?: Record<string, unknown> } };
 
 export interface TurnContext {
   leg: string;
@@ -38,6 +40,8 @@ export interface TurnContext {
  */
 export function scriptedLeg(script: (t: TurnContext) => Action[]) {
   const log: TurnContext[] = [];
+  /** What each tool call returned, in order: the text, and whether it was an error. */
+  const mcpResults: { tool: string; text: string; isError: boolean }[] = [];
   const sessionsPerLeg = new Map<string, number>();
   const adapter: LegAdapter = {
     kind: "claude-code",
@@ -130,6 +134,23 @@ export function scriptedLeg(script: (t: TurnContext) => Action[]) {
             events.push({ type: "rate_limit", quota: a.rateLimit });
             events.push({ type: "turn.ended", reason: "rate-limited", text, error: "usage limit" });
             return;
+          } else if ("mcp" in a) {
+            const name = `mcp__${a.mcp.server}__${a.mcp.tool}`;
+            const id = `m${Math.random()}`;
+            events.push({ type: "tool.called", id, tool: name, input: a.mcp.args ?? {} });
+            const leg = await s.onPermission({
+              tool: name,
+              input: a.mcp.args ?? {},
+              command: null,
+              path: null,
+            });
+            const server = s.mcpServers?.[a.mcp.server];
+            const r =
+              leg.allow && server
+                ? await callMcp(server, a.mcp.tool, a.mcp.args ?? {})
+                : { text: leg.allow ? "no such server" : leg.message, isError: true };
+            mcpResults.push({ tool: a.mcp.tool, ...r });
+            events.push({ type: "tool.result", id, ok: !r.isError, output: r.text });
           } else if ("hang" in a) {
             events.push({ type: "text.delta", text: "working…" });
             await new Promise<void>((r) => {
@@ -183,7 +204,39 @@ export function scriptedLeg(script: (t: TurnContext) => Action[]) {
       };
     },
   };
-  return { adapter, log };
+  return { adapter, log, mcpResults };
+}
+
+/** One MCP call over stdio: initialize, then tools/call, as a Leg's client does. */
+function callMcp(
+  server: { command: string; args: string[] },
+  tool: string,
+  args: Record<string, unknown>,
+): Promise<{ text: string; isError: boolean }> {
+  return new Promise((resolve) => {
+    const child = spawn(server.command, server.args, { stdio: ["pipe", "pipe", "pipe"] });
+    let buf = "";
+    child.stdout.on("data", (d: Buffer) => {
+      buf += d.toString();
+      for (const line of buf.split("\n").slice(0, -1)) {
+        const m = JSON.parse(line) as {
+          id: number;
+          result?: { content?: { text?: string }[]; isError?: boolean };
+          error?: { message: string };
+        };
+        if (m.id !== 2) continue;
+        child.kill();
+        resolve({
+          text: m.error?.message ?? (m.result?.content ?? []).map((c) => c.text ?? "").join("\n"),
+          isError: Boolean(m.error || m.result?.isError),
+        });
+      }
+      buf = buf.slice(buf.lastIndexOf("\n") + 1);
+    });
+    const send = (m: unknown) => child.stdin.write(`${JSON.stringify(m)}\n`);
+    send({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+    send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: tool, arguments: args } });
+  });
 }
 
 function runShell(

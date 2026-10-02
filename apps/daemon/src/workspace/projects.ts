@@ -208,6 +208,8 @@ export class Projects {
           budget: input.budget ?? DEFAULT_BUDGET,
           state: "draft",
           verify: [...skill.verify, ...input.verify],
+          // The skill's tools (ADR-021); set up in Settings → Tools before the job starts.
+          tools: skill.requiredTools,
           unsandboxed: input.unsandboxed,
           createdAt: this.now(),
         })

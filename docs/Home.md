@@ -65,6 +65,7 @@ Nothing is built yet.
 - [[ADR-016-Parallel-Work]] — a job queue first, then tasks side by side in their own worktrees
 - [[ADR-017-Nest-E2E-Protocol]] · [[ADR-018-Nest-Hosting]] · [[ADR-019-Nest-UI-Serving]] — The Nest: libsodium E2E, a VPS with Compose and Caddy, a UI signed by the daemon
 - [[ADR-020-Antigravity-Adapter]] — Antigravity through its official headless CLI, approvals by allow list and replay
+- [[ADR-021-Tools-Broker]] — tools for skills: MCP servers the daemon runs, judged call by call
 - [[ADR-013-Model-Aware-Routing]] — route to Leg + model + effort; smallest sufficient model; reserve scarce windows
 
 ## 05 — Checkpoints

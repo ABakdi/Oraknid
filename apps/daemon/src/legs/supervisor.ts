@@ -5,8 +5,10 @@ import type {
   LegAdapter,
   LegEvent,
   LegSession,
+  McpServer,
   PermissionDecision,
   PermissionRequest,
+  SandboxPlan,
 } from "@oraknid/leg-sdk";
 import type { Sandbox, Watched } from "@oraknid/os";
 import { eq, isNull } from "drizzle-orm";
@@ -16,6 +18,16 @@ import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 import { sandboxPlan } from "./plan.ts";
 import type { LegRegistry } from "./registry.ts";
+
+/** The broker's sockets and the bridge's node, reachable from the Leg's sandbox. */
+function withTools(plan: SandboxPlan, tools: StartRequest["tools"]): SandboxPlan {
+  if (!tools) return plan;
+  return {
+    ...plan,
+    writable: [...plan.writable, ...tools.writable],
+    readonly: [...new Set([...plan.readonly, ...tools.readonly])],
+  };
+}
 
 export interface StartRequest {
   legId: string;
@@ -31,6 +43,8 @@ export interface StartRequest {
   /** Only when I explicitly chose an unsandboxed job (ADR-006). */
   unsandboxed?: boolean;
   onPermission: (request: PermissionRequest) => Promise<PermissionDecision>;
+  /** The job's tools through the broker (ADR-021): servers, and what the sandbox must reach. */
+  tools?: { servers: Record<string, McpServer>; writable: string[]; readonly: string[] };
 }
 
 export interface Supervised {
@@ -146,9 +160,12 @@ export class LegSupervisor {
         systemPrompt: req.systemPrompt,
         prompt: req.prompt,
         resumeFrom: req.resumeFrom ?? null,
-        sandbox: req.unsandboxed ? null : sandboxPlan(leg, this.o.sandbox, this.o.legsDir),
+        sandbox: req.unsandboxed
+          ? null
+          : withTools(sandboxPlan(leg, this.o.sandbox, this.o.legsDir), req.tools),
         credential: await registry.credential(leg),
         onPermission: req.onPermission,
+        ...(req.tools ? { mcpServers: req.tools.servers } : {}),
       });
     } catch (error) {
       // A start that failed leaves no session looking alive (Audit 1 → Q1-13).

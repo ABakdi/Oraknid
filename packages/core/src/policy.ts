@@ -52,6 +52,12 @@ export interface PolicyContext {
   rules?: RuleLevel[];
   /** The task's context holds untrusted content: gated actions always ask, whatever the autonomy (BR-15). */
   untrusted?: boolean;
+  /**
+   * What the job's tools declared about their calls, by `mcp__<tool>__<name>`
+   * (ADR-021): a read passes, a send is the gated action `send`. Anything
+   * else is an external write.
+   */
+  mcp?: ReadonlyMap<string, "read" | "send">;
 }
 
 export type PolicyVerdict =
@@ -312,6 +318,19 @@ export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
 
   // An MCP tool may write outside: gated as an external write, like publishing (Security; Audit 1 → S1-15).
   if (r.tool.startsWith("mcp__")) {
+    const declared = ctx.mcp?.get(r.tool);
+    if (declared === "read") return { verdict: "allow", reason: `${r.tool} only reads` };
+    if (declared === "send") {
+      if (ctx.waived.has("send") && !ctx.untrusted)
+        return { verdict: "allow", reason: "send waived for this job" };
+      return {
+        verdict: "ask",
+        reason: ctx.untrusted
+          ? `${r.tool} sends, and this task read untrusted content`
+          : `${r.tool} sends`,
+        gated: "send",
+      };
+    }
     if (ctx.waived.has("external-write") && !ctx.untrusted)
       return { verdict: "allow", reason: "external-write waived for this job" };
     return {

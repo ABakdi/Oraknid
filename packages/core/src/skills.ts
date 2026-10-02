@@ -127,3 +127,12 @@ export function skillExcerpt(body: string, topic: string, maxChars = 4000): stri
   const text = `${intro.trim()}${best}`;
   return text.length > maxChars ? `${text.slice(0, maxChars)}\n…` : text;
 }
+
+/**
+ * A skill's own checks for results that aren't code (Skills → Checks):
+ * the body of its `## Checks` section, which The Eye's review applies.
+ */
+export function skillChecks(body: string): string {
+  const section = body.split(/^(?=## )/m).find((s) => /^## Checks\b/i.test(s));
+  return section ? section.replace(/^## Checks[^\n]*\n/i, "").trim() : "";
+}

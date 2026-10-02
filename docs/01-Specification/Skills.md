@@ -15,7 +15,7 @@ name: canon-driven-development
 description: One line, shown in the picker.
 interview: true                 # the job opens with an interview
 requires:
-  tools: []                     # e.g. [email, calendar, browser] — MCP servers (non-coding phase)
+  tools: []                     # e.g. [email, calendar] — set up in Settings → Tools
 verify:                         # default job-level checks, overridable per project
   - "pnpm -r typecheck"
   - "pnpm -r test"
@@ -26,10 +26,27 @@ Front matter that is missing or invalid doesn't block the upload. The
 skill is saved with defaults, and the UI says which fields were ignored
 and why.
 
+## Tools
+
+`requires.tools` names the tools a skill's jobs use. A tool is an MCP
+server I set up once in **Settings → Tools**: its command, its secrets
+(keychain), which of its calls only read and which send, and whether
+what it returns is untrusted ([[ADR-021-Tools-Broker]]). A job gets its
+skill's tools when it is created; the job form shows each one, marks
+those not set up, and the job can't start until they are.
+
+## Checks for results that aren't code
+
+A task with no verify command (a draft, a summary, research) is
+reviewed by The Eye before it is done. A skill can give that review its
+own criteria in a `## Checks` section: The Eye applies every one, and
+sends back what fails, like a failed check.
+
 ## Library
 
 - **Built-in:** the canon-driven skill (`docs/skill.md`), shipped as
-  the first built-in. More built-ins arrive with non-coding skills.
+  the first built-in and the default; `email-triage` (Phase 6): read,
+  sort, draft, send what I approve, log, with the email tool.
 - **Uploaded:** mine. I can view, edit (in the UI, with preview),
   version and delete them. A job pins the version it started with.
   Editing a skill never changes a running job.

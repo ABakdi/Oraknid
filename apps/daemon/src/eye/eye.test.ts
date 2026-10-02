@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Budget, JobView, WebPlan } from "@oraknid/contracts";
 import { decide } from "@oraknid/core";
 import { createORPCClient } from "@orpc/client";
@@ -92,8 +93,15 @@ async function eye(
     sameProviderFallback?: boolean;
     classify?: (command: string) => { decision: "allow" | "ask"; reason: string };
     triage?: (message: string) => EyeTriage | Promise<EyeTriage>;
-    evaluate?: (report: string) => { accepted: boolean; reason: string; missing: string[] };
+    evaluate?: (
+      report: string,
+      criteria?: string,
+    ) => { accepted: boolean; reason: string; missing: string[] };
     repair?: (command: string) => { broken: boolean; command: string; reason: string };
+    /** A skill to run the job with, uploaded first. */
+    skill?: string;
+    /** Before the job is created (tools, settings). */
+    setup?: (api: RouterClient<Router>) => Promise<void>;
     files?: Record<string, string>;
   } = {},
 ) {
@@ -113,8 +121,8 @@ async function eye(
     summarize: async () => ({ title: "s", body: "s" }),
     repairCheck: async ({ command }) =>
       o.repair?.(command) ?? { broken: false, command, reason: "the work is at fault" },
-    evaluate: async ({ report }) =>
-      o.evaluate?.(report) ?? { accepted: true, reason: "it is there", missing: [] },
+    evaluate: async ({ report, criteria }) =>
+      o.evaluate?.(report, criteria) ?? { accepted: true, reason: "it is there", missing: [] },
     triage: async ({ message }) => {
       if (!o.triage) throw new Error("no triage scripted");
       return o.triage(message);
@@ -150,7 +158,12 @@ async function eye(
   for (const [name, content] of Object.entries(o.files ?? {}))
     writeFileSync(join(workspace, name), content);
   const project = await api.projects.create({ name: "demo", workspacePath: workspace });
+  await o.setup?.(api);
+  const skillId = o.skill
+    ? (await api.skills.upload({ name: "custom", markdown: o.skill })).skill.id
+    : undefined;
   const { id } = await api.jobs.create({
+    ...(skillId ? { skillId } : {}),
     projectId: project.id,
     goal: "Say hi, with a test",
     verify: [],
@@ -285,6 +298,76 @@ describe("The Eye, end to end", () => {
       .filter((e) => e.type === "task.check-reviewed");
     expect(reviewed.map((e) => e.payload)).toMatchObject([{ broken: false }]);
     expect(leg.log.filter((x) => task(x) === "Write hello.sh")).toHaveLength(2);
+  });
+
+  it("gives a job its skill's tools through the broker: reads pass, a send waits for me (ADR-021)", async () => {
+    const MAIL = fileURLToPath(new URL("../testing/fake-mail-mcp.mjs", import.meta.url));
+    const { api, id, leg, d } = await eye(
+      (t) =>
+        t.turn === 1
+          ? [
+              { mcp: { server: "oraknid-email", tool: "list_messages" } },
+              {
+                mcp: {
+                  server: "oraknid-email",
+                  tool: "send_email",
+                  args: { to: "boss@example.com" },
+                },
+              },
+              { write: "hello.sh", content: "echo hi\n" },
+              { say: "DONE" },
+            ]
+          : [{ say: "DONE" }],
+      {
+        plan: { ...HELLO, tasks: [HELLO.tasks[0] as WebPlan["tasks"][number]], jobVerify: [] },
+        skill:
+          "---\nname: mail-triage\ninterview: false\nrequires:\n  tools: [email]\n---\nTriage my mail.\n",
+        setup: async (api) => {
+          await api.tools.create({
+            name: "email",
+            command: process.execPath,
+            args: [MAIL],
+            secrets: { MAIL_PASSWORD: "hunter2" },
+            reads: ["list_messages"],
+            sends: ["send_email"],
+          });
+        },
+      },
+    );
+    const end = Date.now() + 8000;
+    let item: Awaited<ReturnType<typeof api.inbox.list>>[number] | undefined;
+    while (!item && Date.now() < end) {
+      item = (await api.inbox.list({ state: "open" })).find((i) => i.kind === "approval");
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(item?.title).toBe("Claude A wants to use mcp__email__send_email");
+    expect(item?.detail).toContain("this task read untrusted content");
+    expect(item?.detail).toContain("boss@example.com");
+    await api.inbox.answer({ id: item?.id as string, answer: "Approve" });
+    const job = await until(api, id, ["completed", "blocked"]);
+    expect(job.state, job.blockedReason ?? "").toBe("completed");
+    expect(job.tools).toEqual(["email"]);
+    // The read was wrapped as data; the send went out once I approved it.
+    expect(leg.mcpResults[0]?.text).toContain("<untrusted source=");
+    expect(leg.mcpResults[1]?.isError).toBe(false);
+    expect(leg.mcpResults[1]?.text).toContain("sent to boss@example.com (1 sent)");
+    const calls = d.bus
+      .since(0, [`job:${id}`], 500)
+      .filter((e) => e.type === "tool.called")
+      .map((e) => e.payload);
+    expect(calls).toMatchObject([
+      { tool: "email", name: "list_messages", allowed: true },
+      { tool: "email", name: "send_email", allowed: true },
+    ]);
+    expect((calls[0] as { flags?: string[] }).flags?.length).toBeGreaterThan(0);
+  });
+
+  it("won't start a job whose skill needs a tool I haven't set up", async () => {
+    await expect(
+      eye(good, {
+        skill: "---\nname: cal\nrequires:\n  tools: [calendar]\n---\nBook things.\n",
+      }),
+    ).rejects.toThrow(/Set up "calendar" in Settings → Tools first/);
   });
 
   it("reverts an out-of-scope edit, corrects the Leg, and keeps the in-scope work (D1)", async () => {
@@ -1494,6 +1577,21 @@ describe("a second look at tasks without checks (M1.9)", () => {
     expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
     expect(reviews).toHaveLength(2);
     expect(leg.log.some((t) => t.message.includes("- NOTES.md with the shells"))).toBe(true);
+  });
+
+  it("reviews a result that isn't code against the skill's own checks (Skills → Checks)", async () => {
+    const seen: (string | undefined)[] = [];
+    const { api, id } = await eye(() => [{ say: "DONE: drafts written" }], {
+      plan: RESEARCH,
+      skill:
+        "---\nname: replies\n---\nDraft replies.\n\n## Checks\n- Each draft is addressed to the sender.\n",
+      evaluate: (_report, criteria) => {
+        seen.push(criteria);
+        return { accepted: true, reason: "ok", missing: [] };
+      },
+    });
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    expect(seen[0]).toBe("- Each draft is addressed to the sender.");
   });
 });
 

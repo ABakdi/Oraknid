@@ -107,7 +107,10 @@ export class SkillStore {
     for (const s of this.db.select().from(skills).orderBy(desc(skills.version)).all()) {
       if (!latest.has(s.id)) latest.set(s.id, s);
     }
-    return [...latest.values()];
+    // The default first (the job form's choice), then by name.
+    return [...latest.values()].sort((a, b) =>
+      a.id === BUILT_IN_DEFAULT ? -1 : b.id === BUILT_IN_DEFAULT ? 1 : a.name.localeCompare(b.name),
+    );
   }
 
   #save(id: string, p: ParsedSkill, source: "built-in" | "uploaded"): boolean {

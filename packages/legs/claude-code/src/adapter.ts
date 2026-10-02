@@ -221,6 +221,14 @@ export function createClaudeCodeAdapter(deps: { query?: QueryFn } = {}): LegAdap
       };
       if (s.effort) options.effort = s.effort as EffortLevel;
       if (s.resumeFrom) options.resume = s.resumeFrom;
+      // Only Oraknid's bridges to the job's tools (ADR-021); never my own servers.
+      if (s.mcpServers)
+        options.mcpServers = Object.fromEntries(
+          Object.entries(s.mcpServers).map(([name, m]) => [
+            name,
+            { type: "stdio" as const, command: m.command, args: m.args },
+          ]),
+        );
 
       const q = query({ prompt: input, options });
       const begin = (text: string) => {

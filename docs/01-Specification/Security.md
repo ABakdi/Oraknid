@@ -61,7 +61,12 @@ sandbox limits damage, but it doesn't make that safe.
 - Job inputs are marked untrusted when I create the job, and a task
   becomes untrusted once it reads from the web (WebFetch, WebSearch,
   `curl`, `wget`).
-- MCP tools are always `external-write` gated (waivable per job).
+- MCP tools reach a Leg only through Oraknid's broker
+  ([[ADR-021-Tools-Broker]]): the server runs in its own sandbox with
+  its secrets, which the Leg never sees. A call a tool declares as a
+  read passes; a send is the gated action `send`; anything else is
+  `external-write` (waivable per job). What an untrusted tool returns is
+  wrapped as data, and the task is untrusted from then on.
 - The classifier and the second look get the command or a Leg's report
   as JSON data, never as instructions; the classifier reads no files.
 - Suspicious content (instructions aimed at the agent) is flagged in

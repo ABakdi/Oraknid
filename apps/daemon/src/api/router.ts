@@ -16,6 +16,7 @@ import {
   NewJob,
   NewLeg,
   NewProject,
+  NewTool,
   NotificationChannel,
   NotificationSettings,
   ProfileOverrides,
@@ -30,6 +31,8 @@ import {
   StorageUsage,
   SystemStatus,
   type TaskView,
+  ToolView,
+  UpdateTool,
 } from "@oraknid/contracts";
 import {
   type InhibitorState,
@@ -87,6 +90,7 @@ import { MAX_RUNNING_JOBS, MAX_TASKS_PER_JOB, readSetting, writeSetting } from "
 import type { SilkStore } from "../silk/store.ts";
 import type { SkillStore } from "../skills/store.ts";
 import { pruneLogs, storageUsage } from "../storage/storage.ts";
+import type { ToolRegistry } from "../tools/registry.ts";
 import { VERSION } from "../version.ts";
 import type { Projects } from "../workspace/projects.ts";
 import { jobResult, mergeJob, taskDiff } from "../workspace/result.ts";
@@ -125,6 +129,8 @@ export interface ApiContext {
   inbox: InboxStore;
   projects: Projects;
   skills: SkillStore;
+  /** Tools for skills (ADR-021). */
+  tools: ToolRegistry;
   devices: Devices;
   brain: EyeBrain;
   /** Opens a folder on this machine (xdg-open). */
@@ -232,7 +238,13 @@ function jobView(c: ApiContext, id: string): JobView {
       pinnedModelId: t.pinnedModelId,
       ownerHeld: t.ownerHeld,
     }));
-  return JobView.parse({ ...job, tasks, worktree: job.worktree, branch: job.branch });
+  return JobView.parse({
+    ...job,
+    tasks,
+    worktree: job.worktree,
+    branch: job.branch,
+    missingTools: c.tools.missing(job.tools),
+  });
 }
 
 /** Turns a refusal (an illegal move, an unknown job) into a sentence for the UI. */
@@ -330,6 +342,35 @@ export const router = {
       .input(z.object({ id: z.string() }))
       .output(z.object({ jobs: z.number(), folder: z.string() }))
       .handler(({ context: c, input }) => guard(() => c.projects.remove(input.id, c.paths.logs))),
+  },
+  /** Tools for skills: MCP servers the daemon runs for a job's sessions (ADR-021). */
+  tools: {
+    list: base.output(z.array(ToolView)).handler(async ({ context: c }) => {
+      const skills = c.skills.list();
+      return Promise.all(
+        c.tools.all().map((t) =>
+          c.tools.view(
+            t,
+            skills.filter((s) => s.requiredTools.includes(t.name)).map((s) => s.name),
+          ),
+        ),
+      );
+    }),
+    create: base
+      .input(NewTool)
+      .output(ToolView)
+      .handler(({ context: c, input }) =>
+        guard(async () => c.tools.view(await c.tools.create(input), [])),
+      ),
+    update: base
+      .input(UpdateTool)
+      .output(ToolView)
+      .handler(({ context: c, input }) =>
+        guard(async () => c.tools.view(await c.tools.update(input), [])),
+      ),
+    remove: base
+      .input(z.object({ id: z.string() }))
+      .handler(({ context: c, input }) => guard(() => c.tools.remove(input.id))),
   },
   skills: {
     list: base
@@ -612,9 +653,25 @@ export const router = {
       .input(NewJob)
       .output(z.object({ id: z.string() }))
       .handler(({ context: c, input }) => guard(() => ({ id: c.projects.createJob(input) }))),
-    start: base
-      .input(z.object({ id: z.string() }))
-      .handler(({ context: c, input }) => guard(() => c.runner.start(input.id))),
+    start: base.input(z.object({ id: z.string() })).handler(({ context: c, input }) =>
+      guard(async () => {
+        // A job's tools are set up before it starts (ADR-021).
+        const job = c.jobs.get(input.id);
+        const missing = job ? c.tools.missing(job.tools) : [];
+        if (missing.length)
+          throw new Error(
+            `Set up ${missing.map((m) => `"${m}"`).join(", ")} in Settings → Tools first: the skill needs ${missing.length === 1 ? "it" : "them"}.`,
+          );
+        for (const row of job ? c.tools.byNames(job.tools) : []) {
+          const view = await c.tools.view(row, []);
+          if (view.missingSecrets.length)
+            throw new Error(
+              `The tool "${row.name}" is missing its secret ${view.missingSecrets.join(", ")}: set it in Settings → Tools.`,
+            );
+        }
+        return c.runner.start(input.id);
+      }),
+    ),
     get: base
       .input(z.object({ id: z.string() }))
       .output(JobView)

@@ -107,6 +107,18 @@ export interface SessionStart {
   /** The Leg's secret (e.g. an API key), resolved from the store at start (BR-13). */
   credential: string | null;
   onPermission: (request: PermissionRequest) => Promise<PermissionDecision>;
+  /**
+   * MCP servers this session gets, by name (ADR-021): each is Oraknid's
+   * bridge to a tool the daemon runs. Their calls are judged by the
+   * broker, so the Leg-level permission for them is allowed.
+   */
+  mcpServers?: Record<string, McpServer>;
+}
+
+/** A stdio MCP server a Leg starts: here always Oraknid's bridge. */
+export interface McpServer {
+  command: string;
+  args: string[];
 }
 
 export interface LegSession {

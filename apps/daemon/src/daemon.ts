@@ -58,6 +58,8 @@ import { MAX_RUNNING_JOBS, readSetting } from "./settings.ts";
 import { SilkStore } from "./silk/store.ts";
 import { SkillStore } from "./skills/store.ts";
 import { startNightlyBackups } from "./storage/storage.ts";
+import { McpBroker } from "./tools/broker.ts";
+import { ToolRegistry } from "./tools/registry.ts";
 import { VERSION } from "./version.ts";
 import { setShadowRoot } from "./workspace/git.ts";
 import { Projects } from "./workspace/projects.ts";
@@ -148,6 +150,9 @@ export async function startDaemon(options: DaemonOptions) {
   const skills = new SkillStore(db, now);
   skills.seedBuiltIns();
   const projectsService = new Projects(db, bus, skills, now);
+  // Tools for skills: MCP servers the daemon runs, never the Legs (ADR-021).
+  const toolRegistry = new ToolRegistry(db, bus, secrets, now);
+  const broker = new McpBroker({ registry: toolRegistry, sandbox: os.sandbox });
   const brain =
     options.brain ??
     new PoolLegBrain({
@@ -191,6 +196,7 @@ export async function startDaemon(options: DaemonOptions) {
         supervisor,
         sandbox: os.sandbox,
         brain,
+        tools: { registry: toolRegistry, broker },
         legsDir: paths.legs,
         tmpDir: join(paths.dataDir, "tmp"),
         now,
@@ -375,6 +381,7 @@ export async function startDaemon(options: DaemonOptions) {
         inbox,
         projects: projectsService,
         skills,
+        tools: toolRegistry,
         devices,
         brain,
         openPath:

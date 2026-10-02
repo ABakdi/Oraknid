@@ -11,6 +11,7 @@ import {
   type LegConfig,
   type LegEvent,
   type LegSession,
+  type McpServer,
   type PermissionDecision,
   type PermissionRequest,
   type ProbeResult,
@@ -70,6 +71,8 @@ export const readConfig = (leg: LegConfig): OpenCodeConfig => ({
 /** Every action asks, so Oraknid's policy decides; reading the worktree doesn't (ADR-015). */
 const ASK_EVERYTHING = [
   { action: "*", resource: "*", effect: "ask" },
+  // No Code Mode: MCP tools are called by name, so each call is judged by name (ADR-021).
+  { action: "execute", resource: "*", effect: "deny" },
   { action: "read", resource: "*", effect: "allow" },
   { action: "glob", resource: "*", effect: "allow" },
   { action: "grep", resource: "*", effect: "allow" },
@@ -89,8 +92,26 @@ const TOOL_NAMES: Record<string, string> = {
 };
 
 /** The config OpenCode gets, whole, from the environment: no file of mine or the repo's counts. */
-export function configContent(cfg: OpenCodeConfig, models = cfg.models): string {
+export function configContent(
+  cfg: OpenCodeConfig,
+  models = cfg.models,
+  mcp: Record<string, McpServer> = {},
+): string {
   return JSON.stringify({
+    // Only Oraknid's bridges to the job's tools (ADR-021).
+    ...(Object.keys(mcp).length
+      ? {
+          mcp: {
+            servers: Object.fromEntries(
+              Object.entries(mcp).map(([name, m]) => [
+                name,
+                // Each tool by its name, not through one code-running tool.
+                { type: "local", command: [m.command, ...m.args], codemode: false },
+              ]),
+            ),
+          },
+        }
+      : {}),
     model: models[0] ? `${cfg.providerID}/${models[0]}` : undefined,
     update: "disable",
     providers: {
@@ -146,6 +167,7 @@ async function startServer(
   cwd: string,
   key: string | null,
   models: string[] = cfg.models,
+  mcp: Record<string, McpServer> = {},
 ): Promise<Server> {
   const home = plan?.home ?? cfg.home ?? join(tmpdir(), `oraknid-opencode-${leg.id}`);
   // Its own world: home, temp and every XDG dir (ADR-015: XDG alone still reads ~/.claude).
@@ -167,7 +189,7 @@ async function startServer(
     OPENCODE_DISABLE_PROJECT_CONFIG: "1",
     OPENCODE_DISABLE_MODELS_FETCH: "1",
     OPENCODE_DISABLE_AUTOUPDATE: "1",
-    OPENCODE_CONFIG_CONTENT: configContent(cfg, models),
+    OPENCODE_CONFIG_CONTENT: configContent(cfg, models, mcp),
     ...(key ? { ORAKNID_PROVIDER_KEY: key } : {}),
   };
   const args = ["serve", "--stdio", "--port", "0"];
@@ -343,6 +365,7 @@ export function createOpenCodeAdapter(): LegAdapter {
         s.cwd,
         s.credential ?? (free ? ZEN_KEY : null),
         cfg.models.length ? cfg.models : [s.model],
+        s.mcpServers ?? {},
       );
       const events = new Channel<LegEvent>();
       const abort = new AbortController();
@@ -515,6 +538,21 @@ export function createOpenCodeAdapter(): LegAdapter {
           }
         }
       };
+
+      // The job's tools are connected before the first prompt, so the model is offered them.
+      const wanted = Object.keys(s.mcpServers ?? {});
+      for (let i = 0; wanted.length && i < 75; i++) {
+        const list = await call<{ data: { name: string; status: { status: string } }[] }>(
+          server,
+          "GET",
+          "/api/mcp",
+        ).catch(() => ({ data: [] }));
+        const settled = list.data.filter(
+          (m) => wanted.includes(m.name) && m.status.status !== "pending",
+        );
+        if (settled.length === wanted.length) break;
+        await new Promise((r) => setTimeout(r, 200));
+      }
 
       // The stream is opened before the first prompt, so nothing of the turn is missed.
       const reading = (async () => {

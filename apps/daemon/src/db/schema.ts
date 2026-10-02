@@ -43,6 +43,27 @@ export const skills = sqliteTable(
   (t) => [primaryKey({ columns: [t.id, t.version] })],
 );
 
+/** Tools for skills: MCP servers the daemon runs for a job's sessions (ADR-021). */
+export const tools = sqliteTable("tools", {
+  id: text("id").primaryKey(),
+  /** The name skills ask for, e.g. "email". */
+  name: text("name").notNull().unique(),
+  description: text("description").notNull().default(""),
+  command: text("command").notNull(),
+  args: json<string[]>("args").notNull(),
+  /** Environment variables whose values are secrets in the keychain. */
+  secretNames: json<string[]>("secret_names").notNull(),
+  /** Plain environment, never secret. */
+  env: json<Record<string, string>>("env").notNull(),
+  /** Its tools that only read; anything else writes. */
+  reads: json<string[]>("reads").notNull(),
+  /** Its tools that send (the gated action `send`). */
+  sends: json<string[]>("sends").notNull(),
+  /** What it returns is outside content (BR-15). */
+  untrusted: integer("untrusted", { mode: "boolean" }).notNull().default(true),
+  createdAt: integer("created_at").notNull(),
+});
+
 export const jobs = sqliteTable(
   "jobs",
   {
@@ -86,6 +107,8 @@ export const jobs = sqliteTable(
     verifyRound: integer("verify_round").notNull().default(0),
     /** The active state a paused or waiting job returns to. */
     resumeState: text("resume_state"),
+    /** The tools this job's sessions get, by name (ADR-021). */
+    tools: json<string[]>("tools").notNull().default([]),
     createdAt: integer("created_at").notNull(),
     startedAt: integer("started_at"),
     finishedAt: integer("finished_at"),

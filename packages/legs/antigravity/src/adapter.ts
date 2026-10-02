@@ -10,6 +10,7 @@ import {
   type LegConfig,
   type LegEvent,
   type LegSession,
+  type McpServer,
   type PermissionRequest,
   type ProbeResult,
   type SandboxPlan,
@@ -70,6 +71,20 @@ export function writeSettings(home: string, allowed: Iterable<string>) {
       null,
       2,
     )}\n`,
+  );
+}
+
+/**
+ * The session's MCP servers, where `agy` reads them in the Leg's home
+ * (ADR-021; the location is from Antigravity's guides, unverified):
+ * only Oraknid's bridges, rewritten at each run.
+ */
+export function writeMcpConfig(home: string, servers: Record<string, McpServer>) {
+  const dir = join(home, ".gemini", "config");
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  writeFileSync(
+    join(dir, "mcp_config.json"),
+    `${JSON.stringify({ mcpServers: servers }, null, 2)}\n`,
   );
 }
 
@@ -207,6 +222,7 @@ export function createAntigravityAdapter(): LegAdapter {
       /** One `agy` run: one message in, its events out, until its result. */
       const run = (message: string, onText: (t: string) => void): Promise<RunEnd> => {
         writeSettings(home, allowed);
+        writeMcpConfig(home, s.mcpServers ?? {});
         const args = [
           "--input-format",
           "stream-json",

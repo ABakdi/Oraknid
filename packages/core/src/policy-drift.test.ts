@@ -176,6 +176,28 @@ describe("permission policy", () => {
     ).toBe("allow");
   });
 
+  it("lets a tool's declared reads through, asks before a send, and gates anything else (ADR-021)", () => {
+    const mcp = new Map<string, "read" | "send">([
+      ["mcp__email__list_messages", "read"],
+      ["mcp__email__send_email", "send"],
+    ]);
+    const call = (tool: string) => ({ tool, command: null, path: null });
+    expect(decide(call("mcp__email__list_messages"), ctx({ mcp })).verdict).toBe("allow");
+    expect(decide(call("mcp__email__send_email"), ctx({ mcp, autonomy: "full" }))).toMatchObject({
+      verdict: "ask",
+      gated: "send",
+    });
+    expect(
+      decide(call("mcp__email__delete_message"), ctx({ mcp, autonomy: "full" })),
+    ).toMatchObject({ verdict: "ask", gated: "external-write" });
+    // A waived send still asks once the task read untrusted content (BR-15).
+    const waived = new Set(["send" as const]);
+    expect(decide(call("mcp__email__send_email"), ctx({ mcp, waived })).verdict).toBe("allow");
+    expect(
+      decide(call("mcp__email__send_email"), ctx({ mcp, waived, untrusted: true })),
+    ).toMatchObject({ verdict: "ask", gated: "send" });
+  });
+
   it("finds every program in a command line", () => {
     expect(
       programsOf("cd app && FOO=1 ./node_modules/.bin/vitest run | tee out; $(whoami)"),

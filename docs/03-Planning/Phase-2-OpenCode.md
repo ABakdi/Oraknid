@@ -32,7 +32,7 @@ makes fallback and cross-Leg handoff real.
 - [~] Routing and fallback across kinds: a usage limit on Claude Code moves the task to OpenCode (ADR-009 keeps other Claude accounts out). Routing over all three kinds by learned profiles is exercised once real outcomes exist.
 - [x] Cross-Leg handoff through Silk only (Claude Code → OpenCode), tested with the real OpenCode binary
 - [x] OpenCode's free models by default, no account or key; a real run wrote a file through the adapter (2026-10-02)
-- [ ] A real job on an OpenCode Leg, from the UI
+- [x] A real job on an OpenCode Leg, from the UI (2026-10-02: a shell script and its tests on OpenCode's free models only, The Eye included; completed after the fixes it showed: stretch routing, a broken check repaired by The Eye, every part of a compound command judged)
 
 ## Exit criterion
 

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseSkill, skillExcerpt } from "./skills.ts";
+import { parseSkill, skillChecks, skillExcerpt } from "./skills.ts";
 
 describe("parseSkill", () => {
   it("reads the built-in canon-driven skill", () => {
@@ -58,5 +58,16 @@ describe("skillExcerpt", () => {
     expect(e).toContain("Short version.");
     expect(e).toContain("Tag it.");
     expect(e).not.toContain("Write tests first.");
+  });
+});
+
+describe("skillChecks", () => {
+  it("reads the skill's own checks for non-code results, or nothing", () => {
+    const body =
+      "# Mail\n\nIntro.\n\n## Checks\n- Every draft is addressed to the sender.\n- No draft promises a date.\n\n## Sending\nAsk first.\n";
+    expect(skillChecks(body)).toBe(
+      "- Every draft is addressed to the sender.\n- No draft promises a date.",
+    );
+    expect(skillChecks("# No checks\n\n## Other\nx")).toBe("");
   });
 });

@@ -71,6 +71,9 @@ export const JobView = Job.extend({
   priority: z.number().int().default(0),
   allowRules: z.array(z.string()).default([]),
   denyRules: z.array(z.string()).default([]),
+  /** The tools its sessions get (ADR-021), and those not set up in Settings → Tools yet. */
+  tools: z.array(z.string()).default([]),
+  missingTools: z.array(z.string()).default([]),
 });
 export type JobView = z.infer<typeof JobView>;
 

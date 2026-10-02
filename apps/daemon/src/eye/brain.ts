@@ -44,6 +44,8 @@ export interface EyeBrain {
     task: { title: string; instructions: string; kind: string };
     report: string;
     changes: string;
+    /** The skill's own checks for results that aren't code (Skills → Checks). */
+    criteria?: string;
   }): Promise<Evaluation>;
   /** What a message of mine is, and what to do about it (Talking to The Eye). */
   triage(input: {
@@ -234,8 +236,9 @@ Answer "ask" when it could send the owner's data out, change things outside the 
     task: { title: string; instructions: string; kind: string };
     report: string;
     changes: string;
+    criteria?: string;
   }) {
-    const prompt = `A coding agent says it finished a ${i.task.kind} task that has no automatic check. Review it before it is accepted. You may read the files in the workspace.
+    const prompt = `An agent says it finished a ${i.task.kind} task that has no automatic check. Review it before it is accepted. You may read the files in the workspace.
 
 # The task: ${i.task.title}
 ${i.task.instructions}
@@ -247,7 +250,7 @@ ${JSON.stringify(i.report.slice(-4000) || "(nothing)")}
 # What changed in the workspace
 ${i.changes.slice(0, 3000) || "No file changes."}
 
-Accept it ("accepted": true) when the work the task asks for is there and sound: the findings or the plan exist where the task says, cover what it asks, and contain nothing invented. Otherwise list in "missing" exactly what is still needed, so the agent can finish. "reason" is one sentence.`;
+${i.criteria ? `# The method's own checks\nThe result must pass every one of these:\n${i.criteria.slice(0, 3000)}\n\n` : ""}Accept it ("accepted": true) when the work the task asks for is there and sound: the findings or the plan exist where the task says, cover what it asks, and contain nothing invented. Otherwise list in "missing" exactly what is still needed, so the agent can finish. "reason" is one sentence.`;
     return this.#ask(i.jobId, i.cwd, "medium", ["review"], Evaluation, prompt, "evaluate");
   }
 

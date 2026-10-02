@@ -205,6 +205,13 @@ export function JobPage({ id }: { id: string }) {
           </>
         }
       />
+      {j.missingTools.length ? (
+        <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
+          {t("This job's skill uses {tools}, not set up yet: add it in Settings → Tools.", {
+            tools: j.missingTools.join(", "),
+          })}
+        </div>
+      ) : null}
       {j.blockedReason || j.pauseReason ? (
         <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
           {j.blockedReason ?? j.pauseReason}

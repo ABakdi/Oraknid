@@ -60,6 +60,20 @@ describe("Claude Code adapter", () => {
     await s.kill();
   });
 
+  it("gives a session the job's tools, as Oraknid's bridges and nothing else (ADR-021)", async () => {
+    const seen: { options: Options[] } = { options: [] };
+    const s = await createClaudeCodeAdapter({ query: fakeQuery("reply", seen) }).start(
+      start({
+        mcpServers: { "oraknid-email": { command: "/usr/bin/node", args: ["/b.mjs", "/s.sock"] } },
+      }),
+    );
+    await readUntil(s, (e) => e.type === "turn.ended");
+    expect((seen.options[0] as unknown as Record<string, unknown>).mcpServers).toEqual({
+      "oraknid-email": { type: "stdio", command: "/usr/bin/node", args: ["/b.mjs", "/s.sock"] },
+    });
+    await s.kill();
+  });
+
   it("reads usage from the result, including the context window", async () => {
     const s = await createClaudeCodeAdapter({ query: fakeQuery("reply") }).start(start());
     await readUntil(s, (e) => e.type === "turn.ended");

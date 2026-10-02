@@ -13,10 +13,11 @@ table is the summary and is kept in step with the contracts.
 | Web | `web.edit` (add, update, remove tasks) | Plan editing; an edit that breaks The Web's rules is refused and undone. |
 | Tasks | `tasks.pin` / `takeOver` / `handBack` / `rollback` / `attempts` · `diff` (M2.0) | `diff`: the task's commit once done, else its work since before its first attempt. |
 | Sessions | `sessions.list({jobId})` / `sessions.log({id, after})` (Checkpoint 1) | Each Leg session of a job and its log as readable lines, from a byte offset. |
-| Legs | `legs.loginStart` / `loginFinish` (a Claude Code Leg's sign-in, 2026-10-02) · `legs.list` / `get` / `create` / `test` / `update` (with `maxSessions`, M3.3) / `pause` / `resume` / `remove` / `setModelHidden` / `setProfile` | Creating tests the Leg at once. A Leg's view carries its models with effective profiles, quota windows, VRAM and a setup hint. |
+| Legs | `legs.loginStart` / `loginFinish` (a Claude Code or Antigravity Leg's sign-in, 2026-10-02) · `legs.list` / `get` / `create` / `test` / `update` (with `maxSessions`, M3.3) / `pause` / `resume` / `remove` / `setModelHidden` / `setProfile` | Creating tests the Leg at once. A Leg's view carries its models with effective profiles, quota windows, VRAM and a setup hint. |
 | Silk | `silk.list` / `add` / `edit` / `importMirror` | Editing supersedes. `importMirror` looks for hand edits now. |
 | Inbox | `inbox.list` / `inbox.answer` | `list` filters by state, kind, project, job and words (`q`); each item names its project, job and task. An approval takes only one of its options; the answering device is recorded. |
-| Skills | `skills.list` / `get` / `upload` / `edit` / `remove` | Built-ins are read-only; an upload says what front matter it ignored. |
+| Skills | `skills.list` / `get` / `upload` / `edit` / `remove` | Built-ins are read-only; an upload says what front matter it ignored. The default skill comes first. |
+| Tools | `tools.list` / `create` / `update` / `remove` (Phase 6) | MCP servers for skills ([[ADR-021-Tools-Broker]]). Secrets go to the keychain; a view names them and those missing, never their values. A job lists its `tools` and `missingTools`; `jobs.start` refuses while one is missing. |
 | Stats | `stats.summary` / `tokens` / `activity` | Totals and charts per job, project or everything. |
 | Logs | `audit.search` · `logs.tail` (M2.0) | Filters: job, type or prefix, actor, text. `logs.tail`: the daemon log's last lines. The audit export is built in the UI from `audit.search` pages. |
 | Secrets | `secrets.unlock` | Opens the encrypted-file store when there is no keychain. |

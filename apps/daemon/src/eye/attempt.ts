@@ -41,6 +41,8 @@ import type { LegSupervisor, Supervised } from "../legs/supervisor.ts";
 import { readSetting } from "../settings.ts";
 import { handoffFromLog } from "../silk/handoff.ts";
 import type { SilkStore } from "../silk/store.ts";
+import type { BrokerSession, McpBroker } from "../tools/broker.ts";
+import type { ToolRegistry } from "../tools/registry.ts";
 import {
   changedSince,
   checkpoint,
@@ -80,6 +82,8 @@ export interface AttemptDeps {
   now: () => number;
   /** Auto approval (ADR-014); without one, a classify verdict asks me. */
   brain?: EyeBrain;
+  /** Tools for skills (ADR-021): the job's MCP servers, run by the daemon. */
+  tools?: { registry: ToolRegistry; broker: McpBroker };
   /** Session rotation (BR-3): share of the context window. */
   rotateAt?: number;
   /** How often to look for a stall while waiting for a Leg. */
@@ -97,6 +101,10 @@ export interface AttemptJob {
   waived: GatedAction[];
   unsandboxed: boolean;
   skillBody: string;
+  /** The tools its sessions get, by name (ADR-021). */
+  tools: string[];
+  /** The skill's own checks for results that aren't code (Skills → Checks). */
+  skillChecks?: string;
   /** The job's inputs, rendered for context packs. */
   inputs: string;
 }
@@ -383,9 +391,14 @@ export async function runAttempt(
 
   /** This attempt read something from the web: untrusted from here on (BR-15; Audit 1 → S1-09). */
   let readTheWeb = false;
+  const toolRows = d.tools && job.tools.length ? d.tools.registry.byNames(job.tools) : [];
+  const brokered = toolRows.map((t) => `oraknid-${t.name}`);
   const onPermission = async (r: PermissionRequest): Promise<PermissionDecision> => {
+    // The broker judges every call to a job's tool: the Leg's own ask for it passes (ADR-021).
+    if (isBrokered(r.tool, brokered)) return { allow: true };
     const policy = policyFor(d.db, job.id, ws.cwd);
     if (readTheWeb) policy.untrusted = true;
+    if (toolRows.length) policy.mcp = d.tools?.registry.declarations(toolRows);
     const first = decide(r, policy);
     const fetches =
       r.tool === "WebFetch" ||
@@ -474,8 +487,42 @@ export async function runAttempt(
     return built.text;
   };
 
+  /** The job's tools for this attempt's sessions, opened with the first one. */
+  let toolsOpen = null as BrokerSession | null;
+  const openTools = async () => {
+    if (toolsOpen || !toolRows.length || !d.tools) return toolsOpen;
+    toolsOpen = await d.tools.broker.open(toolRows, {
+      decide: (tool, name, args) =>
+        onPermission({
+          tool: `mcp__${tool.name}__${name}`,
+          input: args,
+          command: null,
+          path: null,
+        }),
+      done: (tool, name, o) => {
+        event("tool.called", {
+          tool: tool.name,
+          name,
+          allowed: o.allowed,
+          ok: o.ok,
+          bytes: o.bytes,
+          ...(o.flags.length ? { flags: o.flags } : {}),
+        });
+        // What came from outside makes the task untrusted (BR-15).
+        if (o.allowed && tool.untrusted && !readTheWeb) {
+          readTheWeb = true;
+          event("task.untrusted", {
+            reason: `read from ${tool.name} (${name}): gated actions ask me from now on`,
+          });
+        }
+      },
+    });
+    return toolsOpen;
+  };
+
   const openSession = async (prompt: string) => {
     observed.lastActivityAt = now();
+    const tools = await openTools();
     // A new session counts its tokens from zero.
     sessionTokens = 0;
     tokensBaseline = 0;
@@ -491,6 +538,7 @@ export async function runAttempt(
       prompt,
       unsandboxed: job.unsandboxed,
       onPermission,
+      ...(tools ? { tools } : {}),
     });
     const row = d.db
       .select({ logFile: sessions.logFile })
@@ -814,6 +862,7 @@ export async function runAttempt(
             task: { title: task.title, instructions: task.instructions, kind: task.kind },
             report: end.text,
             changes: await diffStatSince(ws.g, ckpt, ws.tmpDir),
+            ...(job.skillChecks ? { criteria: job.skillChecks } : {}),
           });
           verified = review.accepted;
           event("task.evaluated", { accepted: review.accepted, reason: review.reason });
@@ -917,7 +966,19 @@ export async function runAttempt(
       });
     });
     throw error;
+  } finally {
+    toolsOpen?.close();
   }
+}
+
+/**
+ * A Leg's name for a call to one of Oraknid's bridges: `mcp__<server>__<tool>`
+ * (Claude Code) or `<server>_<tool>` (OpenCode, which may turn `-` into `_`).
+ */
+export function isBrokered(tool: string, servers: string[]): boolean {
+  const norm = (x: string) => x.replace(/[^A-Za-z0-9_]/g, "_");
+  const t = norm(tool);
+  return servers.some((s) => t.startsWith(`mcp__${norm(s)}__`) || t.startsWith(`${norm(s)}_`));
 }
 
 /** A Leg's limit of task sessions at once: its own setting, else one (ADR-016). */

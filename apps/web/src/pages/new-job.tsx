@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { ErrorNote, Markdown, PageHeader } from "@/components/common";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -31,6 +32,10 @@ export function NewJobPage() {
     topics: ["overview"],
     refreshOn: (e) => e.type.startsWith("leg."),
   });
+  const tools = useLive(() => api.tools.list(), {
+    topics: ["overview"],
+    refreshOn: (e) => e.type.startsWith("tool."),
+  });
   const [projectId, setProjectId] = useState<string>("");
   const [goal, setGoal] = useState("");
   const [skillId, setSkillId] = useState<string>("");
@@ -48,13 +53,21 @@ export function NewJobPage() {
   const project = projectId || projects.data?.[0]?.id || "";
   const skill = skillId || skills.data?.[0]?.id || "";
   const healthy = (legs.data ?? []).filter((l) => l.health === "healthy" && !l.paused);
-  const why = !project
-    ? t("Create a project first.")
-    : !goal.trim()
-      ? t("Write the goal.")
-      : healthy.length === 0
-        ? t("No Leg is healthy right now.")
-        : null;
+  // The skill's tools must be set up before its job starts (ADR-021).
+  const needed = skills.data?.find((s) => s.id === skill)?.requiredTools ?? [];
+  const ready = new Set(
+    (tools.data ?? []).filter((x) => x.missingSecrets.length === 0).map((x) => x.name),
+  );
+  const missingTools = needed.filter((n) => !ready.has(n));
+  const why = missingTools.length
+    ? t("Set up {tools} in Settings → Tools first.", { tools: missingTools.join(", ") })
+    : !project
+      ? t("Create a project first.")
+      : !goal.trim()
+        ? t("Write the goal.")
+        : healthy.length === 0
+          ? t("No Leg is healthy right now.")
+          : null;
 
   const start = async () => {
     setBusy(true);
@@ -155,6 +168,25 @@ export function NewJobPage() {
                 className="text-muted-foreground"
                 text={`${chosenSkill.description}${chosenSkill.interview ? `\n\n${t("It starts by interviewing you in the inbox.")}` : ""}`}
               />
+            ) : null}
+            {needed.length ? (
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <span className="text-muted-foreground">{t("Uses:")}</span>
+                {needed.map((n) => (
+                  <Badge key={n} variant={ready.has(n) ? "outline" : "destructive"}>
+                    {ready.has(n) ? n : t("{tool} (not set up)", { tool: n })}
+                  </Badge>
+                ))}
+                {missingTools.length ? (
+                  <Button
+                    variant="link"
+                    className="h-auto p-0 text-xs"
+                    onClick={() => go("/settings")}
+                  >
+                    {t("Set up in Settings")}
+                  </Button>
+                ) : null}
+              </div>
             ) : null}
           </div>
           <fieldset className="space-y-1.5">

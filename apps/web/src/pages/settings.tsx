@@ -5,6 +5,7 @@ import { AwayCard } from "@/components/away-card";
 import { ErrorNote, Loading, PageHeader } from "@/components/common";
 import { RulesCard } from "@/components/rules-card";
 import { StorageCard } from "@/components/storage-card";
+import { ToolsCard } from "@/components/tools-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -52,6 +53,7 @@ export function SettingsPage() {
       <JobsLimitCard />
       <FallbackCard />
       <PolicyCard />
+      <ToolsCard />
       <DevicesCard />
       <AwayCard />
       <StorageCard />
