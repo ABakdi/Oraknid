@@ -151,9 +151,23 @@ The audit trail and the daemon's logs: search, filters, export.
 
 ### Settings
 
-The Eye Leg, notifications, the allow/deny list, default budgets and
-thresholds, drift thresholds, devices and pairing, theme, storage use
-and pruning, keychain status, sleep inhibition status.
+In tabs, each one concern in sections; the tab is in the address
+(`/settings/<tab>`):
+- **General**: this computer (keychain, sandbox, sleep inhibition),
+  storage use and pruning, notifications, theme.
+- **Eye & jobs**: The Eye's models, jobs at once, same-provider fallback.
+- **Security**: the PIN and idle lock ([[ADR-029-App-Lock]]), the
+  allow/deny list, the terminal.
+- **Devices & phone**: pairing my phone in one step (a QR code to scan;
+  it needs the PIN and The Nest, and the code expires unused after ten
+  minutes), the paired devices, The Nest's connection.
+- **Connections**: GitHub, tools for skills.
+
+### The lock
+
+With the PIN set, a device opens on a PIN pad (digits big enough for a
+thumb) until it is unlocked; idle, it locks again. A wrong PIN says how
+many tries are left before the device is unpaired.
 
 ## Empty, loading and error states
 

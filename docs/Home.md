@@ -74,6 +74,7 @@ Nothing is built yet.
 - [[ADR-022-Eye-Decision-Models]] — a model per kind of Eye decision, and shadow plans to compare
 - [[ADR-023-GitHub-By-Token]] · [[ADR-024-Oraknid-Helper]] · [[ADR-025-Chats]] — Phase 8: GitHub by token, the helper acting through the API, chats that read and research
 - [[ADR-026-Servers]] · [[ADR-027-Oraknid-Monitor]] · [[ADR-028-Terminal]] — Phase 9: servers over SSH with a state document, the monitor read over SSH, a terminal with xterm.js
+- [[ADR-029-App-Lock]] — Phase 10: a PIN on every device, checked by the daemon
 - [[ADR-013-Model-Aware-Routing]] — route to Leg + model + effort; smallest sufficient model; reserve scarce windows
 
 ## 05 — Checkpoints
@@ -81,7 +82,7 @@ Nothing is built yet.
 - [[Checkpoint-1]] — the first real job: too many approvals, the inbox across projects, agent output, talking to The Eye, the result
 
 ## 06 — Audit
-- [[Audit-Home]] — none yet; the first runs before `v0.1.0`
+- [[Audit-Home]] — [[Audit-1]] (closed) and [[Audit-2]] (security, open on two items)
 
 ## Methodology
 - [[skill]] — Canon-Driven Development, the method this canon follows and Oraknid's first built-in skill

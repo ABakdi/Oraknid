@@ -111,10 +111,24 @@ sandbox limits damage, but it doesn't make that safe.
   in a file only my user can read. A token in the address is accepted
   only by the live socket. Secrets are scrubbed from events, logs, Silk
   and inbox text.
+- **A PIN unlocks every device** ([[ADR-029-App-Lock]]): the daemon
+  checks it, and each device's calls need an unlocked session as well
+  as its token. Idle sessions lock; ten wrong PINs unpair the device.
+- A pairing link for away (its QR code) expires if no device uses it
+  within ten minutes, and needs the PIN on the device after.
 - Exposing the daemon on the local network (so my phone can reach it
   before The Nest exists) is an explicit setting, served over HTTPS with
   a local certificate.
-- Remote access goes only through The Nest ([[The-Nest]]).
+- Remote access goes only through The Nest ([[The-Nest]]). Away from
+  home a device can follow, answer, approve and start jobs; what opens
+  a new way in (pairing, the terminal, policies, projects, Legs, tools,
+  servers, the PIN, a job outside the sandbox) is done at home only.
+- Every response carries a content policy: no framing by another site,
+  scripts and images only from Oraknid itself; a request another site
+  made my browser send, other than opening a page, is refused.
+- Oraknid assumes a computer that is mine alone: software running as me
+  can read its data, and another user could take its port while it is
+  down ([[Audit-2]]).
 
 ## Audit log (BR-16)
 

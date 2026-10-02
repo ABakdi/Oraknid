@@ -44,7 +44,18 @@ bwrap --unshare-all --share-net --die-with-parent --new-session \
   so its login and sessions persist across sessions.
 - Verification commands run in the same wrapper, with a throwaway home
   instead of the Leg's, after the command policy has allowed them.
-- Network is shared. Localhost model servers are reachable.
+- Network is shared (Legs need their APIs), so the wrapper runs under
+  a **Landlock** domain first (`python3 -c <script> bwrap …`, Linux
+  6.12+): abstract unix sockets and signals outside the sandbox are out
+  of reach. Without it, a Leg could connect to the desktop's abstract
+  sockets (a terminal's single-instance socket, X11) and run code
+  outside the sandbox ([[Audit-2]] S2-01). `oraknid doctor` says whether
+  it is on.
+- Still reachable: TCP on the host's loopback (the daemon's API, which
+  needs a token; other local services). Its own network namespace, with
+  `pasta` giving it the internet only, is the next step ([[Audit-2]]).
+- A Leg's `~/.ssh` is emptied at the start of every attempt and holds
+  only that job's servers' keys ([[ADR-026-Servers]]).
 
 ## Command policy
 
