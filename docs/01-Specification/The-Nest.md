@@ -38,6 +38,16 @@ flowchart LR
   `NEST_DAEMONS`; a public Nest lets daemons register themselves
   ([[ADR-031-Public-Nest]]).
 - Limits per address and per daemon, frame size and idle sockets.
+- *(2026-10-03)* A Nest is private (the default) or public
+  (`NEST_MODE=public`): in Settings → Devices & phone → The Nest, "Use a
+  public Nest" registers this daemon in one click (address, by default
+  `https://oraknid.abakdi.com`, and an invite code if it asks one); "My
+  own Nest" takes the address, id and secret as before. A public Nest
+  keeps only the hash of each registered daemon's secret, limits
+  registrations, daemons, devices and bytes per day, and forgets a
+  daemon unseen for 30 days. Its page says it is public and can't read
+  what it carries. `install.sh` runs one Nest per domain, two on one
+  server if I want ([[ADR-031-Public-Nest]]).
 
 ## Still open
 - Web push away from home is built (the loader holds the subscription;

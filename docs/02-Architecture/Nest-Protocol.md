@@ -10,7 +10,7 @@ How my devices reach the daemon through The Nest, encrypted end to end
 | :-- | :-- |
 | Daemon | Its static X25519 key pair (in its data folder, 0600), its id, the Nest URL and the daemon secret The Nest knows it by. Each paired device's static public key. |
 | Device | Its static X25519 key pair (browser storage), the daemon's id and static public key, the Nest URL, its device token. All given at **local pairing**, which is the trusted channel. |
-| The Nest | The daemon secrets it accepts (its config), and nothing else: no keys, no tokens, no job data. |
+| The Nest | The daemon secrets it accepts (its config) and, when public, the ids of the daemons that registered with a SHA-256 hash of each secret (`daemons.json` on its volume), and nothing else: no keys, no tokens, no job data. |
 
 ## Connections
 
@@ -29,6 +29,15 @@ sequenceDiagram
     A->>D: sealed frames (responses, live events)
 ```
 
+- **A public Nest** (`NEST_MODE=public`, [[ADR-031-Public-Nest]]):
+  a daemon first calls `POST /register` (JSON, `{ invite }` when the
+  Nest sets `NEST_INVITE`) and gets `{ id, secret }`: a new id and a
+  random 43-character secret, shown once. Oraknid keeps them as it keeps
+  a configured Nest (the secret in the secret store) and connects to
+  `/daemon` like any other. Registering is refused with 404 on a private
+  Nest, 403 without the right code or from another site's page, 429 past
+  the registrations of its address this hour, 503 when the Nest is full.
+  `GET /info` answers `{ mode, inviteRequired }`; the loader shows it.
 - The daemon's link to The Nest carries many device connections,
   tagged by a connection number The Nest assigns. The Nest only moves
   opaque bytes between the two sockets of one connection.
@@ -80,5 +89,13 @@ without a ping. A device socket opens only from the Nest's own page
 answers, and has ten seconds for that. A daemon's secret is 32
 characters or more. The Nest's page can't be framed (HSTS,
 `X-Frame-Options`, no-sniff, no referrer).
+
+A public Nest adds, for the daemons that registered (not those in
+`NEST_DAEMONS`): five registrations per address an hour (every try
+counts), a thousand daemons, ten devices each, 2 GB relayed per daemon
+a day (past it, its devices are closed with 4029 and new ones refused
+until the next UTC day), and a daemon unseen for 30 days is forgotten.
+Registering is for Oraknid at home only: a device away from home can't
+move its daemon to another Nest.
 
 Related: [[The-Nest]] · [[Security]] · [[Realtime-Transport]] · [[ADR-017-Nest-E2E-Protocol]]

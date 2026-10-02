@@ -26,9 +26,10 @@ can't use what I use at home; and The Nest should serve other people.
 - [ ] Away from home with full rights: terminal through the tunnel, servers and the rest
 
 ### M11.4 — A public Nest ([[ADR-031-Public-Nest]])
-- [ ] Public mode with self-registration and its limits; private stays the default
-- [ ] "Use a public Nest" in Settings registers in one click
+- [x] Public mode with self-registration and its limits; private stays the default
+- [x] "Use a public Nest" in Settings registers in one click
 - [ ] `oraknid.abakdi.com` public; `private.oraknid.abakdi.com` mine, on the same server
+  (`install.sh` is ready for it: `--public`, one Nest per domain, the old install moved over; not deployed yet)
 
 ## Exit criterion
 

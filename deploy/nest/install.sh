@@ -2,7 +2,17 @@
 # The Nest in one go, on a Debian or Ubuntu server, behind nginx with HTTPS.
 #
 #   curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/main/deploy/nest/install.sh -o install.sh
-#   sudo sh install.sh oraknid.example.com [--email me@example.com] [--ref main]
+#   sudo sh install.sh oraknid.example.com [--public | --private] [--invite CODE]
+#                      [--email me@example.com] [--ref main]
+#
+# --private (the default): only your own daemon (its id and secret are printed).
+# --public: other people's daemons register themselves too (ADR-031);
+#   --invite CODE makes registering need that code, --no-invite drops it.
+# A rerun keeps the mode and the invite code unless you give them again.
+#
+# Two Nests on one server, one per domain, each run on its own:
+#   sudo sh install.sh oraknid.example.com --public
+#   sudo sh install.sh private.oraknid.example.com --private
 #
 # On a small server, build the image elsewhere and bring it, so the build
 # doesn't take memory from what already runs there:
@@ -12,25 +22,30 @@
 # What it does, and nothing else:
 # - installs what is missing: git, curl, openssl, Docker, nginx, certbot;
 # - clones (or updates) Oraknid in /opt/oraknid and builds The Nest's image;
-# - runs The Nest in Docker, listening on 127.0.0.1 only, on a free port;
+# - runs The Nest in Docker, listening on 127.0.0.1 only, on a free port,
+#   as its own compose project and container (oraknid-nest-<domain>), with
+#   a data volume of its own for the daemons that registered;
 # - adds one nginx site for the domain (WebSockets included), checks the
 #   whole nginx config before reloading, and never restarts nginx;
 # - gets a certificate with certbot and redirects HTTP to HTTPS;
-# - keeps the daemon id and secret in /etc/oraknid-nest/env (same ones on
-#   a rerun) and prints them for Settings → Away from home.
+# - keeps the daemon id, secret, port and mode in /etc/oraknid-nest/<domain>/env
+#   (same ones on a rerun) and prints them for Settings → Devices & phone.
 # Other sites, containers and ports are left as they are. Running it again
-# updates The Nest.
+# updates The Nest. An install made before there could be two (its files in
+# /etc/oraknid-nest/ itself) is moved into the per-domain layout, keeping
+# its secret and port.
 set -eu
 
 DOMAIN=""
 EMAIL=""
 REF="main"
 IMAGE=""
+MODE=""
+INVITE=""
+INVITE_SET=""
 DIR="/opt/oraknid"
 REPO="https://github.com/ABakdi/Oraknid.git"
-CONF_DIR="/etc/oraknid-nest"
-ENV_FILE="$CONF_DIR/env"
-PROJECT="oraknid-nest"
+CONF_ROOT="/etc/oraknid-nest"
 
 say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -41,16 +56,41 @@ while [ $# -gt 0 ]; do
     --ref) REF="${2:-}"; shift 2 ;;
     --dir) DIR="${2:-}"; shift 2 ;;
     --image) IMAGE="${2:-}"; shift 2 ;;
-    -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
+    --public) MODE="public"; shift ;;
+    --private) MODE="private"; shift ;;
+    --invite) INVITE="${2:-}"; INVITE_SET=1; shift 2 ;;
+    --no-invite) INVITE=""; INVITE_SET=1; shift ;;
+    -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
     -*) die "unknown option $1" ;;
     *) DOMAIN="$1"; shift ;;
   esac
 done
 
-[ -n "$DOMAIN" ] || die "usage: sh install.sh <domain> [--email you@example.com] [--ref main]"
-printf '%s' "$DOMAIN" | grep -Eq '^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' || die "\"$DOMAIN\" isn't a domain name"
+[ -n "$DOMAIN" ] || die "usage: sh install.sh <domain> [--public | --private] [--invite CODE] [--email you@example.com] [--ref main]"
+DOMAIN=$(printf '%s' "$DOMAIN" | tr 'A-Z' 'a-z')
+printf '%s' "$DOMAIN" | grep -Eq '^[a-z0-9.-]+\.[a-z]{2,}$' || die "\"$DOMAIN\" isn't a domain name"
+if [ -n "$INVITE" ]; then
+  printf '%s' "$INVITE" | grep -Eq '^[A-Za-z0-9._-]{4,100}$' || die "an invite code is 4 to 100 letters, digits, dots, dashes or underscores"
+fi
 [ "$(id -u)" -eq 0 ] || die "run it as root (sudo sh install.sh $DOMAIN)"
 command -v apt-get >/dev/null || die "this script knows Debian and Ubuntu (apt-get) only"
+
+# One Nest per domain: its own project, container, volume, settings and site.
+SLUG=$(printf '%s' "$DOMAIN" | tr '.' '-')
+NAME="oraknid-nest-$SLUG"
+CONF_DIR="$CONF_ROOT/$DOMAIN"
+ENV_FILE="$CONF_DIR/env"
+# Where a single install kept its settings before (one Nest per server).
+LEGACY_ENV="$CONF_ROOT/env"
+LEGACY_COMPOSE="$CONF_ROOT/compose.yml"
+LEGACY_PROJECT="oraknid-nest"
+if [ -d /etc/nginx/sites-available ]; then
+  SITE="/etc/nginx/sites-available/$DOMAIN.conf"
+  LINK="/etc/nginx/sites-enabled/$DOMAIN.conf"
+else
+  SITE="/etc/nginx/conf.d/$DOMAIN.conf"
+  LINK=""
+fi
 
 # --- What is missing -------------------------------------------------------
 need=""
@@ -93,24 +133,50 @@ else
   git clone -q --depth 1 --branch "$REF" "$REPO" "$DIR"
 fi
 
-# --- Secret and port, kept across reruns ------------------------------------
+# --- An install from before, for this domain? --------------------------------
+# It is this domain's when this domain's nginx site points at its port.
+MIGRATE=""
+if [ ! -f "$ENV_FILE" ] && [ -f "$LEGACY_ENV" ]; then
+  legacy_port=$(sed -n 's/^NEST_PORT=//p' "$LEGACY_ENV")
+  if [ -n "$legacy_port" ] && [ -f "$SITE" ] && grep -q "proxy_pass http://127.0.0.1:$legacy_port;" "$SITE"; then
+    MIGRATE=1
+  fi
+fi
+
+# --- Secret, port and mode, kept across reruns ------------------------------
 mkdir -p "$CONF_DIR"
-chmod 700 "$CONF_DIR"
-NEST_ID=""; NEST_SECRET=""; NEST_PORT=""
+chmod 700 "$CONF_ROOT" "$CONF_DIR"
+if [ -n "$MIGRATE" ]; then
+  say "Moving the Nest already here for $DOMAIN to $CONF_DIR (same secret and port)"
+  cp "$LEGACY_ENV" "$ENV_FILE"
+fi
+NEST_ID=""; NEST_SECRET=""; NEST_PORT=""; NEST_MODE=""; NEST_INVITE=""
 # shellcheck disable=SC1090
 [ -f "$ENV_FILE" ] && . "$ENV_FILE"
 [ -n "$NEST_ID" ] || NEST_ID="home-1"
 [ -n "$NEST_SECRET" ] || NEST_SECRET=$(openssl rand -base64 32 | tr -d '\n=' | tr '+/' '-_')
+[ -n "$MODE" ] || MODE="${NEST_MODE:-private}"
+[ -n "$INVITE_SET" ] || INVITE="$NEST_INVITE"
 port_free() { ! ss -tlnH "sport = :$1" 2>/dev/null | grep -q .; }
+# A port another Nest here keeps is taken, even while that one is stopped.
+port_kept() {
+  for f in "$LEGACY_ENV" "$CONF_ROOT"/*/env; do
+    [ -f "$f" ] && [ "$f" != "$ENV_FILE" ] || continue
+    grep -qx "NEST_PORT=$1" "$f" && return 0
+  done
+  return 1
+}
 if [ -z "$NEST_PORT" ]; then
   NEST_PORT=8787
-  while ! port_free "$NEST_PORT"; do NEST_PORT=$((NEST_PORT + 1)); done
+  while ! port_free "$NEST_PORT" || port_kept "$NEST_PORT"; do NEST_PORT=$((NEST_PORT + 1)); done
 fi
 umask 077
 cat >"$ENV_FILE" <<EOF
 NEST_ID=$NEST_ID
 NEST_SECRET=$NEST_SECRET
 NEST_PORT=$NEST_PORT
+NEST_MODE=$MODE
+NEST_INVITE=$INVITE
 NEST_DAEMONS=$NEST_ID:$NEST_SECRET
 EOF
 umask 022
@@ -123,22 +189,42 @@ if [ -n "$IMAGE" ]; then
   gunzip -c "$IMAGE" 2>/dev/null | docker load -q || docker load -q -i "$IMAGE"
   build="--no-build"
 fi
-say "Starting The Nest (127.0.0.1:$NEST_PORT)"
 cat >"$CONF_DIR/compose.yml" <<EOF
-# Written by install.sh: The Nest alone, nginx in front of it.
-name: $PROJECT
+# Written by install.sh: The Nest for $DOMAIN alone, nginx in front of it.
+name: $NAME
 services:
   nest:
     build:
       context: $DIR
       dockerfile: deploy/nest/Dockerfile
     image: oraknid-nest:latest
+    container_name: $NAME
     restart: unless-stopped
     environment:
       NEST_DAEMONS: \${NEST_DAEMONS}
+      NEST_MODE: \${NEST_MODE}
+      NEST_INVITE: \${NEST_INVITE}
+      NEST_DATA_DIR: /data
+    volumes:
+      - data:/data
     ports:
       - "127.0.0.1:$NEST_PORT:8080"
+volumes:
+  data:
+    name: $NAME-data
 EOF
+# The old project holds the port: it stops first, and its files are put aside.
+if [ -n "$MIGRATE" ]; then
+  say "Stopping the old compose project ($LEGACY_PROJECT)"
+  if [ -f "$LEGACY_COMPOSE" ]; then
+    docker compose -p "$LEGACY_PROJECT" --env-file "$LEGACY_ENV" -f "$LEGACY_COMPOSE" down --remove-orphans
+    mv "$LEGACY_COMPOSE" "$LEGACY_COMPOSE.moved-to-$DOMAIN"
+  else
+    docker compose -p "$LEGACY_PROJECT" down --remove-orphans
+  fi
+  mv "$LEGACY_ENV" "$LEGACY_ENV.moved-to-$DOMAIN"
+fi
+say "Starting The Nest for $DOMAIN ($MODE, 127.0.0.1:$NEST_PORT)"
 docker compose --env-file "$ENV_FILE" -f "$CONF_DIR/compose.yml" up -d $build --remove-orphans
 
 tries=0
@@ -149,13 +235,6 @@ until curl -fsS --max-time 3 "http://127.0.0.1:$NEST_PORT/health" >/dev/null 2>&
 done
 
 # --- nginx: one site of its own --------------------------------------------
-if [ -d /etc/nginx/sites-available ]; then
-  SITE="/etc/nginx/sites-available/$DOMAIN.conf"
-  LINK="/etc/nginx/sites-enabled/$DOMAIN.conf"
-else
-  SITE="/etc/nginx/conf.d/$DOMAIN.conf"
-  LINK=""
-fi
 # certbot adds its HTTPS lines to the site; on a rerun only the port can change.
 if [ -f "$SITE" ] && grep -q "managed by Certbot" "$SITE"; then
   say "Keeping the nginx site, pointing it at port $NEST_PORT"
@@ -164,7 +243,8 @@ else
   say "Writing the nginx site $SITE"
   backup=""
   [ -f "$SITE" ] && backup="$SITE.bak.$(date +%s)" && cp "$SITE" "$backup"
-  map_var="oraknid_nest_connection"
+  # One map variable per site: nginx refuses the same one defined twice.
+  map_var="oraknid_nest_$(printf '%s' "$SLUG" | tr '-' '_')"
   cat >"$SITE" <<EOF
 # The Nest (Oraknid's relay), written by deploy/nest/install.sh.
 map \$http_upgrade \$$map_var {
@@ -219,9 +299,22 @@ else
   say "The Nest runs, but https://$DOMAIN/health didn't answer from here yet; check DNS and the firewall (ports 80 and 443)"
 fi
 
+if [ "$MODE" = "public" ]; then
+  if [ -n "$INVITE" ]; then
+    public="Public: other daemons register with the invite code $INVITE
+  (Settings → Devices & phone → The Nest → Use a public Nest)."
+  else
+    public="Public: other daemons register themselves
+  (Settings → Devices & phone → The Nest → Use a public Nest)."
+  fi
+else
+  public="Private: only the daemon below connects."
+fi
 cat <<EOF
 
-The Nest is up. At home, in Oraknid: Settings → Devices & phone → The Nest
+The Nest is up on https://$DOMAIN. $public
+
+Your own daemon, in Oraknid: Settings → Devices & phone → The Nest → My own Nest
   Address:    https://$DOMAIN
   Daemon id:  $NEST_ID
   Secret:     $NEST_SECRET
@@ -229,5 +322,5 @@ The Nest is up. At home, in Oraknid: Settings → Devices & phone → The Nest
 
 Update later:   sh $DIR/deploy/nest/install.sh $DOMAIN --ref $REF  (add --image to bring a prebuilt one)
 Logs:           docker compose -f $CONF_DIR/compose.yml logs -f
-Remove:         docker compose -f $CONF_DIR/compose.yml down; rm $LINK $SITE; systemctl reload nginx
+Remove:         docker compose -f $CONF_DIR/compose.yml down -v; rm $LINK $SITE; systemctl reload nginx
 EOF

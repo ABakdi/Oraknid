@@ -275,6 +275,7 @@ export const LOCK_FREE = new Set(["/lock/status", "/lock/unlock"]);
 const HOME_ONLY = [
   "/secrets/",
   "/nest/configure",
+  "/nest/register",
   "/nest/pairAway",
   "/devices/pairStart",
   "/devices/revoke",

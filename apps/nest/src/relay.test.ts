@@ -1,3 +1,7 @@
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DaemonEnd, DeviceEnd, newKeyPair, ready } from "@oraknid/tunnel";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import WebSocket from "ws";
@@ -97,5 +101,116 @@ describe("The Nest (Nest-Protocol)", () => {
     await expect(opened(new WebSocket(`${base}/device?daemon=home`))).rejects.toThrow("429");
     first.close();
     daemon.close();
+  });
+});
+
+describe("A public Nest (ADR-031)", () => {
+  async function startPublic(o: Partial<Parameters<typeof createNest>[0]> = {}) {
+    nest = createNest({ daemons: new Map(), mode: "public", ...o });
+    await new Promise<void>((r) => nest?.server.listen(0, "127.0.0.1", () => r()));
+    return `http://127.0.0.1:${(nest.server.address() as { port: number }).port}`;
+  }
+  const register = (base: string, body: object = {}) =>
+    fetch(`${base}/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  const daemon = (base: string, id: string, secret: string) =>
+    new WebSocket(`${base.replace(/^http/, "ws")}/daemon?id=${id}`, {
+      headers: { authorization: `Bearer ${secret}` },
+    });
+
+  it("lets a daemon register itself, keeps only its secret's hash, and knows it after a restart", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "oraknid-nest-"));
+    let base = await startPublic({ dataDir: dir });
+    expect(await (await fetch(`${base}/info`)).json()).toEqual({
+      mode: "public",
+      inviteRequired: false,
+    });
+    const res = await register(base);
+    expect(res.status).toBe(201);
+    const { id, secret } = (await res.json()) as { id: string; secret: string };
+    expect(secret.length).toBeGreaterThanOrEqual(32);
+    const kept = readFileSync(join(dir, "daemons.json"), "utf8");
+    expect(kept).toContain(id);
+    expect(kept).not.toContain(secret);
+    await expect(opened(daemon(base, id, "x".repeat(43)))).rejects.toThrow("401");
+    const d = daemon(base, id, secret);
+    await opened(d);
+    d.close();
+
+    await nest?.close();
+    base = await startPublic({ dataDir: dir });
+    const again = daemon(base, id, secret);
+    await opened(again);
+    again.close();
+  });
+
+  it("refuses to register when private, or without the right invite code", async () => {
+    const http = (await start()).replace(/^ws/, "http");
+    expect(await (await fetch(`${http}/info`)).json()).toEqual({
+      mode: "private",
+      inviteRequired: false,
+    });
+    expect((await register(http)).status).toBe(404);
+    await nest?.close();
+
+    const base = await startPublic({ invite: "garden-gate" });
+    expect(await (await fetch(`${base}/info`)).json()).toEqual({
+      mode: "public",
+      inviteRequired: true,
+    });
+    expect((await register(base)).status).toBe(403);
+    expect((await register(base, { invite: "garden-gat" })).status).toBe(403);
+    expect((await register(base, { invite: "garden-gate" })).status).toBe(201);
+    // Another site's page can't register its visitors.
+    const foreign = await fetch(`${base}/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "https://elsewhere.example" },
+      body: JSON.stringify({ invite: "garden-gate" }),
+    });
+    expect(foreign.status).toBe(403);
+  });
+
+  it("limits registrations per address, daemons, devices and bytes per daemon", async () => {
+    let base = await startPublic({ limits: { registrationsPerAddressHour: 2 } });
+    expect((await register(base)).status).toBe(201);
+    expect((await register(base)).status).toBe(201);
+    expect((await register(base)).status).toBe(429);
+    await nest?.close();
+
+    base = await startPublic({ limits: { maxDaemons: 1 } });
+    expect((await register(base)).status).toBe(201);
+    expect((await register(base)).status).toBe(503);
+    await nest?.close();
+
+    base = await startPublic({ limits: { devicesPerRegistered: 1, bytesPerDaemonDay: 100 } });
+    const { id, secret } = (await (await register(base)).json()) as { id: string; secret: string };
+    const d = daemon(base, id, secret);
+    await opened(d);
+    const ws = base.replace(/^http/, "ws");
+    const first = new WebSocket(`${ws}/device?daemon=${id}`);
+    await opened(first);
+    await expect(opened(new WebSocket(`${ws}/device?daemon=${id}`))).rejects.toThrow("503");
+    // Past its share for the day, the device is closed and no other opens.
+    const closed = new Promise<number>((r) => first.once("close", (code) => r(code)));
+    first.send("x".repeat(101));
+    expect(await closed).toBe(4029);
+    await expect(opened(new WebSocket(`${ws}/device?daemon=${id}`))).rejects.toThrow("429");
+    d.close();
+  });
+
+  it("forgets a daemon unseen for thirty days", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "oraknid-nest-"));
+    const old = Date.now() - 31 * 24 * 3600_000;
+    const hash = createHash("sha256").update("s".repeat(43)).digest("hex");
+    writeFileSync(
+      join(dir, "daemons.json"),
+      JSON.stringify({ "d-old": { hash, createdAt: old, lastSeen: old } }),
+    );
+    const base = await startPublic({ dataDir: dir });
+    await expect(opened(daemon(base, "d-old", "s".repeat(43)))).rejects.toThrow("401");
+    expect(readFileSync(join(dir, "daemons.json"), "utf8")).not.toContain("d-old");
   });
 });
