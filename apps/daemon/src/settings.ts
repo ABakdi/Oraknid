@@ -25,6 +25,11 @@ export function writeSetting<T extends z.ZodType>(
   now = Date.now(),
 ) {
   const checked = schema.parse(value);
+  // A cleared setting (null) is no row: reading it gives its default, null for every nullable one.
+  if (checked === null) {
+    db.delete(settings).where(eq(settings.key, key)).run();
+    return;
+  }
   db.insert(settings)
     .values({ key, value: checked, updatedAt: now })
     .onConflictDoUpdate({ target: settings.key, set: { value: checked, updatedAt: now } })

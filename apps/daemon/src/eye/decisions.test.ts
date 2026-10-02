@@ -37,6 +37,9 @@ describe("The Eye's decision models (ADR-022)", () => {
     d.setModels({ leg: "L", planning: "P", judging: null, quick: "Q", shadow: "S" });
     expect(d.pins()).toEqual({ planning: "P", judging: null, quick: "Q", shadow: "S" });
     expect(d.models().leg).toBe("L");
+    // Cleared again: "let routing choose" is saved too.
+    d.setModels({ leg: null, planning: null, judging: null, quick: null, shadow: "S" });
+    expect(d.models()).toMatchObject({ leg: null, shadow: "S" });
 
     const base = { jobId: "J", pairId: "p1", call: "plan" as const, ms: 10, firstTry: true };
     d.record({ ...base, role: "primary", model: "A", plan: plan(["one", "two"]), error: null });
