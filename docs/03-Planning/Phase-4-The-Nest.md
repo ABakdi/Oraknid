@@ -21,7 +21,7 @@ I want to approve and answer from anywhere, without opening ports at home.
 - [x] Pairing a device for away from Settings, by a QR code or link whose keys stay in the fragment; the loader's fingerprint shown at home
 
 ### M4.3 — Remote use
-- [ ] Web push through The Nest
+- [~] Web push away from home: the loader registers the subscription (the UI's frame can't) and a small service worker shows the notifications; the daemon sends them straight to the push service, encrypted to the browser, so The Nest isn't involved. Not yet tried on a phone (needs my deployed Nest)
 - [ ] Mobile pass of every screen over the relay (needs my VPS and domain)
 
 ## Exit criterion

@@ -8,6 +8,8 @@ export interface RemoteTransport {
     headers: Record<string, string>;
     body: string;
   }>;
+  /** Push to this device, registered by the loader. */
+  subscribePush(): Promise<void>;
   openLive(h: { onOpen(): void; onMessage(frame: string): void; onClose(): void }): {
     send(frame: string): void;
     close(): void;

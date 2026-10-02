@@ -45,6 +45,8 @@ async function showHash() {
 
 async function main() {
   void showHash();
+  // For notifications while I'm away (M4.3); it caches nothing.
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
   const b = bundle();
   if (!b) {
     say(
@@ -143,6 +145,36 @@ function connect(b: Bundle) {
           ...(r.body !== undefined ? { body: r.body } : {}),
         });
       }),
+    /** Push to this device: the subscription is this page's (the UI's frame can't hold one). */
+    subscribePush: async () => {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window))
+        throw new Error("This browser can't receive push notifications.");
+      if ((await Notification.requestPermission()) !== "granted")
+        throw new Error("Notifications are blocked for this site in the browser.");
+      const call = (path: string, json: unknown) =>
+        new Promise<{ status: number; body: string }>((resolve) => {
+          const id = next++;
+          pending.set(id, resolve as never);
+          send({
+            t: "req",
+            id,
+            method: "POST",
+            path,
+            headers: { authorization: `Bearer ${b.token}` },
+            body: JSON.stringify({ json }),
+          });
+        });
+      const key = JSON.parse((await call("/api/notifications/vapidPublicKey", null)).body)
+        .json as string;
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: fromBase64Url(key),
+      });
+      const j = sub.toJSON() as { endpoint: string; keys: { p256dh: string; auth: string } };
+      const r = await call("/api/notifications/subscribe", { endpoint: j.endpoint, keys: j.keys });
+      if (r.status >= 400) throw new Error("Oraknid didn't take the subscription.");
+    },
     openLive: (h: { onOpen(): void; onMessage(f: string): void; onClose(): void }) => {
       live = h;
       send({ t: "live-open", token: b.token });
@@ -156,6 +188,18 @@ function connect(b: Bundle) {
       };
     },
   };
+}
+
+function fromBase64Url(s: string): Uint8Array<ArrayBuffer> {
+  const b = atob(
+    s
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+      .padEnd(Math.ceil(s.length / 4) * 4, "="),
+  );
+  const out = new Uint8Array(new ArrayBuffer(b.length));
+  for (let i = 0; i < b.length; i++) out[i] = b.charCodeAt(i);
+  return out;
 }
 
 /** After the UI started, a dropped tunnel is opened again under it. */

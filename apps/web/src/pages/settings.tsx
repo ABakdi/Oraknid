@@ -30,6 +30,7 @@ import { api, auth, message } from "@/lib/api";
 import { ago } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { useLive } from "@/lib/live";
+import { remote } from "@/lib/remote";
 import { type ThemeChoice, useTheme } from "@/lib/theme";
 
 async function act(fn: () => Promise<unknown>, ok?: string) {
@@ -386,6 +387,9 @@ function NotificationsCard() {
 }
 
 async function subscribePush() {
+  // Away from home, the loader holds the subscription (Phase 4, M4.3).
+  const away = remote();
+  if (away) return away.subscribePush();
   if (!("serviceWorker" in navigator) || !("PushManager" in window))
     throw new Error(t("This browser can't receive push notifications."));
   const permission = await Notification.requestPermission();

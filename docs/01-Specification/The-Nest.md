@@ -1,4 +1,4 @@
-# The Nest *(Phase 4, built 2026-10-02 except web push)*
+# The Nest *(Phase 4, built 2026-10-02)*
 
 **Is:** a relay server I host myself, so I can reach my Oraknid from
 anywhere (phone or desktop) without opening ports at home.
@@ -39,6 +39,8 @@ flowchart LR
 - Limits per address and per daemon, frame size and idle sockets.
 
 ## Still open
-- Web push through The Nest (M4.3).
+- Web push away from home is built (the loader holds the subscription;
+  pushes go from the daemon to the push service, encrypted to the
+  browser) but not yet tried on a phone.
 
 Related: [[Security]] · [[Realtime-Transport]] · [[Roadmap]]
