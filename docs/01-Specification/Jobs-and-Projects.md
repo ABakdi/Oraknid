@@ -47,6 +47,11 @@ I go. I can leave and come back to it from Jobs, **Start** it (then it
 plans, or interviews further if the interview isn't over), or **Delete**
 it. A draft costs nothing until it starts, except The Eye's replies.
 
+## Servers
+
+A project's settings list my servers; I tick the ones its jobs may use.
+Their jobs get each server's state document and a way in ([[Servers]]).
+
 ## Repositories
 
 A project can come from GitHub ([[ADR-023-GitHub-By-Token]]): a new

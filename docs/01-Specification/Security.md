@@ -78,6 +78,17 @@ sandbox limits damage, but it doesn't make that safe.
   never written in a URL, a remote or a config file, and never given to
   a Leg. A push with it is a gated action.
 
+## Servers and the terminal
+- Server credentials are in the keychain; a password is used once to
+  install Oraknid's own key for that server, then deleted. Host keys are
+  pinned; a changed one stops every connection until I accept it
+  ([[ADR-026-Servers]]). Discovery only reads.
+- A job gets a server only when its project has it; its Leg then has
+  that server's key in its own home, and its commands there go through
+  the approvals.
+- The terminal is off until I turn it on, needs a paired device, and is
+  audited; it is a full shell as me ([[ADR-028-Terminal]]).
+
 ## Chats and the helper
 - A chat may read its folder and the projects I attach, and research
   the web; nothing else ([[ADR-025-Chats]]). The helper acts only

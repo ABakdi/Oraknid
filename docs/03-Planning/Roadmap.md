@@ -13,7 +13,8 @@ flowchart LR
     P5 --> P6[Phase 6<br/>Non-coding skills]
     P6 --> P7[Phase 7<br/>Eye decision models]
     P7 --> P8[Phase 8<br/>Daily use]
-    P8 --> L[Later<br/>containers · teams]
+    P8 --> P9[Phase 9<br/>Servers]
+    P9 --> L[Later<br/>containers · teams]
     L --> W[Final phase<br/>Windows]
 ```
 
@@ -26,7 +27,8 @@ flowchart LR
 | [[Phase-5-Antigravity]] · done: a real job on an Antigravity Leg completed verified (2026-10-02) | Antigravity adapter, or a documented workaround. | An Antigravity Leg completes a verified task unattended, or an ADR records why that isn't possible and what replaces it. |
 | [[Phase-6-Non-Coding-Skills]] · built ([[ADR-021-Tools-Broker]]); my real inbox to try | Skills declaring MCP tools, credentials scoped per job, the email flow. | The email skill runs read → classify → draft → approve → send → log on my real inbox, with every send approved. |
 | [[Phase-7-Eye-Decision-Models]] · built ([[ADR-022-Eye-Decision-Models]]); a real comparison to run | Jev / Kev (or similar) behind `EyeBrain`. | The Eye runs a job with a dedicated decision model, and plan quality is compared against a pool Leg on the same job. |
-| [[Phase-8-Daily-Use]] ← **next** | The New work page with the interview in it and drafts, skills per project, GitHub repos, markdown everywhere, readable screens, Chats, the Oraknid helper. | I start a project from a new GitHub repo through the page or the helper, go through the interview there, leave it as a draft and start it later; every log is readable; I talk to a model about it in Chats. |
+| [[Phase-8-Daily-Use]] · built; GitHub with my token to try | The New work page with the interview in it and drafts, skills per project, GitHub repos, markdown everywhere, readable screens, Chats, the Oraknid helper. | I start a project from a new GitHub repo through the page or the helper, go through the interview there, leave it as a draft and start it later; every log is readable; I talk to a model about it in Chats. |
+| [[Phase-9-Servers]] ← **next** | My servers over SSH: Oraknid's own key, read-only discovery, a state document kept current, servers per project, oraknid-monitor, a terminal in the web UI. | I add my VPS, it is discovered and documented, monitored, deployed to by a job through approvals with its document updated after, and I open a terminal on it from the web UI. |
 | Later | Containers per job, teams and roles. | Planned when they come up. |
 | Final phase — Windows | Windows service, inhibitor, Credential Manager, metrics, sandbox equivalent. | The Phase 1 exit criterion passes on Windows. |
 
@@ -37,6 +39,9 @@ those hands-on runs, then Later.
 Phase notes for Later and the Windows phase are written when their turn comes.
 
 ## Changes of order
+
+**2026-10-02 — Phase 9, Servers, added before Later.** Where my work
+ends: servers known, documented, monitored and reachable from Oraknid.
 
 **2026-10-02 — Phase 8, Daily use, added before Later.** From my list
 of what gets in the way when I use Oraknid every day: starting work,

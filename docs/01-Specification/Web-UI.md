@@ -102,6 +102,17 @@ disabled until there is a goal and a project, and says why.
 
 My chats with any Leg and model, like a chat app ([[Chats-and-Helper]]).
 
+### Servers
+
+My servers ([[Servers]]): each with its state, its state document,
+oraknid-monitor's readings live and over 24 hours, services and ports;
+add, discover again, edit the document, open a terminal, remove.
+
+### Terminal
+
+A terminal in the page (xterm.js) on this computer or a server, when
+turned on in Settings ([[ADR-028-Terminal]]).
+
 ### The helper
 
 A floating button at the bottom left of every screen opens the Oraknid
