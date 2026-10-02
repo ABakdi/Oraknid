@@ -22,4 +22,11 @@ data, and only relays. It needs a domain name and a certificate.
 Option 1, with rate limiting and connection caps in The Nest itself
 (it's on the internet), and only device and daemon identities stored.
 
+Amended 2026-10-02: a server that already runs nginx for other sites
+keeps it. `deploy/nest/install.sh` runs The Nest alone in Docker on a
+local port, adds one nginx site (checked before a reload, never a
+restart) and gets the certificate with certbot. On a small server the
+image is built elsewhere and brought with `--image`, so the build takes
+no memory from what runs there.
+
 Related: [[The-Nest]] · [[ADR-017-Nest-E2E-Protocol]] · [[ADR-019-Nest-UI-Serving]]
