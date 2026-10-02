@@ -214,6 +214,7 @@ interface AgyEvent {
     step_type?: string;
     tool_name?: string;
     text_delta?: string;
+    usage?: { input_tokens?: number };
     tool_info?: Record<string, unknown>;
   };
   result?: {
@@ -333,6 +334,8 @@ export function createAntigravityAdapter(): LegAdapter {
       const allowedWrites = new Set<string>();
       let conversation = s.resumeFrom;
       let usage: UsageSnapshot = emptyUsage();
+      /** The conversation's size as last read: what a new run re-reads is not new. */
+      let seenContext = 0;
       let current: ChildProcess | null = null;
       let interrupted = false;
       let killed = false;
@@ -379,6 +382,8 @@ export function createAntigravityAdapter(): LegAdapter {
         });
         current = child;
         let denials: RunEnd["denials"] = [];
+        /** The largest context one step of this run read: the conversation as it stands. */
+        let runContext = 0;
         const held = new Map<number, string>();
         const steps = new Map<number, ToolStep>();
         let result: AgyEvent["result"] | null = null;
@@ -394,6 +399,7 @@ export function createAntigravityAdapter(): LegAdapter {
           if (e.event === "step_update" && e.step_update) {
             const u = e.step_update;
             if (u.text_delta) onText(u.text_delta);
+            runContext = Math.max(runContext, u.usage?.input_tokens ?? 0);
             const step = toolStep(u);
             if (step) {
               const id = `${conversation ?? "agy"}:${step.index}`;
@@ -440,12 +446,18 @@ export function createAntigravityAdapter(): LegAdapter {
               }
             conversation = e.result.conversation_id || conversation;
             const r = e.result.usage ?? {};
+            // agy reports each step's whole re-read of the conversation as input, with no cache:
+            // only its growth is new, the rest counts as cache reads, as for other Legs.
+            const total = r.input_tokens ?? 0;
+            const context = runContext || total;
+            const fresh = Math.min(total, Math.max(0, context - seenContext));
+            seenContext = Math.max(seenContext, context);
             usage = {
               ...usage,
-              inputTokens: usage.inputTokens + (r.input_tokens ?? 0),
+              inputTokens: usage.inputTokens + fresh,
               outputTokens: usage.outputTokens + (r.output_tokens ?? 0) + (r.thinking_tokens ?? 0),
-              cacheReadTokens: usage.cacheReadTokens + (r.cache_read_tokens ?? 0),
-              contextTokens: (r.input_tokens ?? 0) + (r.cache_read_tokens ?? 0),
+              cacheReadTokens: usage.cacheReadTokens + (r.cache_read_tokens ?? 0) + (total - fresh),
+              contextTokens: context,
             };
             events.push({ type: "usage", usage });
             child.stdin?.end();

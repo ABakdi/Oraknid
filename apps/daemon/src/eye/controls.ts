@@ -55,7 +55,8 @@ export async function handBack(d: ControlDeps, taskId: string, finished: boolean
   if (!t.ownerHeld) throw new Error("That task is not mine.");
   d.db
     .update(tasks)
-    .set({ ownerHeld: false, state: finished ? "done" : "ready" })
+    // Handed back, it starts fresh: the ladder it climbed before I stepped in is behind it.
+    .set({ ownerHeld: false, state: finished ? "done" : "ready", escalation: 0 })
     .where(eq(tasks.id, taskId))
     .run();
   if (finished) {

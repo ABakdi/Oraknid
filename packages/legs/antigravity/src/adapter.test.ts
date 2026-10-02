@@ -96,6 +96,27 @@ describe("Antigravity adapter", () => {
     expect(res.some((r) => r.test("echo aXb"))).toBe(false);
   });
 
+  it("counts a re-read conversation as cache, not as new work (seen with agy 1.2.14)", async () => {
+    const s = await createAntigravityAdapter().start({
+      leg: leg(homeIn("reply")),
+      model: "gemini-3.8-flash-high",
+      effort: null,
+      cwd: mkdtempSync(join(tmpdir(), "oraknid-agy-usage-")),
+      systemPrompt: "",
+      prompt: "Say hello.",
+      resumeFrom: null,
+      sandbox: null,
+      credential: null,
+      onPermission: async () => ({ allow: true }),
+    });
+    await readUntil(s, (e) => e.type === "turn.ended");
+    await s.send("again");
+    await readUntil(s, (e) => e.type === "turn.ended");
+    // The stand-in reports 10 input tokens a run: the same conversation, read twice.
+    expect(s.usage()).toMatchObject({ inputTokens: 10, cacheReadTokens: 10 });
+    await s.kill();
+  });
+
   it("gives agy only Oraknid's bridges as MCP servers (ADR-021)", () => {
     const home = mkdtempSync(join(tmpdir(), "oraknid-agy-mcp-"));
     writeMcpConfig(home, { "oraknid-email": { command: "/usr/bin/node", args: ["/b.mjs", "/s"] } });
