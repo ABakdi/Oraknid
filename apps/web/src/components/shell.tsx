@@ -155,9 +155,9 @@ export function Shell({ children }: { children: ReactNode }) {
           {resolved === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
         </Button>
         <Button asChild size="sm" className="hidden gap-1 sm:flex">
-          <Link href="/jobs/new">
+          <Link href="/new">
             <Plus className="size-4" />
-            {t("New job")}
+            {t("New work")}
           </Link>
         </Button>
       </header>
@@ -225,7 +225,7 @@ export function Shell({ children }: { children: ReactNode }) {
       {more ? (
         <div className="fixed inset-x-0 bottom-14 z-30 grid grid-cols-2 gap-1 border-t bg-background p-2 md:hidden">
           {[
-            { href: "/jobs/new", label: "New job", icon: Plus },
+            { href: "/new", label: "New work", icon: Plus },
             ...NAV.filter((n) => !TABS.includes(n.href)),
           ].map(({ href, label, icon: Icon }) => (
             <Link
@@ -270,9 +270,9 @@ function Palette({ open, onOpenChange }: { open: boolean; onOpenChange: (o: bool
               {t(n.label)}
             </CommandItem>
           ))}
-          <CommandItem onSelect={() => run(() => go("/jobs/new"))}>
+          <CommandItem onSelect={() => run(() => go("/new"))}>
             <Plus className="size-4" />
-            {t("New job")}
+            {t("New work")}
           </CommandItem>
         </CommandGroup>
         <CommandGroup heading={t("Jobs")}>

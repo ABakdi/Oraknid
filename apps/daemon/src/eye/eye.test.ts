@@ -107,6 +107,8 @@ async function eye(
     ) => { accepted: boolean; reason: string; missing: string[] };
     repair?: (command: string) => { broken: boolean; command: string; reason: string };
     pickSkill?: (skills: { id: string; name: string }[]) => { skillId: string; reason: string };
+    /** Leave the job a draft: the test starts it. */
+    draft?: boolean;
     /** The machine's memory use, as a share. */
     memory?: () => number;
     /** A skill to run the job with, uploaded first. */
@@ -189,7 +191,7 @@ async function eye(
   });
   if (o.sameProviderFallback)
     await api.settings.setSameProviderFallback({ kind: "claude-code", enabled: true });
-  await api.jobs.start({ id });
+  if (!o.draft) await api.jobs.start({ id });
   return { d: daemon, api, id, workspace, leg, plans, legIds };
 }
 
@@ -1014,6 +1016,50 @@ describe("the interview (M1.7)", () => {
       },
     ],
     open: [],
+  });
+
+  it("interviews in the draft's conversation, so the started job asks nothing (New work page)", async () => {
+    const { api, id, plans } = await eye(good, {
+      draft: true,
+      interview: (answers) =>
+        answers.length < 1
+          ? round(1)
+          : { done: true, playback: "A greeting script.", questions: [], open: [] },
+    });
+    const said = async (n: number) => {
+      const end = Date.now() + 5000;
+      for (;;) {
+        const msgs = await api.jobs.conversation({ id });
+        if (msgs.length >= n && !(await api.jobs.draftThinking({ id }))) return msgs;
+        if (Date.now() > end) throw new Error(JSON.stringify(msgs));
+        await new Promise((r) => setTimeout(r, 20));
+      }
+    };
+    await api.jobs.draftStart({ id });
+    const first = await said(1);
+    expect(first[0]?.author).toBe("eye");
+    expect(first[0]?.text).toContain("press **Start**");
+    await api.jobs.draftTalk({ id, text: "1. hi, with a newline" });
+    const after = await said(3);
+    expect(after.at(-1)?.text).toContain("I have what I need");
+    await api.jobs.updateDraft({ id, autonomy: "full" });
+    await expect(api.jobs.remove({ id: "01J9Z3K8W2Q4V6X8Y0A1B2C3D4" })).rejects.toThrow();
+    await api.jobs.start({ id });
+    const job = await until(api, id, ["completed", "blocked"]);
+    expect(job.state, job.blockedReason ?? "").toBe("completed");
+    expect(job.autonomy).toBe("full");
+    // The interview was over before the start: no round in the inbox, one round asked in all.
+    expect((await api.inbox.list({})).filter((i) => i.title.startsWith("Interview"))).toEqual([]);
+    expect(plans.filter((p) => p.startsWith("interview"))).toEqual(["interview:1", "interview:2"]);
+    const silk = await api.silk.list({ jobId: id });
+    expect(silk.find((e) => e.kind === "interview-answer")?.body).toContain("**My answer:** 1. hi");
+    await expect(api.jobs.draftTalk({ id, text: "more" })).rejects.toThrow(/has started/);
+  });
+
+  it("deletes a draft I don't want, with all it had", async () => {
+    const { api, id } = await eye(good, { draft: true });
+    await api.jobs.remove({ id });
+    expect((await api.jobs.list()).find((j) => j.id === id)).toBeUndefined();
   });
 
   it("asks in rounds through the inbox, keeps my words, plays back, then plans", async () => {

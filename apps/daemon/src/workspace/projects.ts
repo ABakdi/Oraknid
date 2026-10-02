@@ -3,6 +3,7 @@ import { basename, join, resolve } from "node:path";
 import {
   ACTIVE_JOB_STATES,
   DEFAULT_BUDGET,
+  type DraftPatch,
   type NewJob,
   type NewProject,
 } from "@oraknid/contracts";
@@ -12,6 +13,7 @@ import {
   attempts,
   events,
   eyeMessages,
+  eyePlans,
   inboxItems,
   jobs,
   projects,
@@ -114,6 +116,78 @@ export class Projects {
   }
 
   /** Archived: hidden from the lists, kept for stats (Core-Entities → Project). */
+  /** Every row of these jobs; their tasks' edges first. */
+  #deleteJobs(ids: string[]) {
+    const taskIds = this.db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(inArray(tasks.jobId, ids))
+      .all()
+      .map((t) => t.id);
+    if (taskIds.length) this.db.delete(taskEdges).where(inArray(taskEdges.taskId, taskIds)).run();
+    for (const table of [
+      attempts,
+      sessions,
+      silkMirror,
+      silkEntries,
+      inboxItems,
+      eyeMessages,
+      eyePlans,
+      steps,
+      sideEffects,
+      events,
+      tasks,
+    ])
+      this.db.delete(table).where(inArray(table.jobId, ids)).run();
+    this.db.delete(jobs).where(inArray(jobs.id, ids)).run();
+  }
+
+  /**
+   * A draft I don't want, or a job that has ended, gone from Oraknid
+   * (New work → Delete). Its branch and worktree, if any, stay in my repo.
+   */
+  removeJob(jobId: string, logsDir: string) {
+    const job = this.db.select().from(jobs).where(eq(jobs.id, jobId)).get();
+    if (!job) throw new Error(`No job ${jobId}.`);
+    if (!["draft", "completed", "cancelled"].includes(job.state))
+      throw new Error(`"${job.title}" is still going; cancel it first.`);
+    this.bus.atomically(() => {
+      this.#deleteJobs([jobId]);
+      this.bus.publish({
+        type: "job.deleted",
+        topic: "overview",
+        jobId: null,
+        payload: { id: jobId, title: job.title },
+        actor: "owner",
+      });
+    });
+    rmSync(join(logsDir, "jobs", jobId), { recursive: true, force: true });
+  }
+
+  /** A draft's options, changed as I go on the New work page; a started job has its own controls. */
+  updateDraft(input: DraftPatch) {
+    const job = this.db.select().from(jobs).where(eq(jobs.id, input.id)).get();
+    if (!job) throw new Error(`No job ${input.id}.`);
+    if (job.state !== "draft") throw new Error("That job has started: change it from its page.");
+    const { id, skillId, ...rest } = input;
+    const set: Partial<typeof jobs.$inferInsert> = { ...rest };
+    if (rest.goal) set.title = firstLine(rest.goal);
+    if (skillId !== undefined) {
+      const skill = skillId ? this.skills.latest(skillId) : undefined;
+      if (skillId && !skill) throw new Error(`No skill ${skillId}.`);
+      if (skill)
+        Object.assign(set, { skillId: skill.id, skillVersion: skill.version, skillChoices: [] });
+    }
+    this.db.update(jobs).set(set).where(eq(jobs.id, id)).run();
+    this.bus.publish({
+      type: "job.draft-updated",
+      topic: `job:${id}`,
+      jobId: id,
+      payload: { fields: Object.keys(set) },
+      actor: "owner",
+    });
+  }
+
   /** The skills its jobs may use; The Eye picks one per job (Skills → Skills per project). */
   setSkills(id: string, skillIds: string[]) {
     this.require(id);
@@ -169,20 +243,7 @@ export class Projects {
           .map((t) => t.id);
         if (taskIds.length)
           this.db.delete(taskEdges).where(inArray(taskEdges.taskId, taskIds)).run();
-        for (const table of [
-          attempts,
-          sessions,
-          silkMirror,
-          silkEntries,
-          inboxItems,
-          eyeMessages,
-          steps,
-          sideEffects,
-          events,
-          tasks,
-        ])
-          this.db.delete(table).where(inArray(table.jobId, ids)).run();
-        this.db.delete(jobs).where(inArray(jobs.id, ids)).run();
+        this.#deleteJobs(ids);
       }
       this.db
         .delete(settings)

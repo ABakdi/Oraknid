@@ -90,42 +90,10 @@ export function eyeProgram(d: EyeDeps): JobProgram {
     if (!project) throw new Error("The job's project is gone.");
     // Several skills to choose from: The Eye picks the one for this job, once (Skills → Skills per project).
     if (job0.skillChoices.length > 1) {
-      const first = job0;
-      await ctx.step("skill:pick", { choices: first.skillChoices }, async () => {
-        const offered = first.skillChoices
-          .map((id) => d.skills.latest(id))
-          .filter((x): x is NonNullable<typeof x> => !!x);
-        let pick = {
-          skillId: offered[0]?.id ?? first.skillId,
-          reason: "the project's first skill",
-        };
-        try {
-          pick = await d.brain.pickSkill({
-            jobId: first.id,
-            cwd: project.workspacePath,
-            goal: first.goal,
-            skills: offered.map((x) => ({ id: x.id, name: x.name, description: x.description })),
-          });
-        } catch (error) {
-          pick.reason = `no Leg could choose (${error instanceof Error ? error.message : String(error)}), so the project's first`;
-        }
-        const chosen = d.skills.latest(pick.skillId) ?? offered[0];
-        if (!chosen) return null;
-        d.db
-          .update(jobs)
-          .set({ skillId: chosen.id, skillVersion: chosen.version, skillChoices: [] })
-          .where(eq(jobs.id, first.id))
-          .run();
-        d.silk.add({
-          jobId: first.id,
-          kind: "decision",
-          title: `Method: ${chosen.name}`,
-          body: `The Eye chose **${chosen.name}** from the project's skills (${offered.map((x) => x.name).join(", ")}): ${pick.reason}`,
-          authoredBy: "eye",
-        });
-        return chosen.id;
-      });
-      job0 = d.db.select().from(jobs).where(eq(jobs.id, ctx.jobId)).get() ?? first;
+      await ctx.step("skill:pick", { choices: job0.skillChoices }, () =>
+        pickJobSkill(d, ctx.jobId, project.workspacePath),
+      );
+      job0 = d.db.select().from(jobs).where(eq(jobs.id, ctx.jobId)).get() ?? job0;
     }
     const skill = d.skills.version(job0.skillId, job0.skillVersion);
 
@@ -575,7 +543,49 @@ async function runTask(
 }
 
 export const ENOUGH = "Enough, start";
-const INTERVIEW_DONE = "What I want (interview)";
+export const INTERVIEW_DONE = "What I want (interview)";
+
+/**
+ * The Eye picks the job's skill among the project's (Skills → Skills per
+ * project), records why in Silk, and returns its id; nothing to do once chosen.
+ */
+export async function pickJobSkill(
+  d: Pick<EyeDeps, "db" | "skills" | "brain" | "silk">,
+  jobId: string,
+  cwd: string,
+): Promise<string | null> {
+  const first = d.db.select().from(jobs).where(eq(jobs.id, jobId)).get();
+  if (!first || first.skillChoices.length < 2) return first?.skillId ?? null;
+  const offered = first.skillChoices
+    .map((id) => d.skills.latest(id))
+    .filter((x): x is NonNullable<typeof x> => !!x);
+  let pick = { skillId: offered[0]?.id ?? first.skillId, reason: "the project's first skill" };
+  try {
+    pick = await d.brain.pickSkill({
+      jobId,
+      cwd,
+      goal: first.goal,
+      skills: offered.map((x) => ({ id: x.id, name: x.name, description: x.description })),
+    });
+  } catch (error) {
+    pick.reason = `no Leg could choose (${error instanceof Error ? error.message : String(error)}), so the project's first`;
+  }
+  const chosen = d.skills.latest(pick.skillId) ?? offered[0];
+  if (!chosen) return null;
+  d.db
+    .update(jobs)
+    .set({ skillId: chosen.id, skillVersion: chosen.version, skillChoices: [] })
+    .where(eq(jobs.id, jobId))
+    .run();
+  d.silk.add({
+    jobId,
+    kind: "decision",
+    title: `Method: ${chosen.name}`,
+    body: `The Eye chose **${chosen.name}** from the project's skills (${offered.map((x) => x.name).join(", ")}): ${pick.reason}`,
+    authoredBy: "eye",
+  });
+  return chosen.id;
+}
 
 async function interview(
   d: EyeDeps,
@@ -676,7 +686,10 @@ async function interview(
   }
 }
 
-function renderRound(round: InterviewRound): string {
+export function renderRound(
+  round: InterviewRound,
+  end = `Answer in your own words, numbered; or choose "${ENOUGH}" to stop here.`,
+): string {
   return [
     round.playback ? `**What I understood**\n\n${round.playback}` : "",
     `**Questions**\n\n${round.questions
@@ -685,7 +698,7 @@ function renderRound(round: InterviewRound): string {
           `${i + 1}. ${q.question}${q.options.length ? `\n   Options: ${q.options.join(" · ")}${q.recommended ? ` (recommended: ${q.recommended})` : ""}` : ""}`,
       )
       .join("\n")}`,
-    `Answer in your own words, numbered; or choose "${ENOUGH}" to stop here.`,
+    end,
   ]
     .filter(Boolean)
     .join("\n\n");

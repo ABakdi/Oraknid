@@ -14,12 +14,12 @@ import { JobPage } from "@/pages/job";
 import { JobsPage } from "@/pages/jobs";
 import { LegsPage } from "@/pages/legs";
 import { LogsPage } from "@/pages/logs";
-import { NewJobPage } from "@/pages/new-job";
 import { OverviewPage } from "@/pages/overview";
 import { PairPage } from "@/pages/pair";
 import { ProjectsPage } from "@/pages/projects";
 import { SettingsPage } from "@/pages/settings";
 import { SkillsPage } from "@/pages/skills";
+import { WorkPage } from "@/pages/work";
 
 export function App() {
   const [paired, setPaired] = useState(() => !!auth.token());
@@ -60,7 +60,9 @@ export function App() {
               <Switch>
                 <Route path="/" component={OverviewPage} />
                 <Route path="/jobs" component={JobsPage} />
-                <Route path="/jobs/new" component={NewJobPage} />
+                <Route path="/jobs/new">{() => <WorkPage />}</Route>
+                <Route path="/new">{() => <WorkPage />}</Route>
+                <Route path="/new/:id">{(p) => <WorkPage key={p.id} draftId={p.id} />}</Route>
                 <Route path="/jobs/:id">{(p) => <JobPage id={p.id} />}</Route>
                 <Route path="/projects" component={ProjectsPage} />
                 <Route path="/inbox">{() => <InboxPage />}</Route>

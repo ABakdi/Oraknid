@@ -15,9 +15,9 @@ to a model or to ask Oraknid to do things for me.
 ## Milestones
 
 ### M8.1 — Starting work in one place
-- [ ] **New work** page: options on the left (project: an existing one, or a new one from an existing folder, a new empty folder, a new GitHub repo or a cloned one; skills; Legs; autonomy; budget), my prompt and a conversation with The Eye on the right
-- [ ] The interview and any extra context happen in that conversation, before Start; answers go to Silk as before, so a started job doesn't ask again
-- [ ] A draft is saved as I go: I can leave it, come back to it from Jobs, start it later, or delete it
+- [x] **New work** page: options on the left (project: an existing one, or a new one from an existing folder, a new empty folder, a new GitHub repo or a cloned one; skills; Legs; autonomy; budget), my prompt and a conversation with The Eye on the right
+- [x] The interview and any extra context happen in that conversation, before Start; answers go to Silk as before, so a started job doesn't ask again
+- [x] A draft is saved as I go: I can leave it, come back to it from Jobs, start it later, or delete it
 
 ### M8.2 — Skills per project
 - [x] A project has a set of skills; The Eye picks the one that fits a job, and may use another one's guidance for a task
@@ -25,8 +25,8 @@ to a model or to ask Oraknid to do things for me.
 
 ### M8.3 — Repositories
 - [x] Settings → GitHub: a token I paste (keychain), checked, with the account it belongs to ([[ADR-023-GitHub-By-Token]])
-- [ ] New project from a new GitHub repo (created, cloned) or an existing one (listed, cloned)
-- [ ] Pushing stays a gated action (BR-5); the token never reaches a Leg
+- [x] New project from a new GitHub repo (created, cloned) or an existing one (listed, cloned)
+- [x] Pushing stays a gated action (BR-5); the token never reaches a Leg
 - [ ] Other remotes (GitLab, any git URL) — last
 
 ### M8.4 — Markdown everywhere

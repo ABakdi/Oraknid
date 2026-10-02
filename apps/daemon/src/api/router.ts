@@ -6,6 +6,7 @@ import {
   ChatMessage,
   ChatView,
   DoctorCheck,
+  DraftPatch,
   EmailSettings,
   Event,
   EyeMessage,
@@ -80,6 +81,7 @@ import {
   WebEdit,
 } from "../eye/controls.ts";
 import type { EyeDecisions } from "../eye/decisions.ts";
+import { draftStart, draftTalk, isThinking } from "../eye/draft.ts";
 import {
   GlobalPolicy,
   readGlobalPolicy,
@@ -158,6 +160,15 @@ export interface ApiContext {
 }
 
 const base = os.$context<ApiContext>();
+
+const drafts = (c: ApiContext) => ({
+  db: c.jobs.db,
+  bus: c.bus,
+  silk: c.silk,
+  skills: c.skills,
+  brain: c.brain,
+  now: c.now,
+});
 
 /** The last `n` lines of a file, reading at most its last 512 KB. */
 function tailFile(file: string, n: number): string[] {
@@ -863,6 +874,29 @@ export const router = {
           ),
         })),
       ),
+    /** A draft's options, changed as I go (New work page). */
+    updateDraft: base
+      .input(DraftPatch)
+      .handler(({ context: c, input }) => guard(() => c.projects.updateDraft(input))),
+    /** A draft, or a job that has ended, gone (its branch stays in my repo). */
+    remove: base
+      .input(z.object({ id: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.projects.removeJob(input.id, c.paths.logs)),
+      ),
+    /** The Eye opens a draft's conversation: its first interview round, or a word. */
+    draftStart: base
+      .input(z.object({ id: z.string() }))
+      .handler(({ context: c, input }) => guard(() => draftStart(drafts(c), input.id))),
+    /** My message before the start: an interview answer, or context. */
+    draftTalk: base
+      .input(z.object({ id: z.string(), text: z.string().min(1) }))
+      .handler(({ context: c, input }) => guard(() => draftTalk(drafts(c), input.id, input.text))),
+    /** Whether The Eye is answering a draft now. */
+    draftThinking: base
+      .input(z.object({ id: z.string() }))
+      .output(z.boolean())
+      .handler(({ input }) => isThinking(input.id)),
     conversation: base
       .input(z.object({ id: z.string() }))
       .output(z.array(EyeMessage))

@@ -77,6 +77,20 @@ export const NewJob = z.object({
 });
 export type NewJob = z.infer<typeof NewJob>;
 
+/** A draft's options, changed on the New work page before it starts (Phase 8). */
+export const DraftPatch = z.object({
+  id: Id,
+  goal: z.string().min(1).optional(),
+  autonomy: Autonomy.optional(),
+  allowedLegIds: z.array(Id).optional(),
+  budget: Budget.optional(),
+  verify: z.array(z.string().min(1)).optional(),
+  inputs: z.array(JobInput).optional(),
+  /** A skill I pick; null leaves it to the project's skills. */
+  skillId: z.string().nullable().optional(),
+});
+export type DraftPatch = z.infer<typeof DraftPatch>;
+
 export const TaskView = Task.extend({
   /** Why the router chose its Leg model: score, reasons, what it left out. */
   routing: z
@@ -110,6 +124,8 @@ export const JobView = Job.extend({
   /** The tools its sessions get (ADR-021), and those not set up in Settings → Tools yet. */
   tools: z.array(z.string()).default([]),
   missingTools: z.array(z.string()).default([]),
+  /** The skills The Eye still chooses from (none once chosen, or when I picked one). */
+  skillChoices: z.array(z.string()).default([]),
 });
 export type JobView = z.infer<typeof JobView>;
 

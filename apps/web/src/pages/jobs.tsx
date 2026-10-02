@@ -15,9 +15,9 @@ export function JobsPage() {
   });
   const add = (
     <Button asChild className="gap-1">
-      <Link href="/jobs/new">
+      <Link href="/new">
         <Plus className="size-4" />
-        {t("New job")}
+        {t("New work")}
       </Link>
     </Button>
   );
@@ -40,7 +40,7 @@ export function JobsPage() {
             return (
               <Link
                 key={j.id}
-                href={`/jobs/${j.id}`}
+                href={j.state === "draft" ? `/new/${j.id}` : `/jobs/${j.id}`}
                 className="flex flex-wrap items-center gap-3 px-3 py-3 hover:bg-accent/50"
               >
                 <div className="min-w-0 flex-1">
