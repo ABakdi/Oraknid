@@ -2,11 +2,12 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { type Daemon, startDaemon } from "../daemon.ts";
 import { resolvePaths } from "../paths.ts";
 import { fakeOs } from "../testing/fake-os.ts";
 import { type Action, scriptedLeg } from "../testing/scripted-leg.ts";
-import { type EyePins, type PlanRecord, PoolLegBrain } from "./brain.ts";
+import { type EyePins, type PlanRecord, PoolLegBrain, parseJson } from "./brain.ts";
 
 let daemon: Daemon | undefined;
 afterEach(async () => {
@@ -125,5 +126,16 @@ describe("The Eye's brain", () => {
       ["shadow", "Claude · sonnet", true],
     ]);
     expect(records[0]?.pairId).toBe(records[1]?.pairId);
+  });
+
+  it("takes an answer given inside a copy of the schema, and says so when it's only a schema", () => {
+    const S = z.object({ a: z.number() });
+    expect(
+      parseJson('```json\n{"$schema":"x","type":"object","properties":{"a":1}}\n```', S),
+    ).toEqual({ ok: true, value: { a: 1 } });
+    expect(parseJson('{"type":"object","properties":{"a":{"type":"number"}}}', S)).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/JSON Schema, not an answer/),
+    });
   });
 });

@@ -607,6 +607,23 @@ export function parseJson<T>(
   }
   const r = schema.safeParse(data);
   if (r.success) return { ok: true, value: r.data };
+  // Some models answer inside a copy of the schema: the answer is its "properties" (seen 2026-10-02).
+  const wrapped = data as { $schema?: unknown; type?: unknown; properties?: unknown };
+  if (
+    wrapped &&
+    typeof wrapped === "object" &&
+    (wrapped.$schema !== undefined || wrapped.type === "object") &&
+    wrapped.properties &&
+    typeof wrapped.properties === "object"
+  ) {
+    const inner = schema.safeParse(wrapped.properties);
+    if (inner.success) return { ok: true, value: inner.data };
+    return {
+      ok: false,
+      error:
+        "it was a JSON Schema, not an answer: reply with the object itself, as the schema describes it.",
+    };
+  }
   return {
     ok: false,
     error: r.error.issues
