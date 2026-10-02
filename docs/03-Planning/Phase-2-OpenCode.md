@@ -39,4 +39,12 @@ makes fallback and cross-Leg handoff real.
 A job uses Claude Code and OpenCode, with at least one cross-Leg handoff
 through Silk, and completes verified.
 
+**Met 2026-10-02**: a job of two tasks on my Claude Max Leg and
+OpenCode's free models. Its first task started on Claude Sonnet; I
+paused it mid-work, which wrote its handoff to Silk, and pinned it to
+OpenCode's big-pickle, which finished it from that handoff alone; the
+second ran on Claude Haiku; the job completed verified. (A usage limit
+moving a task the same way is tested with stand-ins; a real one is in
+Phase 1's hands-on list.)
+
 Related: [[Roadmap]] · [[Phase-1-MVP]]
