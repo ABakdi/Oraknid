@@ -61,13 +61,28 @@ export function legEnv(home: string, plan: SandboxPlan | null): Record<string, s
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** `agy`'s settings: exactly the commands Oraknid allowed in this session. */
-export function writeSettings(home: string, allowed: Iterable<string>) {
+export function writeSettings(
+  home: string,
+  allowed: Iterable<string>,
+  workspace?: string,
+  writes: Iterable<string> = [],
+) {
   const dir = join(home, ".gemini", "antigravity-cli");
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   writeFileSync(
     join(dir, "settings.json"),
     `${JSON.stringify(
-      { permissions: { allow: [...allowed].map((c) => `command(regex:^${escapeRegex(c)}$)`) } },
+      {
+        permissions: {
+          allow: [
+            ...[...allowed].map((c) => `command(regex:^${escapeRegex(c)}$)`),
+            // The worktree is agy's to edit. Outside a git repo it sees, agy asks for its own
+            // file writes, and headless it can't (agy 1.2.14): they are allowed here.
+            ...(workspace ? [`write_file(${workspace.replace(/\/*$/, "/")})`] : []),
+            ...[...writes].map((p) => `write_file(${p})`),
+          ],
+        },
+      },
       null,
       2,
     )}\n`,
@@ -125,36 +140,60 @@ export function refusals(
   steps: ToolStep[],
   deniedActions: { action?: string; display_name?: string }[],
   allowed: ReadonlySet<string>,
-): { command: string | null; raw: string; index: number | null }[] {
-  const out: { command: string | null; raw: string; index: number | null }[] = [];
-  const seen = new Set<string>();
-  for (const step of steps) {
+): { command: string | null; path: string | null; raw: string; index: number | null }[] {
+  type Refusal = { command: string | null; path: string | null; raw: string; index: number | null };
+  const out: Refusal[] = [];
+  const used = new Set<number>();
+  const of = (step: ToolStep): Refusal => {
     const command = commandOf(step);
-    const refused =
-      (step.state === "ERROR" && /permission|denied/i.test(step.error ?? "")) ||
-      (deniedActions.length > 0 &&
-        step.state === "DONE" &&
-        step.output === null &&
-        command !== null &&
-        !allowed.has(command));
-    if (!refused) continue;
-    const key = command ?? `${step.tool}:${JSON.stringify(step.input)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push({
+    const path = typeof step.input.TargetFile === "string" ? step.input.TargetFile : null;
+    return {
       command,
-      raw: command ? `${step.tool}: ${command}` : `${step.tool} ${JSON.stringify(step.input)}`,
+      path,
+      raw: command
+        ? `${step.tool}: ${command}`
+        : `${step.tool} ${path ?? JSON.stringify(step.input)}`,
       index: step.index,
-    });
-  }
-  // A denied action no step shows: said as it is.
-  if (deniedActions.length && !out.length)
-    for (const d of deniedActions)
+    };
+  };
+  // An error step that says it was refused.
+  for (const step of steps)
+    if (step.state === "ERROR" && /permission|denied/i.test(step.error ?? "")) {
+      used.add(step.index);
+      out.push(of(step));
+    }
+  // Each denied action the errors didn't account for: its latest step of that tool
+  // (RunCommand is run_command), done without output, as agy reports it in a sandbox.
+  const counted = new Map<string, number>();
+  for (const step of steps)
+    if (used.has(step.index)) counted.set(step.tool, (counted.get(step.tool) ?? 0) + 1);
+  for (const d of deniedActions) {
+    const tool = (d.display_name ?? "").replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
+    if ((counted.get(tool) ?? 0) > 0) {
+      counted.set(tool, (counted.get(tool) ?? 0) - 1);
+      continue;
+    }
+    const step = [...steps]
+      .reverse()
+      .find(
+        (x) =>
+          x.tool === tool &&
+          !used.has(x.index) &&
+          x.state === "DONE" &&
+          !x.output &&
+          !(commandOf(x) && allowed.has(commandOf(x) as string)),
+      );
+    if (step) {
+      used.add(step.index);
+      out.push(of(step));
+    } else
       out.push({
         command: null,
+        path: null,
         raw: `${d.display_name ?? d.action ?? "an action"} was denied`,
         index: null,
       });
+  }
   return out;
 }
 
@@ -196,7 +235,7 @@ interface RunEnd {
   status: string;
   error: string | null;
   /** What agy refused, with the tool call it belongs to (its result was held back). */
-  denials: { command: string | null; raw: string; id: string | null }[];
+  denials: { command: string | null; path: string | null; raw: string; id: string | null }[];
 }
 
 function stopTree(child: ChildProcess, signal: NodeJS.Signals) {
@@ -291,6 +330,7 @@ export function createAntigravityAdapter(): LegAdapter {
       const env = legEnv(home, s.sandbox);
       const events = new Channel<LegEvent>();
       const allowed = new Set<string>();
+      const allowedWrites = new Set<string>();
       let conversation = s.resumeFrom;
       let usage: UsageSnapshot = emptyUsage();
       let current: ChildProcess | null = null;
@@ -308,7 +348,7 @@ export function createAntigravityAdapter(): LegAdapter {
 
       /** One `agy` run: one message in, its events out, until its result. */
       const run = (message: string, onText: (t: string) => void): Promise<RunEnd> => {
-        writeSettings(home, allowed);
+        writeSettings(home, allowed, s.cwd, allowedWrites);
         writeMcpConfig(home, s.mcpServers ?? {});
         const args = [
           "--input-format",
@@ -361,8 +401,9 @@ export function createAntigravityAdapter(): LegAdapter {
               if (step.state === "ACTIVE")
                 events.push({ type: "tool.called", id, tool: step.tool, input: step.input });
               else if (
-                step.tool === "run_command" &&
-                (step.state === "ERROR" || (step.state === "DONE" && step.output === null))
+                (step.tool === "run_command" &&
+                  (step.state === "ERROR" || (step.state === "DONE" && step.output === null))) ||
+                (step.state === "ERROR" && /permission|denied/i.test(step.error ?? ""))
               ) {
                 // Maybe agy's own refusal: Oraknid decides first, and the Leg hears that (ADR-020).
                 held.set(step.index, id);
@@ -381,6 +422,7 @@ export function createAntigravityAdapter(): LegAdapter {
             const refused = refusals([...steps.values()], e.result.denied_actions ?? [], allowed);
             denials = refused.map((r) => ({
               command: r.command,
+              path: r.path,
               raw: r.raw,
               id: r.index !== null ? (held.get(r.index) ?? null) : null,
             }));
@@ -467,26 +509,38 @@ export function createAntigravityAdapter(): LegAdapter {
           // Soft-denied by agy: Oraknid's policy decides, and the Leg is told (ADR-020).
           const replies: string[] = [];
           for (const [i, d] of r.denials.entries()) {
-            const request: PermissionRequest = {
-              tool: d.command ? "Bash" : "unknown",
-              input: d.command ? { command: d.command } : { notice: d.raw },
-              command: d.command,
-              path: null,
+            const id = d.id ?? `denied-${round}-${i}`;
+            const fail = (why: string) => {
+              if (!d.id)
+                events.push({ type: "tool.called", id, tool: "unknown", input: { notice: d.raw } });
+              events.push({ type: "tool.result", id, ok: false, output: why });
             };
+            // Nothing to judge: the Leg is asked, never me (an "unknown" approval helps nobody).
+            if (!d.command && !d.path) {
+              const why =
+                "agy refused an action Oraknid can't identify. Do it with a plain shell command or your file tools, and say exactly what you need if that fails.";
+              fail(why);
+              replies.push(`Refused: ${d.raw}. ${why}`);
+              continue;
+            }
+            const request: PermissionRequest = d.command
+              ? { tool: "Bash", input: { command: d.command }, command: d.command, path: null }
+              : { tool: "Write", input: { file_path: d.path }, command: null, path: d.path };
             const decision = await s.onPermission(request);
             events.push({ type: "permission.requested", request, decision });
-            if (decision.allow && d.command) {
-              allowed.add(d.command);
-              replies.push(`Approved: run \`${d.command}\` again now.`);
+            if (decision.allow) {
+              if (d.command) {
+                allowed.add(d.command);
+                replies.push(`Approved: run \`${d.command}\` again now.`);
+              } else {
+                allowedWrites.add(d.path as string);
+                replies.push(`Approved: write ${d.path} again now.`);
+              }
             } else {
-              const why = decision.allow
-                ? "It can't be allowed by its command text."
-                : decision.message;
-              const id = d.id ?? `denied-${round}-${i}`;
-              if (!d.id)
-                events.push({ type: "tool.called", id, tool: request.tool, input: request.input });
-              events.push({ type: "tool.result", id, ok: false, output: why });
-              replies.push(`Denied: ${d.command ? `\`${d.command}\`` : d.raw}. ${why}`);
+              fail(decision.message);
+              replies.push(
+                `Denied: ${d.command ? `\`${d.command}\`` : d.path}. ${decision.message}`,
+              );
             }
           }
           message = `${replies.join("\n")}\nContinue the task.`;

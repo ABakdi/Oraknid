@@ -101,6 +101,13 @@ against the real binary yet.
   in the workspace are written without asking.
 - `command(regex:^…$)` in `settings.json` does allow exactly that
   command (checked).
+- **File writes**: `agy` writes without asking only inside a git repo
+  it sees. A task's worktree, inside the sandbox, isn't one (its link
+  to the main repository is out of view), so every write was refused
+  and turned into "unknown" approvals in my inbox (seen 2026-10-02).
+  The Leg's settings now allow `write_file(<worktree>/)`; a refused
+  write elsewhere goes to the policy as a file write with its path, and
+  a refusal Oraknid can't identify goes back to the Leg, never to me.
 - Still to see: how a quota error reads.
 
 ## Consequences

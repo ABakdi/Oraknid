@@ -32,8 +32,9 @@ const homeIn = (mode: string) => {
 
 describe("Antigravity adapter", () => {
   it("reads what agy refused from its events, not from its generic note", () => {
+    let n = 0;
     const step = (state: string, CommandLine: string, extra: Record<string, unknown> = {}) => ({
-      index: 1,
+      index: ++n,
       tool: "run_command",
       input: { CommandLine },
       state,
@@ -53,14 +54,26 @@ describe("Antigravity adapter", () => {
           step("DONE", "pwd", { output: "/w" }),
           step("DONE", "npm test"),
         ],
-        denied,
+        [...denied, ...denied],
         new Set(["npm test"]),
       ).map((r) => r.command),
     ).toEqual(["ls -la", "cat b.txt"]);
     expect(refusals([step("DONE", "cat b.txt")], [], new Set())).toEqual([]);
     expect(refusals([], denied, new Set())).toEqual([
-      { command: null, raw: "RunCommand was denied", index: null },
+      { command: null, path: null, raw: "RunCommand was denied", index: null },
     ]);
+    // A write refused in the sandbox: done, no output, and WriteToFile denied.
+    const write = {
+      index: 4,
+      tool: "write_to_file",
+      input: { TargetFile: "/w/b.txt" },
+      state: "DONE",
+      output: null,
+      error: null,
+    };
+    expect(
+      refusals([write], [{ action: "write_file", display_name: "WriteToFile" }], new Set()),
+    ).toMatchObject([{ command: null, path: "/w/b.txt", index: 4 }]);
   });
 
   it("tells a quota error from another error", () => {
@@ -132,9 +145,10 @@ describe("Antigravity adapter", () => {
     const events = await readUntil(s, (e) => e.type === "turn.ended", 30_000);
     expect(events.at(-1)).toMatchObject({ reason: "completed", text: "hello" });
     expect(s.nativeSessionId()).toMatch(/^conv-/);
-    expect(readFileSync(join(home, ".gemini/antigravity-cli/settings.json"), "utf8")).toContain(
-      '"allow": []',
-    );
+    expect(
+      JSON.parse(readFileSync(join(home, ".gemini/antigravity-cli/settings.json"), "utf8"))
+        .permissions.allow,
+    ).toEqual([`write_file(${cwd}/)`]);
     await s.kill();
   }, 60_000);
 
