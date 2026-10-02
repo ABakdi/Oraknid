@@ -47,6 +47,10 @@ export const ToolView = z.object({
   untrusted: z.boolean(),
   /** Skills that ask for it. */
   usedBy: z.array(z.string()),
+  /** Part of Oraknid (the email tool): run inside the daemon, not edited here. */
+  builtIn: z.boolean(),
+  /** Calls Oraknid itself holds for my approval (an agent's email waits as a draft). */
+  held: z.array(z.string()),
   createdAt: Timestamp,
 });
 export type ToolView = z.infer<typeof ToolView>;

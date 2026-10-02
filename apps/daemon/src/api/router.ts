@@ -19,10 +19,18 @@ import {
   JobResult,
   JobView,
   LegView,
+  MailAccountView,
+  MailCompose,
+  MailDraftView,
+  MailFolderView,
+  MailMessageView,
+  MailOAuthSettings,
+  MailThreadPage,
   MetricsSample,
   NewChat,
   NewJob,
   NewLeg,
+  NewMailAccount,
   NewProject,
   NewProjectFrom,
   NewServer,
@@ -103,6 +111,7 @@ import { discoverAgents } from "../legs/discover.ts";
 import type { LegLogins } from "../legs/login.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import { readSessionLog } from "../legs/session-log.ts";
+import type { MailService } from "../mail/service.ts";
 import type { NestLink } from "../nest/link.ts";
 import type { Notifications } from "../notify/notifications.ts";
 import type { Secrets } from "../os/secrets.ts";
@@ -171,6 +180,8 @@ export interface ApiContext {
   helper: Helper;
   /** My servers (ADR-026). */
   servers: Servers;
+  /** My mail (ADR-032). */
+  mail: MailService;
   devices: Devices;
   brain: EyeBrain;
   /** Opens a folder on this machine (xdg-open). */
@@ -559,6 +570,153 @@ export const router = {
     remove: base
       .input(z.object({ id: z.string() }))
       .handler(({ context: c, input }) => guard(() => c.chats.remove(input.id))),
+  },
+  /** My mail: accounts, folders, threads, drafts (ADR-032). */
+  mail: {
+    accounts: base.output(z.array(MailAccountView)).handler(({ context: c }) => c.mail.accounts()),
+    addAccount: base
+      .input(NewMailAccount)
+      .output(MailAccountView)
+      .handler(({ context: c, input }) => guard(() => c.mail.addAccount(input))),
+    updateAccount: base
+      .input(
+        z.object({
+          id: z.string(),
+          name: z.string().min(1).max(60).optional(),
+          autoSend: z.boolean().optional(),
+          appendSent: z.boolean().optional(),
+        }),
+      )
+      .handler(({ context: c, input }) => {
+        const { id, ...patch } = input;
+        return guard(() => c.mail.update(id, patch));
+      }),
+    removeAccount: base
+      .input(z.object({ id: z.string() }))
+      .handler(({ context: c, input }) => guard(() => c.mail.removeAccount(input.id))),
+    /** Signing in again with a new password ("Reconnect"). */
+    reconnect: base
+      .input(z.object({ id: z.string(), password: z.string().min(1).optional() }))
+      .handler(({ context: c, input }) => guard(() => c.mail.reconnect(input.id, input.password))),
+    sync: base
+      .input(z.object({ id: z.string() }))
+      .handler(({ context: c, input }) => guard(() => c.mail.syncNow(input.id))),
+    oauthSettings: base
+      .output(MailOAuthSettings)
+      .handler(({ context: c }) => c.mail.oauthSettings()),
+    setOAuth: base
+      .input(
+        z.object({
+          provider: z.enum(["google", "microsoft"]),
+          clientId: z.string(),
+          clientSecret: z.string().min(1).optional(),
+        }),
+      )
+      .handler(({ context: c, input }) =>
+        guard(() => c.mail.setOAuth(input.provider, input.clientId, input.clientSecret)),
+      ),
+    /** The provider's sign-in page; it comes back to this daemon on 127.0.0.1. */
+    oauthStart: base
+      .input(
+        z.object({ provider: z.enum(["google", "microsoft"]), accountId: z.string().optional() }),
+      )
+      .output(z.object({ url: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.mail.oauthStart(input.provider, input.accountId ?? null)),
+      ),
+    folders: base
+      .input(z.object({ accountId: z.string() }))
+      .output(z.array(MailFolderView))
+      .handler(({ context: c, input }) => guard(() => c.mail.folders(input.accountId))),
+    threads: base
+      .input(
+        z.object({
+          accountId: z.string(),
+          folderId: z.string().nullable().optional(),
+          query: z.string().max(200).optional(),
+          offset: z.number().int().min(0).default(0),
+          limit: z.number().int().min(1).max(500).default(100),
+        }),
+      )
+      .output(MailThreadPage)
+      .handler(({ context: c, input }) => guard(() => c.mail.threads(input))),
+    thread: base
+      .input(z.object({ accountId: z.string(), threadId: z.string() }))
+      .output(z.object({ messages: z.array(MailMessageView), drafts: z.array(MailDraftView) }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.mail.thread(input.accountId, input.threadId)),
+      ),
+    flag: base
+      .input(
+        z.object({
+          ids: z.array(z.string()).min(1),
+          seen: z.boolean().optional(),
+          flagged: z.boolean().optional(),
+        }),
+      )
+      .handler(({ context: c, input }) =>
+        guard(() =>
+          c.mail.flag(
+            input.ids,
+            {
+              ...(input.seen !== undefined ? { seen: input.seen } : {}),
+              ...(input.flagged !== undefined ? { flagged: input.flagged } : {}),
+            },
+            { kind: "owner", device: c.device },
+          ),
+        ),
+      ),
+    move: base
+      .input(z.object({ ids: z.array(z.string()).min(1), folderId: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.mail.move(input.ids, input.folderId, { kind: "owner", device: c.device })),
+      ),
+    archive: base
+      .input(z.object({ ids: z.array(z.string()).min(1) }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.mail.archive(input.ids, { kind: "owner", device: c.device })),
+      ),
+    delete: base
+      .input(z.object({ ids: z.array(z.string()).min(1) }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.mail.remove(input.ids, { kind: "owner", device: c.device })),
+      ),
+    allowImages: base
+      .input(z.object({ id: z.string(), sender: z.boolean().default(false) }))
+      .handler(({ context: c, input }) => guard(() => c.mail.allowImages(input.id, input.sender))),
+    attachment: base
+      .input(z.object({ id: z.string(), index: z.number().int().min(0) }))
+      .output(z.object({ filename: z.string(), contentType: z.string(), base64: z.string() }))
+      .handler(({ context: c, input }) => guard(() => c.mail.attachment(input.id, input.index))),
+    drafts: base
+      .input(z.object({ accountId: z.string().optional() }))
+      .output(z.array(MailDraftView))
+      .handler(({ context: c, input }) => c.mail.drafts(input.accountId)),
+    /** A reply, addressed and quoted, to finish in the composer. */
+    replyTemplate: base
+      .input(z.object({ id: z.string(), all: z.boolean().default(false) }))
+      .output(MailCompose)
+      .handler(({ context: c, input }) =>
+        guard(() => c.mail.replyTemplate(input.id, input.all, "")),
+      ),
+    saveDraft: base
+      .input(MailCompose.extend({ id: z.string().optional() }))
+      .output(MailDraftView)
+      .handler(({ context: c, input }) =>
+        guard(() => c.mail.saveDraft(input, { kind: "owner", device: c.device })),
+      ),
+    send: base
+      .input(MailCompose.extend({ id: z.string().optional() }))
+      .output(MailDraftView)
+      .handler(({ context: c, input }) => guard(() => c.mail.sendNow(input, c.device))),
+    /** I approve a draft, an agent's included: it is sent now. */
+    approve: base
+      .input(z.object({ id: z.string() }))
+      .output(MailDraftView)
+      .handler(({ context: c, input }) => guard(() => c.mail.approve(input.id, c.device))),
+    discard: base
+      .input(z.object({ id: z.string() }))
+      .handler(({ context: c, input }) => guard(() => c.mail.discard(input.id))),
   },
   /** Tools for skills: MCP servers the daemon runs for a job's sessions (ADR-021). */
   tools: {

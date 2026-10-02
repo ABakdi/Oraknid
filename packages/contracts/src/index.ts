@@ -6,6 +6,7 @@ export * from "./helper.ts";
 export * from "./jobs.ts";
 export * from "./legs.ts";
 export * from "./live.ts";
+export * from "./mail.ts";
 export * from "./metrics.ts";
 export * from "./notifications.ts";
 export * from "./plan.ts";

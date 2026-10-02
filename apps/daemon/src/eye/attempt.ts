@@ -530,67 +530,71 @@ export async function runAttempt(
       key: `mcp:${tool.name}:${name}:${hash(JSON.stringify(args))}`,
       taskId,
     });
-    toolsOpen = await d.tools.broker.open(toolRows, {
-      decide: async (tool, name, args) => {
-        const sends = tool.sends.includes(name) && d.effects;
-        const spec = sendSpec(tool, name, args);
-        if (sends) {
-          // At most once (BR-6): a send already made, or caught mid-way by a crash, isn't made again.
-          const before = d.effects?.get(SideEffects.keyOf(job.id, spec));
-          if (before?.state === "performed" || before?.state === "confirmed")
-            return {
-              allow: false,
-              message: `This exact ${name} was already made in this job; Oraknid doesn't repeat it.`,
-            };
-          if (before?.state === "performing")
-            return {
-              allow: false,
-              message: `An identical ${name} was interrupted mid-way; the owner is asked whether it happened before it is tried again.`,
-            };
-        }
-        const v = await onPermission({
-          tool: `mcp__${tool.name}__${name}`,
-          input: args,
-          command: null,
-          path: null,
-        });
-        if (v.allow && sends && d.effects) {
-          const row = d.effects.intend(job.id, {
-            ...spec,
-            action: `${tool.name}.${name}`,
-            payload: { tool: tool.name, name, args },
+    toolsOpen = await d.tools.broker.open(
+      toolRows,
+      {
+        decide: async (tool, name, args) => {
+          const sends = tool.sends.includes(name) && d.effects;
+          const spec = sendSpec(tool, name, args);
+          if (sends) {
+            // At most once (BR-6): a send already made, or caught mid-way by a crash, isn't made again.
+            const before = d.effects?.get(SideEffects.keyOf(job.id, spec));
+            if (before?.state === "performed" || before?.state === "confirmed")
+              return {
+                allow: false,
+                message: `This exact ${name} was already made in this job; Oraknid doesn't repeat it.`,
+              };
+            if (before?.state === "performing")
+              return {
+                allow: false,
+                message: `An identical ${name} was interrupted mid-way; the owner is asked whether it happened before it is tried again.`,
+              };
+          }
+          const v = await onPermission({
+            tool: `mcp__${tool.name}__${name}`,
+            input: args,
+            command: null,
+            path: null,
           });
-          d.effects.set(row.idempotencyKey, "performing");
-        }
-        return v;
-      },
-      done: (tool, name, o) => {
-        if (o.allowed && tool.sends.includes(name) && d.effects) {
-          const key = SideEffects.keyOf(job.id, sendSpec(tool, name, o.args));
-          if (d.effects.get(key)?.state === "performing")
-            d.effects.set(
-              key,
-              o.ok ? "performed" : "failed",
-              o.ok ? { result: { bytes: o.bytes } } : { problem: "the tool said it failed" },
-            );
-        }
-        event("tool.called", {
-          tool: tool.name,
-          name,
-          allowed: o.allowed,
-          ok: o.ok,
-          bytes: o.bytes,
-          ...(o.flags.length ? { flags: o.flags } : {}),
-        });
-        // What came from outside makes the task untrusted (BR-15).
-        if (o.allowed && tool.untrusted && !readTheWeb) {
-          readTheWeb = true;
-          event("task.untrusted", {
-            reason: `read from ${tool.name} (${name}): gated actions ask me from now on`,
+          if (v.allow && sends && d.effects) {
+            const row = d.effects.intend(job.id, {
+              ...spec,
+              action: `${tool.name}.${name}`,
+              payload: { tool: tool.name, name, args },
+            });
+            d.effects.set(row.idempotencyKey, "performing");
+          }
+          return v;
+        },
+        done: (tool, name, o) => {
+          if (o.allowed && tool.sends.includes(name) && d.effects) {
+            const key = SideEffects.keyOf(job.id, sendSpec(tool, name, o.args));
+            if (d.effects.get(key)?.state === "performing")
+              d.effects.set(
+                key,
+                o.ok ? "performed" : "failed",
+                o.ok ? { result: { bytes: o.bytes } } : { problem: "the tool said it failed" },
+              );
+          }
+          event("tool.called", {
+            tool: tool.name,
+            name,
+            allowed: o.allowed,
+            ok: o.ok,
+            bytes: o.bytes,
+            ...(o.flags.length ? { flags: o.flags } : {}),
           });
-        }
+          // What came from outside makes the task untrusted (BR-15).
+          if (o.allowed && tool.untrusted && !readTheWeb) {
+            readTheWeb = true;
+            event("task.untrusted", {
+              reason: `read from ${tool.name} (${name}): gated actions ask me from now on`,
+            });
+          }
+        },
       },
-    });
+      { jobId: job.id },
+    );
     return toolsOpen;
   };
 
