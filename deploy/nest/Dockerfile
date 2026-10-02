@@ -10,9 +10,12 @@ RUN pnpm install --frozen-lockfile --filter @oraknid/nest... \
  && cp -r apps/nest/dist apps/nest/public /out/
 
 FROM node:22-slim
-ENV NODE_ENV=production PORT=8080
+ENV NODE_ENV=production PORT=8080 NEST_DATA_DIR=/data
 WORKDIR /app
 COPY --from=build /out /app
+# A public Nest keeps its registered daemons here (ADR-031): mount a volume on it.
+RUN mkdir -p /data && chown node:node /data
+VOLUME /data
 USER node
 EXPOSE 8080
 CMD ["node", "dist/main.mjs"]

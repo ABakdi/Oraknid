@@ -43,8 +43,18 @@ async function showHash() {
     .join("")}`;
 }
 
+/** Whose Nest this is: a public one carries other people's daemons too (ADR-031). */
+async function showKind() {
+  const info = (await (await fetch("/info")).json()) as { mode?: string };
+  (document.getElementById("nest") as HTMLElement).textContent =
+    info.mode === "public"
+      ? "A public Nest: it carries your encrypted traffic, and can't read it."
+      : "A private Nest: it carries your encrypted traffic, and can't read it.";
+}
+
 async function main() {
   void showHash();
+  void showKind().catch(() => {});
   // For notifications while I'm away (M4.3); it caches nothing.
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
   const b = bundle();

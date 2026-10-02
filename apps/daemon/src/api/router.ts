@@ -748,6 +748,13 @@ export const router = {
       .handler(({ context: c, input }) =>
         guard(() => c.nest.configure(input.url, input.secret, input.daemonId)),
       ),
+    /** On a public Nest: this daemon registers itself and connects (ADR-031). */
+    register: base
+      .input(z.object({ url: z.url(), invite: z.string().max(200).optional() }))
+      .output(z.object({ daemonId: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.nest.register(input.url, input.invite || undefined)),
+      ),
     /** A device for away: its link carries its keys in the fragment, never through The Nest. */
     pairAway: base
       .input(

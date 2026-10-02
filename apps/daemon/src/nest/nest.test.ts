@@ -9,6 +9,7 @@ import type { RouterClient } from "@orpc/server";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import type { Router } from "../api/router.ts";
+import { remoteAllowed } from "../auth/lock.ts";
 import { type Daemon, startDaemon } from "../daemon.ts";
 import { resolvePaths } from "../paths.ts";
 import { fakeOs } from "../testing/fake-os.ts";
@@ -198,4 +199,36 @@ describe("away from home, through The Nest (Phase 4)", () => {
     await ended;
     await expect(phone(b)).rejects.toThrow(/isn't paired, or was revoked/);
   }, 30_000);
+
+  it("registers itself on a public Nest and connects, and only from home (ADR-031)", async () => {
+    nest = createNest({ daemons: new Map(), mode: "public", invite: "garden-gate" });
+    await new Promise<void>((r) => nest?.server.listen(0, "127.0.0.1", () => r()));
+    const nestUrl = `http://127.0.0.1:${(nest.server.address() as { port: number }).port}`;
+    const dir = mkdtempSync(join(tmpdir(), "oraknid-nest-"));
+    daemon = await startDaemon({
+      paths: resolvePaths({ ORAKNID_DATA_DIR: dir, ORAKNID_CONFIG_DIR: dir }),
+      port: 0,
+      dbFile: ":memory:",
+      os: fakeOs({ keychain: true }).os,
+    });
+    const api = createORPCClient<RouterClient<Router>>(
+      new RPCLink({
+        url: `${daemon.url}/api`,
+        headers: { authorization: `Bearer ${daemon.cliToken}` },
+      }),
+    );
+
+    await expect(api.nest.register({ url: nestUrl, invite: "wrong" })).rejects.toThrow(
+      /invite code/,
+    );
+    // Away from home, nothing moves this daemon to another Nest.
+    expect(remoteAllowed("/nest/register")).toBe(false);
+    const { daemonId } = await api.nest.register({ url: `${nestUrl}/`, invite: "garden-gate" });
+    expect(daemonId).toMatch(/^d-/);
+    const end = Date.now() + 3000;
+    while (!(await api.nest.status()).connected && Date.now() < end)
+      await new Promise((r) => setTimeout(r, 20));
+    const s = await api.nest.status();
+    expect(s).toMatchObject({ connected: true, url: nestUrl, daemonId });
+  });
 });

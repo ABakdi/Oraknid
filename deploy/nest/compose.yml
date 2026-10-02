@@ -9,7 +9,11 @@ services:
       dockerfile: deploy/nest/Dockerfile
     restart: unless-stopped
     environment:
-      NEST_DAEMONS: ${NEST_DAEMONS}
+      NEST_DAEMONS: ${NEST_DAEMONS:-}
+      NEST_MODE: ${NEST_MODE:-private}
+      NEST_INVITE: ${NEST_INVITE:-}
+    volumes:
+      - nest-data:/data
     expose:
       - "8080"
   caddy:
@@ -27,5 +31,6 @@ services:
     depends_on:
       - nest
 volumes:
+  nest-data:
   caddy-data:
   caddy-config:

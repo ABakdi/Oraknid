@@ -12,20 +12,42 @@ import { api, message } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useLive } from "@/lib/live";
 
+/** The public Nest offered first (ADR-031). */
+const PUBLIC_NEST = "https://oraknid.abakdi.com";
+
 /**
  * Reaching Oraknid away from home through The Nest (Phase 4, Nest-Protocol):
- * where my Nest is, and whether the daemon is connected to it.
+ * a public Nest this daemon registers on in one step (ADR-031), or my own
+ * with its id and secret; and whether the daemon is connected to it.
  */
 export function AwayCard() {
   const status = useLive(() => api.nest.status(), {
     topics: ["overview"],
     refreshOn: (e) => e.type.startsWith("nest."),
   });
+  const [choice, setChoice] = useState<"public" | "own" | null>(null);
+  const [publicUrl, setPublicUrl] = useState(PUBLIC_NEST);
+  const [invite, setInvite] = useState("");
   const [url, setUrl] = useState("");
   const [secret, setSecret] = useState("");
   const [daemonId, setDaemonId] = useState("home-1");
   const [busy, setBusy] = useState(false);
   const s = status.data;
+  const mode = choice ?? (s?.configured ? "own" : "public");
+
+  const register = async () => {
+    setBusy(true);
+    try {
+      await api.nest.register({ url: publicUrl.trim(), invite: invite.trim() || undefined });
+      setInvite("");
+      toast.success(t("Registered; the daemon connects to The Nest."));
+      status.reload();
+    } catch (e) {
+      toast.error(message(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const configure = async () => {
     setBusy(true);
@@ -54,7 +76,7 @@ export function AwayCard() {
         </CardTitle>
         <CardDescription>
           {t(
-            "Through The Nest, the relay you host: it carries only encrypted traffic between your devices and this daemon, and keeps nothing.",
+            "Through The Nest, a relay: it carries only encrypted traffic between your devices and this daemon, and can't read it. Use a public one, or host your own.",
           )}
         </CardDescription>
       </CardHeader>
@@ -77,42 +99,96 @@ export function AwayCard() {
             ) : null}
           </div>
         ) : null}
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="nest-url">{t("The Nest's address")}</Label>
-            <Input
-              id="nest-url"
-              className="font-mono"
-              placeholder="https://nest.example.com"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="nest-secret">{t("This daemon's secret at The Nest")}</Label>
-            <Input
-              id="nest-secret"
-              type="password"
-              value={secret}
-              onChange={(e) => setSecret(e.target.value)}
-            />
-          </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant={mode === "public" ? "default" : "outline"}
+            aria-pressed={mode === "public"}
+            onClick={() => setChoice("public")}
+          >
+            {t("Use a public Nest")}
+          </Button>
+          <Button
+            size="sm"
+            variant={mode === "own" ? "default" : "outline"}
+            aria-pressed={mode === "own"}
+            onClick={() => setChoice("own")}
+          >
+            {t("My own Nest")}
+          </Button>
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="nest-id">{t("This daemon's id at The Nest (as in NEST_DAEMONS)")}</Label>
-          <Input
-            id="nest-id"
-            className="w-48 font-mono"
-            value={daemonId}
-            onChange={(e) => setDaemonId(e.target.value)}
-          />
-        </div>
-        <Button
-          disabled={busy || !url.trim() || secret.length < 16 || !daemonId.trim()}
-          onClick={configure}
-        >
-          {s?.configured ? t("Change and reconnect") : t("Connect to The Nest")}
-        </Button>
+        {mode === "public" ? (
+          <>
+            <div className="text-xs text-muted-foreground">
+              {t(
+                "The daemon registers itself there and gets its own id and secret. The Nest sees when you connect and how much, never what.",
+              )}
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="nest-public-url">{t("The Nest's address")}</Label>
+                <Input
+                  id="nest-public-url"
+                  className="font-mono"
+                  value={publicUrl}
+                  onChange={(e) => setPublicUrl(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="nest-invite">{t("Invite code (if it asks for one)")}</Label>
+                <Input
+                  id="nest-invite"
+                  value={invite}
+                  onChange={(e) => setInvite(e.target.value)}
+                />
+              </div>
+            </div>
+            <Button disabled={busy || !publicUrl.trim()} onClick={register}>
+              {t("Register")}
+            </Button>
+          </>
+        ) : (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="nest-url">{t("The Nest's address")}</Label>
+                <Input
+                  id="nest-url"
+                  className="font-mono"
+                  placeholder="https://nest.example.com"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="nest-secret">{t("This daemon's secret at The Nest")}</Label>
+                <Input
+                  id="nest-secret"
+                  type="password"
+                  value={secret}
+                  onChange={(e) => setSecret(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="nest-id">
+                {t("This daemon's id at The Nest (as in NEST_DAEMONS)")}
+              </Label>
+              <Input
+                id="nest-id"
+                className="w-48 font-mono"
+                value={daemonId}
+                onChange={(e) => setDaemonId(e.target.value)}
+              />
+            </div>
+            <Button
+              disabled={busy || !url.trim() || secret.length < 16 || !daemonId.trim()}
+              onClick={configure}
+            >
+              {s?.configured ? t("Change and reconnect") : t("Connect to The Nest")}
+            </Button>
+          </>
+        )}
       </CardContent>
     </Card>
   );
@@ -198,7 +274,7 @@ export function PhoneCard() {
               {t("The Nest is connected")}{" "}
               {!nest.data?.connected ? (
                 <span className="text-muted-foreground">
-                  {t("(set it up below: its address and secret)")}
+                  {t("(set it up below: a public Nest, or your own)")}
                 </span>
               ) : null}
             </Step>

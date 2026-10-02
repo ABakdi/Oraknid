@@ -135,6 +135,35 @@ export class NestLink {
   }
 
   /**
+   * On a public Nest (ADR-031): it gives this daemon an id and a secret,
+   * which are kept as configure() keeps them.
+   */
+  async register(url: string, invite?: string): Promise<{ daemonId: string }> {
+    const cleaned = url.replace(/\/+$/, "");
+    let res: Response;
+    try {
+      res = await fetch(`${cleaned}/register`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(invite ? { invite } : {}),
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch {
+      throw new Error(`Couldn't reach a Nest at ${cleaned}.`);
+    }
+    const body = (await res.json().catch(() => null)) as { message?: unknown } | null;
+    if (res.status === 404) throw new Error("That Nest is private: it takes no registrations.");
+    if (!res.ok)
+      throw new Error(
+        typeof body?.message === "string" ? body.message : `The Nest answered ${res.status}.`,
+      );
+    const given = z.object({ id: z.string().min(1), secret: z.string().min(32) }).safeParse(body);
+    if (!given.success) throw new Error("The Nest's answer wasn't a registration.");
+    await this.configure(cleaned, given.data.secret, given.data.id);
+    return { daemonId: given.data.id };
+  }
+
+  /**
    * A device for away from home, paired here: its keys and token are made
    * now and go to it in a link I open on it (never through The Nest).
    */
