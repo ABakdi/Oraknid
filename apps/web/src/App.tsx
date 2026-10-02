@@ -120,7 +120,9 @@ export function App() {
                 <Route path="/jobs/:id/:tab?">
                   {(p) => <JobPage key={p.id} id={p.id} tab={p.tab} />}
                 </Route>
-                <Route path="/projects" component={ProjectsPage} />
+                <Route path="/projects/:id?/:tab?">
+                  {(p) => <ProjectsPage id={p.id} tab={p.tab} />}
+                </Route>
                 <Route path="/inbox">{() => <InboxPage />}</Route>
                 <Route path="/inbox/:id">{(p) => <InboxPage focus={p.id} />}</Route>
                 <Route path="/legs">{() => <LegsPage />}</Route>

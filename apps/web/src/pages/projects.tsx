@@ -1,10 +1,11 @@
 import type { ProjectView } from "@oraknid/contracts";
-import { FolderGit2, Plus } from "lucide-react";
+import { ChevronLeft, FolderGit2, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { LegComparison, TokensChart } from "@/components/charts";
 import { Empty, ErrorNote, Loading, PageHeader, Stat, StateBadge } from "@/components/common";
+import { type PageTab, PageTabs } from "@/components/page-tabs";
 import { ProjectServersCard } from "@/components/project-servers";
 import { ProjectSkillsCard } from "@/components/project-skills";
 import { RulesCard } from "@/components/rules-card";
@@ -24,83 +25,181 @@ import { api, message } from "@/lib/api";
 import { tokens } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { useLive } from "@/lib/live";
+import { cn } from "@/lib/utils";
 
-export function ProjectsPage() {
+export function ProjectsPage({ id, tab }: { id?: string; tab?: string }) {
+  const [, go] = useLocation();
   const projects = useLive(() => api.projects.list(), {
     topics: ["overview"],
     refreshOn: (e) => e.type.startsWith("project.") || e.type === "job.created",
   });
   const [creating, setCreating] = useState(false);
-  const [selected, setSelected] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   if (projects.error) return <ErrorNote error={projects.error} />;
   if (projects.loading) return <Loading />;
   const add = (
-    <Button className="gap-1" onClick={() => setCreating(true)}>
+    <Button className="gap-1" size="sm" onClick={() => setCreating(true)}>
       <Plus className="size-4" />
       {t("New project")}
     </Button>
   );
   const all = projects.data ?? [];
-  const archived = all.filter((p) => p.archivedAt);
-  const shown = all.filter((p) => showArchived || !p.archivedAt);
-  const current =
-    (selected && all.some((p) => p.id === selected) ? selected : null) ?? shown[0]?.id ?? null;
-  return (
-    <div className="space-y-4">
-      <PageHeader title={t("Projects")} actions={add} />
-      {(projects.data ?? []).length === 0 ? (
+  if (all.length === 0)
+    return (
+      <div className="space-y-4">
+        <PageHeader title={t("Projects")} />
         <Empty title={t("No projects yet")} action={add}>
           {t(
             "A project is a folder or repo that jobs work in. Oraknid works in its own worktree and never on your branch.",
           )}
         </Empty>
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-[18rem_1fr]">
-          <div className="space-y-1">
-            {shown.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => setSelected(p.id)}
-                className={`w-full rounded-lg border px-3 py-2 text-left hover:bg-accent ${p.id === current ? "border-primary bg-accent" : "bg-card"}`}
-              >
-                <div className="flex items-center gap-2 font-medium">
-                  <FolderGit2 className="size-4" />
-                  <span className="truncate">{p.name}</span>
-                  {p.archivedAt ? (
-                    <span className="text-xs font-normal text-muted-foreground">
-                      {t("archived")}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="truncate text-xs text-muted-foreground">{p.workspacePath}</div>
-                <div className="text-xs text-muted-foreground">
-                  {t("{n} job(s)", { n: p.jobCount })} ·{" "}
-                  {p.shadow
-                    ? t("no git (checkpoints in a shadow repo)")
-                    : `${p.releaseBranch} / ${p.workBranch}`}
-                </div>
-              </button>
-            ))}
-            {archived.length ? (
-              <Button variant="ghost" size="sm" onClick={() => setShowArchived((v) => !v)}>
-                {showArchived
-                  ? t("Hide archived")
-                  : t("Show archived ({n})", { n: archived.length })}
-              </Button>
-            ) : null}
-          </div>
-          {current ? (
-            <div className="min-w-0 space-y-3">
-              <ProjectActions project={all.find((p) => p.id === current) as ProjectView} />
-              <ProjectStats id={current} />
-            </div>
+        <NewProject open={creating} onOpenChange={setCreating} />
+      </div>
+    );
+  const archived = all.filter((p) => p.archivedAt);
+  const listed = all.filter((p) => showArchived || !p.archivedAt);
+  // A project open: its id in the address; on a computer the first one by default.
+  const selected = all.find((p) => p.id === id);
+  const shown =
+    selected ?? (typeof window !== "undefined" && window.innerWidth >= 768 ? listed[0] : undefined);
+  return (
+    <div className="-mb-24 flex h-[calc(100dvh-7.5rem)] min-h-0 gap-4 md:-mb-8 md:h-[calc(100dvh-4.5rem)]">
+      <aside
+        className={cn(
+          "flex min-h-0 w-full shrink-0 flex-col gap-2 md:w-72",
+          selected && "hidden md:flex",
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <h1 className="flex-1 text-lg font-semibold">{t("Projects")}</h1>
+          {add}
+        </div>
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+          {listed.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => go(`/projects/${p.id}`)}
+              className={cn(
+                "w-full rounded-lg border bg-card px-3 py-2 text-left hover:bg-accent",
+                p.id === shown?.id && "border-primary bg-accent",
+              )}
+            >
+              <div className="flex items-center gap-2 font-medium">
+                <FolderGit2 className="size-4 shrink-0" />
+                <span className="truncate">{p.name}</span>
+                {p.archivedAt ? (
+                  <span className="text-xs font-normal text-muted-foreground">{t("archived")}</span>
+                ) : null}
+              </div>
+              <div className="truncate text-xs text-muted-foreground">{p.workspacePath}</div>
+              <div className="truncate text-xs text-muted-foreground">
+                {t("{n} job(s)", { n: p.jobCount })} ·{" "}
+                {p.shadow
+                  ? t("no git (checkpoints in a shadow repo)")
+                  : `${p.releaseBranch} / ${p.workBranch}`}
+              </div>
+            </button>
+          ))}
+          {archived.length ? (
+            <Button variant="ghost" size="sm" onClick={() => setShowArchived((v) => !v)}>
+              {showArchived ? t("Hide archived") : t("Show archived ({n})", { n: archived.length })}
+            </Button>
           ) : null}
         </div>
-      )}
+      </aside>
+      <section className={cn("min-h-0 min-w-0 flex-1", !selected && "hidden md:block")}>
+        {shown ? <ProjectDetail key={shown.id} project={shown} tab={tab} /> : null}
+      </section>
       <NewProject open={creating} onOpenChange={setCreating} />
     </div>
+  );
+}
+
+/** One project: Jobs · Stats · Skills · Servers · Commands · About, in tabs. */
+function ProjectDetail({ project, tab }: { project: ProjectView; tab?: string }) {
+  const [, go] = useLocation();
+  const id = project.id;
+  const header = (
+    <div className="flex shrink-0 items-center gap-2">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="md:hidden"
+        aria-label={t("All projects")}
+        onClick={() => go("/projects")}
+      >
+        <ChevronLeft className="size-4" />
+      </Button>
+      <h2 className="min-w-0 truncate text-lg font-semibold">{project.name}</h2>
+      <span className="hidden min-w-0 truncate font-mono text-xs text-muted-foreground sm:inline">
+        {project.workspacePath}
+      </span>
+    </div>
+  );
+  const tabs: PageTab[] = [
+    {
+      id: "jobs",
+      label: t("Jobs"),
+      badge: project.jobCount || undefined,
+      content: () => <ProjectJobs id={id} />,
+    },
+    { id: "stats", label: t("Stats"), content: () => <ProjectStats id={id} /> },
+    { id: "skills", label: t("Skills"), content: () => <ProjectSkillsCard projectId={id} /> },
+    { id: "servers", label: t("Servers"), content: () => <ProjectServersCard projectId={id} /> },
+    {
+      id: "commands",
+      label: t("Commands"),
+      content: () => (
+        <RulesCard
+          scope={id}
+          title={t("Commands in this project")}
+          description={t(
+            "Patterns for this project's jobs: a job's own rules win, these come next, then the global ones.",
+          )}
+          load={() => api.projects.policy({ id })}
+          save={(r) => api.projects.setPolicy({ id, ...r })}
+        />
+      ),
+    },
+    { id: "about", label: t("About"), content: () => <ProjectActions project={project} /> },
+  ];
+  return (
+    <PageTabs
+      base={`/projects/${id}`}
+      tab={tab}
+      tabs={tabs}
+      header={header}
+      className="mb-0 h-full md:mb-0 md:h-full"
+    />
+  );
+}
+
+/** The project's jobs, newest first. */
+function ProjectJobs({ id }: { id: string }) {
+  const jobs = useLive(() => api.jobs.list(), {
+    topics: ["overview"],
+    refreshOn: (e) => e.type.startsWith("job."),
+  });
+  const mine = (jobs.data ?? []).filter((j) => j.projectId === id).reverse();
+  return (
+    <Card>
+      <CardContent className="divide-y p-0">
+        {mine.length === 0 ? (
+          <div className="px-4 py-3 text-sm text-muted-foreground">{t("No jobs yet.")}</div>
+        ) : null}
+        {mine.map((j) => (
+          <Link
+            key={j.id}
+            href={`/jobs/${j.id}`}
+            className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-accent/50"
+          >
+            <span className="flex-1 truncate">{j.title}</span>
+            <StateBadge state={j.state} />
+          </Link>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -177,12 +276,7 @@ function ProjectStats({ id }: { id: string }) {
       api.stats.tokens({ projectId: id, since: Date.now() - 14 * 86400_000, bucketMs: 86400_000 }),
     { topics: ["overview"], deps: [id] },
   );
-  const jobs = useLive(() => api.jobs.list(), {
-    topics: ["overview"],
-    refreshOn: (e) => e.type.startsWith("job."),
-  });
   if (!s.data) return <Loading />;
-  const mine = (jobs.data ?? []).filter((j) => j.projectId === id).reverse();
   const hours = Math.round(s.data.timeMs / 360_000) / 10;
   return (
     <div className="space-y-3">
@@ -211,17 +305,6 @@ function ProjectStats({ id }: { id: string }) {
           )}
         </CardContent>
       </Card>
-      <ProjectSkillsCard projectId={id} />
-      <ProjectServersCard projectId={id} />
-      <RulesCard
-        scope={id}
-        title={t("Commands in this project")}
-        description={t(
-          "Patterns for this project's jobs: a job's own rules win, these come next, then the global ones.",
-        )}
-        load={() => api.projects.policy({ id })}
-        save={(r) => api.projects.setPolicy({ id, ...r })}
-      />
       {s.data.byLeg.length ? (
         <Card>
           <CardHeader>
@@ -232,26 +315,6 @@ function ProjectStats({ id }: { id: string }) {
           </CardContent>
         </Card>
       ) : null}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">{t("History")}</CardTitle>
-        </CardHeader>
-        <CardContent className="divide-y p-0">
-          {mine.length === 0 ? (
-            <div className="px-4 py-3 text-sm text-muted-foreground">{t("No jobs yet.")}</div>
-          ) : null}
-          {mine.map((j) => (
-            <Link
-              key={j.id}
-              href={`/jobs/${j.id}`}
-              className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-accent/50"
-            >
-              <span className="flex-1 truncate">{j.title}</span>
-              <StateBadge state={j.state} />
-            </Link>
-          ))}
-        </CardContent>
-      </Card>
     </div>
   );
 }

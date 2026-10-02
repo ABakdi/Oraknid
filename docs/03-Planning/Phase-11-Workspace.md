@@ -14,7 +14,7 @@ can't use what I use at home; and The Nest should serve other people.
 ### M11.1 — Pages that use their space
 - [x] The overview's charts and legends fit a phone (nothing past the right edge): the tokens chart has its own legend, a Leg per line
 - [x] Job page in tabs in the address, The Eye as a full conversation, no jump when changing tabs (each tab scrolls inside itself)
-- [~] Every other page with several concerns in tabs: Servers done (a list beside the server, its Readings, State document and About in tabs); Legs and Projects next
+- [x] Every other page with several concerns in tabs: Servers and Projects (a list beside the open one, its tabs in the address; on a phone, one then the other); Legs keep their folding cards
 - [x] The sidebar folds, by hand (`[`) and by itself on Chats, Terminal, Mail and a job
 - [x] Keyboard shortcuts and their list (`?`)
 
