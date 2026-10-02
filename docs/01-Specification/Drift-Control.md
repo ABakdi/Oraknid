@@ -10,16 +10,16 @@ works. Verification judges the result.
 Each detector runs on the session's event stream, the workspace diff
 and usage samples. Thresholds are defaults, editable in Settings.
 
-| # | Drift | Detected when | Default threshold |
-| :-- | :-- | :-- | :-- |
-| D1 | **Out-of-scope edit** | A changed path is outside the task's `scope` globs. | Any file. |
-| D2 | **Loop / oscillation** | The same file region is edited back and forth, or the same command runs with the same result repeatedly. | 3 repeats in 10 turns. |
-| D3 | **Repeated failure** | Verification fails with the same error signature. | 3 times. |
-| D4 | **Fake progress claim** | The Leg says "done", "tests pass" or similar, but verification fails, or the claimed command never ran in the stream. | 1 time. |
-| D5 | **Stall** | No output, no file change and no tool call. | 5 min (local: 10 min). |
-| D6 | **Token burn without progress** | Tokens spent since the last verified progress (a passing verify, a new passing test, a checkpoint) exceed the limit. | 30% of the task budget, or 150k tokens. |
-| D7 | **Forbidden command** | A command matches the deny list, or isn't on the allow list. | Any. Always blocked first, then counted as drift. |
-| D8 | **Gate bypass attempt** | The Leg tries again a gated action I refused (e.g. `git push`). | Any. Blocked, then escalated straight to step 4. |
+| #   | Drift                           | Detected when                                                                                                         | Default threshold                                 |
+| :-- | :------------------------------ | :-------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------ |
+| D1  | **Out-of-scope edit**           | A changed path is outside the task's `scope` globs.                                                                   | Any file.                                         |
+| D2  | **Loop / oscillation**          | The same file region is edited back and forth, or the same command runs with the same result repeatedly.              | 3 repeats in 10 turns.                            |
+| D3  | **Repeated failure**            | Verification fails with the same error signature.                                                                     | 3 times.                                          |
+| D4  | **Fake progress claim**         | The Leg says "done", "tests pass" or similar, but verification fails, or the claimed command never ran in the stream. | 1 time.                                           |
+| D5  | **Stall**                       | No output, no file change and no tool call.                                                                           | 5 min (local: 10 min).                            |
+| D6  | **Token burn without progress** | Tokens spent since the last verified progress (a passing verify, a new passing test, a checkpoint) exceed the limit.  | 30% of the task budget, or 150k tokens.           |
+| D7  | **Forbidden command**           | A command matches the deny list, or isn't on the allow list.                                                          | Any. Always blocked first, then counted as drift. |
+| D8  | **Gate bypass attempt**         | The Leg tries again a gated action I refused (e.g. `git push`).                                                       | Any. Blocked, then escalated straight to step 4.  |
 
 Cheap Legs can help with classification (e.g. "is this message a done
 claim?"). The thresholds and the final decision stay deterministic.

@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { Autonomy, Budget, Difficulty, MetricsSample, TaskKind } from "@oraknid/contracts";
 import {
   allowRuleFor,
@@ -41,6 +43,7 @@ import type { InboxStore } from "../inbox/store.ts";
 import { sandboxPlan } from "../legs/plan.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor, Supervised } from "../legs/supervisor.ts";
+import type { Servers } from "../servers/service.ts";
 import { readSetting } from "../settings.ts";
 import { handoffFromLog } from "../silk/handoff.ts";
 import type { SilkStore } from "../silk/store.ts";
@@ -89,6 +92,8 @@ export interface AttemptDeps {
   tools?: { registry: ToolRegistry; broker: McpBroker };
   /** The outbox: a tool's sends happen at most once (BR-6). */
   effects?: SideEffects;
+  /** My servers, for a job whose project has some (ADR-026). */
+  servers?: Servers;
   /** The machine's last few seconds of metrics: a new session waits for room (ADR-016). */
   machine?: () => MetricsSample[];
   /** Session rotation (BR-3): share of the context window. */
@@ -112,6 +117,8 @@ export interface AttemptJob {
   tools: string[];
   /** The skill's own checks for results that aren't code (Skills → Checks). */
   skillChecks?: string;
+  /** The servers its project gave it (Servers → Servers in projects). */
+  serverIds?: string[];
   /** The project's other skills, whose guidance a task may get (Skills → Skills per project). */
   otherSkills?: { name: string; body: string }[];
   /** The job's inputs, rendered for context packs. */
@@ -510,7 +517,7 @@ export async function runAttempt(
       void summarizeShortened(d, job.id, ws.cwd, built.shortened).catch((e) =>
         console.error("silk summary failed", e),
       );
-    return built.text;
+    return serversText ? `${built.text}\n\n${serversText}` : built.text;
   };
 
   /** The job's tools for this attempt's sessions, opened with the first one. */
@@ -586,7 +593,45 @@ export async function runAttempt(
     return toolsOpen;
   };
 
+  /**
+   * The job's servers (ADR-026): their state documents in the context, and
+   * a way in from the Leg's own home: an SSH alias, its key, the pinned host key.
+   */
+  let serversText = "";
+  let serversReady = false;
+  const prepareServers = async () => {
+    if (serversReady || !d.servers || !job.serverIds?.length) return;
+    serversReady = true;
+    const ssh = join(d.legsDir, leg.legId, "home", ".ssh");
+    mkdirSync(ssh, { recursive: true, mode: 0o700 });
+    const config: string[] = [];
+    const known: string[] = [];
+    const docs: string[] = [];
+    for (const id of job.serverIds) {
+      try {
+        const s = await d.servers.forLeg(id);
+        const keyFile = join(ssh, s.alias);
+        writeFileSync(keyFile, s.privateKey.endsWith("\n") ? s.privateKey : `${s.privateKey}\n`, {
+          mode: 0o600,
+        });
+        config.push(
+          `Host ${s.alias}\n  HostName ${s.host}\n  Port ${s.port}\n  User ${s.user}\n  IdentityFile ${keyFile}\n  IdentitiesOnly yes\n  StrictHostKeyChecking yes\n  UserKnownHostsFile ${join(ssh, "oraknid_known_hosts")}`,
+        );
+        if (s.knownHost) known.push(s.knownHost);
+        docs.push(`## ${s.name} — \`ssh ${s.alias}\`\n\n${s.state}`);
+      } catch (error) {
+        docs.push(
+          `## (a server this job can't reach: ${error instanceof Error ? error.message : String(error)})`,
+        );
+      }
+    }
+    writeFileSync(join(ssh, "config"), `${config.join("\n\n")}\n`, { mode: 0o600 });
+    writeFileSync(join(ssh, "oraknid_known_hosts"), `${known.join("\n")}\n`, { mode: 0o600 });
+    serversText = `# Servers this job may use\n\nReach each with its alias (\`ssh <alias>\`, \`scp\`, \`rsync\`). Read its state document first: it says what runs there and what must not break. Change only what the task needs; anything else on the server is not yours.\n\n${docs.join("\n\n")}`;
+  };
+
   const openSession = async (prompt: string) => {
+    await prepareServers();
     observed.lastActivityAt = now();
     const tools = await openTools();
     // A new session counts its tokens from zero.

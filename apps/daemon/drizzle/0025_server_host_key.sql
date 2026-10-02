@@ -1,0 +1,1 @@
+ALTER TABLE `servers` ADD `host_key_line` text;

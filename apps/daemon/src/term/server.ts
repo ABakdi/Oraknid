@@ -1,0 +1,123 @@
+import type { IncomingMessage, Server } from "node:http";
+import { homedir } from "node:os";
+import { WebSocketServer } from "ws";
+import type { EventBus } from "../events/bus.ts";
+import type { Servers } from "../servers/service.ts";
+
+// The terminal (ADR-028): one WebSocket per terminal, keystrokes and
+// resizes in, output out; a real pty on this computer (node-pty), or an
+// SSH shell on one of my servers. Off until I turn it on; audited.
+
+export const TERMINAL_SETTING = "terminal.enabled";
+
+type Frame = { t: "in"; d: string } | { t: "resize"; cols: number; rows: number };
+
+interface Pty {
+  write(d: string): void;
+  resize(cols: number, rows: number): void;
+  kill(): void;
+  onData(f: (d: string) => void): void;
+  onExit(f: () => void): void;
+}
+
+async function localPty(cols: number, rows: number): Promise<Pty> {
+  // Loaded only when a terminal opens: a native module the rest never needs.
+  const pty = await import("node-pty");
+  const shell = process.env.SHELL || "/bin/bash";
+  const p = pty.spawn(shell, ["-l"], {
+    name: "xterm-256color",
+    cols,
+    rows,
+    cwd: homedir(),
+    env: { ...process.env, TERM: "xterm-256color" } as Record<string, string>,
+  });
+  return {
+    write: (d) => p.write(d),
+    resize: (c, r) => p.resize(c, r),
+    kill: () => p.kill(),
+    onData: (f) => p.onData(f),
+    onExit: (f) => p.onExit(() => f()),
+  };
+}
+
+async function serverPty(servers: Servers, id: string, cols: number, rows: number): Promise<Pty> {
+  const ch = await servers.shell(id, cols, rows);
+  return {
+    write: (d) => ch.write(d),
+    resize: (c, r) => ch.setWindow(r, c, 0, 0),
+    kill: () => ch.close(),
+    onData: (f) => {
+      ch.on("data", (d: Buffer) => f(d.toString()));
+      ch.stderr.on("data", (d: Buffer) => f(d.toString()));
+    },
+    onExit: (f) => ch.on("close", f),
+  };
+}
+
+export function attachTerminal(o: {
+  server: Server;
+  bus: EventBus;
+  servers: Servers;
+  /** The paired device asking, or null. */
+  device: (req: IncomingMessage) => string | null;
+  enabled: () => boolean;
+}) {
+  const wss = new WebSocketServer({ noServer: true });
+  o.server.on("upgrade", (req, socket, head) => {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    if (url.pathname !== "/term") return;
+    const device = o.device(req);
+    if (!device || !o.enabled()) {
+      socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, async (ws) => {
+      const target = url.searchParams.get("target") ?? "local";
+      const cols = Math.max(20, Math.min(500, Number(url.searchParams.get("cols")) || 80));
+      const rows = Math.max(5, Math.min(200, Number(url.searchParams.get("rows")) || 24));
+      let pty: Pty;
+      try {
+        pty =
+          target === "local"
+            ? await localPty(cols, rows)
+            : await serverPty(o.servers, target, cols, rows);
+      } catch (error) {
+        ws.send(`\r\n\x1b[31m${error instanceof Error ? error.message : String(error)}\x1b[0m\r\n`);
+        ws.close();
+        return;
+      }
+      // Who opened what, and when; never what is typed (ADR-028).
+      o.bus.publish({
+        type: "terminal.opened",
+        topic: "overview",
+        jobId: null,
+        payload: { target, device },
+        actor: "owner",
+      });
+      pty.onData((d) => {
+        if (ws.readyState === ws.OPEN) ws.send(d);
+      });
+      pty.onExit(() => ws.close());
+      ws.on("message", (raw) => {
+        let f: Frame;
+        try {
+          f = JSON.parse(String(raw)) as Frame;
+        } catch {
+          return;
+        }
+        if (f.t === "in" && typeof f.d === "string") pty.write(f.d);
+        if (f.t === "resize" && f.cols > 0 && f.rows > 0) pty.resize(f.cols, f.rows);
+      });
+      ws.on("close", () => {
+        pty.kill();
+        o.bus.publish({
+          type: "terminal.closed",
+          topic: "overview",
+          jobId: null,
+          payload: { target },
+        });
+      });
+    });
+  });
+}

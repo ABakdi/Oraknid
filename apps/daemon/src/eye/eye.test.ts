@@ -23,6 +23,7 @@ import {
 } from "../db/schema.ts";
 import { resolvePaths } from "../paths.ts";
 import { fakeOs } from "../testing/fake-os.ts";
+import { fakeSsh } from "../testing/fake-ssh.ts";
 import { type Action, scriptedLeg, type TurnContext } from "../testing/scripted-leg.ts";
 import type { EyeBrain, EyeTriage } from "./brain.ts";
 import { policyFor } from "./policy.ts";
@@ -137,6 +138,9 @@ async function eye(
     },
     summarize: async () => ({ title: "s", body: "s" }),
     helperTurn: async ({ prompt }) => o.helper?.(prompt) ?? { reply: "ok", actions: [] },
+    serverState: async ({ name, discovery }) => ({
+      document: `# ${name}\n\n${discovery.slice(0, 200)}`,
+    }),
     pickSkill: async ({ skills }) =>
       o.pickSkill?.(skills) ?? { skillId: skills[0]?.id ?? "", reason: "the first fits" },
     repairCheck: async ({ command }) =>
@@ -197,7 +201,7 @@ async function eye(
   if (o.sameProviderFallback)
     await api.settings.setSameProviderFallback({ kind: "claude-code", enabled: true });
   if (!o.draft) await api.jobs.start({ id });
-  return { d: daemon, api, id, workspace, leg, plans, legIds };
+  return { d: daemon, api, id, workspace, leg, plans, legIds, dataDir: dir };
 }
 
 async function until(
@@ -1144,6 +1148,45 @@ describe("the interview (M1.7)", () => {
     await expect(
       api.helper.decide({ messageId: three[4]?.id as string, index: 0, confirm: true }),
     ).rejects.toThrow(/already settled/);
+  });
+
+  it("gives a project's server to its jobs: the document, an alias and key in the Leg's home (ADR-026)", async () => {
+    const ssh = await fakeSsh({ password: "pw" });
+    const { api, id, leg, dataDir } = await eye(good, {
+      draft: true,
+      plan: { ...HELLO, tasks: [HELLO.tasks[0] as WebPlan["tasks"][number]], jobVerify: [] },
+    });
+    try {
+      const server = await api.servers.add({
+        name: "VPS One",
+        host: "127.0.0.1",
+        port: ssh.port,
+        user: "me",
+        description: "My sites.",
+        password: "pw",
+      });
+      await api.servers.setup({ id: server.id });
+      const [project] = await api.projects.list();
+      await api.projects.setServers({ id: project?.id as string, serverIds: [server.id] });
+      await api.jobs.start({ id });
+      const job = await until(api, id, ["completed", "blocked"], 20_000);
+      expect(job.state, job.blockedReason ?? "").toBe("completed");
+      const turn = leg.log.find((t) => t.system.includes("# Servers this job may use"));
+      expect(turn?.system).toContain("## VPS One — `ssh oraknid-vps-one`");
+      const legRow = (await api.legs.list())[0];
+      const sshDir = join(dataDir, "legs", legRow?.id as string, "home", ".ssh");
+      const configs = readFileSync(join(sshDir, "config"), "utf8");
+      expect(configs).toContain("Host oraknid-vps-one");
+      expect(configs).toContain("StrictHostKeyChecking yes");
+      expect(readFileSync(join(sshDir, "oraknid_known_hosts"), "utf8")).toMatch(
+        /^\[127\.0\.0\.1\]:\d+ ssh-ed25519 /,
+      );
+      expect(readFileSync(join(sshDir, "oraknid-vps-one"), "utf8")).toContain("PRIVATE KEY");
+      // Refreshed after the job: version 2.
+      expect((await api.servers.state({ id: server.id }))?.version).toBe(2);
+    } finally {
+      await ssh.close();
+    }
   });
 
   it("deletes a draft I don't want, with all it had", async () => {

@@ -17,8 +17,10 @@ import { LogsPage } from "@/pages/logs";
 import { OverviewPage } from "@/pages/overview";
 import { PairPage } from "@/pages/pair";
 import { ProjectsPage } from "@/pages/projects";
+import { ServersPage } from "@/pages/servers";
 import { SettingsPage } from "@/pages/settings";
 import { SkillsPage } from "@/pages/skills";
+import { TerminalPage } from "@/pages/terminal";
 import { WorkPage } from "@/pages/work";
 
 export function App() {
@@ -71,6 +73,9 @@ export function App() {
                 <Route path="/legs/:id">{(p) => <LegsPage focus={p.id} />}</Route>
                 <Route path="/skills" component={SkillsPage} />
                 <Route path="/chats">{() => <ChatsPage />}</Route>
+                <Route path="/servers" component={ServersPage} />
+                <Route path="/terminal">{() => <TerminalPage />}</Route>
+                <Route path="/terminal/:target">{(p) => <TerminalPage target={p.target} />}</Route>
                 <Route path="/chats/:id">{(p) => <ChatsPage id={p.id} />}</Route>
                 <Route path="/logs" component={LogsPage} />
                 <Route path="/settings" component={SettingsPage} />

@@ -26,6 +26,8 @@ export const projects = sqliteTable("projects", {
   archivedAt: integer("archived_at"),
   /** The skills its jobs may use; The Eye picks one per job (Skills → Skills per project). Empty: the default. */
   skillIds: json<string[]>("skill_ids").notNull().default([]),
+  /** The servers its jobs may use (Servers → Servers in projects). None by default. */
+  serverIds: json<string[]>("server_ids").notNull().default([]),
 });
 
 export const skills = sqliteTable(
@@ -43,6 +45,62 @@ export const skills = sqliteTable(
     createdAt: integer("created_at").notNull(),
   },
   (t) => [primaryKey({ columns: [t.id, t.version] })],
+);
+
+/** My servers (Servers, ADR-026). Credentials are in the keychain, never here. */
+export const servers = sqliteTable("servers", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  host: text("host").notNull(),
+  port: integer("port").notNull(),
+  user: text("user").notNull(),
+  /** In my words: what it is and what it has. */
+  description: text("description").notNull(),
+  /** Pinned at the first connection: SHA-256 of its host key, base64. */
+  hostKey: text("host_key"),
+  /** The pinned host key itself ("type base64"), for a Leg's known_hosts. */
+  hostKeyLine: text("host_key_line"),
+  /** A key presented that isn't the pinned one, waiting for my word. */
+  hostKeyOffered: text("host_key_offered"),
+  /** How Oraknid logs in: its own key, my key, or (until setup) a password. */
+  auth: text("auth", { enum: ["oraknid-key", "my-key", "password"] }).notNull(),
+  /** new → ready once Oraknid's key, discovery, document and monitor are done. */
+  setup: text("setup", { enum: ["new", "ready"] })
+    .notNull()
+    .default("new"),
+  monitorHash: text("monitor_hash"),
+  lastSeenAt: integer("last_seen_at"),
+  error: text("error"),
+  createdAt: integer("created_at").notNull(),
+});
+
+/** Each version of a server's state document. */
+export const serverStates = sqliteTable(
+  "server_states",
+  {
+    id: text("id").primaryKey(),
+    serverId: text("server_id").notNull(),
+    version: integer("version").notNull(),
+    body: text("body").notNull(),
+    /** Written by The Eye from a discovery, or by me. */
+    source: text("source", { enum: ["eye", "owner"] }).notNull(),
+    /** The discovery it came from, when The Eye wrote it. */
+    discovery: text("discovery"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("server_states_server").on(t.serverId, t.version)],
+);
+
+/** oraknid-monitor's readings, the last 24 hours (ADR-027). */
+export const serverSamples = sqliteTable(
+  "server_samples",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    serverId: text("server_id").notNull(),
+    at: integer("at").notNull(),
+    sample: json<unknown>("sample").notNull(),
+  },
+  (t) => [index("server_samples_server").on(t.serverId, t.at)],
 );
 
 /** The Oraknid helper's conversation (ADR-024): what I asked, what it said and did. */

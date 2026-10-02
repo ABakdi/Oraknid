@@ -16,6 +16,8 @@ export const Project = z.object({
   archivedAt: Timestamp.nullable(),
   /** The skills its jobs may use (Skills → Skills per project). Empty: the default. */
   skillIds: z.array(Id).default([]),
+  /** The servers its jobs may use (Servers → Servers in projects). */
+  serverIds: z.array(Id).default([]),
 });
 export type Project = z.infer<typeof Project>;
 

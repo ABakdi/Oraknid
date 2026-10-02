@@ -57,10 +57,12 @@ import { countActiveJobs, createInhibitController } from "./os/inhibit-controlle
 import { startMetricsLoop } from "./os/metrics-loop.ts";
 import { Secrets } from "./os/secrets.ts";
 import { DEFAULT_HOST, DEFAULT_PORT, type Paths } from "./paths.ts";
+import { Servers } from "./servers/service.ts";
 import { MAX_RUNNING_JOBS, readSetting } from "./settings.ts";
 import { SilkStore } from "./silk/store.ts";
 import { SkillStore } from "./skills/store.ts";
 import { startNightlyBackups } from "./storage/storage.ts";
+import { attachTerminal, TERMINAL_SETTING } from "./term/server.ts";
 import { McpBroker } from "./tools/broker.ts";
 import { ToolRegistry } from "./tools/registry.ts";
 import { VERSION } from "./version.ts";
@@ -82,6 +84,8 @@ export interface DaemonOptions {
   /** OS pieces to replace (tests). */
   os?: Partial<OsDeps>;
   metricsIntervalMs?: number;
+  /** Seconds between oraknid-monitor readings (tests: shorter). */
+  serverSampleSec?: number;
   /** GitHub's addresses, for tests against a stand-in. */
   github?: { api?: string; web?: string };
   /** What runs a job: The Eye, unless a test replaces it. */
@@ -199,6 +203,17 @@ export async function startDaemon(options: DaemonOptions) {
   });
   // The last ten seconds of the machine, for resource-aware scheduling (ADR-016).
   let recentMachine: () => MetricsSample[] = () => [];
+  // My servers: SSH with Oraknid's own key, a state document, oraknid-monitor (ADR-026/027).
+  const serverService = new Servers({
+    db,
+    bus,
+    secrets,
+    brain,
+    workDir: join(paths.dataDir, "servers"),
+    now,
+    ...(options.serverSampleSec ? { sampleEverySec: options.serverSampleSec } : {}),
+  });
+  serverService.start();
   const runner = new JobRunner({
     // How many jobs run at once; the rest queue by priority (ADR-016).
     maxRunning: () => readSetting(db, MAX_RUNNING_JOBS, z.number().int().min(1), 2),
@@ -220,6 +235,7 @@ export async function startDaemon(options: DaemonOptions) {
         sandbox: os.sandbox,
         brain,
         tools: { registry: toolRegistry, broker },
+        servers: serverService,
         effects,
         // Set once the metrics loop runs; until then nothing holds work back.
         machine: () => recentMachine(),
@@ -321,6 +337,16 @@ export async function startDaemon(options: DaemonOptions) {
     allow: (req) =>
       isLocalRequest(req, port) && devices.identify(tokenOf(req.headers, req.url)) !== null,
     ...(options.heartbeatMs ? { heartbeatMs: options.heartbeatMs } : {}),
+  });
+
+  // The terminal: off until I turn it on, paired devices only (ADR-028).
+  attachTerminal({
+    server,
+    bus,
+    servers: serverService,
+    device: (req) =>
+      isLocalRequest(req, port) ? devices.identify(tokenOf(req.headers, req.url)) : null,
+    enabled: () => readSetting(db, TERMINAL_SETTING, z.boolean(), false),
   });
 
   const metricsLoop = startMetricsLoop({
@@ -434,6 +460,7 @@ export async function startDaemon(options: DaemonOptions) {
         chats,
         github,
         helper,
+        servers: serverService,
         devices,
         brain,
         openPath:
@@ -510,6 +537,7 @@ export async function startDaemon(options: DaemonOptions) {
       backups.stop();
       logins.stopAll();
       chats.stopAll();
+      serverService.stop();
       nest.stop();
       await supervisor.killAll();
       await inhibit.stop();
@@ -546,6 +574,7 @@ export async function startDaemon(options: DaemonOptions) {
     skills,
     budgets,
     projects: projectsService,
+    servers: serverService,
     devices,
     cliToken: devices.cliToken,
     inbox,

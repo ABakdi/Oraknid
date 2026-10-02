@@ -39,6 +39,8 @@ export function attachLive({ server, bus, allow, heartbeatMs = 15_000 }: LiveOpt
 
   server.on("upgrade", (req, socket, head) => {
     const path = new URL(req.url ?? "/", "http://localhost").pathname;
+    // The terminal's socket is its own (ADR-028).
+    if (path === "/term") return;
     if (path !== "/live" || !allow(req)) {
       socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
       socket.destroy();

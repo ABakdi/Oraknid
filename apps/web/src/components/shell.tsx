@@ -11,7 +11,9 @@ import {
   Plus,
   ScrollText,
   Search,
+  Server,
   Sparkles,
+  SquareTerminal,
   Sun,
   Wand2,
 } from "lucide-react";
@@ -42,6 +44,8 @@ const NAV = [
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/legs", label: "Legs", icon: Bot },
   { href: "/chats", label: "Chats", icon: MessagesSquare },
+  { href: "/servers", label: "Servers", icon: Server },
+  { href: "/terminal", label: "Terminal", icon: SquareTerminal },
   { href: "/skills", label: "Skills", icon: Sparkles },
   { href: "/logs", label: "Logs", icon: ScrollText },
   { href: "/settings", label: "Settings", icon: Cog },

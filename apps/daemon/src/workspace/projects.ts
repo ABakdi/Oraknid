@@ -17,6 +17,7 @@ import {
   inboxItems,
   jobs,
   projects,
+  servers,
   sessions,
   settings,
   sideEffects,
@@ -185,6 +186,24 @@ export class Projects {
       jobId: id,
       payload: { fields: Object.keys(set) },
       actor: "owner",
+    });
+  }
+
+  /** The servers its jobs may use (Servers → Servers in projects). */
+  setServers(id: string, serverIds: string[]) {
+    this.require(id);
+    for (const s of serverIds)
+      if (!this.db.select().from(servers).where(eq(servers.id, s)).get())
+        throw new Error(`No server ${s}.`);
+    this.bus.atomically(() => {
+      this.db.update(projects).set({ serverIds }).where(eq(projects.id, id)).run();
+      this.bus.publish({
+        type: "project.servers",
+        topic: "overview",
+        jobId: null,
+        payload: { id, serverIds },
+        actor: "owner",
+      });
     });
   }
 

@@ -29,6 +29,7 @@ import type { InboxStore } from "../inbox/store.ts";
 import { sandboxPlan } from "../legs/plan.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor } from "../legs/supervisor.ts";
+import type { Servers } from "../servers/service.ts";
 import { MAX_TASKS_PER_JOB, readSetting } from "../settings.ts";
 import type { SilkStore } from "../silk/store.ts";
 import type { SkillStore } from "../skills/store.ts";
@@ -64,6 +65,8 @@ export interface EyeDeps {
   tools?: { registry: ToolRegistry; broker: McpBroker };
   /** The outbox, for a tool's sends (BR-6). */
   effects?: SideEffects;
+  /** My servers (ADR-026). */
+  servers?: Servers;
   /** Recent metrics, for resource-aware scheduling (ADR-016). */
   machine?: () => MetricsSample[];
   legsDir: string;
@@ -243,6 +246,24 @@ export function eyeProgram(d: EyeDeps): JobProgram {
             : "Every task passed its own checks; the job has no job-level checks.",
           authoredBy: "eye",
         });
+        // Its servers' documents, from a new discovery and what it did (Servers → The state document).
+        const serverIds =
+          d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.serverIds ?? [];
+        for (const id of d.servers ? serverIds : []) {
+          await ctx.step(`server:${id}:after`, null, async () => {
+            const done = taskRows(d.db, job.id)
+              .filter((t) => t.state === "done")
+              .map((t) => `- ${t.title}`)
+              .join("\n");
+            await d.servers
+              ?.discover(
+                id,
+                `The job "${job.title}" finished. Its goal: ${job.goal}\nIts tasks:\n${done}`,
+              )
+              .catch(() => null);
+            return null;
+          });
+        }
         ctx.setState("completed");
         return;
       }
@@ -404,6 +425,8 @@ async function runTask(
     unsandboxed: job.unsandboxed,
     skillBody: d.skills.version(job.skillId, job.skillVersion)?.body ?? "",
     tools: job.tools,
+    serverIds:
+      d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.serverIds ?? [],
     skillChecks: skillChecks(d.skills.version(job.skillId, job.skillVersion)?.body ?? ""),
     otherSkills: (
       d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.skillIds ?? []
@@ -441,6 +464,7 @@ async function runTask(
           ...(d.tools ? { tools: d.tools } : {}),
           ...(d.effects ? { effects: d.effects } : {}),
           ...(d.machine ? { machine: d.machine } : {}),
+          ...(d.servers ? { servers: d.servers } : {}),
           ...(d.stallCheckMs ? { stallCheckMs: d.stallCheckMs } : {}),
         },
         attemptJob,

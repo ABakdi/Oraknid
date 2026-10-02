@@ -6,6 +6,7 @@ import { ErrorNote, Loading, PageHeader } from "@/components/common";
 import { GitHubCard } from "@/components/github-card";
 import { RulesCard } from "@/components/rules-card";
 import { StorageCard } from "@/components/storage-card";
+import { TerminalCard } from "@/components/terminal-card";
 import { ToolsCard } from "@/components/tools-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -55,6 +56,7 @@ export function SettingsPage() {
       <PolicyCard />
       <ToolsCard />
       <GitHubCard />
+      <TerminalCard />
       <DevicesCard />
       <AwayCard />
       <StorageCard />

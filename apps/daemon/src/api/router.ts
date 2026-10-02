@@ -25,6 +25,7 @@ import {
   NewLeg,
   NewProject,
   NewProjectFrom,
+  NewServer,
   NewTool,
   NotificationChannel,
   NotificationSettings,
@@ -35,6 +36,9 @@ import {
   PruneRequest,
   PushSubscriptionInput,
   QuietHours,
+  ServerSample,
+  ServerState,
+  ServerView,
   SessionLogPage,
   SessionView,
   SilkEntry,
@@ -102,10 +106,12 @@ import type { NestLink } from "../nest/link.ts";
 import type { Notifications } from "../notify/notifications.ts";
 import type { Secrets } from "../os/secrets.ts";
 import type { Paths } from "../paths.ts";
+import type { Servers } from "../servers/service.ts";
 import { MAX_RUNNING_JOBS, MAX_TASKS_PER_JOB, readSetting, writeSetting } from "../settings.ts";
 import type { SilkStore } from "../silk/store.ts";
 import type { SkillStore } from "../skills/store.ts";
 import { pruneLogs, storageUsage } from "../storage/storage.ts";
+import { TERMINAL_SETTING } from "../term/server.ts";
 import type { ToolRegistry } from "../tools/registry.ts";
 import { VERSION } from "../version.ts";
 import type { GitHub } from "../workspace/github.ts";
@@ -157,6 +163,8 @@ export interface ApiContext {
   github: GitHub;
   /** The Oraknid helper (ADR-024). */
   helper: Helper;
+  /** My servers (ADR-026). */
+  servers: Servers;
   devices: Devices;
   brain: EyeBrain;
   /** Opens a folder on this machine (xdg-open). */
@@ -373,6 +381,12 @@ export const router = {
         guard(async () => ({ ...(await projectFrom(c, input)), jobCount: 0 })),
       ),
     list: base.output(z.array(ProjectView)).handler(({ context: c }) => c.projects.list()),
+    /** The servers its jobs may use (Servers → Servers in projects). */
+    setServers: base
+      .input(z.object({ id: z.string(), serverIds: z.array(z.string()) }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.projects.setServers(input.id, input.serverIds)),
+      ),
     /** The skills its jobs may use (Skills → Skills per project). */
     setSkills: base
       .input(z.object({ id: z.string(), skillIds: z.array(z.string()) }))
@@ -390,6 +404,54 @@ export const router = {
       .input(z.object({ id: z.string() }))
       .output(z.object({ jobs: z.number(), folder: z.string() }))
       .handler(({ context: c, input }) => guard(() => c.projects.remove(input.id, c.paths.logs))),
+  },
+  /** My servers: SSH, a state document, oraknid-monitor (ADR-026/027). */
+  servers: {
+    list: base.output(z.array(ServerView)).handler(({ context: c }) => c.servers.list()),
+    add: base
+      .input(NewServer)
+      .output(ServerView)
+      .handler(({ context: c, input }) => guard(() => c.servers.add(input))),
+    update: base
+      .input(
+        z.object({
+          id: z.string(),
+          name: z.string().min(1).optional(),
+          description: z.string().optional(),
+        }),
+      )
+      .handler(({ context: c, input }) => {
+        const { id, ...patch } = input;
+        return guard(() => c.servers.update(id, patch));
+      }),
+    /** Oraknid's key, discovery, the state document and oraknid-monitor, with my click. */
+    setup: base
+      .input(z.object({ id: z.string() }))
+      .output(ServerView)
+      .handler(({ context: c, input }) => guard(() => c.servers.setup(input.id))),
+    discover: base
+      .input(z.object({ id: z.string() }))
+      .output(ServerState)
+      .handler(({ context: c, input }) => guard(() => c.servers.discover(input.id))),
+    acceptHostKey: base
+      .input(z.object({ id: z.string() }))
+      .handler(({ context: c, input }) => guard(() => c.servers.acceptHostKey(input.id))),
+    state: base
+      .input(z.object({ id: z.string(), version: z.number().int().optional() }))
+      .output(ServerState.nullable())
+      .handler(({ context: c, input }) => guard(() => c.servers.state(input.id, input.version))),
+    editState: base
+      .input(z.object({ id: z.string(), body: z.string().min(1) }))
+      .output(ServerState)
+      .handler(({ context: c, input }) => guard(() => c.servers.editState(input.id, input.body))),
+    samples: base
+      .input(z.object({ id: z.string(), since: z.number() }))
+      .output(z.array(ServerSample))
+      .handler(({ context: c, input }) => guard(() => c.servers.samples(input.id, input.since))),
+    remove: base
+      .input(z.object({ id: z.string() }))
+      .output(z.object({ cleaned: z.boolean() }))
+      .handler(({ context: c, input }) => guard(() => c.servers.remove(input.id))),
   },
   /** The Oraknid helper: what I ask in words, done through this API (ADR-024). */
   helper: {
@@ -787,6 +849,22 @@ export const router = {
           });
         }),
       ),
+    /** The terminal in the web UI: off until I turn it on (ADR-028). */
+    terminal: base
+      .output(z.boolean())
+      .handler(({ context: c }) => readSetting(c.jobs.db, TERMINAL_SETTING, z.boolean(), false)),
+    setTerminal: base.input(z.object({ enabled: z.boolean() })).handler(({ context: c, input }) =>
+      guard(() => {
+        writeSetting(c.jobs.db, TERMINAL_SETTING, z.boolean(), input.enabled);
+        c.bus.publish({
+          type: "settings.updated",
+          topic: "overview",
+          jobId: null,
+          payload: { terminal: input.enabled },
+          actor: "owner",
+        });
+      }),
+    ),
     /** The Eye's Leg, a model per kind of decision, and the shadow planner (ADR-022). */
     eyeModels: base.output(EyeModels).handler(({ context: c }) => c.decisions.models()),
     setEyeModels: base
