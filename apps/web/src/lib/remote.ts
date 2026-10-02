@@ -50,6 +50,12 @@ function portTransport(): RemoteTransport {
       replies.set(id, { ok: ok as (v: unknown) => void, fail });
       post({ id, op, ...extra });
     });
+  // What breaks in this frame is told to the loader: a phone has no console to open.
+  const report = (what: string) => post({ op: "error", what: what.slice(0, 2000) });
+  window.addEventListener("error", (e) => report(String(e.error?.stack ?? e.message)));
+  window.addEventListener("unhandledrejection", (e) =>
+    report(String((e.reason as Error)?.stack ?? e.reason)),
+  );
   window.addEventListener("message", (e) => {
     // Only the loader, once: it's this frame's parent.
     if (port || e.source !== window.parent || e.data !== "oraknid-remote" || !e.ports[0]) return;

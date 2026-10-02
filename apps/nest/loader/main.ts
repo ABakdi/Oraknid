@@ -267,6 +267,10 @@ function run(html: string) {
         session?: string;
         frame?: string;
       };
+      if (m.op === "error") {
+        console.error("Oraknid UI:", (m as { what?: string }).what);
+        return;
+      }
       if (!transport) return;
       if (m.op === "request") port.postMessage({ id: m.id, ok: await transport.request(m.r) });
       else if (m.op === "subscribePush")

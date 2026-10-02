@@ -221,7 +221,7 @@ fi
 
 cat <<EOF
 
-The Nest is up. At home, in Oraknid: Settings → Away from home
+The Nest is up. At home, in Oraknid: Settings → Devices & phone → The Nest
   Address:    https://$DOMAIN
   Daemon id:  $NEST_ID
   Secret:     $NEST_SECRET
