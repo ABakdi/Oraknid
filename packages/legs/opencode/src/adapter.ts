@@ -11,6 +11,7 @@ import {
   type LegConfig,
   type LegEvent,
   type LegSession,
+  type PermissionDecision,
   type PermissionRequest,
   type ProbeResult,
   type SandboxPlan,
@@ -113,6 +114,22 @@ export function configContent(cfg: OpenCodeConfig, models = cfg.models): string 
       ],
     },
   });
+}
+
+/**
+ * What OpenCode asks, for Oraknid's policy. OpenCode splits a compound
+ * shell command into one resource per command, and an action on several
+ * files into one per file: every one is judged, never only the first.
+ */
+export function permissionRequests(perm: Record<string, unknown>): PermissionRequest[] {
+  const action = String(perm.action ?? "");
+  const resources = Array.isArray(perm.resources) ? perm.resources.map(String) : [];
+  const tool = TOOL_NAMES[action] ?? action;
+  const input = { action, resources, metadata: perm.metadata ?? null };
+  if (action === "shell")
+    return [{ tool, input, command: resources.length ? resources.join("\n") : null, path: null }];
+  if (!resources.length) return [{ tool, input, command: null, path: null }];
+  return resources.map((path) => ({ tool, input, command: null, path }));
 }
 
 interface Server {
@@ -372,17 +389,16 @@ export function createOpenCodeAdapter(): LegAdapter {
       const id = sessionId as string;
 
       const answer = async (perm: Record<string, unknown>) => {
-        const action = String(perm.action ?? "");
-        const resources = Array.isArray(perm.resources) ? perm.resources.map(String) : [];
-        const tool = TOOL_NAMES[action] ?? action;
-        const request: PermissionRequest = {
-          tool,
-          input: { action, resources, metadata: perm.metadata ?? null },
-          command: action === "shell" ? (resources[0] ?? null) : null,
-          path: action === "shell" ? null : (resources[0] ?? null),
-        };
-        const decision = await s.onPermission(request);
-        events.push({ type: "permission.requested", request, decision });
+        // Allowed only when every part is.
+        let decision: PermissionDecision = { allow: true };
+        for (const request of permissionRequests(perm)) {
+          const d = await s.onPermission(request);
+          events.push({ type: "permission.requested", request, decision: d });
+          if (!d.allow) {
+            decision = d;
+            break;
+          }
+        }
         await call(server, "POST", `/api/session/${id}/permission/${String(perm.id)}/reply`, {
           decision: decision.allow ? "once" : "reject",
           ...(decision.allow ? {} : { message: decision.message }),

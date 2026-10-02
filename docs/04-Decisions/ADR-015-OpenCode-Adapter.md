@@ -49,7 +49,11 @@ provider). What matters for an unattended, sandboxed Leg:
   `* → ask` (reads, globs and greps allowed), so every shell command,
   edit and fetch reaches Oraknid's policy through `permission.asked`.
   "Allow" replies `once`; "deny" replies `reject` with the reason, which
-  the model reads.
+  the model reads. OpenCode splits a compound shell command into one
+  resource per command, and an action on several files into one per
+  file: the policy judges the whole command and every file, and one
+  "deny" denies the action (fixed 2026-10-02, seen in a live session:
+  only the first part was judged before).
 - **Usage** from `session.step.ended` (input without cache, output,
   cache read and write); cost from the model's configured price.
 - **Rate limits**: the first `session.retry.scheduled` with
