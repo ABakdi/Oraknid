@@ -114,6 +114,22 @@ export class Projects {
   }
 
   /** Archived: hidden from the lists, kept for stats (Core-Entities → Project). */
+  /** The skills its jobs may use; The Eye picks one per job (Skills → Skills per project). */
+  setSkills(id: string, skillIds: string[]) {
+    this.require(id);
+    for (const s of skillIds) if (!this.skills.latest(s)) throw new Error(`No skill ${s}.`);
+    this.bus.atomically(() => {
+      this.db.update(projects).set({ skillIds }).where(eq(projects.id, id)).run();
+      this.bus.publish({
+        type: "project.skills",
+        topic: "overview",
+        jobId: null,
+        payload: { id, skillIds },
+        actor: "owner",
+      });
+    });
+  }
+
   setArchived(id: string, archived: boolean) {
     this.require(id);
     this.bus.atomically(() => {
@@ -187,7 +203,11 @@ export class Projects {
 
   createJob(input: NewJob) {
     const project = this.require(input.projectId);
-    const skillId = input.skillId ?? BUILT_IN_DEFAULT;
+    // A skill I picked; else the project's, The Eye choosing among several (Skills → Skills per project).
+    const candidates = input.skillId
+      ? []
+      : (project.skillIds as string[]).filter((id) => this.skills.latest(id));
+    const skillId = input.skillId ?? candidates[0] ?? BUILT_IN_DEFAULT;
     const skill = this.skills.latest(skillId);
     if (!skill) throw new Error(`No skill ${skillId}.`);
     const id = newId(this.now());
@@ -209,7 +229,14 @@ export class Projects {
           state: "draft",
           verify: [...skill.verify, ...input.verify],
           // The skill's tools (ADR-021); set up in Settings → Tools before the job starts.
-          tools: skill.requiredTools,
+          tools: [
+            ...new Set(
+              (candidates.length > 1 ? candidates : [skillId]).flatMap(
+                (id) => this.skills.latest(id)?.requiredTools ?? [],
+              ),
+            ),
+          ],
+          skillChoices: candidates.length > 1 ? candidates : [],
           unsandboxed: input.unsandboxed,
           createdAt: this.now(),
         })

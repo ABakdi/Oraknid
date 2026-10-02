@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseSkill, skillChecks, skillExcerpt } from "./skills.ts";
+import { guidanceFromOthers, parseSkill, skillChecks, skillExcerpt } from "./skills.ts";
 
 describe("parseSkill", () => {
   it("reads the built-in canon-driven skill", () => {
@@ -69,5 +69,19 @@ describe("skillChecks", () => {
       "- Every draft is addressed to the sender.\n- No draft promises a date.",
     );
     expect(skillChecks("# No checks\n\n## Other\nx")).toBe("");
+  });
+});
+
+describe("guidanceFromOthers", () => {
+  it("brings another skill's section when it fits the task better, and nothing otherwise", () => {
+    const main = "# Code\n\n## Tests\nWrite tests first.\n";
+    const docs = {
+      name: "docs",
+      body: "# Docs\n\n## Writing the README\nA README says what, why and how to run it.\n",
+    };
+    expect(guidanceFromOthers(main, [docs], "Write the README for the project")).toContain(
+      'From the "docs" skill',
+    );
+    expect(guidanceFromOthers(main, [docs], "Add tests for the parser")).toBe("");
   });
 });

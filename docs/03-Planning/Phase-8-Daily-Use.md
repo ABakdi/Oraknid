@@ -20,8 +20,8 @@ to a model or to ask Oraknid to do things for me.
 - [ ] A draft is saved as I go: I can leave it, come back to it from Jobs, start it later, or delete it
 
 ### M8.2 — Skills per project
-- [ ] A project has a set of skills; The Eye picks the one that fits a job, and may use another one's guidance for a task
-- [ ] Add a skill from the project settings without leaving them; upload a `.md` file as well as pasting
+- [x] A project has a set of skills; The Eye picks the one that fits a job, and may use another one's guidance for a task
+- [x] Add a skill from the project settings without leaving them; upload a `.md` file as well as pasting
 
 ### M8.3 — Repositories
 - [x] Settings → GitHub: a token I paste (keychain), checked, with the account it belongs to ([[ADR-023-GitHub-By-Token]])

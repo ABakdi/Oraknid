@@ -106,6 +106,7 @@ async function eye(
       criteria?: string,
     ) => { accepted: boolean; reason: string; missing: string[] };
     repair?: (command: string) => { broken: boolean; command: string; reason: string };
+    pickSkill?: (skills: { id: string; name: string }[]) => { skillId: string; reason: string };
     /** The machine's memory use, as a share. */
     memory?: () => number;
     /** A skill to run the job with, uploaded first. */
@@ -129,6 +130,8 @@ async function eye(
       return o.replan;
     },
     summarize: async () => ({ title: "s", body: "s" }),
+    pickSkill: async ({ skills }) =>
+      o.pickSkill?.(skills) ?? { skillId: skills[0]?.id ?? "", reason: "the first fits" },
     repairCheck: async ({ command }) =>
       o.repair?.(command) ?? { broken: false, command, reason: "the work is at fault" },
     evaluate: async ({ report, criteria }) =>
@@ -420,6 +423,37 @@ describe("The Eye, end to end", () => {
     memory = 0.5;
     expect((await until(api, id, ["completed", "blocked"], 15_000)).state).toBe("completed");
   }, 30_000);
+
+  it("lets The Eye pick the job's skill among the project's, and records why (Skills per project)", async () => {
+    const offered: string[][] = [];
+    const { api, id } = await eye(good, {
+      plan: { ...HELLO, tasks: [HELLO.tasks[0] as WebPlan["tasks"][number]], jobVerify: [] },
+      setup: async (api) => {
+        const a = await api.skills.upload({
+          name: "a",
+          markdown: "---\nname: scripts\ninterview: false\n---\nShell scripts.\n",
+        });
+        const b = await api.skills.upload({
+          name: "b",
+          markdown: "---\nname: hello\ninterview: false\n---\nSay hi.\n",
+        });
+        const [project] = await api.projects.list();
+        await api.projects.setSkills({
+          id: project?.id as string,
+          skillIds: [a.skill.id, b.skill.id],
+        });
+      },
+      pickSkill: (skills) => {
+        offered.push(skills.map((s) => s.name));
+        return { skillId: (skills[1] as { id: string }).id, reason: "it says hi" };
+      },
+    });
+    const job = await until(api, id, ["completed", "blocked"]);
+    expect(job.state, job.blockedReason ?? "").toBe("completed");
+    expect(offered).toEqual([["scripts", "hello"]]);
+    const silk = await api.silk.list({ jobId: id });
+    expect(silk.find((e) => e.title === "Method: hello")?.body).toContain("it says hi");
+  });
 
   it("reverts an out-of-scope edit, corrects the Leg, and keeps the in-scope work (D1)", async () => {
     const { api, id, leg } = await eye((t) => {

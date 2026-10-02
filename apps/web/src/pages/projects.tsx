@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Link } from "wouter";
 import { LegComparison, TokensChart } from "@/components/charts";
 import { Empty, ErrorNote, Loading, PageHeader, Stat, StateBadge } from "@/components/common";
+import { ProjectSkillsCard } from "@/components/project-skills";
 import { RulesCard } from "@/components/rules-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -209,6 +210,7 @@ function ProjectStats({ id }: { id: string }) {
           )}
         </CardContent>
       </Card>
+      <ProjectSkillsCard projectId={id} />
       <RulesCard
         scope={id}
         title={t("Commands in this project")}

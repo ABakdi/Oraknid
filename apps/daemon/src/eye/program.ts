@@ -84,10 +84,49 @@ const slug = (s: string) =>
 /** The Eye as a job program (docs/01-Specification/The-Eye.md → The loop). */
 export function eyeProgram(d: EyeDeps): JobProgram {
   return async (ctx: JobContext) => {
-    const job0 = d.db.select().from(jobs).where(eq(jobs.id, ctx.jobId)).get();
+    let job0 = d.db.select().from(jobs).where(eq(jobs.id, ctx.jobId)).get();
     if (!job0) throw new Error(`No job ${ctx.jobId}.`);
     const project = d.db.select().from(projects).where(eq(projects.id, job0.projectId)).get();
     if (!project) throw new Error("The job's project is gone.");
+    // Several skills to choose from: The Eye picks the one for this job, once (Skills → Skills per project).
+    if (job0.skillChoices.length > 1) {
+      const first = job0;
+      await ctx.step("skill:pick", { choices: first.skillChoices }, async () => {
+        const offered = first.skillChoices
+          .map((id) => d.skills.latest(id))
+          .filter((x): x is NonNullable<typeof x> => !!x);
+        let pick = {
+          skillId: offered[0]?.id ?? first.skillId,
+          reason: "the project's first skill",
+        };
+        try {
+          pick = await d.brain.pickSkill({
+            jobId: first.id,
+            cwd: project.workspacePath,
+            goal: first.goal,
+            skills: offered.map((x) => ({ id: x.id, name: x.name, description: x.description })),
+          });
+        } catch (error) {
+          pick.reason = `no Leg could choose (${error instanceof Error ? error.message : String(error)}), so the project's first`;
+        }
+        const chosen = d.skills.latest(pick.skillId) ?? offered[0];
+        if (!chosen) return null;
+        d.db
+          .update(jobs)
+          .set({ skillId: chosen.id, skillVersion: chosen.version, skillChoices: [] })
+          .where(eq(jobs.id, first.id))
+          .run();
+        d.silk.add({
+          jobId: first.id,
+          kind: "decision",
+          title: `Method: ${chosen.name}`,
+          body: `The Eye chose **${chosen.name}** from the project's skills (${offered.map((x) => x.name).join(", ")}): ${pick.reason}`,
+          authoredBy: "eye",
+        });
+        return chosen.id;
+      });
+      job0 = d.db.select().from(jobs).where(eq(jobs.id, ctx.jobId)).get() ?? first;
+    }
     const skill = d.skills.version(job0.skillId, job0.skillVersion);
 
     // ── The workspace: a worktree on a job branch, or the folder itself with a shadow repo.
@@ -398,6 +437,13 @@ async function runTask(
     skillBody: d.skills.version(job.skillId, job.skillVersion)?.body ?? "",
     tools: job.tools,
     skillChecks: skillChecks(d.skills.version(job.skillId, job.skillVersion)?.body ?? ""),
+    otherSkills: (
+      d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.skillIds ?? []
+    )
+      .filter((id) => id !== job.skillId)
+      .map((id) => d.skills.latest(id))
+      .filter((x): x is NonNullable<typeof x> => !!x)
+      .map((x) => ({ name: x.name, body: x.body })),
     inputs: renderInputs(job.inputs as JobInput[], where.projectPath),
   };
   // Beside other tasks, it works in a worktree of its own, branched from the job branch (ADR-016).

@@ -136,3 +136,32 @@ export function skillChecks(body: string): string {
   const section = body.split(/^(?=## )/m).find((s) => /^## Checks\b/i.test(s));
   return section ? section.replace(/^## Checks[^\n]*\n/i, "").trim() : "";
 }
+
+/**
+ * The section of another skill that fits a task better than anything in
+ * the job's own (Skills → Skills per project), or "" when none does.
+ */
+export function guidanceFromOthers(
+  main: string,
+  others: { name: string; body: string }[],
+  topic: string,
+): string {
+  const words = topic
+    .toLowerCase()
+    .split(/\W+/)
+    .filter((w) => w.length > 3)
+    // Short stems: "write" finds "Writing".
+    .map((w) => w.slice(0, 4));
+  const best = (body: string) =>
+    body
+      .split(/^(?=## )/m)
+      .slice(1)
+      .map((sec) => ({ sec, score: words.filter((w) => sec.toLowerCase().includes(w)).length }))
+      .sort((a, b) => b.score - a.score)[0] ?? { sec: "", score: 0 };
+  const floor = best(main).score;
+  const found = others
+    .map((o) => ({ name: o.name, ...best(o.body) }))
+    .filter((o) => o.score > floor && o.score >= 2)
+    .sort((a, b) => b.score - a.score)[0];
+  return found ? `## From the "${found.name}" skill\n\n${found.sec.trim().slice(0, 3000)}` : "";
+}

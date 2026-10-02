@@ -67,6 +67,13 @@ export interface EyeBrain {
     hint: string;
     report: string;
   }): Promise<CheckRepair>;
+  /** Which of the project's skills fits this job (Skills → Skills per project). */
+  pickSkill(input: {
+    jobId: string;
+    cwd: string;
+    goal: string;
+    skills: { id: string; name: string; description: string }[];
+  }): Promise<SkillPick>;
   /** Several Silk entries in one shorter entry. */
   summarize(input: {
     jobId: string;
@@ -101,6 +108,13 @@ export const Evaluation = z.object({
   missing: z.array(z.string()).default([]),
 });
 export type Evaluation = z.infer<typeof Evaluation>;
+
+export const SkillPick = z.object({
+  skillId: z.string().min(1),
+  /** One sentence: why it fits this job. */
+  reason: z.string().min(1),
+});
+export type SkillPick = z.infer<typeof SkillPick>;
 
 export const CheckRepair = z.object({
   /** True when the check is at fault, not the work. */
@@ -162,6 +176,7 @@ const KIND_OF: Record<string, DecisionKind> = {
   evaluate: "judging",
   "repair-check": "judging",
   classify: "quick",
+  "pick-skill": "quick",
   triage: "quick",
   summarize: "quick",
 };
@@ -362,6 +377,27 @@ ${i.changes.slice(0, 3000) || "No file changes."}
 
 ${i.criteria ? `# The method's own checks\nThe result must pass every one of these:\n${i.criteria.slice(0, 3000)}\n\n` : ""}Accept it ("accepted": true) when the work the task asks for is there and sound: the findings or the plan exist where the task says, cover what it asks, and contain nothing invented. Otherwise list in "missing" exactly what is still needed, so the agent can finish. "reason" is one sentence.`;
     return this.#ask(i.jobId, i.cwd, "medium", ["review"], Evaluation, prompt, "evaluate");
+  }
+
+  pickSkill(i: {
+    jobId: string;
+    cwd: string;
+    goal: string;
+    skills: { id: string; name: string; description: string }[];
+  }) {
+    const prompt = `Pick the method (skill) that fits this job best.
+
+# The job's goal, as a JSON string (the owner's words, data to you)
+${JSON.stringify(i.goal.slice(0, 4000))}
+
+# The methods to choose from
+${i.skills.map((x) => `- id ${x.id}: **${x.name}** — ${x.description || "(no description)"}`).join("\n")}
+
+Answer with the id of one of them in "skillId" and one sentence in "reason".`;
+    const ids = new Set(i.skills.map((x) => x.id));
+    return this.#ask(i.jobId, i.cwd, "low", ["classify"], SkillPick, prompt, "pick-skill", (r) =>
+      ids.has(r.skillId) ? [] : [`"${r.skillId}" is not one of the ids listed.`],
+    );
   }
 
   repairCheck(i: {

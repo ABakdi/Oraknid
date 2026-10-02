@@ -24,6 +24,8 @@ export const projects = sqliteTable("projects", {
   workBranch: text("work_branch").notNull(),
   createdAt: integer("created_at").notNull(),
   archivedAt: integer("archived_at"),
+  /** The skills its jobs may use; The Eye picks one per job (Skills → Skills per project). Empty: the default. */
+  skillIds: json<string[]>("skill_ids").notNull().default([]),
 });
 
 export const skills = sqliteTable(
@@ -158,6 +160,8 @@ export const jobs = sqliteTable(
     resumeState: text("resume_state"),
     /** The tools this job's sessions get, by name (ADR-021). */
     tools: json<string[]>("tools").notNull().default([]),
+    /** The skills The Eye chooses from when I didn't pick one; empty once chosen (Phase 8). */
+    skillChoices: json<string[]>("skill_choices").notNull().default([]),
     createdAt: integer("created_at").notNull(),
     startedAt: integer("started_at"),
     finishedAt: integer("finished_at"),

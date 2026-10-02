@@ -14,6 +14,8 @@ export const Project = z.object({
   workBranch: z.string().min(1),
   createdAt: Timestamp,
   archivedAt: Timestamp.nullable(),
+  /** The skills its jobs may use (Skills → Skills per project). Empty: the default. */
+  skillIds: z.array(Id).default([]),
 });
 export type Project = z.infer<typeof Project>;
 

@@ -12,6 +12,7 @@ import {
   decide,
   detect,
   type GatedAction,
+  guidanceFromOthers,
   HANDOFF_REQUEST,
   inScope,
   nextEscalation,
@@ -111,6 +112,8 @@ export interface AttemptJob {
   tools: string[];
   /** The skill's own checks for results that aren't code (Skills → Checks). */
   skillChecks?: string;
+  /** The project's other skills, whose guidance a task may get (Skills → Skills per project). */
+  otherSkills?: { name: string; body: string }[];
   /** The job's inputs, rendered for context packs. */
   inputs: string;
 }
@@ -487,7 +490,16 @@ export async function runAttempt(
         verify: task.verify,
       },
       goal: job.goal,
-      skill: skillExcerpt(job.skillBody, `${task.title} ${task.kind}`),
+      skill: [
+        skillExcerpt(job.skillBody, `${task.title} ${task.kind}`),
+        guidanceFromOthers(
+          job.skillBody,
+          job.otherSkills ?? [],
+          `${task.title} ${task.instructions}`,
+        ),
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
       entries: d.silk.all(job.id),
       digest: "",
       inputs: job.inputs,

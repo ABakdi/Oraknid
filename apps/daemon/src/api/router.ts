@@ -357,6 +357,12 @@ export const router = {
         guard(async () => ({ ...(await projectFrom(c, input)), jobCount: 0 })),
       ),
     list: base.output(z.array(ProjectView)).handler(({ context: c }) => c.projects.list()),
+    /** The skills its jobs may use (Skills → Skills per project). */
+    setSkills: base
+      .input(z.object({ id: z.string(), skillIds: z.array(z.string()) }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.projects.setSkills(input.id, input.skillIds)),
+      ),
     /** Hidden from the lists, kept for stats; or back again. */
     archive: base
       .input(z.object({ id: z.string(), archived: z.boolean() }))
