@@ -1,5 +1,11 @@
 import { join, resolve } from "node:path";
-import type { Autonomy, InterviewRound, JobInput, WebPlan } from "@oraknid/contracts";
+import type {
+  Autonomy,
+  InterviewRound,
+  JobInput,
+  MetricsSample,
+  WebPlan,
+} from "@oraknid/contracts";
 import {
   decide,
   type GatedAction,
@@ -58,6 +64,8 @@ export interface EyeDeps {
   tools?: { registry: ToolRegistry; broker: McpBroker };
   /** The outbox, for a tool's sends (BR-6). */
   effects?: SideEffects;
+  /** Recent metrics, for resource-aware scheduling (ADR-016). */
+  machine?: () => MetricsSample[];
   legsDir: string;
   tmpDir: string;
   now: () => number;
@@ -418,6 +426,7 @@ async function runTask(
           brain: d.brain,
           ...(d.tools ? { tools: d.tools } : {}),
           ...(d.effects ? { effects: d.effects } : {}),
+          ...(d.machine ? { machine: d.machine } : {}),
           ...(d.stallCheckMs ? { stallCheckMs: d.stallCheckMs } : {}),
         },
         attemptJob,

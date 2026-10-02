@@ -106,6 +106,8 @@ async function eye(
       criteria?: string,
     ) => { accepted: boolean; reason: string; missing: string[] };
     repair?: (command: string) => { broken: boolean; command: string; reason: string };
+    /** The machine's memory use, as a share. */
+    memory?: () => number;
     /** A skill to run the job with, uploaded first. */
     skill?: string;
     /** Before the job is created (tools, settings). */
@@ -148,9 +150,10 @@ async function eye(
     paths: resolvePaths({ ORAKNID_DATA_DIR: dir, ORAKNID_CONFIG_DIR: dir }),
     port: 0,
     dbFile: ":memory:",
-    os: fakeOs({ keychain: true }).os,
+    os: fakeOs({ keychain: true, ...(o.memory ? { memoryUsed: o.memory } : {}) }).os,
     adapters: { "claude-code": leg.adapter },
     brain,
+    metricsIntervalMs: 50,
     stallCheckMs: 100,
   });
   const api = createORPCClient<RouterClient<Router>>(
@@ -395,6 +398,28 @@ describe("The Eye, end to end", () => {
       }),
     ).rejects.toThrow(/Set up "calendar" in Settings → Tools first/);
   });
+
+  it("waits for memory before starting a session, says why, then goes on (ADR-016)", async () => {
+    let memory = 0.97;
+    const { api, id, d } = await eye(good, {
+      plan: { ...HELLO, tasks: [HELLO.tasks[0] as WebPlan["tasks"][number]], jobVerify: [] },
+      memory: () => memory,
+    });
+    const end = Date.now() + 5000;
+    let waiting: unknown;
+    while (!waiting && Date.now() < end) {
+      waiting = d.bus
+        .since(0, [`job:${id}`], 500)
+        .find((e) => e.type === "task.waiting-for-leg")?.payload;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(waiting).toMatchObject({
+      reason: "It waits for room: the machine is out of memory (97% used).",
+    });
+    expect((await api.jobs.get({ id })).tasks[0]?.state).not.toBe("done");
+    memory = 0.5;
+    expect((await until(api, id, ["completed", "blocked"], 15_000)).state).toBe("completed");
+  }, 30_000);
 
   it("reverts an out-of-scope edit, corrects the Leg, and keeps the in-scope work (D1)", async () => {
     const { api, id, leg } = await eye((t) => {

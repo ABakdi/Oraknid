@@ -12,7 +12,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { LegKind } from "@oraknid/contracts";
+import type { LegKind, MetricsSample } from "@oraknid/contracts";
 import { scrubSecrets } from "@oraknid/core";
 import { createAntigravityAdapter } from "@oraknid/leg-antigravity";
 import { createClaudeCodeAdapter } from "@oraknid/leg-claude-code";
@@ -188,6 +188,8 @@ export async function startDaemon(options: DaemonOptions) {
       console.error("silk import failed", error);
     }
   });
+  // The last ten seconds of the machine, for resource-aware scheduling (ADR-016).
+  let recentMachine: () => MetricsSample[] = () => [];
   const runner = new JobRunner({
     // How many jobs run at once; the rest queue by priority (ADR-016).
     maxRunning: () => readSetting(db, MAX_RUNNING_JOBS, z.number().int().min(1), 2),
@@ -210,6 +212,8 @@ export async function startDaemon(options: DaemonOptions) {
         brain,
         tools: { registry: toolRegistry, broker },
         effects,
+        // Set once the metrics loop runs; until then nothing holds work back.
+        machine: () => recentMachine(),
         legsDir: paths.legs,
         tmpDir: join(paths.dataDir, "tmp"),
         now,
@@ -304,6 +308,12 @@ export async function startDaemon(options: DaemonOptions) {
     busy: () => live.metricsWatchers() > 0 || supervisor.watched().length > 0,
     ...(options.metricsIntervalMs ? { intervalMs: options.metricsIntervalMs } : {}),
   });
+  recentMachine = () => {
+    const recent = metricsLoop.recent(now() - 10_000);
+    // A task waiting for room keeps the samples fresh, even with nothing else running.
+    if ((recent.at(-1)?.at ?? 0) < now() - 2000) void metricsLoop.tick();
+    return recent;
+  };
 
   os.inhibitor.onChange((state) =>
     bus.publish({ type: "system.inhibitor", topic: "overview", jobId: null, payload: state }),

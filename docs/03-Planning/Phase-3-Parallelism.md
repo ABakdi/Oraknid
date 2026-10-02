@@ -12,7 +12,7 @@ tasks in The Web, and independent jobs, can run together.
 
 ### M3.1 — Parallel tasks in one job
 - [x] A worktree per running task, branched from the job branch's tip, when more than one task at once is allowed (Settings; 1 by default)
-- [~] Scheduler limits: per Leg (sessions at once), per job (tasks at once), global (jobs at once); not yet CPU/RAM/VRAM-aware for local Legs
+- [x] Scheduler limits: per Leg (sessions at once), per job (tasks at once), global (jobs at once), and the machine's room (2026-10-02): a local model starts only with memory under 85%, CPU under 90% and a GPU with VRAM under 90%; nothing starts above 95% memory. A task that waits says why and starts when there is room
 - [x] Scope-overlap check before running two tasks at once (their globs' fixed roots)
 
 ### M3.2 — Merging

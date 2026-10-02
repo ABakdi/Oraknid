@@ -46,6 +46,20 @@ job side by side.
   the newer work resolves it the same way, without git work for a Leg.
 - Silk stays one per job; handoffs stay per task.
 
+## Resources (added 2026-10-02)
+- A new session also waits for **room on the machine**, read from the
+  last ten seconds of metrics (averaged, so a spike doesn't hold work
+  back). A local model (its profile's cost model is `local`) needs
+  memory under 85%, CPU under 90%, and when there are GPUs, one with
+  VRAM under 90%. Any Leg waits above 95% memory: even a remote agent's
+  process needs some.
+- The waiting task says why ("It waits for room: the machine is busy:
+  memory at 90%") and starts as soon as there is room, without blocking
+  its job. While it waits, the machine is sampled even with nothing
+  else running.
+- Thresholds are fixed for now; they become settings if I need to
+  change them.
+
 ## Consequences
 - BR-19 is replaced: "At most the set number of jobs run at once; the
   rest wait in a queue, by priority."

@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import type { Autonomy, Budget, Difficulty, TaskKind } from "@oraknid/contracts";
+import type { Autonomy, Budget, Difficulty, MetricsSample, TaskKind } from "@oraknid/contracts";
 import {
   allowRuleFor,
   buildContextPack,
+  busyMachine,
   claimsDone,
   correctivePrompt,
   DEFAULT_THRESHOLDS,
@@ -87,6 +88,8 @@ export interface AttemptDeps {
   tools?: { registry: ToolRegistry; broker: McpBroker };
   /** The outbox: a tool's sends happen at most once (BR-6). */
   effects?: SideEffects;
+  /** The machine's last few seconds of metrics: a new session waits for room (ADR-016). */
+  machine?: () => MetricsSample[];
   /** Session rotation (BR-3): share of the context window. */
   rotateAt?: number;
   /** How often to look for a stall while waiting for a Leg. */
@@ -191,22 +194,30 @@ export async function runAttempt(
   const routeOptions = { moneyAllowed: job.moneyAllowed, quotaShare };
   // A Leg runs at most its limit of task sessions at once (ADR-016). When only busy Legs could
   // take the task, it waits for one, without blocking its job.
-  const free = (c: RouteCandidate) => d.supervisor.busy(c.legId) < legLimit(d, c.legId);
+  // And a new session waits for room on the machine: a local model needs headroom (ADR-016).
+  let machineBusy: string | null = null;
+  const free = (c: RouteCandidate) => {
+    if (d.supervisor.busy(c.legId) >= legLimit(d, c.legId)) return false;
+    const why = d.machine ? busyMachine(d.machine(), c.profile.costModel === "local") : null;
+    if (why) machineBusy = why;
+    return !why;
+  };
   let routed = route(routeTask, candidates.filter(free), routeOptions);
-  let saidWaiting = false;
+  let saidWaiting: string | null = null;
   while (!routed.ranked[0] && route(routeTask, candidates, routeOptions).ranked[0]) {
-    if (!saidWaiting) {
-      saidWaiting = true;
+    const reason = machineBusy
+      ? `It waits for room: ${machineBusy}.`
+      : "Every Leg that could take it is busy; it starts when one is free.";
+    if (saidWaiting !== reason) {
+      saidWaiting = reason;
       d.bus.publish({
         type: "task.waiting-for-leg",
         topic: `job:${job.id}`,
         jobId: job.id,
-        payload: {
-          taskId,
-          reason: "Every Leg that could take it is busy; it starts when one is free.",
-        },
+        payload: { taskId, reason },
       });
     }
+    machineBusy = null;
     await pause(1000, signal);
     routed = route(routeTask, candidates.filter(free), routeOptions);
   }

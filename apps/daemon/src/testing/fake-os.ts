@@ -8,7 +8,7 @@ import type {
 import type { OsDeps } from "../os/context.ts";
 
 /** OS stand-ins so daemon tests never touch the real keychain, logind or systemd. */
-export function fakeOs(opts: { keychain?: boolean } = {}) {
+export function fakeOs(opts: { keychain?: boolean; memoryUsed?: () => number } = {}) {
   const store = new Map<string, string>();
   const keychainUp = opts.keychain ?? false;
   const sent: { channel: string; n: Notification }[] = [];
@@ -62,8 +62,9 @@ export function fakeOs(opts: { keychain?: boolean } = {}) {
           system: {
             cpuPercent: 1,
             cores: 4,
-            memoryUsedBytes: 1,
-            memoryTotalBytes: 2,
+            // Half the memory, unless a test says otherwise (share of 1000).
+            memoryUsedBytes: Math.round((opts.memoryUsed?.() ?? 0.5) * 1000),
+            memoryTotalBytes: 1000,
             diskReadBytesPerSec: 0,
             diskWriteBytesPerSec: 0,
             netRxBytesPerSec: 0,
