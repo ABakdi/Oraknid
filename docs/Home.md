@@ -30,7 +30,7 @@ Nothing is built yet.
 
 ## 02 — Architecture
 - [[Architecture-Overview]] — packages, layers, data flow, paths
-- [[Leg-Adapters]] — the adapter interface; Claude Code, OpenAI-compatible, OpenCode, Antigravity, checked 2026-10-01
+- [[Leg-Adapters]] — the adapter interface; Claude Code, OpenAI-compatible, OpenCode, Antigravity, checked 2026-10-02
 - [[Persistence-and-Recovery]] — tables, write discipline, recovery, backups
 - [[Realtime-Transport]] — topics, frames, reconnect
 - [[OS-Integration]] — service, inhibitor, keychain, metrics, notifier, sandbox per OS
@@ -64,6 +64,7 @@ Nothing is built yet.
 - [[ADR-015-OpenCode-Adapter]] — OpenCode v2 through a private server per session, every action asked
 - [[ADR-016-Parallel-Work]] — a job queue first, then tasks side by side in their own worktrees
 - [[ADR-017-Nest-E2E-Protocol]] · [[ADR-018-Nest-Hosting]] · [[ADR-019-Nest-UI-Serving]] — The Nest: libsodium E2E, a VPS with Compose and Caddy, a UI signed by the daemon
+- [[ADR-020-Antigravity-Adapter]] — Antigravity through its official headless CLI, approvals by allow list and replay
 - [[ADR-013-Model-Aware-Routing]] — route to Leg + model + effort; smallest sufficient model; reserve scarce windows
 
 ## 05 — Checkpoints

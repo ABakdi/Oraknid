@@ -110,7 +110,9 @@ export function LegsPage() {
                 <RefreshCw className="size-3.5" />
                 {t("Test")}
               </Button>
-              {leg.kind === "claude-code" ? <LegLogin legId={leg.id} legName={leg.name} /> : null}
+              {leg.kind === "claude-code" || leg.kind === "antigravity" ? (
+                <LegLogin legId={leg.id} legName={leg.name} kind={leg.kind} />
+              ) : null}
               <Button
                 size="sm"
                 variant="secondary"
@@ -262,7 +264,10 @@ export function LegsPage() {
 }
 
 function AddLeg({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const [kind, setKind] = useState<"claude-code" | "openai-compatible" | "opencode">("claude-code");
+  const [kind, setKind] = useState<
+    "claude-code" | "openai-compatible" | "opencode" | "antigravity"
+  >("claude-code");
+  const [agyBinary, setAgyBinary] = useState("agy");
   const [providerID, setProviderID] = useState("openrouter");
   const [ocBaseURL, setOcBaseURL] = useState("https://openrouter.ai/api/v1");
   const [models, setModels] = useState("");
@@ -286,34 +291,36 @@ function AddLeg({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boole
               name,
               config: { binary, ...(configDir ? { configDir } : {}) },
             })
-          : kind === "opencode"
-            ? await api.legs.create({
-                kind,
-                name,
-                config: ownProvider
-                  ? {
-                      binary: "opencode",
-                      providerID,
-                      package: "@opencode/ai/providers/openai-compatible",
-                      ...(ocBaseURL ? { baseURL: ocBaseURL } : {}),
-                      models: models
-                        .split(/[\s,]+/)
-                        .map((m) => m.trim())
-                        .filter(Boolean),
-                    }
-                  : {
-                      binary: "opencode",
-                      package: "@opencode/ai/providers/openai-compatible",
-                      models: [],
-                    },
-                ...(ownProvider && secret ? { secret } : {}),
-              })
-            : await api.legs.create({
-                kind,
-                name,
-                config: { baseUrl },
-                ...(secret ? { secret } : {}),
-              });
+          : kind === "antigravity"
+            ? await api.legs.create({ kind, name, config: { binary: agyBinary, models: [] } })
+            : kind === "opencode"
+              ? await api.legs.create({
+                  kind,
+                  name,
+                  config: ownProvider
+                    ? {
+                        binary: "opencode",
+                        providerID,
+                        package: "@opencode/ai/providers/openai-compatible",
+                        ...(ocBaseURL ? { baseURL: ocBaseURL } : {}),
+                        models: models
+                          .split(/[\s,]+/)
+                          .map((m) => m.trim())
+                          .filter(Boolean),
+                      }
+                    : {
+                        binary: "opencode",
+                        package: "@opencode/ai/providers/openai-compatible",
+                        models: [],
+                      },
+                  ...(ownProvider && secret ? { secret } : {}),
+                })
+              : await api.legs.create({
+                  kind,
+                  name,
+                  config: { baseUrl },
+                  ...(secret ? { secret } : {}),
+                });
       setResult(leg);
     } catch (e) {
       setError(e);
@@ -342,10 +349,12 @@ function AddLeg({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boole
               {result.name} <StateBadge state={result.health} />
             </div>
             <div className="text-muted-foreground">{result.healthDetail}</div>
-            {result.kind === "claude-code" && result.health !== "healthy" ? (
+            {(result.kind === "claude-code" || result.kind === "antigravity") &&
+            result.health !== "healthy" &&
+            !/not installed/.test(result.healthDetail ?? "") ? (
               <div className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
                 <span className="flex-1">{t("Log this account in to use it.")}</span>
-                <LegLogin legId={result.id} legName={result.name} />
+                <LegLogin legId={result.id} legName={result.name} kind={result.kind} />
               </div>
             ) : result.setupHint ? (
               <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 font-mono text-xs [overflow-wrap:anywhere]">
@@ -372,6 +381,7 @@ function AddLeg({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boole
                   <SelectItem value="opencode">
                     {t("OpenCode, with a provider's API key")}
                   </SelectItem>
+                  <SelectItem value="antigravity">{t("Antigravity account (Google)")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -384,9 +394,11 @@ function AddLeg({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boole
                 placeholder={
                   kind === "claude-code"
                     ? t("Claude — personal")
-                    : kind === "opencode"
-                      ? t("OpenCode — free models")
-                      : t("Ollama on this machine")
+                    : kind === "antigravity"
+                      ? t("Antigravity — personal")
+                      : kind === "opencode"
+                        ? t("OpenCode — free models")
+                        : t("Ollama on this machine")
                 }
               />
             </div>
@@ -411,6 +423,23 @@ function AddLeg({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boole
                     value={configDir}
                     onChange={(e) => setConfigDir(e.target.value)}
                     placeholder={t("empty: a folder of its own")}
+                  />
+                </div>
+              </>
+            ) : kind === "antigravity" ? (
+              <>
+                <div className="rounded-md border px-3 py-2 text-xs text-muted-foreground">
+                  {t(
+                    "Antigravity's official CLI, agy, signed in to your Google account from this Leg's card. It must be installed on this machine first (antigravity.google/docs/cli). Commands it runs still go through your approvals.",
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="ab">{t("Binary")}</Label>
+                  <Input
+                    id="ab"
+                    className="font-mono"
+                    value={agyBinary}
+                    onChange={(e) => setAgyBinary(e.target.value)}
                   />
                 </div>
               </>

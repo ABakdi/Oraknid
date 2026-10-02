@@ -38,6 +38,15 @@ export const OpenCodeLegConfig = z.object({
   contextWindow: z.number().int().positive().optional(),
 });
 
+/**
+ * An Antigravity Leg (ADR-020): the official `agy`, signed in from its
+ * card. Its models come from `agy models`; `models` is the fallback.
+ */
+export const AntigravityLegConfig = z.object({
+  binary: z.string().min(1).default("agy"),
+  models: z.array(z.string().min(1)).default([]),
+});
+
 export const NewLeg = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("claude-code"),
@@ -57,6 +66,11 @@ export const NewLeg = z.discriminatedUnion("kind", [
     config: OpenCodeLegConfig,
     /** The provider's API key. Goes to the secret store, never the database. */
     secret: z.string().min(1).optional(),
+  }),
+  z.object({
+    kind: z.literal("antigravity"),
+    name: z.string().min(1),
+    config: AntigravityLegConfig,
   }),
 ]);
 export type NewLeg = z.infer<typeof NewLeg>;

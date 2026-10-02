@@ -54,6 +54,10 @@ windows:
    it uses OpenCode's own free models, with no account or key; or a
    provider id, its endpoint, the models and the API key. The Leg keeps
    its own OpenCode data under its home ([[ADR-015-OpenCode-Adapter]]).
+   For Antigravity: the `agy` binary, installed by me from Google's
+   own installer; **Log in** on its card opens Google's sign-in page
+   and I paste the code back, as for Claude Code
+   ([[ADR-020-Antigravity-Adapter]]).
 3. **Test.** Oraknid runs a tiny health prompt, reads the model and
    context window, and reports usage support. A failed test says
    exactly what failed and saves nothing until it passes, or until I

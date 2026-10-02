@@ -109,16 +109,28 @@ OpenCode Legs use other providers' API keys or local models.
 
 ## Antigravity — Phase 5
 
-**Can now run unattended** (re-checked 2026-10-01): the official `agy`
-CLI has a headless mode: `agy -p`, `--output-format stream-json`,
-`--input-format stream-json`, `--conversation <id>` / `-c`,
-`--json-schema`, `--print-timeout`. Events: `init`, `step_update`
-(with `usage`), `result` (`SUCCESS|ERROR|CANCELED|INTERRUPTED|WAITING…`).
-Auth uses the binary's own cached credentials after one interactive
-login. Google staff describe launching `agy` as a child process this
-way as supported. Using Antigravity OAuth from other tools isn't
-allowed. Still unknown: exact usage field names, how a quota error
-looks, a config-dir variable for several accounts, MCP config, and
-interrupt behaviour. Phase 5 starts by closing these.
+**Built against the docs, not yet run for real** (re-checked
+2026-10-02, [[ADR-020-Antigravity-Adapter]]). The official `agy` CLI
+runs headless: `--input-format stream-json --output-format
+stream-json`, one user message per line on stdin; events `init`,
+`step_update` (`text_delta`, `tool_info`, `usage`) and `result`
+(`conversation_id`, `status`, `error`, `usage`). Google staff describe
+launching `agy` as a child process with its own cached sign-in as
+supported; using its OAuth from other tools isn't.
+
+- **One `agy` run per turn**, inside the sandbox, continuing the
+  conversation with `--conversation`; interrupt is SIGINT.
+- **Approvals**: headless `agy` can't ask, it soft-denies. Oraknid
+  writes the Leg's `settings.json` with exactly the commands its policy
+  allowed; a soft-denied command goes to the policy, and the adapter
+  continues the conversation with "approved, run it now" or with the
+  reason it was denied. `--dangerously-skip-permissions` is never used.
+- **Its own world**: HOME and XDG dirs in the Leg's home, no D-Bus, so
+  my desktop keyring is out of reach; sign-in runs from the Leg's card
+  under a pseudo-terminal in `agy`'s SSH mode (link, then code).
+- **Still to confirm on a real run**: the soft-deny notice's wording,
+  a quota error's wording, `tool_info`'s fields, and whether the
+  sign-in stays in the Leg's home without a keyring (several accounts
+  depend on it). `agy` is not installed on this machine yet.
 
 Related: [[Legs-and-Capability-Profiles]] · [[ADR-011-Claude-Code-Adapter]] · [[ADR-009-Multiple-Accounts-Per-Provider]] · [[Sandboxing]]

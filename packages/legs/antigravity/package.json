@@ -1,0 +1,22 @@
+{
+  "name": "@oraknid/leg-antigravity",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./fake": "./src/fake.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@oraknid/contracts": "workspace:^",
+    "@oraknid/leg-sdk": "workspace:^",
+    "@oraknid/os": "workspace:^"
+  },
+  "devDependencies": {
+    "vitest": "5.0.3"
+  }
+}

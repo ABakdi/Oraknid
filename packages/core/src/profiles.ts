@@ -80,7 +80,23 @@ export function defaultProfile(kind: LegKind, model: string): ProfileSettings {
       maxDifficulty: "medium",
     };
   }
-  if (kind === "opencode" || kind === "antigravity") {
+  if (kind === "antigravity") {
+    // Gemini through Antigravity's plan (ADR-020): Pro for the hard work, Flash for the rest.
+    const agy = {
+      ...base,
+      costModel: "subscription" as const,
+      contextWindow: 1_000_000,
+      tools: AGENT_TOOLS,
+    };
+    if (m.includes("flash"))
+      return {
+        ...agy,
+        strengths: flat(3, { mechanical: 4, summarize: 4 }),
+        maxDifficulty: "medium",
+      };
+    return { ...agy, strengths: flat(4), quotaWeight: 3, maxDifficulty: "high" };
+  }
+  if (kind === "opencode") {
     return {
       ...base,
       costModel: "subscription",

@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { FAKE_AGY } from "@oraknid/leg-antigravity/fake";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { RouterClient } from "@orpc/server";
@@ -397,4 +398,35 @@ echo "Invalid code."; exit 1
     });
     await expect(api.legs.loginFinish({ id: leg.id, code: "again" })).rejects.toThrow(/expired/);
   });
+});
+
+describe("signing an Antigravity Leg in from the web (ADR-020)", () => {
+  it("runs agy under a terminal, shows its link, and the sign-in lands in the Leg's own home", async () => {
+    const { api } = await start();
+    const bin = join(mkdtempSync(join(tmpdir(), "oraknid-fake-agy-")), "agy");
+    // A fresh Leg home starts signed out.
+    writeFileSync(
+      bin,
+      `#!/bin/sh
+[ -f "$HOME/.fake-agy-mode" ] || echo signed-out > "$HOME/.fake-agy-mode"
+exec node ${FAKE_AGY} "$@"
+`,
+      { mode: 0o755 },
+    );
+    const leg = await api.legs.create({
+      kind: "antigravity",
+      name: "Gemini",
+      config: { binary: bin },
+    });
+    const first = await api.legs.loginStart({ id: leg.id });
+    expect(first.url).toBe("https://accounts.google.com/o/oauth2/auth?client=agy&state=x1");
+    const wrong = await api.legs.loginFinish({ id: leg.id, code: "wrong" });
+    expect(wrong.ok).toBe(false);
+    expect(wrong.detail).toMatch(/Invalid code/);
+    await api.legs.loginStart({ id: leg.id });
+    expect(await api.legs.loginFinish({ id: leg.id, code: "good-code" })).toEqual({
+      ok: true,
+      detail: "Signed in.",
+    });
+  }, 30_000);
 });

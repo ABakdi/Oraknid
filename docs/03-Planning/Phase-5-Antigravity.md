@@ -14,12 +14,14 @@ this phase starts by closing them.
 ## Milestones
 
 ### M5.1 — Re-check the interface
-- [ ] Verify Antigravity's current headless or programmatic options against its official docs and terms
-- [ ] ADR: adapter, workaround, or not supported
+- [x] Verify Antigravity's current headless or programmatic options against its official docs and terms (2026-10-02, from the docs: `agy` isn't installed here)
+- [x] ADR: adapter, workaround, or not supported → [[ADR-020-Antigravity-Adapter]]: an adapter
 
 ### M5.2 — Adapter or workaround
-- [ ] Implement what the ADR decides
-- [ ] Default capability profile
+- [x] Implement what the ADR decides: `packages/legs/antigravity`, passing the Leg contract against a stand-in `agy`, and inside bwrap
+- [x] Sign-in from the Leg's card (Google's page, code pasted back)
+- [x] Default capability profile: Gemini Pro up to high tasks, Flash up to medium
+- [ ] A real run: install `agy`, sign a Leg in, run a job on it; confirm the four unknowns of ADR-020
 
 ## Exit criterion
 

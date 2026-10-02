@@ -14,6 +14,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { LegKind } from "@oraknid/contracts";
 import { scrubSecrets } from "@oraknid/core";
+import { createAntigravityAdapter } from "@oraknid/leg-antigravity";
 import { createClaudeCodeAdapter } from "@oraknid/leg-claude-code";
 import { createOpenAICompatibleAdapter } from "@oraknid/leg-openai-compatible";
 import { createOpenCodeAdapter } from "@oraknid/leg-opencode";
@@ -120,6 +121,7 @@ export async function startDaemon(options: DaemonOptions) {
     "claude-code": createClaudeCodeAdapter(),
     "openai-compatible": createOpenAICompatibleAdapter(),
     opencode: createOpenCodeAdapter(),
+    antigravity: createAntigravityAdapter(),
   };
   const registry = new LegRegistry(db, bus, secrets, paths.legs, now);
   const logins = new LegLogins(paths.legs);

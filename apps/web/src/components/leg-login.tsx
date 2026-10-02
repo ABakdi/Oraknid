@@ -17,11 +17,20 @@ import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 
 /**
- * Logs a Claude Code Leg in from here (Legs → Adding a Leg): the official
- * sign-in page opens in a new tab, and the code it shows comes back here.
- * Oraknid never sees the password.
+ * Logs a Claude Code or Antigravity Leg in from here (Legs → Adding a
+ * Leg, BR-22): the official sign-in page opens in a new tab, and the
+ * code it shows comes back here. Oraknid never sees the password.
  */
-export function LegLogin({ legId, legName }: { legId: string; legName: string }) {
+export function LegLogin({
+  legId,
+  legName,
+  kind = "claude-code",
+}: {
+  legId: string;
+  legName: string;
+  kind?: "claude-code" | "antigravity";
+}) {
+  const google = kind === "antigravity";
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
   const [code, setCode] = useState("");
@@ -67,9 +76,13 @@ export function LegLogin({ legId, legName }: { legId: string; legName: string })
           <DialogHeader>
             <DialogTitle>{t("Log {name} in", { name: legName })}</DialogTitle>
             <DialogDescription>
-              {t(
-                "Sign in on Claude's own page, then paste the code it shows. This account's login stays in this Leg's own folder.",
-              )}
+              {google
+                ? t(
+                    "Sign in on Google's own page, then paste the code it shows. This account's login stays in this Leg's own folder.",
+                  )
+                : t(
+                    "Sign in on Claude's own page, then paste the code it shows. This account's login stays in this Leg's own folder.",
+                  )}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 text-sm">
@@ -79,12 +92,16 @@ export function LegLogin({ legId, legName }: { legId: string; legName: string })
                 <Button asChild variant="secondary" className="gap-1">
                   <a href={url} target="_blank" rel="noreferrer">
                     <ExternalLink className="size-4" />
-                    {t("Open Claude's sign-in page")}
+                    {google ? t("Open Google's sign-in page") : t("Open Claude's sign-in page")}
                   </a>
                 </Button>
               ) : (
                 <div className="text-muted-foreground">
-                  {busy ? t("Asking Claude Code for the link…") : null}
+                  {busy
+                    ? google
+                      ? t("Asking Antigravity for the link…")
+                      : t("Asking Claude Code for the link…")
+                    : null}
                 </div>
               )}
             </div>
