@@ -131,6 +131,24 @@ export function signatureOf(command: string, output: string): string {
     .slice(0, 16);
 }
 
+/**
+ * Whether a failed check looks broken itself rather than the work: a
+ * program refusing its own arguments, or one that isn't installed
+ * (The-Eye → A check that is wrong). Only a hint: The Eye decides.
+ */
+export function looksBroken(r: VerifyResult): string | null {
+  if (r.ok) return null;
+  const out = r.output.replace(ANSI, "");
+  const missing = /(?:^|\s)([\w.+-]+): (?:command )?not found/m.exec(out);
+  if (r.exitCode === 127 && missing) return `\`${missing[1]}\` isn't installed where checks run`;
+  if (
+    r.exitCode === 2 &&
+    /^usage:|invalid option|unrecognized option|illegal option|unknown option/im.test(out)
+  )
+    return "a program in it refused its own arguments";
+  return null;
+}
+
 /** What the policy says about a check: refused when never allowed, or gated (it would need me). */
 export function verifyRefusal(v: PolicyVerdict): string | null {
   if (v.verdict === "deny") return v.reason;

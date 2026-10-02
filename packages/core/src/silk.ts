@@ -73,7 +73,7 @@ export function buildContextPack(p: PackInput): Pack {
     p.task.instructions,
     `**You may change only:** ${p.task.scope.length ? p.task.scope.join(", ") : "(nothing — this task changes no files)"}`,
     p.task.verify.length
-      ? `**It is done when these pass (Oraknid runs them itself):**\n${p.task.verify.map((v) => `- \`${v}\``).join("\n")}`
+      ? `**It is done when these pass (Oraknid runs them itself):**\n${p.task.verify.map((v) => `- \`${v}\``).join("\n")}\n\nIf a check itself looks wrong (it fails for a reason that has nothing to do with your work), don't investigate it: finish the work, then say DONE and why the check is wrong. Oraknid reviews its checks.`
       : "",
   ]
     .filter(Boolean)

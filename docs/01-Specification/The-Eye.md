@@ -118,6 +118,28 @@ wait for me:
 - The Leg claimed done → verify (BR-1).
 - Verification failed → a prompt with the exact failing output.
 
+## A check that is wrong
+
+A plan can carry a check that is wrong itself: a misspelled option, a
+tool that isn't installed where checks run. The Leg's work can't make
+it pass, and sending the Leg after it only burns its time (seen live
+2026-10-02: a free model spent twenty minutes on `grep -qx5`).
+
+- The Leg is told the checks are Oraknid's: when one looks wrong, it
+  finishes the work and says why, instead of investigating.
+- When a check fails the way a broken one does (a program refusing its
+  own arguments, exit 2 with its usage; or `not found`, exit 127), The
+  Eye looks at it with one reasoning call before the Leg hears of it:
+  the task, the check, its output and the Leg's report.
+- **Broken**: The Eye replaces it with a corrected check that tests the
+  same thing, no less, records the change in Silk as its decision
+  (shown on the job), and runs the checks again. At most twice per
+  turn end. **Not broken**, or no Leg can think: the failure goes to the
+  Leg as usual.
+
+BR-1 holds: a task is still done only when Oraknid's own run of its
+checks passes; the change of a check is visible, never silent.
+
 ## Talking to The Eye
 
 Each job has a prompt to The Eye. I write in my words: an instruction,

@@ -39,6 +39,7 @@ const brain = {
   plan: async () => PLAN,
   replan: async () => PLAN,
   summarize: async () => ({ title: "s", body: "s" }),
+  repairCheck: async ({ command }) => ({ broken: false, command, reason: "kept" }),
   evaluate: async () => ({ accepted: true, reason: "ok", missing: [] }),
   triage: async () => {
     throw new Error("unused");

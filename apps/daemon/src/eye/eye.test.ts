@@ -93,6 +93,7 @@ async function eye(
     classify?: (command: string) => { decision: "allow" | "ask"; reason: string };
     triage?: (message: string) => EyeTriage | Promise<EyeTriage>;
     evaluate?: (report: string) => { accepted: boolean; reason: string; missing: string[] };
+    repair?: (command: string) => { broken: boolean; command: string; reason: string };
     files?: Record<string, string>;
   } = {},
 ) {
@@ -110,6 +111,8 @@ async function eye(
       return o.replan;
     },
     summarize: async () => ({ title: "s", body: "s" }),
+    repairCheck: async ({ command }) =>
+      o.repair?.(command) ?? { broken: false, command, reason: "the work is at fault" },
     evaluate: async ({ report }) =>
       o.evaluate?.(report) ?? { accepted: true, reason: "it is there", missing: [] },
     triage: async ({ message }) => {
@@ -227,6 +230,61 @@ describe("The Eye, end to end", () => {
       /said it was done, but `sh hello.sh \| grep -qx hi` failed[\s\S]*exit 1/,
     );
     expect(job.tasks[0]?.attemptCount).toBe(1);
+  });
+
+  it("repairs a check that is wrong itself, says so in Silk, and doesn't send the Leg after it", async () => {
+    const broken = "sh hello.sh | grep -qx5hi";
+    const repaired: string[] = [];
+    const { api, id, leg } = await eye(good, {
+      plan: {
+        ...HELLO,
+        tasks: [{ ...(HELLO.tasks[0] as WebPlan["tasks"][number]), verify: [broken] }],
+        jobVerify: [],
+      },
+      repair: (command) => {
+        repaired.push(command);
+        return {
+          broken: true,
+          command: "sh hello.sh | grep -qx hi",
+          reason: "-x5 isn't an option",
+        };
+      },
+    });
+    const job = await until(api, id, ["completed", "blocked"]);
+    expect(job.state, job.blockedReason ?? "").toBe("completed");
+    expect(repaired).toEqual([broken]);
+    // One turn: the Leg was never sent after the broken check.
+    expect(leg.log.filter((x) => task(x) === "Write hello.sh")).toHaveLength(1);
+    expect(job.tasks[0]?.verify).toEqual(["sh hello.sh | grep -qx hi"]);
+    const silk = await api.silk.list({ jobId: id });
+    expect(silk.find((e) => e.title === "Check corrected: Write hello.sh")?.body).toContain(
+      "-x5 isn't an option",
+    );
+  });
+
+  it("keeps a check The Eye says is right, and the Leg gets its failure as usual", async () => {
+    const { api, id, leg, d } = await eye(
+      (t) =>
+        t.turn === 1
+          ? // Its script calls a program that doesn't exist: it looks like a broken check, but isn't.
+            [{ write: "hello.sh", content: "nosuchprogram\n" }, { say: "DONE" }]
+          : [{ write: "hello.sh", content: "echo hi\n" }, { say: "DONE" }],
+      {
+        plan: {
+          ...HELLO,
+          tasks: [{ ...(HELLO.tasks[0] as WebPlan["tasks"][number]), verify: ["sh hello.sh"] }],
+          jobVerify: [],
+        },
+      },
+    );
+    const job = await until(api, id, ["completed", "blocked"]);
+    expect(job.state).toBe("completed");
+    expect(job.tasks[0]?.verify).toEqual(["sh hello.sh"]);
+    const reviewed = d.bus
+      .since(0, [`job:${id}`], 500)
+      .filter((e) => e.type === "task.check-reviewed");
+    expect(reviewed.map((e) => e.payload)).toMatchObject([{ broken: false }]);
+    expect(leg.log.filter((x) => task(x) === "Write hello.sh")).toHaveLength(2);
   });
 
   it("reverts an out-of-scope edit, corrects the Leg, and keeps the in-scope work (D1)", async () => {

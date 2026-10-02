@@ -52,7 +52,7 @@ import {
   rollback,
 } from "../workspace/git.ts";
 import { waitForAnswer } from "./approvals.ts";
-import type { EyeBrain } from "./brain.ts";
+import type { CheckRepair, EyeBrain } from "./brain.ts";
 
 /** The providers (Leg kinds) for which I allowed same-provider fallback (ADR-009). */
 export const SAME_PROVIDER_FALLBACK = "fallback.sameProvider";
@@ -64,7 +64,7 @@ export const ALL_LIKE_THIS = "Approve all like this for this job";
 
 import { summarizeShortened } from "../silk/summarize.ts";
 import { guidanceMark, takeGuidance } from "./talk.ts";
-import { runVerify, verifyRefusal } from "./verify.ts";
+import { looksBroken, runVerify, verifyRefusal } from "./verify.ts";
 
 export type TaskRow = typeof tasks.$inferSelect;
 
@@ -743,13 +743,53 @@ export async function runAttempt(
         const plan = job.unsandboxed
           ? null
           : sandboxPlan(d.registry.require(leg.legId), d.sandbox, d.legsDir);
-        const results = await runVerify(task.verify, ws.cwd, plan, {
-          signal,
-          refuse: (command) =>
-            verifyRefusal(
-              decide({ tool: "Bash", command, path: null }, policyFor(d.db, job.id, ws.cwd)),
-            ),
-        });
+        const check = () =>
+          runVerify(task.verify, ws.cwd, plan, {
+            signal,
+            refuse: (command) =>
+              verifyRefusal(
+                decide({ tool: "Bash", command, path: null }, policyFor(d.db, job.id, ws.cwd)),
+              ),
+          });
+        let results = await check();
+        // A check that is wrong is The Eye's to fix, not the Leg's (The-Eye → A check that is wrong).
+        for (let repairs = 0; repairs < 2 && d.brain; repairs++) {
+          const bad = results.find((r) => !r.ok);
+          const hint = bad ? looksBroken(bad) : null;
+          if (!bad || !hint) break;
+          let repair: CheckRepair;
+          try {
+            repair = await d.brain.repairCheck({
+              jobId: job.id,
+              cwd: ws.cwd,
+              task: { title: task.title, instructions: task.instructions },
+              command: bad.command,
+              output: bad.output,
+              hint,
+              report: end.text,
+            });
+          } catch {
+            break;
+          }
+          event("task.check-reviewed", {
+            command: bad.command,
+            broken: repair.broken,
+            replacement: repair.broken ? repair.command : null,
+            reason: repair.reason,
+          });
+          if (!repair.broken) break;
+          task.verify = task.verify.map((v) => (v === bad.command ? repair.command : v));
+          d.db.update(tasks).set({ verify: task.verify }).where(eq(tasks.id, taskId)).run();
+          d.silk.add({
+            jobId: job.id,
+            taskId,
+            kind: "decision",
+            title: `Check corrected: ${task.title}`,
+            body: `\`${bad.command}\` was wrong (${repair.reason}). It is now \`${repair.command}\`.`,
+            authoredBy: "eye",
+          });
+          results = await check();
+        }
         const failed = results.find((r) => !r.ok);
         verified = !failed;
         event("task.verified", {
