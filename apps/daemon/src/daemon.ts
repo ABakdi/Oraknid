@@ -26,6 +26,7 @@ import { z } from "zod";
 import { router } from "./api/router.ts";
 import { startAuditExport } from "./audit/audit.ts";
 import { Devices, tokenOf } from "./auth/devices.ts";
+import { Chats } from "./chats/service.ts";
 import { closeDatabase, openDatabase } from "./db/open.ts";
 import { jobs as jobsTable } from "./db/schema.ts";
 import { SideEffects } from "./engine/effects.ts";
@@ -154,6 +155,8 @@ export async function startDaemon(options: DaemonOptions) {
   // Tools for skills: MCP servers the daemon runs, never the Legs (ADR-021).
   const toolRegistry = new ToolRegistry(db, bus, secrets, now);
   const broker = new McpBroker({ registry: toolRegistry, sandbox: os.sandbox });
+  // Chats with my models: talk and research (ADR-025).
+  const chats = new Chats({ db, bus, registry, supervisor, dataDir: paths.dataDir, now });
   // A model per kind of decision, and the shadow planner (ADR-022).
   const decisions = new EyeDecisions(db, bus, now);
   const brain =
@@ -406,6 +409,7 @@ export async function startDaemon(options: DaemonOptions) {
         skills,
         tools: toolRegistry,
         decisions,
+        chats,
         devices,
         brain,
         openPath:
@@ -481,6 +485,7 @@ export async function startDaemon(options: DaemonOptions) {
       audit.stop();
       backups.stop();
       logins.stopAll();
+      chats.stopAll();
       nest.stop();
       await supervisor.killAll();
       await inhibit.stop();

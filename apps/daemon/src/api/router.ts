@@ -3,6 +3,8 @@ import {
   Autonomy,
   Budget,
   ChannelTestResult,
+  ChatMessage,
+  ChatView,
   DoctorCheck,
   EmailSettings,
   Event,
@@ -15,6 +17,7 @@ import {
   JobView,
   LegView,
   MetricsSample,
+  NewChat,
   NewJob,
   NewLeg,
   NewProject,
@@ -49,6 +52,7 @@ import { asc, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { AuditQuery, searchAudit } from "../audit/audit.ts";
 import type { Devices } from "../auth/devices.ts";
+import type { Chats } from "../chats/service.ts";
 import {
   attempts as attemptsTable,
   jobs as jobsTable,
@@ -139,6 +143,8 @@ export interface ApiContext {
   tools: ToolRegistry;
   /** The Eye's decision models and plan comparisons (ADR-022). */
   decisions: EyeDecisions;
+  /** Chats with my models (ADR-025). */
+  chats: Chats;
   devices: Devices;
   brain: EyeBrain;
   /** Opens a folder on this machine (xdg-open). */
@@ -350,6 +356,35 @@ export const router = {
       .input(z.object({ id: z.string() }))
       .output(z.object({ jobs: z.number(), folder: z.string() }))
       .handler(({ context: c, input }) => guard(() => c.projects.remove(input.id, c.paths.logs))),
+  },
+  /** Chats with my models: talk and research (ADR-025). */
+  chats: {
+    list: base.output(z.array(ChatView)).handler(({ context: c }) => c.chats.list()),
+    get: base
+      .input(z.object({ id: z.string() }))
+      .output(z.object({ chat: ChatView, messages: z.array(ChatMessage) }))
+      .handler(({ context: c, input }) => guard(() => c.chats.get(input.id))),
+    create: base
+      .input(NewChat)
+      .output(ChatView)
+      .handler(({ context: c, input }) => guard(() => c.chats.create(input))),
+    send: base
+      .input(z.object({ id: z.string(), text: z.string().min(1) }))
+      .handler(({ context: c, input }) => guard(() => c.chats.send(input.id, input.text))),
+    stop: base
+      .input(z.object({ id: z.string() }))
+      .handler(({ context: c, input }) => guard(() => c.chats.stop(input.id))),
+    rename: base
+      .input(z.object({ id: z.string(), title: z.string().min(1).max(120) }))
+      .handler(({ context: c, input }) => guard(() => c.chats.rename(input.id, input.title))),
+    setProjects: base
+      .input(z.object({ id: z.string(), projectIds: z.array(z.string()) }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.chats.setProjects(input.id, input.projectIds)),
+      ),
+    remove: base
+      .input(z.object({ id: z.string() }))
+      .handler(({ context: c, input }) => guard(() => c.chats.remove(input.id))),
   },
   /** Tools for skills: MCP servers the daemon runs for a job's sessions (ADR-021). */
   tools: {

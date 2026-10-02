@@ -43,6 +43,36 @@ export const skills = sqliteTable(
   (t) => [primaryKey({ columns: [t.id, t.version] })],
 );
 
+/** Chats with my models (ADR-025): talk and research, attached projects read-only. */
+export const chats = sqliteTable("chats", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  legId: text("leg_id").notNull(),
+  legModelId: text("leg_model_id").notNull(),
+  effort: text("effort"),
+  /** Projects it may read. */
+  projectIds: json<string[]>("project_ids").notNull(),
+  /** The Leg's own session, to continue the conversation where the adapter can. */
+  nativeSessionId: text("native_session_id"),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+export const chatMessages = sqliteTable(
+  "chat_messages",
+  {
+    id: text("id").primaryKey(),
+    chatId: text("chat_id").notNull(),
+    author: text("author", { enum: ["owner", "model"] }).notNull(),
+    text: text("text").notNull(),
+    /** Which model answered. */
+    model: text("model"),
+    error: text("error"),
+    at: integer("at").notNull(),
+  },
+  (t) => [index("chat_messages_chat").on(t.chatId, t.at)],
+);
+
 /** Every plan The Eye asked for and its shadow's, to compare models (ADR-022). */
 export const eyePlans = sqliteTable(
   "eye_plans",

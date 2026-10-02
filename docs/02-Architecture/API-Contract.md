@@ -17,6 +17,7 @@ table is the summary and is kept in step with the contracts.
 | Silk | `silk.list` / `add` / `edit` / `importMirror` | Editing supersedes. `importMirror` looks for hand edits now. |
 | Inbox | `inbox.list` / `inbox.answer` | `list` filters by state, kind, project, job and words (`q`); each item names its project, job and task. An approval takes only one of its options; the answering device is recorded. |
 | Skills | `skills.list` / `get` / `upload` / `edit` / `remove` | Built-ins are read-only; an upload says what front matter it ignored. The default skill comes first. |
+| Chats | `chats.list` / `get` / `create` / `send` / `stop` / `rename` / `setProjects` / `remove` (Phase 8, ADR-025) | `get` returns the messages and, while it answers, the text so far (`answering`); events `chat.*` on `overview` say when to reload. |
 | Tools | `tools.list` / `create` / `update` / `remove` (Phase 6) | MCP servers for skills ([[ADR-021-Tools-Broker]]). Secrets go to the keychain; a view names them and those missing, never their values. A job lists its `tools` and `missingTools`; `jobs.start` refuses while one is missing. |
 | Stats | `stats.summary` / `tokens` / `activity` | Totals and charts per job, project or everything. |
 | Logs | `audit.search` · `logs.tail` (M2.0) | Filters: job, type or prefix, actor, text. `logs.tail`: the daemon log's last lines. The audit export is built in the UI from `audit.search` pages. |

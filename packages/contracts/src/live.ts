@@ -6,7 +6,7 @@ import { MetricsSample } from "./metrics.ts";
 
 export const Topic = z
   .string()
-  .regex(/^(overview|inbox|metrics|(job|leg):[0-9A-HJKMNP-TV-Z]{26})$/);
+  .regex(/^(overview|inbox|metrics|(job|leg|chat):[0-9A-HJKMNP-TV-Z]{26})$/);
 export type Topic = z.infer<typeof Topic>;
 
 export const ClientFrame = z.discriminatedUnion("type", [

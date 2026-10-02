@@ -39,8 +39,8 @@ to a model or to ask Oraknid to do things for me.
 - [x] Skills: upload a `.md` file
 
 ### M8.6 — Chats
-- [ ] A Chats page: new chat, pick the Leg and model, talk; mostly talk and research, with projects I attach readable ([[ADR-025-Chats]])
-- [ ] Chats kept, renamed, deleted
+- [x] A Chats page: new chat, pick the Leg and model, talk; mostly talk and research, with projects I attach readable ([[ADR-025-Chats]])
+- [x] Chats kept, renamed, deleted
 
 ### M8.7 — The Oraknid helper
 - [ ] A floating chat at the bottom left that does things for me through Oraknid's own API: creating a project or a draft, changing settings, finding things; it asks what it needs, and asks before starting a job, creating a repo or deleting ([[ADR-024-Oraknid-Helper]])

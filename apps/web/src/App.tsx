@@ -8,6 +8,7 @@ import { api, auth, setOnUnauthorized } from "@/lib/api";
 import { live } from "@/lib/live";
 import { remote } from "@/lib/remote";
 import { ThemeProvider } from "@/lib/theme";
+import { ChatsPage } from "@/pages/chats";
 import { InboxPage } from "@/pages/inbox";
 import { JobPage } from "@/pages/job";
 import { JobsPage } from "@/pages/jobs";
@@ -67,6 +68,8 @@ export function App() {
                 <Route path="/legs">{() => <LegsPage />}</Route>
                 <Route path="/legs/:id">{(p) => <LegsPage focus={p.id} />}</Route>
                 <Route path="/skills" component={SkillsPage} />
+                <Route path="/chats">{() => <ChatsPage />}</Route>
+                <Route path="/chats/:id">{(p) => <ChatsPage id={p.id} />}</Route>
                 <Route path="/logs" component={LogsPage} />
                 <Route path="/settings" component={SettingsPage} />
                 <Route>

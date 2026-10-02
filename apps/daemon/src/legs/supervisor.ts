@@ -19,13 +19,16 @@ import { newId } from "../ids.ts";
 import { sandboxPlan } from "./plan.ts";
 import type { LegRegistry } from "./registry.ts";
 
-/** The broker's sockets and the bridge's node, reachable from the Leg's sandbox. */
-function withTools(plan: SandboxPlan, tools: StartRequest["tools"]): SandboxPlan {
-  if (!tools) return plan;
+/** The broker's sockets and the bridge's node, and any folder it may only read (a chat's projects). */
+function withTools(
+  plan: SandboxPlan,
+  tools: StartRequest["tools"],
+  readonly: string[] = [],
+): SandboxPlan {
   return {
     ...plan,
-    writable: [...plan.writable, ...tools.writable],
-    readonly: [...new Set([...plan.readonly, ...tools.readonly])],
+    writable: [...plan.writable, ...(tools?.writable ?? [])],
+    readonly: [...new Set([...plan.readonly, ...(tools?.readonly ?? []), ...readonly])],
   };
 }
 
@@ -45,6 +48,8 @@ export interface StartRequest {
   onPermission: (request: PermissionRequest) => Promise<PermissionDecision>;
   /** The job's tools through the broker (ADR-021): servers, and what the sandbox must reach. */
   tools?: { servers: Record<string, McpServer>; writable: string[]; readonly: string[] };
+  /** Folders it may read and never write (ADR-025: a chat's projects). */
+  readonly?: string[];
 }
 
 export interface Supervised {
@@ -162,7 +167,7 @@ export class LegSupervisor {
         resumeFrom: req.resumeFrom ?? null,
         sandbox: req.unsandboxed
           ? null
-          : withTools(sandboxPlan(leg, this.o.sandbox, this.o.legsDir), req.tools),
+          : withTools(sandboxPlan(leg, this.o.sandbox, this.o.legsDir), req.tools, req.readonly),
         credential: await registry.credential(leg),
         onPermission: req.onPermission,
         ...(req.tools ? { mcpServers: req.tools.servers } : {}),

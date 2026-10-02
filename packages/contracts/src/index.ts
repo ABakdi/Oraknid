@@ -1,3 +1,4 @@
+export * from "./chats.ts";
 export * from "./common.ts";
 export * from "./entities.ts";
 export * from "./events.ts";
