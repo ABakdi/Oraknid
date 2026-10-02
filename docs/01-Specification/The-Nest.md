@@ -35,7 +35,8 @@ flowchart LR
   the UI comes from the daemon through the tunnel, only a small loader
   from The Nest ([[ADR-019-Nest-UI-Serving]]).
 - Several daemons per Nest: yes, each with its own id and secret in
-  `NEST_DAEMONS`.
+  `NEST_DAEMONS`; a public Nest lets daemons register themselves
+  ([[ADR-031-Public-Nest]]).
 - Limits per address and per daemon, frame size and idle sockets.
 
 ## Still open

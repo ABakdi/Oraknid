@@ -36,6 +36,17 @@ their questions and redirecting The Eye.
 
 - **Command palette (⌘K / Ctrl+K)**: jump to anything, and run any
   control (pause job, new job, approve…).
+- **The sidebar folds** to icons (a button, or `[`), remembered per
+  device; pages with a side panel of their own (Chats, Terminal, Email,
+  a job) fold it by themselves while they are open.
+- **Pages use their space** (2026-10-03): a page with more than one
+  concern is in tabs, the tab in the address; each tab fills the height
+  it needs, a conversation takes the whole height like Chats; changing
+  tabs never jumps the page. Nothing runs off the right edge on a phone:
+  long names are cut with their full text on hover, and wrap in legends.
+- **Keyboard**: `?` lists every shortcut; `g` then `o`/`j`/`p`/`i`/`l`/
+  `c`/`s`/`t`/`m` goes to Overview, Jobs, Projects, Inbox, Legs, Chats,
+  Servers, Terminal, Mail; `[` folds the sidebar; `n` new work.
 - **On mobile:** the sidebar becomes a bottom tab bar (Overview, Jobs,
   Inbox, Legs, More). Every control is reachable within two taps, and
   touch targets are at least 44 px.
@@ -61,7 +72,11 @@ their questions and redirecting The Eye.
 - **Task drawer:** instructions, scope, verify commands and their latest
   output, attempts and sessions, escalation history, checkpoints (with
   rollback), the diff, and the routing reason.
-- **Tabs:** Agents (first) · Activity · Silk · Inbox (this job) · Budget · Stats · Settings.
+- **Tabs, in the address** (`/jobs/<id>/<tab>`): The Web (first: the
+  graph and its task drawer) · The Eye (a conversation filling the page,
+  as in Chats) · Agents · Activity · Silk · Inbox (this job) · Budget &
+  stats · Result (once there is one) · Settings. A header above them
+  keeps the title, state and controls; nothing else is above the tabs.
 - **Controls** always visible: Pause / Resume, Cancel, Redirect, Edit plan,
   autonomy level.
 - **Agents**: every session of the job (Legs and The Eye's reasoning),
@@ -110,8 +125,19 @@ add, discover again, edit the document, open a terminal, remove.
 
 ### Terminal
 
-A terminal in the page (xterm.js) on this computer or a server, when
-turned on in Settings ([[ADR-028-Terminal]]).
+A terminal workspace (xterm.js), when turned on in Settings
+([[ADR-028-Terminal]]): terminals in tabs, and side by side or in a grid
+(one, two columns, two by two). A new terminal is picked from cards:
+this computer, each server with its state. Shortcuts:
+`Ctrl+Shift+T` new, `Ctrl+Shift+W` close, `Ctrl+Shift+←/→` previous and
+next, `Ctrl+Shift+1…9` go to, `Ctrl+Shift+D` split, `Ctrl+Shift+G` grid,
+`Ctrl+Shift+Enter` this one alone; copy on select, `Ctrl+Shift+C/V`.
+
+### Mail
+
+An email client ([[ADR-032-Email]]): accounts and folders on the left,
+the thread list, the open thread; compose, reply, forward; agents'
+drafts marked and waiting for my approval.
 
 ### The helper
 

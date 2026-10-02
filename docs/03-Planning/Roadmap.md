@@ -15,7 +15,9 @@ flowchart LR
     P7 --> P8[Phase 8<br/>Daily use]
     P8 --> P9[Phase 9<br/>Servers]
     P9 --> P10[Phase 10<br/>Lockdown]
-    P10 --> L[Later<br/>containers · teams]
+    P10 --> P11[Phase 11<br/>Workspace]
+    P11 --> P12[Phase 12<br/>Email]
+    P12 --> L[Later<br/>containers · teams]
     L --> W[Final phase<br/>Windows]
 ```
 
@@ -30,7 +32,9 @@ flowchart LR
 | [[Phase-7-Eye-Decision-Models]] · done ([[ADR-022-Eye-Decision-Models]]); The Eye on Claude, Jev not connected yet | Jev / Kev (or similar) behind `EyeBrain`. | The Eye runs a job with a dedicated decision model, and plan quality is compared against a pool Leg on the same job. |
 | [[Phase-8-Daily-Use]] · built; GitHub with my token to try | The New work page with the interview in it and drafts, skills per project, GitHub repos, markdown everywhere, readable screens, Chats, the Oraknid helper. | I start a project from a new GitHub repo through the page or the helper, go through the interview there, leave it as a draft and start it later; every log is readable; I talk to a model about it in Chats. |
 | [[Phase-9-Servers]] · built; a job deploying to my server is mine to try | My servers over SSH: Oraknid's own key, read-only discovery, a state document kept current, servers per project, oraknid-monitor, a terminal in the web UI. | I add my VPS, it is discovered and documented, monitored, deployed to by a job through approvals with its document updated after, and I open a terminal on it from the web UI. |
-| [[Phase-10-Lockdown]] ← **now** | A PIN on every device checked by the daemon ([[ADR-029-App-Lock]]), [[Audit-2]] and its fixes, settings in tabs, pairing my phone in one step. | From my phone I open Oraknid with my PIN, and nobody without it can; a job can't reach anything on my computer outside its sandbox. |
+| [[Phase-10-Lockdown]] · built; `passt` for S2-21 is mine to install | A PIN on every device checked by the daemon ([[ADR-029-App-Lock]]), [[Audit-2]] and its fixes, settings in tabs, pairing my phone in one step. | From my phone I open Oraknid with my PIN, and nobody without it can; a job can't reach anything on my computer outside its sandbox. |
+| [[Phase-11-Workspace]] ← **now** | Pages in tabs that use their space, a folding sidebar, shortcuts, a terminal workspace, full rights for a chosen device ([[ADR-030-Device-Rights]]), a public Nest ([[ADR-031-Public-Nest]]). | The Eye's conversation fills my phone's screen; four terminals in a grid; a terminal on my server from my phone; another daemon on the public Nest, mine on my private one. |
+| [[Phase-12-Email]] | An email client in Oraknid, several accounts, agents that read, sort and draft, nothing sent without me ([[ADR-032-Email]]). | Gmail and an IMAP account end to end; an agent drafts a reply I approve and send. |
 | Later | Containers per job, teams and roles. | Planned when they come up. |
 | Final phase — Windows | Windows service, inhibitor, Credential Manager, metrics, sandbox equivalent. | The Phase 1 exit criterion passes on Windows. |
 
