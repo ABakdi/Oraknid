@@ -26,6 +26,16 @@ Front matter that is missing or invalid doesn't block the upload. The
 skill is saved with defaults, and the UI says which fields were ignored
 and why.
 
+## Skills per project
+
+A project has a **set of skills** (its settings; the canon-driven skill
+by default). For each job, The Eye picks the one that fits the goal,
+unless I chose one on the New work page; it says which and why in the
+job's activity. A task may also get the guidance of another skill of
+the set when it fits that task better (a docs task in a code job). A
+skill can be added to the set from the project's settings, by picking
+from the library or uploading a `.md` file.
+
 ## Tools
 
 `requires.tools` names the tools a skill's jobs use. A tool is an MCP
@@ -47,8 +57,8 @@ sends back what fails, like a failed check.
 - **Built-in:** the canon-driven skill (`docs/skill.md`), shipped as
   the first built-in and the default; `email-triage` (Phase 6): read,
   sort, draft, send what I approve, log, with the email tool.
-- **Uploaded:** mine. I can view, edit (in the UI, with preview),
-  version and delete them. A job pins the version it started with.
+- **Uploaded:** mine, pasted or from a `.md` file. I can view, edit (in
+  the UI, with preview), version and delete them. A job pins the version it started with.
   Editing a skill never changes a running job.
 
 ## The interview

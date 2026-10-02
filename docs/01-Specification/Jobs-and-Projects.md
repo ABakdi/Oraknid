@@ -21,24 +21,40 @@ On creation Oraknid:
 4. Adds `.oraknid/` to `.git/info/exclude`, except `.oraknid/silk/`,
    which I may choose to commit.
 
-## Creating a job
+## Starting work (the New work page, Phase 8)
 
-One form, everything on it:
+One page, two sides ([[Phase-8-Daily-Use]]):
 
-| Field | Default | Notes |
+**Left, the options:**
+
+| Option | Default | Notes |
 | :-- | :-- | :-- |
-| Project | last used | Or "new project". |
-| Goal | — | Required. Free text. |
-| Inputs | none | Files, folders, links. Copied or linked into the job's context. |
-| Skill | the canon-driven skill | Picked from the [[Skills]] library. |
+| Project | last used | An existing project, or a **new** one: an existing folder (a repo or not), a new empty folder (with a new git repo), a **new GitHub repo** (created, then cloned), or an **existing GitHub repo** (cloned) — [[ADR-023-GitHub-By-Token]]. |
+| Skills | the project's | The skills The Eye may use; it picks the one that fits ([[Skills]]). |
 | Legs | all healthy Legs | Any subset. |
 | Autonomy | Standard | See [[Approvals-and-Autonomy]]. |
 | Budget | no money; tokens unlimited; time alarm 8 h | See [[Budgets-and-Quotas]]. |
-| Verification | from the skill and the project | Commands The Eye runs at the job level. Editable. |
+| Inputs, verification | none; from the skill and the project | As before. |
 
-**Start** puts the job in `interviewing` (if the skill asks for one) or
-`planning`. While another job is running (MVP, BR-19), the job is queued
-and says so.
+**Right, the prompt and the conversation:** I write what I want; The
+Eye answers in the same place. When the skill interviews, the interview
+happens here, round by round, with my answers kept in Silk verbatim
+(so the started job doesn't ask again); otherwise what I add is kept as
+context. I can go on talking until I'm happy.
+
+**The draft:** the job exists as a `draft` from my first word, saved as
+I go. I can leave and come back to it from Jobs, **Start** it (then it
+plans, or interviews further if the interview isn't over), or **Delete**
+it. A draft costs nothing until it starts, except The Eye's replies.
+
+## Repositories
+
+A project can come from GitHub ([[ADR-023-GitHub-By-Token]]): a new
+repo created on my account, or one of mine, cloned into the folder I
+choose. The token is mine, in the keychain, used by Oraknid for
+creating and cloning, and for a push only when I approve it. Other
+remotes (GitLab, any git URL) come last; a public clone URL works
+meanwhile.
 
 ## Following a job
 

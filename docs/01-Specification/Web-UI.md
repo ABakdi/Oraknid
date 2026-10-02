@@ -91,24 +91,42 @@ A list with totals. Each project page: history of jobs, tokens and time
 spent, tasks completed, failures, breakdown by Leg, and a link to the
 workspace and its Silk mirror.
 
-### New job
+### New work
 
-One form ([[Jobs-and-Projects]]): goal, inputs (drop files or folders),
-skill picker with preview, Legs (checkboxes with live health), budget,
-autonomy level. **Start** stays disabled until the goal is filled in,
-and says why.
+Options on the left, my prompt and the conversation with The Eye on
+the right ([[Jobs-and-Projects]] → Starting work). The draft is saved as
+I go; **Start**, **Delete** and the drafts list in Jobs. **Start** stays
+disabled until there is a goal and a project, and says why.
+
+### Chats
+
+My chats with any Leg and model, like a chat app ([[Chats-and-Helper]]).
+
+### The helper
+
+A floating button at the bottom left of every screen opens the Oraknid
+helper ([[Chats-and-Helper]]).
+
+### Markdown
+
+Everything a Leg or The Eye writes (session logs, the activity stream,
+the Eye's conversation, chats, the helper) is rendered as markdown.
 
 ### Inbox
 
 Approvals and questions from all jobs. Each item can be answered in
-place. Interview rounds appear as a short form. Each item names its
+place, and reads well at any width: long commands and text wrap inside
+the card, never past it. Interview rounds appear as a short form. Each item names its
 project and job. Filters: project, job, kind, state, and a search over
 the text.
 
 ### Legs
 
-The registry: health, kind, model, quota, observed performance. **Add
-Leg** with a live test. The capability profile editor shows learned
+The registry: health, kind, model, quota, observed performance. Each
+Leg is a card collapsed to one line (name, health, kind, quota), opened
+to see its models and configure it; a Leg named on the Overview links
+here, opened. **Add Leg** with a live test, and **Find agents on this
+machine**. The capability profile editor shows learned
 values next to my overrides.
 
 ### Skills

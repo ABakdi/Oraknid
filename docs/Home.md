@@ -22,6 +22,7 @@ Nothing is built yet.
 - [[Budgets-and-Quotas]] — tokens, quota windows, context, time, money
 - [[Approvals-and-Autonomy]] — autonomy levels, gated actions, the inbox
 - [[Skills]] — the skill format, the library, the interview stage
+- [[Chats-and-Helper]] — free chats with my models, and the Oraknid helper
 - [[Durability]] — service, sleep inhibition, crash recovery, lossless pause, watchdog
 - [[Notifications]] — desktop, web push, email, routing
 - [[Security]] — secrets, scope, command filter, prompt injection, pairing, audit
@@ -47,6 +48,7 @@ Nothing is built yet.
 - [[Phase-5-Antigravity]]
 - [[Phase-6-Non-Coding-Skills]]
 - [[Phase-7-Eye-Decision-Models]]
+- [[Phase-8-Daily-Use]]
 
 ## 04 — Decisions
 - [[ADR-001-Monorepo]] — one pnpm + Turborepo monorepo with the canon inside
@@ -68,6 +70,7 @@ Nothing is built yet.
 - [[ADR-020-Antigravity-Adapter]] — Antigravity through its official headless CLI, approvals by allow list and replay
 - [[ADR-021-Tools-Broker]] — tools for skills: MCP servers the daemon runs, judged call by call
 - [[ADR-022-Eye-Decision-Models]] — a model per kind of Eye decision, and shadow plans to compare
+- [[ADR-023-GitHub-By-Token]] · [[ADR-024-Oraknid-Helper]] · [[ADR-025-Chats]] — Phase 8: GitHub by token, the helper acting through the API, chats that read and research
 - [[ADR-013-Model-Aware-Routing]] — route to Leg + model + effort; smallest sufficient model; reserve scarce windows
 
 ## 05 — Checkpoints

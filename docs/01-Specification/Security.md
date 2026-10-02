@@ -72,6 +72,19 @@ sandbox limits damage, but it doesn't make that safe.
 - Suspicious content (instructions aimed at the agent) is flagged in
   the UI.
 
+## GitHub token
+- The token I paste for GitHub ([[ADR-023-GitHub-By-Token]]) is in the
+  keychain, given to `git` only through `GIT_ASKPASS` for one command,
+  never written in a URL, a remote or a config file, and never given to
+  a Leg. A push with it is a gated action.
+
+## Chats and the helper
+- A chat may read its folder and the projects I attach, and research
+  the web; nothing else ([[ADR-025-Chats]]). The helper acts only
+  through Oraknid's API with my device's rights, and asks before
+  starting a job, creating a repo, deleting or waiving a gate
+  ([[ADR-024-Oraknid-Helper]]).
+
 ## The daemon's own surface
 
 - The HTTP/WebSocket API listens on `127.0.0.1` only by default. Until
