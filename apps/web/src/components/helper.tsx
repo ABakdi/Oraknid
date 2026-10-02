@@ -207,6 +207,12 @@ function Action({
         </Badge>
         <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{a.summary}</span>
       </div>
+      {a.state === "proposed" ? (
+        // What will run, exactly: the summary is the model's words, this is the action (Audit 2).
+        <div className="rounded border bg-muted/40 p-1.5 font-mono text-[11px] [overflow-wrap:anywhere]">
+          {a.name} {JSON.stringify(a.input)}
+        </div>
+      ) : null}
       {a.result ? (
         <div className="text-muted-foreground [overflow-wrap:anywhere]">{a.result}</div>
       ) : null}

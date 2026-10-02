@@ -12,6 +12,7 @@ import {
 import { api, auth } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useLive } from "@/lib/live";
+import { unlock } from "@/lib/lock";
 import { remote } from "@/lib/remote";
 
 /**
@@ -60,7 +61,7 @@ export function TerminalPage({ target = "local" }: { target?: string }) {
       ) : !enabled.data ? (
         <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
           {t("The terminal is off: it is a full shell as you.")}{" "}
-          <Link href="/settings" className="underline">
+          <Link href="/settings/security" className="underline">
             {t("Turn it on in Settings")}
           </Link>
           .
@@ -88,12 +89,22 @@ function Term({ target }: { target: string }) {
           fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
           fontSize: 13,
           theme: { background: "#0b0d12" },
+          // A link printed in the terminal opens only as a web page, never as script (Audit 2).
+          linkHandler: {
+            activate: (_e, uri) => {
+              try {
+                const u = new URL(uri);
+                if (u.protocol === "https:" || u.protocol === "http:")
+                  window.open(u.href, "_blank", "noopener,noreferrer");
+              } catch {}
+            },
+          },
         });
         const fit = new FitAddon();
         term.loadAddon(fit);
         term.open(box.current);
         fit.fit();
-        const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/term?target=${encodeURIComponent(target)}&cols=${term.cols}&rows=${term.rows}&token=${auth.token() ?? ""}`;
+        const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/term?target=${encodeURIComponent(target)}&cols=${term.cols}&rows=${term.rows}&token=${auth.token() ?? ""}&unlock=${encodeURIComponent(unlock.get() ?? "")}`;
         const ws = new WebSocket(url);
         ws.onmessage = (e) => term.write(String(e.data));
         ws.onclose = () => {

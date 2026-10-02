@@ -19,8 +19,34 @@ const SYSTEM_FILES = [
   "/etc/gitconfig",
 ];
 
+/**
+ * Run before bwrap (Audit 2): a Landlock domain that scopes abstract unix
+ * sockets and signals. bwrap keeps the host's network namespace (Legs need
+ * the internet), and abstract sockets live there: without this, a Leg could
+ * connect to the desktop's (a terminal's single-instance socket, X11, D-Bus)
+ * and run code outside the sandbox. Python's ctypes calls the syscalls;
+ * exit 97 says Landlock isn't there.
+ */
+export const LANDLOCK_SCRIPT = `import ctypes, os, sys
+libc = ctypes.CDLL(None, use_errno=True)
+libc.syscall.restype = ctypes.c_long
+abi = libc.syscall(444, None, ctypes.c_size_t(0), ctypes.c_uint32(1))
+if abi < 6:
+    sys.stderr.write("oraknid: this kernel's Landlock can't scope abstract sockets\\n"); sys.exit(97)
+class Attr(ctypes.Structure):
+    _fields_ = [("fs", ctypes.c_uint64), ("net", ctypes.c_uint64), ("scoped", ctypes.c_uint64)]
+attr = Attr(0, 0, 1 | 2)
+fd = libc.syscall(444, ctypes.byref(attr), ctypes.c_size_t(ctypes.sizeof(attr)), ctypes.c_uint32(0))
+if fd < 0 or libc.prctl(38, 1, 0, 0, 0) != 0 or libc.syscall(446, ctypes.c_int(fd), ctypes.c_uint32(0)) != 0:
+    sys.stderr.write("oraknid: Landlock failed\\n"); sys.exit(97)
+os.close(fd)
+os.execvp(sys.argv[1], sys.argv[1:])
+`;
+
 export interface BwrapOptions {
   bwrapPath?: string;
+  /** Scope abstract sockets with Landlock (default: when the probe says it works). */
+  landlock?: boolean;
   /** For tests: what exists on the host. */
   exists?: (path: string) => boolean;
   symlinkTarget?: (path: string) => string | undefined;
@@ -30,6 +56,12 @@ export function createBwrapSandbox(options: BwrapOptions = {}): Sandbox {
   const bwrap = options.bwrapPath ?? "bwrap";
   const exists = options.exists ?? existsSync;
   const symlinkTarget = options.symlinkTarget ?? readSymlink;
+  let landlock = options.landlock;
+  const scoped = () => {
+    landlock ??=
+      spawnSync("python3", ["-c", LANDLOCK_SCRIPT, "true"], { timeout: 5000 }).status === 0;
+    return landlock;
+  };
 
   return {
     status(): SandboxStatus {
@@ -46,11 +78,19 @@ export function createBwrapSandbox(options: BwrapOptions = {}): Sandbox {
           detail: `bwrap cannot create a sandbox: ${(probe.stderr || "no output").trim()}`,
         };
       }
-      return { available: true, detail: "bubblewrap works" };
+      return {
+        available: true,
+        detail: scoped()
+          ? "bubblewrap works; the desktop's sockets are out of reach (Landlock)"
+          : "bubblewrap works, but Landlock can't scope abstract sockets here (needs Linux 6.12+ and python3): a Leg could reach the desktop's sockets",
+      };
     },
 
     wrap(spec: SandboxSpec) {
-      return { command: bwrap, args: bwrapArgs(spec, exists, symlinkTarget) };
+      const args = bwrapArgs(spec, exists, symlinkTarget);
+      return scoped()
+        ? { command: "python3", args: ["-c", LANDLOCK_SCRIPT, bwrap, ...args] }
+        : { command: bwrap, args };
     },
   };
 }

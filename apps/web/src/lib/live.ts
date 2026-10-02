@@ -1,6 +1,7 @@
 import type { Event, MetricsSample, ServerFrame } from "@oraknid/contracts";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { auth } from "./api";
+import { unlock } from "./lock";
 import { RemoteSocket, remote } from "./remote";
 
 export type LiveStatus = "live" | "reconnecting" | "offline";
@@ -26,11 +27,13 @@ class Live {
   epoch = 0;
 
   start() {
-    if (this.#ws || !auth.token()) return;
-    const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/live?token=${auth.token()}`;
+    // Locked, nothing to listen to (ADR-029).
+    if (this.#ws || !auth.token() || !unlock.get()) return;
+    const session = unlock.get() ?? "";
+    const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/live?token=${auth.token()}&unlock=${encodeURIComponent(session)}`;
     const t = remote();
     // Away from home, the live socket goes through the loader's tunnel.
-    const ws = (t ? new RemoteSocket(t) : new WebSocket(url)) as WebSocket;
+    const ws = (t ? new RemoteSocket(t, session) : new WebSocket(url)) as WebSocket;
     this.#ws = ws;
     ws.onopen = () => {
       this.#retry = 0;

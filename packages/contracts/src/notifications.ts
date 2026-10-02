@@ -23,6 +23,8 @@ export const NotifyEvent = z.enum([
   "time.alarm",
   "recovered",
   "leg.unavailable",
+  /** Wrong PINs, a device unpaired by them (ADR-029). */
+  "security",
 ]);
 export type NotifyEvent = z.infer<typeof NotifyEvent>;
 
@@ -71,8 +73,17 @@ export const ChannelTestResult = z.object({
 });
 export type ChannelTestResult = z.infer<typeof ChannelTestResult>;
 
+/** The browsers' push services: the daemon posts nowhere else (Audit 2). */
+const PUSH_HOSTS = [".googleapis.com", ".mozilla.com", ".push.apple.com", ".notify.windows.com"];
+
 export const PushSubscriptionInput = z.object({
-  endpoint: z.url(),
+  endpoint: z.url().refine(
+    (u) => {
+      const url = new URL(u);
+      return url.protocol === "https:" && PUSH_HOSTS.some((h) => url.hostname.endsWith(h));
+    },
+    { message: "That isn't a browser push service's address." },
+  ),
   keys: z.object({ p256dh: z.string().min(1), auth: z.string().min(1) }),
 });
 export type PushSubscriptionInput = z.infer<typeof PushSubscriptionInput>;

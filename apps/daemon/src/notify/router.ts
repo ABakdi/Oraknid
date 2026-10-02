@@ -159,6 +159,27 @@ export function startNotificationRouter(o: {
           },
           itemId: null,
         };
+      case "lock.wrong-pin": {
+        const w = payload as { count?: number; notify?: boolean; remote?: boolean };
+        if (!w.notify && (w.count ?? 0) < 10) return null;
+        return {
+          p: {
+            event: "security",
+            jobId: null,
+            n: {
+              title: (w.count ?? 0) >= 10 ? "A device was unpaired" : "Wrong PINs",
+              body:
+                (w.count ?? 0) >= 10
+                  ? "Ten wrong PINs: that device can't reach Oraknid any more."
+                  : `${w.count} wrong PINs on one device${w.remote ? ", away from home" : ""}. If it wasn't you, unpair it.`,
+              url: url("/settings/devices"),
+              urgency: "critical",
+              tag: "security",
+            },
+          },
+          itemId: null,
+        };
+      }
       case "system.recovered": {
         const s = payload as { jobsResumed?: string[]; effectsNeedingMe?: number };
         return {

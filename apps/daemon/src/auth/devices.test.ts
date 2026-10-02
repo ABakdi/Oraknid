@@ -61,7 +61,16 @@ describe("paired devices", () => {
     await expect(client().devices.pairComplete({ code, name: "Again" })).rejects.toThrow(
       /wrong or has expired/,
     );
-    expect((await client(paired.token).system.status()).pid).toBe(process.pid);
+    // Paired is not enough (ADR-029): this device sets the first PIN, and its session opens it.
+    await expect(client(paired.token).system.status()).rejects.toThrow(/Set your PIN/);
+    const { session } = await client(paired.token).lock.setPin({ current: null, pin: "482915" });
+    const open = createORPCClient<RouterClient<Router>>(
+      new RPCLink({
+        url: `${daemon?.url}/api`,
+        headers: { authorization: `Bearer ${paired.token}`, "x-oraknid-unlock": session },
+      }),
+    );
+    expect((await open.system.status()).pid).toBe(process.pid);
     const list = await client(d.cliToken).devices.list();
     expect(list.map((x) => x.name)).toEqual(["My phone"]);
     expect(JSON.stringify(d.db.$client.prepare("select * from devices").all())).not.toContain(

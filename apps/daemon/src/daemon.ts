@@ -26,6 +26,7 @@ import { z } from "zod";
 import { router } from "./api/router.ts";
 import { startAuditExport } from "./audit/audit.ts";
 import { Devices, tokenOf } from "./auth/devices.ts";
+import { AppLock, LOCK_FREE, remoteAllowed, unlockOf } from "./auth/lock.ts";
 import { Chats } from "./chats/service.ts";
 import { closeDatabase, openDatabase } from "./db/open.ts";
 import { jobs as jobsTable } from "./db/schema.ts";
@@ -290,6 +291,26 @@ export async function startDaemon(options: DaemonOptions) {
   const sandboxStatus = os.sandbox.status();
 
   const devices = new Devices(db, bus, now);
+  // A pairing link for away left unused expires (ADR-029).
+  const unclaimed = setInterval(() => devices.expireUnclaimed(10 * 60_000), 60_000);
+  unclaimed.unref();
+  // The PIN and each device's unlocked session (ADR-029).
+  const lock = new AppLock(db, bus, (id) => devices.revoke(id), now);
+  /** A socket's device, if it is also unlocked; "cli" needs no unlocking. A socket isn't activity. */
+  // A revoked device loses its sessions and its push subscription at once (Audit 2).
+  bus.subscribe((e) => {
+    if (e.type !== "device.revoked") return;
+    const id = (e.payload as { id?: string }).id;
+    if (id) {
+      lock.lock(id);
+      notifications.forgetDevice(id);
+    }
+  });
+  const unlocked = (token: string | undefined, session: string | undefined) => {
+    const who = devices.identify(token);
+    if (!who) return null;
+    return who === "cli" || lock.check(who, session, false) ? who : null;
+  };
   // The link to The Nest (Phase 4): connects once configured and listening.
   const nest = new NestLink({
     db,
@@ -317,13 +338,52 @@ export async function startDaemon(options: DaemonOptions) {
     res.status(403).json({ message: "Oraknid only accepts requests from this machine for now." });
   });
 
+  // No other site may frame the UI or run anything in it (Audit 2).
+  app.use((req, res, next) => {
+    res.setHeader("Content-Security-Policy", UI_CSP);
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+    if (req.path.startsWith("/api/")) res.setHeader("Cache-Control", "no-store");
+    next();
+  });
+
   // Every client is a paired device, or the CLI (Security → The daemon's own surface).
   app.use("/api", (req, res, next) => {
     if (req.path === "/devices/pairComplete") return next();
     // A token in the address only for the live socket, which cannot send headers (Audit 1 → S1-14).
     const who = devices.identify(tokenOf(req.headers));
     if (who) {
+      // Only the tunnel sets it; anyone else setting it only restricts themselves.
+      const remote = req.headers["x-oraknid-remote"] === "1";
+      const session = unlockOf(req.headers);
       res.locals.device = who === "cli" ? null : who;
+      res.locals.remote = remote;
+      res.locals.session = session;
+      if (who === "cli" || LOCK_FREE.has(req.path)) return next();
+      if (req.path === "/lock/setPin" && !remote && !lock.hasPin()) return next();
+      if (!lock.check(who, session)) {
+        rpcError(
+          res,
+          423,
+          "LOCKED",
+          lock.hasPin()
+            ? "Locked: enter your PIN."
+            : "Set your PIN first, on the computer running Oraknid.",
+        );
+        return;
+      }
+      // Away from home, nothing that could open a new way in (ADR-029, Audit 2).
+      if (remote && !remoteAllowed(req.path)) {
+        rpcError(
+          res,
+          403,
+          "FORBIDDEN",
+          "That can only be done on the computer running Oraknid, not away from home.",
+        );
+        return;
+      }
       return next();
     }
     res.status(401).json({
@@ -335,7 +395,8 @@ export async function startDaemon(options: DaemonOptions) {
     server,
     bus,
     allow: (req) =>
-      isLocalRequest(req, port) && devices.identify(tokenOf(req.headers, req.url)) !== null,
+      isLocalRequest(req, port) &&
+      unlocked(tokenOf(req.headers, req.url), unlockOf(req.headers, req.url)) !== null,
     ...(options.heartbeatMs ? { heartbeatMs: options.heartbeatMs } : {}),
   });
 
@@ -345,7 +406,15 @@ export async function startDaemon(options: DaemonOptions) {
     bus,
     servers: serverService,
     device: (req) =>
-      isLocalRequest(req, port) ? devices.identify(tokenOf(req.headers, req.url)) : null,
+      isLocalRequest(req, port) &&
+      // The terminal is never opened away from home (Audit 2).
+      new URL(req.url ?? "/", "http://x").searchParams.get("via") !== "nest"
+        ? unlocked(tokenOf(req.headers, req.url), unlockOf(req.headers, req.url))
+        : null,
+    active: (req) => {
+      const who = devices.identify(tokenOf(req.headers, req.url));
+      if (who && who !== "cli") lock.check(who, unlockOf(req.headers, req.url));
+    },
     enabled: () => readSetting(db, TERMINAL_SETTING, z.boolean(), false),
   });
 
@@ -435,6 +504,9 @@ export async function startDaemon(options: DaemonOptions) {
       prefix: "/api",
       context: {
         device: (res.locals.device as string | null | undefined) ?? null,
+        remote: res.locals.remote === true,
+        session: res.locals.session as string | undefined,
+        lock,
         startedAt,
         paths,
         bus,
@@ -525,6 +597,7 @@ export async function startDaemon(options: DaemonOptions) {
       // Nothing may start a run once shutdown begins: timers and watchers go first (Audit 1 → D1-08).
       health.stop();
       clearInterval(mirrorTimer);
+      clearInterval(unclaimed);
       clearInterval(blockedTimer);
       budgets.stop();
       // Jobs reach a safe point and keep their state for the next start, within systemd's stop timeout.
@@ -612,6 +685,26 @@ function webRemote(): string | null {
 }
 
 /** apps/web/dist, found from this module (src/ or dist/), if it was built. */
+/** An error the API's clients read like any other (oRPC's shape). */
+function rpcError(res: express.Response, status: number, code: string, message: string) {
+  res.status(status).json({ json: { defined: false, code, status, message } });
+}
+
+/** The UI's content policy: its own scripts only, no framing, images from nowhere else. */
+const UI_CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "worker-src 'self' blob:",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self' ws://127.0.0.1:* ws://localhost:* ws://[::1]:*",
+  "frame-ancestors 'none'",
+  "base-uri 'none'",
+  "form-action 'self'",
+  "object-src 'none'",
+].join("; ");
+
 function webDist(): string | null {
   let dir = dirname(fileURLToPath(import.meta.url));
   for (let i = 0; i < 5; i++) {

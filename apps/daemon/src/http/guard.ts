@@ -13,6 +13,18 @@ export function isLocalRequest(req: IncomingMessage, port: number): boolean {
   const host = req.headers.host ?? "";
   if (!localOrigins(port).hosts.has(host)) return false;
 
+  // Another site may link to the UI (an email's link), not frame it, post to it
+  // or fetch from it (Audit 2).
+  if (
+    req.headers["sec-fetch-site"] === "cross-site" &&
+    // A page load, or the app's service worker fetching it again (dest "empty"); never a frame.
+    !(
+      req.headers["sec-fetch-mode"] === "navigate" &&
+      ["document", "empty"].includes(String(req.headers["sec-fetch-dest"]))
+    )
+  )
+    return false;
+
   const origin = req.headers.origin;
   if (origin !== undefined && !localOrigins(port).origins.has(origin)) return false;
   return true;

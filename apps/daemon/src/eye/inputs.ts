@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { resolve, sep } from "node:path";
 import type { JobInput } from "@oraknid/contracts";
 import { wrapUntrusted } from "@oraknid/core";
 
@@ -17,7 +17,7 @@ export function renderInputs(inputs: JobInput[], workspace: string): string {
       const label = `${i.kind} ${i.ref}${i.untrusted ? " (untrusted)" : ""}`;
       if (i.kind === "file") {
         // Inputs belong to the project folder; the worktree may not have them (uncommitted).
-        const text = readSmall(resolve(workspace, i.ref));
+        const text = readInside(workspace, i.ref);
         if (text === null) return `- ${label}: (not readable, or larger than ${MAX} characters)`;
         return i.untrusted
           ? `- ${label}:\n${wrapUntrusted(`the file ${i.ref}`, text)}`
@@ -28,6 +28,22 @@ export function renderInputs(inputs: JobInput[], workspace: string): string {
       return `- ${label}`;
     })
     .join("\n");
+}
+
+/**
+ * A file of the project folder, read small: the real path must stay in the
+ * folder, so a link a Leg left there can't lead the daemon to my keys
+ * (Audit 2). Null otherwise.
+ */
+export function readInside(root: string, ref: string): string | null {
+  try {
+    const base = realpathSync(root);
+    const real = realpathSync(resolve(base, ref));
+    if (real !== base && !real.startsWith(base + sep)) return null;
+    return readSmall(real);
+  } catch {
+    return null;
+  }
 }
 
 export function readSmall(path: string): string | null {

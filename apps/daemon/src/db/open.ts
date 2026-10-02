@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
@@ -31,6 +31,10 @@ export async function openDatabase(options: OpenOptions): Promise<Db> {
   client.pragma("synchronous = FULL");
   client.pragma("foreign_keys = ON");
   client.pragma("busy_timeout = 5000");
+  // Mine alone, whatever the folder's mode (Audit 2).
+  if (!inMemory)
+    for (const f of [options.file, `${options.file}-wal`, `${options.file}-shm`])
+      if (existsSync(f)) chmodSync(f, 0o600);
 
   const migrationsFolder = findMigrationsFolder();
   const pending = countPendingMigrations(client, migrationsFolder);

@@ -1,5 +1,5 @@
 // Oraknid's service worker: an installable app, the shell offline, and web push (Notifications).
-const SHELL = "oraknid-shell-v1";
+const SHELL = "oraknid-shell-v2";
 
 self.addEventListener("install", (e) => {
   e.waitUntil(
@@ -10,7 +10,15 @@ self.addEventListener("install", (e) => {
   );
 });
 
-self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
+// Old shells go: one may hold an answer that should never have been kept.
+self.addEventListener("activate", (e) =>
+  e.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== SHELL).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim()),
+  ),
+);
 
 // The app shell comes from the network when it can, the cache when it can't; the API never from the cache.
 self.addEventListener("fetch", (e) => {
@@ -20,8 +28,11 @@ self.addEventListener("fetch", (e) => {
   e.respondWith(
     fetch(e.request)
       .then((res) => {
-        const copy = res.clone();
-        caches.open(SHELL).then((c) => c.put(e.request, copy));
+        // Only a good answer is kept: a refusal must not stand in for the app.
+        if (res.ok) {
+          const copy = res.clone();
+          caches.open(SHELL).then((c) => c.put(e.request, copy));
+        }
         return res;
       })
       .catch(() => caches.match(e.request).then((r) => r || caches.match("/"))),

@@ -145,6 +145,13 @@ export function Markdown({ text, className }: { text: string; className?: string
         remarkPlugins={[remarkGfm, remarkBreaks]}
         components={{
           a: ({ node: _n, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+          // An image would be fetched by my browser as soon as I look: a way
+          // out for anything an agent read (Audit 2). Shown as text instead.
+          img: ({ alt, src }) => (
+            <span className="text-muted-foreground">
+              [{t("image")}: {alt || "—"} {typeof src === "string" ? src : ""}]
+            </span>
+          ),
         }}
       >
         {text}

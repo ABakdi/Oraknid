@@ -95,7 +95,8 @@ export class Notifications {
     return keys.publicKey;
   }
 
-  subscribe(sub: PushSubscriptionInput) {
+  /** A device's push subscription; it goes when the device is revoked. */
+  subscribe(sub: PushSubscriptionInput, deviceId: string | null = null) {
     const now = (this.o.now ?? Date.now)();
     this.o.db
       .insert(pushSubscriptions)
@@ -103,13 +104,18 @@ export class Notifications {
         endpoint: sub.endpoint,
         p256dh: sub.keys.p256dh,
         auth: sub.keys.auth,
+        deviceId,
         createdAt: now,
       })
       .onConflictDoUpdate({
         target: pushSubscriptions.endpoint,
-        set: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
+        set: { p256dh: sub.keys.p256dh, auth: sub.keys.auth, deviceId },
       })
       .run();
+  }
+
+  forgetDevice(deviceId: string) {
+    this.o.db.delete(pushSubscriptions).where(eq(pushSubscriptions.deviceId, deviceId)).run();
   }
 
   unsubscribe(endpoint: string) {

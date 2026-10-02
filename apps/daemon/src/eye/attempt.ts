@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Autonomy, Budget, Difficulty, MetricsSample, TaskKind } from "@oraknid/contracts";
 import {
@@ -13,6 +13,7 @@ import {
   type DriftCode,
   decide,
   detect,
+  fence,
   type GatedAction,
   guidanceFromOthers,
   HANDOFF_REQUEST,
@@ -455,7 +456,7 @@ export async function runAttempt(
       taskId,
       raisedBy: { legId: leg.legId },
       title: `${leg.legName} wants to ${r.command ? `run \`${r.command.slice(0, 80)}\`` : `use ${r.tool}`}`,
-      detail: `Task: ${task.title}\nWhy it asks: ${v.reason}.\n\n${r.command ? `\`\`\`\n${r.command}\n\`\`\`` : `\`\`\`json\n${JSON.stringify(r.input, null, 2)}\n\`\`\``}`,
+      detail: `Task: ${task.title}\nWhy it asks: ${v.reason}.\n\n${r.command ? fence(r.command) : fence(JSON.stringify(r.input, null, 2), "json")}`,
       options: ["Approve", "Deny", ALL_LIKE_THIS],
       defaultOption: null,
     });
@@ -600,9 +601,13 @@ export async function runAttempt(
   let serversText = "";
   let serversReady = false;
   const prepareServers = async () => {
-    if (serversReady || !d.servers || !job.serverIds?.length) return;
+    if (serversReady) return;
     serversReady = true;
+    // The Leg's home outlives this job: keys another job left there go first,
+    // so a job reaches only its own project's servers (Audit 2).
     const ssh = join(d.legsDir, leg.legId, "home", ".ssh");
+    rmSync(ssh, { recursive: true, force: true });
+    if (!d.servers || !job.serverIds?.length) return;
     mkdirSync(ssh, { recursive: true, mode: 0o700 });
     const config: string[] = [];
     const known: string[] = [];
@@ -956,7 +961,7 @@ export async function runAttempt(
           results: results.map((r) => ({ command: r.command, ok: r.ok, exitCode: r.exitCode })),
         });
         if (failed) {
-          failure = `\`${failed.command}\` failed (exit ${failed.exitCode}):\n\`\`\`\n${failed.output.slice(-3000)}\n\`\`\``;
+          failure = `${fence(failed.command)}\nfailed (exit ${failed.exitCode}):\n${fence(failed.output.slice(-3000))}`;
           observed.verifyFailures.push(failed.signature ?? "");
           if (claimsDone(end.text))
             observed.falseClaim = `said it was done, but \`${failed.command}\` failed`;

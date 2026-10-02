@@ -1,4 +1,5 @@
 import type { Event, NewEvent } from "@oraknid/contracts";
+import { scrubDeep } from "@oraknid/core";
 import { and, asc, count, desc, gt, inArray } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
 import { events } from "../db/schema.ts";
@@ -54,7 +55,8 @@ export class EventBus {
         payload:
           event.payload === undefined || event.payload === null
             ? null
-            : JSON.parse(this.scrub(JSON.stringify(event.payload))),
+            : // Round-tripped first: what is stored is plain JSON, as before.
+              scrubDeep(JSON.parse(JSON.stringify(event.payload)), (s) => this.scrub(s)),
         actor: event.actor ?? "oraknid",
       })
       .returning()

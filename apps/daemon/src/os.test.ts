@@ -221,7 +221,7 @@ describe("notifications", () => {
     const key = await api.notifications.vapidPublicKey();
     expect(await api.notifications.vapidPublicKey()).toBe(key);
     await api.notifications.subscribe({
-      endpoint: "https://push.example.com/abc",
+      endpoint: "https://fcm.googleapis.com/fcm/send/abc",
       keys: { p256dh: "p", auth: "a" },
     });
     expect(d.db.$client.prepare("select count(*) n from push_subscriptions").get()).toEqual({

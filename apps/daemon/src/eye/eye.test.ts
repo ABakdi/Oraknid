@@ -1116,37 +1116,39 @@ describe("the interview (M1.7)", () => {
     await api.helper.send({
       text: "Make me a project called hello in my scratch folder, and a job that says hi",
     });
-    // It goes on by itself: the project, then (seeing its id) the draft, in one exchange.
-    const one = await settle(3);
-    expect(one[1]?.actions[0]).toMatchObject({
-      name: "create_project",
-      state: "done",
-      link: "/projects",
-    });
-    expect(one[2]?.actions[0]).toMatchObject({ name: "create_draft", state: "done" });
-    expect(one[2]?.actions[0]?.link).toMatch(/^\/new\//);
-    expect(one[2]?.actions[1]).toMatchObject({
+    // A project's folder is where agents may write: I confirm it first (Audit 2), and its exact input shows.
+    const zero = await settle(2);
+    expect(zero[1]?.actions[0]).toMatchObject({ name: "create_project", state: "proposed" });
+    await expect(
+      api.helper.decide({ messageId: zero[1]?.id as string, index: 0, confirm: true }),
+    ).resolves.toMatchObject({ state: "done", link: "/projects" });
+    await api.helper.send({ text: "and the job" });
+    const one = await settle(4);
+    expect(one[3]?.actions[0]).toMatchObject({ name: "create_draft", state: "done" });
+    expect(one[3]?.actions[0]?.link).toMatch(/^\/new\//);
+    expect(one[3]?.actions[1]).toMatchObject({
       state: "failed",
       result: 'No action "no_such_thing".',
     });
-    const two = one;
+    const two = [undefined, undefined, one[3]];
     await api.helper.send({ text: "start it" });
-    const three = await settle(5);
-    expect(three[4]?.actions[0]).toMatchObject({ name: "start_job", state: "proposed" });
+    const three = await settle(6);
+    const proposal = three[5];
+    expect(proposal?.actions[0]).toMatchObject({ name: "start_job", state: "proposed" });
     // Nothing started until I confirm.
     const jobId = String(two[2]?.actions[0]?.link ?? "")
       .split("/")
       .at(-1) as string;
     expect((await api.jobs.get({ id: jobId })).state).toBe("draft");
     const done = await api.helper.decide({
-      messageId: three[4]?.id as string,
+      messageId: proposal?.id as string,
       index: 0,
       confirm: true,
     });
     expect(done).toMatchObject({ state: "done", link: `/jobs/${jobId}` });
     expect((await until(api, jobId, ["completed", "blocked"])).state).toBe("completed");
     await expect(
-      api.helper.decide({ messageId: three[4]?.id as string, index: 0, confirm: true }),
+      api.helper.decide({ messageId: proposal?.id as string, index: 0, confirm: true }),
     ).rejects.toThrow(/already settled/);
   });
 

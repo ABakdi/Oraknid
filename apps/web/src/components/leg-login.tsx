@@ -88,7 +88,7 @@ export function LegLogin({
           <div className="space-y-3 text-sm">
             <div className="space-y-1.5">
               <div className="font-medium">{t("1. Sign in")}</div>
-              {url ? (
+              {url && /^https:\/\//.test(url) ? (
                 <Button asChild variant="secondary" className="gap-1">
                   <a href={url} target="_blank" rel="noreferrer">
                     <ExternalLink className="size-4" />

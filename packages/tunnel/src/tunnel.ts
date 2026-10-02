@@ -65,6 +65,9 @@ abstract class End {
   }
 
   protected openPull(header: string) {
+    // Once per tunnel: a second header would rewind the stream, and old
+    // frames recorded by The Nest would open again (replay; Audit 2).
+    if (this.#pull) throw new TunnelError("The stream was already started.");
     this.#pull = sodium.crypto_secretstream_xchacha20poly1305_init_pull(
       unb64(header),
       this.rx as Uint8Array,
@@ -182,6 +185,8 @@ export class DaemonEnd extends End {
   receive(frame: string): Received {
     const f = this.parse(frame);
     if (f.t === "hello") {
+      // One handshake per tunnel: a hello replayed later can't re-key it.
+      if (this.deviceId) throw new TunnelError("Hello twice.");
       const pk = this.o.devicePublicKey(f.device);
       if (!pk)
         return { messages: [], replies: [refusal("this device isn't paired, or was revoked")] };

@@ -274,12 +274,115 @@ function parse(src: string, out: string[], depth: number): void {
     atCommand = false;
     const program = word.replace(/^.*\//, "");
     if (!BUILTIN_NOOPS.has(program) && word !== "_") out.push(program);
+    // A program that runs another one (`bash -c …`, `env …`, `find -exec …`):
+    // what it runs is read too, or the policy would see only the wrapper (Audit 2).
+    if (RUNS_OTHERS.has(program)) {
+      const args: string[] = [];
+      for (;;) {
+        while (src[i] === " " || src[i] === "\t") i++;
+        if (i >= src.length || /[\n;&|()<>]/.test(src[i] as string)) break;
+        if (/[0-9]/.test(src[i] as string) && /[<>]/.test(src[i + 1] ?? "")) break;
+        const w = readWord();
+        if (w === "" && i < src.length && !/\s/.test(src[i] as string)) break;
+        args.push(w);
+      }
+      for (const inner of innerCommands(program, args)) parse(inner, out, depth + 1);
+    }
   }
 
   function readWordAfterSpaces() {
     while (src[i] === " ") i++;
     readWord();
   }
+}
+
+const SHELLS = new Set(["sh", "bash", "dash", "zsh", "ksh", "mksh", "ash", "fish", "busybox"]);
+/** Run the command in their arguments, after their own options. */
+const EXECS = new Set([
+  "env",
+  "nice",
+  "nohup",
+  "timeout",
+  "stdbuf",
+  "setsid",
+  "command",
+  "exec",
+  "builtin",
+  "doas",
+  "sudo",
+  "time",
+  "ionice",
+  "taskset",
+  "chrt",
+  "flock",
+  "unbuffer",
+  "strace",
+  "ltrace",
+  "nsenter",
+  "unshare",
+  "chroot",
+  "runuser",
+  "xargs",
+  "parallel",
+]);
+/** Their first plain argument is theirs (a duration, a mask, a lock file, a root), not the command. */
+const TAKES_ONE = new Set(["timeout", "taskset", "chrt", "flock", "chroot", "runuser"]);
+const RUNS_OTHERS = new Set([...SHELLS, ...EXECS, "eval", "watch", "find"]);
+
+const quote = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
+
+/** The command lines a wrapper runs, from its (unquoted) arguments. */
+function innerCommands(program: string, args: string[]): string[] {
+  if (SHELLS.has(program)) {
+    // `-c script`, also inside a cluster: `-lc`, `-ec`, `-xc`.
+    const at = args.findIndex((a) => /^-[a-zA-Z]*c[a-zA-Z]*$/.test(a));
+    if (at >= 0 && args[at + 1] !== undefined) return [args[at + 1] as string];
+    // `busybox sh …` / `busybox wget …`: the applet is the program.
+    if (program === "busybox" && args[0]) return [args.map(quote).join(" ")];
+    return [];
+  }
+  if (program === "eval" || program === "watch") {
+    const rest = program === "watch" ? args.filter((a) => !a.startsWith("-")) : args;
+    return rest.length ? [rest.join(" ")] : [];
+  }
+  if (program === "find") {
+    const out: string[] = [];
+    for (let k = 0; k < args.length; k++)
+      if (/^-(exec|execdir|ok|okdir)$/.test(args[k] as string)) {
+        const cmd: string[] = [];
+        for (k++; k < args.length && args[k] !== ";" && args[k] !== "+"; k++)
+          cmd.push(args[k] as string);
+        if (cmd.length) out.push(cmd.map(quote).join(" "));
+      }
+    return out;
+  }
+  // EXECS: skip options (and an option's value when it is a separate word), assignments, then their own argument.
+  let k = 0;
+  let own = TAKES_ONE.has(program) ? 1 : 0;
+  while (k < args.length) {
+    const a = args[k] as string;
+    if (a === "--") {
+      k++;
+      break;
+    }
+    if (a.startsWith("-")) {
+      // `-n 5`, `-I {}`, `-u user`: a short option with a separate value.
+      if (/^-[nIuPLdEsagcp]$/.test(a) && program !== "env") k++;
+      k++;
+      continue;
+    }
+    if (program === "env" && /^[A-Za-z_][A-Za-z0-9_]*=/.test(a)) {
+      k++;
+      continue;
+    }
+    if (own > 0) {
+      own--;
+      k++;
+      continue;
+    }
+    break;
+  }
+  return k < args.length ? [args.slice(k).map(quote).join(" ")] : [];
 }
 
 /** The index of the parenthesis that closes the one at `open`, respecting quotes. */

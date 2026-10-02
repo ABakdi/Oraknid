@@ -14,11 +14,15 @@ async function pair() {
   // Frames go both ways until both ends are open, as The Nest would carry them.
   const toDaemon = [d.hello()];
   const toDevice: string[] = [];
+  const sent: string[] = [];
   while (toDaemon.length || toDevice.length) {
-    for (const f of toDaemon.splice(0)) toDevice.push(...a.receive(f).replies);
+    for (const f of toDaemon.splice(0)) {
+      sent.push(f);
+      toDevice.push(...a.receive(f).replies);
+    }
     for (const f of toDevice.splice(0)) toDaemon.push(...d.receive(f).replies);
   }
-  return { d, a, daemon, device };
+  return { d, a, daemon, device, sent };
 }
 
 describe("the end-to-end tunnel (ADR-017)", () => {
@@ -64,5 +68,16 @@ describe("the end-to-end tunnel (ADR-017)", () => {
     const tampered = JSON.parse(d.seal({ n: 3 }));
     tampered.c = `A${tampered.c.slice(1)}`;
     expect(() => a.receive(JSON.stringify(tampered))).toThrow(TunnelError);
+  });
+
+  it("won't rewind: a recorded stream header or hello replayed by The Nest closes the tunnel", async () => {
+    const { d, a, sent } = await pair();
+    const header = sent.find((f) => f.includes('"stream"')) as string;
+    const hello = sent.find((f) => f.includes('"hello"')) as string;
+    const first = d.seal({ path: "/api/jobs/create" });
+    expect(a.receive(first).messages).toHaveLength(1);
+    expect(() => a.receive(header)).toThrow(/already started/);
+    expect(() => a.receive(hello)).toThrow(/Hello twice/);
+    expect(() => a.receive(first)).toThrow(TunnelError);
   });
 });

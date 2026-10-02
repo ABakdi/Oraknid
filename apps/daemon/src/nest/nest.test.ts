@@ -95,6 +95,9 @@ describe("away from home, through The Nest (Phase 4)", () => {
       await new Promise((r) => setTimeout(r, 20));
     expect((await api.nest.status()).connected).toBe(true);
 
+    // No phone for away without a PIN (ADR-029).
+    await expect(api.nest.pairAway({ name: "x" })).rejects.toThrow(/Set your PIN/);
+    await api.lock.setPin({ current: null, pin: "583920" });
     const { link } = await api.nest.pairAway({ name: "My phone, away" });
     expect(link.startsWith(`${nestUrl}/#oraknid=`)).toBe(true);
     const b = JSON.parse(
@@ -102,16 +105,49 @@ describe("away from home, through The Nest (Phase 4)", () => {
     ) as Bundle;
     const p = await phone(b);
 
+    // Locked until the PIN, through the tunnel.
     p.send({
       t: "req",
-      id: 1,
+      id: 10,
       method: "POST",
       path: "/api/system/status",
       headers: { authorization: `Bearer ${b.token}` },
       body: "{}",
     });
+    expect((await p.wait((m) => m.t === "res" && m.id === 10)).status).toBe(423);
+    p.send({
+      t: "req",
+      id: 11,
+      method: "POST",
+      path: "/api/lock/unlock",
+      headers: { authorization: `Bearer ${b.token}` },
+      body: JSON.stringify({ json: { pin: "583920" } }),
+    });
+    const unlocked = await p.wait((m) => m.t === "res" && m.id === 11);
+    const session = JSON.parse(String(unlocked.body)).json.session as string;
+    const auth = { authorization: `Bearer ${b.token}`, "x-oraknid-unlock": session };
+    p.send({
+      t: "req",
+      id: 1,
+      method: "POST",
+      path: "/api/system/status",
+      headers: auth,
+      body: "{}",
+    });
     const res = await p.wait((m) => m.t === "res" && m.id === 1);
     expect(res.status).toBe(200);
+    // Unlocked away from home, still nothing that opens a new way in.
+    p.send({
+      t: "req",
+      id: 12,
+      method: "POST",
+      path: "/api/settings/setTerminal",
+      headers: { ...auth, "x-oraknid-remote": "0" },
+      body: JSON.stringify({ json: { enabled: true } }),
+    });
+    const refused = await p.wait((m) => m.t === "res" && m.id === 12);
+    expect(refused.status).toBe(403);
+    expect(String(refused.body)).toMatch(/not away from home/);
     expect(JSON.parse(String(res.body)).json.pid).toBe(process.pid);
 
     // Another device's token can't ride this device's tunnel.
@@ -125,13 +161,14 @@ describe("away from home, through The Nest (Phase 4)", () => {
     });
     expect((await p.wait((m) => m.t === "res" && m.id === 2)).status).toBe(401);
 
-    p.send({ t: "live-open", token: b.token });
+    p.send({ t: "live-open", token: b.token, unlock: session });
     const hello = await p.wait((m) => m.t === "live" && String(m.frame).includes('"hello"'));
     expect(String(hello.frame)).toContain('"type":"hello"');
 
-    // A revoked device is refused at its next handshake.
+    // A revoked device's tunnel ends at once, and it is refused at its next handshake.
+    const ended = new Promise((ok) => p.ws.once("close", ok));
     await api.devices.revoke({ id: b.deviceId });
-    p.ws.close();
+    await ended;
     await expect(phone(b)).rejects.toThrow(/isn't paired, or was revoked/);
   });
 });

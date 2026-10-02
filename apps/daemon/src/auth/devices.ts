@@ -132,6 +132,22 @@ export class Devices {
       .all();
   }
 
+  /**
+   * Devices for away whose link was never used (ADR-029): revoked after
+   * `maxAgeMs`, so a pairing code left on a screen or in a screenshot
+   * expires. Returns how many.
+   */
+  expireUnclaimed(maxAgeMs: number): number {
+    const stale = this.db
+      .select()
+      .from(devices)
+      .where(and(isNull(devices.revokedAt), isNull(devices.lastSeenAt)))
+      .all()
+      .filter((d) => d.publicKey && d.pairedAt < this.now() - maxAgeMs);
+    for (const d of stale) this.revoke(d.id);
+    return stale.length;
+  }
+
   revoke(id: string) {
     const d = this.db.select().from(devices).where(eq(devices.id, id)).get();
     if (!d) throw new Error(`No device ${id}.`);

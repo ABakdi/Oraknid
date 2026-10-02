@@ -1,9 +1,12 @@
 import type { EyeModels, NotificationSettings, NotifyEvent, Route } from "@oraknid/contracts";
+import type React from "react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { AwayCard } from "@/components/away-card";
+import { useLocation } from "wouter";
+import { AwayCard, PhoneCard } from "@/components/away-card";
 import { ErrorNote, Loading, PageHeader } from "@/components/common";
 import { GitHubCard } from "@/components/github-card";
+import { LockCard } from "@/components/lock-card";
 import { RulesCard } from "@/components/rules-card";
 import { StorageCard } from "@/components/storage-card";
 import { TerminalCard } from "@/components/terminal-card";
@@ -28,6 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, auth, message } from "@/lib/api";
 import { ago } from "@/lib/format";
 import { t } from "@/lib/i18n";
@@ -44,24 +48,99 @@ async function act(fn: () => Promise<unknown>, ok?: string) {
   }
 }
 
-export function SettingsPage() {
+/**
+ * Settings in tabs, each one concern (Web-UI → Settings): the tab is in
+ * the address (/settings/<tab>), so a link can open the right one.
+ */
+const TABS = [
+  { id: "general", label: "General" },
+  { id: "work", label: "Eye & jobs" },
+  { id: "security", label: "Security" },
+  { id: "devices", label: "Devices & phone" },
+  { id: "connections", label: "Connections" },
+] as const;
+type TabId = (typeof TABS)[number]["id"];
+
+export function SettingsPage({ tab }: { tab?: string }) {
+  const [, go] = useLocation();
+  const current: TabId = TABS.some((x) => x.id === tab) ? (tab as TabId) : "general";
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <PageHeader title={t("Settings")} />
-      <SystemCard />
-      <EyeCard />
-      <NotificationsCard />
-      <JobsLimitCard />
-      <FallbackCard />
-      <PolicyCard />
-      <ToolsCard />
-      <GitHubCard />
-      <TerminalCard />
-      <DevicesCard />
-      <AwayCard />
-      <StorageCard />
-      <ThemeCard />
+      <Tabs value={current} onValueChange={(v) => go(`/settings/${v}`)}>
+        <div className="-mx-1 overflow-x-auto px-1 pb-1">
+          <TabsList>
+            {TABS.map((x) => (
+              <TabsTrigger key={x.id} value={x.id} className="px-3">
+                {t(x.label)}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
+        <TabsContent value="general" className="space-y-6 pt-2">
+          <Section title={t("This computer")}>
+            <SystemCard />
+            <StorageCard />
+          </Section>
+          <Section title={t("Notifications")}>
+            <NotificationsCard />
+          </Section>
+          <Section title={t("Look")}>
+            <ThemeCard />
+          </Section>
+        </TabsContent>
+        <TabsContent value="work" className="space-y-6 pt-2">
+          <Section title={t("The Eye")}>
+            <EyeCard />
+          </Section>
+          <Section title={t("Running jobs")}>
+            <JobsLimitCard />
+            <FallbackCard />
+          </Section>
+        </TabsContent>
+        <TabsContent value="security" className="space-y-6 pt-2">
+          <Section title={t("Unlocking")}>
+            <LockCard />
+          </Section>
+          <Section title={t("What agents may run")}>
+            <PolicyCard />
+          </Section>
+          <Section title={t("Terminal")}>
+            <TerminalCard />
+          </Section>
+        </TabsContent>
+        <TabsContent value="devices" className="space-y-6 pt-2">
+          <Section title={t("Your phone, from anywhere")}>
+            <PhoneCard />
+          </Section>
+          <Section title={t("Paired devices")}>
+            <DevicesCard />
+          </Section>
+          <Section title={t("The Nest")}>
+            <AwayCard />
+          </Section>
+        </TabsContent>
+        <TabsContent value="connections" className="space-y-6 pt-2">
+          <Section title={t("GitHub")}>
+            <GitHubCard />
+          </Section>
+          <Section title={t("Tools for skills")}>
+            <ToolsCard />
+          </Section>
+        </TabsContent>
+      </Tabs>
     </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="space-y-3">
+      <h2 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+        {title}
+      </h2>
+      {children}
+    </section>
   );
 }
 
@@ -213,6 +292,7 @@ const EVENTS: [NotifyEvent, string][] = [
   ["time.alarm", "Time alarm"],
   ["recovered", "Recovered after a stop"],
   ["leg.unavailable", "A Leg became unavailable"],
+  ["security", "Wrong PINs, a device unpaired"],
 ];
 const DEFAULTS: Record<NotifyEvent, Route> = {
   approval: { desktop: true, push: true, email: "after-15-min" },
@@ -224,6 +304,7 @@ const DEFAULTS: Record<NotifyEvent, Route> = {
   "time.alarm": { desktop: true, push: true, email: "now" },
   recovered: { desktop: true, push: true, email: "never" },
   "leg.unavailable": { desktop: false, push: false, email: "never" },
+  security: { desktop: true, push: true, email: "now" },
 };
 
 function NotificationsCard() {

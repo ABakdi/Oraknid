@@ -1,4 +1,4 @@
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import type {
   Autonomy,
   InterviewRound,
@@ -47,7 +47,7 @@ import {
 } from "../workspace/git.ts";
 import { type AttemptJob, runAttempt } from "./attempt.ts";
 import type { EyeBrain } from "./brain.ts";
-import { readSmall, renderInputs } from "./inputs.ts";
+import { readInside, renderInputs } from "./inputs.ts";
 import { policyFor } from "./policy.ts";
 import { runVerify, verifyRefusal } from "./verify.ts";
 
@@ -158,8 +158,7 @@ export function eyeProgram(d: EyeDeps): JobProgram {
     // Untrusted inputs are looked at once for attempts to steer the agent (Security → Prompt injection).
     await ctx.step("untrusted-scan", null, async () => {
       for (const input of (job0.inputs as JobInput[]).filter((i) => i.untrusted)) {
-        const text =
-          input.kind === "file" ? readSmall(resolve(project.workspacePath, input.ref)) : null;
+        const text = input.kind === "file" ? readInside(project.workspacePath, input.ref) : null;
         const why = text ? suspicious(text) : [];
         if (why.length === 0) continue;
         d.silk.add({

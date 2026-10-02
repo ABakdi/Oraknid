@@ -15,6 +15,12 @@ const daemons = new Map(
       return [p.slice(0, i), p.slice(i + 1)] as [string, string];
     }),
 );
+// A daemon's secret is what keeps others from posing as it: long, or refused (Audit 2).
+for (const [id, secret] of daemons)
+  if (!id || secret.length < 32) {
+    console.error(`NEST_DAEMONS: "${id}" needs an id and a secret of 32 characters or more.`);
+    process.exit(1);
+  }
 if (daemons.size === 0) {
   console.error("NEST_DAEMONS is empty: no daemon could connect. Set it to id:secret pairs.");
   process.exit(1);

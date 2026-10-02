@@ -21,6 +21,10 @@ interface Limits {
   devicesPerDaemon: number;
   frameBytes: number;
   idleMs: number;
+  /** How long a device has to be answered by its daemon (its handshake), and how much it may send before. */
+  handshakeMs: number;
+  preHandshakeFrames: number;
+  preHandshakeBytes: number;
 }
 
 const DEFAULTS: Limits = {
@@ -28,6 +32,9 @@ const DEFAULTS: Limits = {
   devicesPerDaemon: 50,
   frameBytes: 4 * 1024 * 1024,
   idleMs: 60_000,
+  handshakeMs: 10_000,
+  preHandshakeFrames: 3,
+  preHandshakeBytes: 4096,
 };
 
 interface DaemonLink {
@@ -43,6 +50,18 @@ export function createNest(o: NestOptions): { server: Server; close(): Promise<v
   const limits = { ...DEFAULTS, ...o.limits };
   const app = express();
   app.disable("x-powered-by");
+  // Its page is never framed by another site, and loads nothing it doesn't name (Audit 2).
+  app.use((_req, res, next) => {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader(
+      "Content-Security-Policy",
+      "base-uri 'none'; object-src 'none'; form-action 'none'",
+    );
+    next();
+  });
   app.get("/health", (_req, res) => {
     res.json({ ok: true });
   });
@@ -51,11 +70,18 @@ export function createNest(o: NestOptions): { server: Server; close(): Promise<v
   const wss = new WebSocketServer({ noServer: true, maxPayload: limits.frameBytes });
   const daemons = new Map<string, DaemonLink>();
   const perAddress = new Map<string, number>();
+  const answered = new WeakMap<WebSocket, { answered: boolean; frames: number }>();
 
-  const address = (req: IncomingMessage) =>
-    String(req.headers["x-forwarded-for"] ?? req.socket.remoteAddress ?? "?")
-      .split(",")[0]
-      ?.trim() ?? "?";
+  // An IPv6 address counts by its /64: one machine has a whole one (Audit 2).
+  const address = (req: IncomingMessage) => {
+    const a =
+      String(req.headers["x-forwarded-for"] ?? req.socket.remoteAddress ?? "?")
+        .split(",")[0]
+        ?.trim() ?? "?";
+    return a.includes(":") && !a.startsWith("::ffff:")
+      ? `${a.split(":").slice(0, 4).join(":")}::/64`
+      : a;
+  };
 
   // Sockets that stop answering pings are dropped.
   const alive = new WeakMap<WebSocket, boolean>();
@@ -93,6 +119,14 @@ export function createNest(o: NestOptions): { server: Server; close(): Promise<v
       return;
     }
     if (url.pathname === "/device") {
+      // Only its own page opens device sockets: another site's visitors can't fill them (Audit 2).
+      const origin = req.headers.origin;
+      if (
+        origin &&
+        origin !== `https://${req.headers.host}` &&
+        origin !== `http://${req.headers.host}`
+      )
+        return refuse(403, "Forbidden");
       const link = daemons.get(url.searchParams.get("daemon") ?? "");
       if (!link) return refuse(404, "Not Found");
       const from = address(req);
@@ -123,7 +157,11 @@ export function createNest(o: NestOptions): { server: Server; close(): Promise<v
       const device = typeof m.c === "number" ? link.devices.get(m.c) : undefined;
       if (!device) return;
       if (m.close) device.close(1000, "closed by the daemon");
-      else if (typeof m.f === "string" && device.readyState === WebSocket.OPEN) device.send(m.f);
+      else if (typeof m.f === "string" && device.readyState === WebSocket.OPEN) {
+        const s = answered.get(device);
+        if (s) s.answered = true;
+        device.send(m.f);
+      }
     });
     ws.on("close", () => {
       if (daemons.get(id) === link) daemons.delete(id);
@@ -139,8 +177,25 @@ export function createNest(o: NestOptions): { server: Server; close(): Promise<v
       if (link.ws.readyState === WebSocket.OPEN) link.ws.send(JSON.stringify(m));
     };
     toDaemon({ c, open: true });
-    ws.on("message", (data) => toDaemon({ c, f: String(data) }));
+    // Until its daemon answers (the handshake), a device sends a few small frames, and has ten seconds.
+    const state = { answered: false, frames: 0 };
+    answered.set(ws, state);
+    const deadline = setTimeout(() => {
+      if (!state.answered) ws.close(4008, "no handshake");
+    }, limits.handshakeMs);
+    ws.on("message", (data) => {
+      const f = String(data);
+      if (
+        !state.answered &&
+        (++state.frames > limits.preHandshakeFrames || f.length > limits.preHandshakeBytes)
+      ) {
+        ws.close(4009, "too much before the handshake");
+        return;
+      }
+      toDaemon({ c, f });
+    });
     ws.on("close", () => {
+      clearTimeout(deadline);
       link.devices.delete(c);
       perAddress.set(from, Math.max(0, (perAddress.get(from) ?? 1) - 1));
       toDaemon({ c, close: true });

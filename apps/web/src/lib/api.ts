@@ -2,6 +2,7 @@ import type { Router } from "@oraknid/daemon/src/api/router.ts";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { RouterClient } from "@orpc/server";
+import { unlock } from "./lock";
 import { remote, remoteFetch } from "./remote";
 import { store } from "./store";
 
@@ -23,12 +24,17 @@ export const api: RouterClient<Router> = createORPCClient(
     url: remote() ? "http://oraknid.remote/api" : `${location.origin}/api`,
     headers: () => {
       const token = auth.token();
-      return token ? { authorization: `Bearer ${token}` } : {};
+      const session = unlock.get();
+      return {
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...(session ? { "x-oraknid-unlock": session } : {}),
+      };
     },
     fetch: async (request, init) => {
       const t = remote();
       const res = t ? await remoteFetch(t, request as Request) : await fetch(request, init);
       if (res.status === 401) onUnauthorized();
+      if (res.status === 423) unlock.locked();
       return res;
     },
   }),

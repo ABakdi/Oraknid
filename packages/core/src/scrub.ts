@@ -29,3 +29,26 @@ export function scrubSecrets(text: string, known: Iterable<string> = []): string
     );
   return out;
 }
+
+/**
+ * Scrubs every string inside a value, one at a time: a pattern never runs
+ * across two fields of its JSON and drops what lies between (Audit 2).
+ */
+export function scrubDeep<T>(value: T, scrub: (s: string) => string): T {
+  if (typeof value === "string") return scrub(value) as T;
+  if (Array.isArray(value)) return value.map((v) => scrubDeep(v, scrub)) as T;
+  if (value && typeof value === "object")
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, scrubDeep(v, scrub)])) as T;
+  return value;
+}
+
+/**
+ * A Markdown code block that holds any text: its fence is longer than any
+ * run of backticks inside, so the text can't close it early and render as
+ * Markdown of its own, a fake "safe" line in an approval card (Audit 2).
+ */
+export function fence(text: string, lang = ""): string {
+  const longest = Math.max(2, ...[...text.matchAll(/`+/g)].map((m) => m[0].length));
+  const f = "`".repeat(longest + 1);
+  return `${f}${lang}\n${text}\n${f}`;
+}

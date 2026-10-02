@@ -12,6 +12,7 @@ export const DEFAULT_ROUTES: Record<NotifyEvent, Route> = {
   "time.alarm": { desktop: true, push: true, email: "now" },
   recovered: { desktop: true, push: true, email: "never" },
   "leg.unavailable": { desktop: false, push: false, email: "never" },
+  security: { desktop: true, push: true, email: "now" },
 };
 
 export const routeFor = (event: NotifyEvent, mine: Partial<Record<NotifyEvent, Route>>): Route =>
@@ -33,4 +34,4 @@ export function inQuietHours(q: QuietHours | null, at: Date): boolean {
 
 /** Quiet hours hold everything except approvals for running jobs. */
 export const heldByQuietHours = (event: NotifyEvent, jobRunning: boolean, quiet: boolean) =>
-  quiet && !(event === "approval" && jobRunning);
+  quiet && event !== "security" && !(event === "approval" && jobRunning);

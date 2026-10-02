@@ -2,6 +2,7 @@ import type { IncomingMessage, Server } from "node:http";
 import { homedir } from "node:os";
 import { WebSocketServer } from "ws";
 import type { EventBus } from "../events/bus.ts";
+import { LOCKING } from "../live/server.ts";
 import type { Servers } from "../servers/service.ts";
 
 // The terminal (ADR-028): one WebSocket per terminal, keystrokes and
@@ -58,11 +59,28 @@ export function attachTerminal(o: {
   server: Server;
   bus: EventBus;
   servers: Servers;
-  /** The paired device asking, or null. */
+  /** The paired, unlocked device asking, or null. */
   device: (req: IncomingMessage) => string | null;
+  /** Typing in the terminal is activity: it keeps the session unlocked. */
+  active?: (req: IncomingMessage) => void;
   enabled: () => boolean;
 }) {
   const wss = new WebSocketServer({ noServer: true });
+  // A terminal lives only while its device is paired and unlocked, and the
+  // terminal is on (ADR-029): checked every 10 s and at once on a lock.
+  const open = new Map<import("ws").WebSocket, IncomingMessage>();
+  const recheck = () => {
+    for (const [ws, req] of open) if (!o.device(req) || !o.enabled()) ws.close(4401, "locked");
+  };
+  const timer = setInterval(recheck, 10_000);
+  timer.unref();
+  const off = o.bus.subscribe((e) => {
+    if (LOCKING.has(e.type) || e.type === "settings.updated") recheck();
+  });
+  o.server.on("close", () => {
+    clearInterval(timer);
+    off();
+  });
   o.server.on("upgrade", (req, socket, head) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     if (url.pathname !== "/term") return;
@@ -73,6 +91,8 @@ export function attachTerminal(o: {
       return;
     }
     wss.handleUpgrade(req, socket, head, async (ws) => {
+      open.set(ws, req);
+      ws.on("close", () => open.delete(ws));
       const target = url.searchParams.get("target") ?? "local";
       const cols = Math.max(20, Math.min(500, Number(url.searchParams.get("cols")) || 80));
       const rows = Math.max(5, Math.min(200, Number(url.searchParams.get("rows")) || 24));
@@ -106,7 +126,10 @@ export function attachTerminal(o: {
         } catch {
           return;
         }
-        if (f.t === "in" && typeof f.d === "string") pty.write(f.d);
+        if (f.t === "in" && typeof f.d === "string") {
+          o.active?.(req);
+          pty.write(f.d);
+        }
         if (f.t === "resize" && f.cols > 0 && f.rows > 0) pty.resize(f.cols, f.rows);
       });
       ws.on("close", () => {

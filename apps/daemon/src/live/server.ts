@@ -23,6 +23,9 @@ export interface LiveOptions {
  * The /live WebSocket (ADR-004): sequenced events per topic, with replay
  * from `lastSeq` after a reconnect.
  */
+/** Events after which every socket is checked again. */
+export const LOCKING = new Set(["lock.locked", "lock.pin-set", "lock.pin-reset", "device.revoked"]);
+
 const RELAYED = new Set([
   "job.state",
   "task.state",
@@ -49,7 +52,19 @@ export function attachLive({ server, bus, allow, heartbeatMs = 15_000 }: LiveOpt
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
   });
 
-  wss.on("connection", (ws) => {
+  // A socket lives only while its device is paired and unlocked (ADR-029):
+  // checked again at every heartbeat, and at once when anything locks.
+  const open = new Map<WebSocket, IncomingMessage>();
+  const recheck = () => {
+    for (const [ws, req] of open) if (!allow(req)) ws.close(4401, "locked");
+  };
+  const offLock = bus.subscribe((e) => {
+    if (LOCKING.has(e.type)) recheck();
+  });
+  server.on("close", offLock);
+
+  wss.on("connection", (ws, req: IncomingMessage) => {
+    open.set(ws, req);
     const topics = new Set<Topic>();
     // Seqs sent and not yet acknowledged by a resume: nothing is sent twice.
     const sent = new SentSeqs();
@@ -119,6 +134,10 @@ export function attachLive({ server, bus, allow, heartbeatMs = 15_000 }: LiveOpt
     }
 
     const heartbeat = setInterval(() => {
+      if (!allow(req)) {
+        ws.close(4401, "locked");
+        return;
+      }
       if (!alive) {
         ws.terminate();
         return;
@@ -128,6 +147,7 @@ export function attachLive({ server, bus, allow, heartbeatMs = 15_000 }: LiveOpt
     }, heartbeatMs);
 
     ws.on("close", () => {
+      open.delete(ws);
       clearTimeout(relayTimer);
       clearInterval(heartbeat);
       metricsClients.delete(ws);

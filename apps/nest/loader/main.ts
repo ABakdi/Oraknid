@@ -50,7 +50,7 @@ async function main() {
   const b = bundle();
   if (!b) {
     say(
-      "This device isn't paired for away. At home, open Oraknid → Settings → Away from home, and open the link it gives on this device.",
+      "This device isn't paired for away. At home, open Oraknid → Settings → Devices & phone, and scan the code it shows with this device.",
     );
     return;
   }
@@ -130,18 +130,31 @@ function connect(b: Bundle) {
     }, 3000);
   };
 
-  // What the UI uses, from inside its frame (apps/web → lib/remote.ts).
-  (window as unknown as { __ORAKNID_REMOTE__: unknown }).__ORAKNID_REMOTE__ = {
-    request: (r: { method: string; path: string; body?: string }) =>
+  // What the UI uses, through its port (apps/web → lib/remote.ts). It never
+  // sees this page's storage, the device's keys or its token (Audit 2).
+  let unlock = "";
+  transport = {
+    request: (r: {
+      method: string;
+      path: string;
+      body?: string;
+      headers?: Record<string, string>;
+    }) =>
       new Promise((resolve) => {
         const id = next++;
         pending.set(id, resolve);
+        // Only the unlocked session travels from the UI; the token is added here.
+        const session = r.headers?.["x-oraknid-unlock"];
+        if (typeof session === "string") unlock = session;
         send({
           t: "req",
           id,
           method: r.method,
           path: r.path,
-          headers: { authorization: `Bearer ${b.token}` },
+          headers: {
+            authorization: `Bearer ${b.token}`,
+            ...(unlock ? { "x-oraknid-unlock": unlock } : {}),
+          },
           ...(r.body !== undefined ? { body: r.body } : {}),
         });
       }),
@@ -160,7 +173,10 @@ function connect(b: Bundle) {
             id,
             method: "POST",
             path,
-            headers: { authorization: `Bearer ${b.token}` },
+            headers: {
+              authorization: `Bearer ${b.token}`,
+              ...(unlock ? { "x-oraknid-unlock": unlock } : {}),
+            },
             body: JSON.stringify({ json }),
           });
         });
@@ -175,9 +191,13 @@ function connect(b: Bundle) {
       const r = await call("/api/notifications/subscribe", { endpoint: j.endpoint, keys: j.keys });
       if (r.status >= 400) throw new Error("Oraknid didn't take the subscription.");
     },
-    openLive: (h: { onOpen(): void; onMessage(f: string): void; onClose(): void }) => {
+    openLive: (
+      h: { onOpen(): void; onMessage(f: string): void; onClose(): void },
+      session?: string,
+    ) => {
       live = h;
-      send({ t: "live-open", token: b.token });
+      if (session) unlock = session;
+      send({ t: "live-open", token: b.token, unlock });
       setTimeout(() => h.onOpen(), 0);
       return {
         send: (frame: string) => send({ t: "live", frame }),
@@ -207,11 +227,72 @@ function reconnect(b: Bundle) {
   connect(b);
 }
 
-/** The UI, from the daemon, in a frame of this page so it can reach the tunnel. */
+interface Transport {
+  request(r: unknown): Promise<unknown>;
+  subscribePush(): Promise<void>;
+  openLive(
+    h: { onOpen(): void; onMessage(f: string): void; onClose(): void },
+    session?: string,
+  ): { send(frame: string): void; close(): void };
+}
+/** The tunnel's current transport; a reconnect replaces it under the running UI. */
+let transport: Transport | null = null;
+
+/**
+ * The UI, from the daemon, in a sandboxed frame (Audit 2): an opaque
+ * origin, so nothing in it can read this page's storage; it reaches the
+ * tunnel only through a message port this page hands it.
+ */
 function run(html: string) {
   const frame = document.createElement("iframe");
+  frame.sandbox.add(
+    "allow-scripts",
+    "allow-forms",
+    "allow-popups",
+    "allow-modals",
+    "allow-downloads",
+  );
+  frame.name = "oraknid-remote";
   frame.srcdoc = html;
   frame.title = "Oraknid";
+  frame.addEventListener("load", () => {
+    const channel = new MessageChannel();
+    let liveConn: { send(frame: string): void; close(): void } | null = null;
+    const port = channel.port1;
+    port.onmessage = async (e) => {
+      const m = e.data as {
+        id?: number;
+        op: string;
+        r?: unknown;
+        session?: string;
+        frame?: string;
+      };
+      if (!transport) return;
+      if (m.op === "request") port.postMessage({ id: m.id, ok: await transport.request(m.r) });
+      else if (m.op === "subscribePush")
+        transport.subscribePush().then(
+          () => port.postMessage({ id: m.id, ok: true }),
+          (err: unknown) =>
+            port.postMessage({ id: m.id, error: String(err instanceof Error ? err.message : err) }),
+        );
+      else if (m.op === "live-open") {
+        liveConn?.close();
+        liveConn = transport.openLive(
+          {
+            onOpen: () => port.postMessage({ op: "live-open" }),
+            onMessage: (f) => port.postMessage({ op: "live", frame: f }),
+            onClose: () => port.postMessage({ op: "live-close" }),
+          },
+          m.session,
+        );
+      } else if (m.op === "live-send" && typeof m.frame === "string") liveConn?.send(m.frame);
+      else if (m.op === "live-close") {
+        liveConn?.close();
+        liveConn = null;
+      }
+    };
+    frame.contentWindow?.postMessage("oraknid-remote", "*", [channel.port2]);
+  });
   document.body.replaceChildren(frame);
 }
 

@@ -134,10 +134,12 @@ program
   .action(async () => {
     const info = await findRunning();
     if (!info) fail("Oraknid is not running. Start it with: oraknid start");
-    // The browser on this machine pairs itself with a fresh code in the address.
+    // The code stays in this terminal: a command line is readable by every
+    // user of this machine (/proc), so it never goes in the address (Audit 2).
     const { code } = await api(info).devices.pairStart();
-    spawn("xdg-open", [`${info.url}/#pair=${code}`], { detached: true, stdio: "ignore" }).unref();
+    spawn("xdg-open", [info.url], { detached: true, stdio: "ignore" }).unref();
     console.log(`Opening ${info.url}`);
+    console.log(`If the page asks to pair this browser, its code is: ${code} (valid 5 minutes)`);
   });
 
 program
@@ -149,8 +151,20 @@ program
     const { code, expiresAt } = await api(info).devices.pairStart();
     console.log(`Pairing code: ${code}`);
     console.log(
-      `Enter it in Oraknid on the new device within ${Math.round((expiresAt - Date.now()) / 60_000)} minutes, or open ${info.url}/#pair=${code}`,
+      `Enter it in Oraknid on the new device within ${Math.round((expiresAt - Date.now()) / 60_000)} minutes.`,
     );
+  });
+
+program
+  .command("pin")
+  .description("the PIN that unlocks Oraknid on every device")
+  .argument("<action>", "reset: forget the PIN; every device then asks for a new one")
+  .action(async (action: string) => {
+    if (action !== "reset") fail('Only "oraknid pin reset" is known.');
+    const info = await findRunning();
+    if (!info) fail("Oraknid is not running. Start it with: oraknid start");
+    await api(info).lock.reset();
+    console.log("The PIN is reset. Open Oraknid on this computer to set a new one.");
   });
 
 program

@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -131,6 +132,28 @@ describe.runIf(live)("bubblewrap, for real", () => {
     const w = workspace();
     const r = run(spec(w, `echo x > ${process.env.HOME}/oraknid-escape-test`));
     expect(r.status).not.toBe(0);
+  });
+
+  it("can't reach the desktop's abstract sockets, which live in the shared network namespace (Audit 2)", async () => {
+    const w = workspace();
+    const name = `oraknid-escape-${process.pid}`;
+    const server = createServer(() => {}).listen(`\0${name}`);
+    await new Promise((r) => server.once("listening", r));
+    try {
+      const r = run(
+        spec(
+          w,
+          `python3 -c 'import socket,sys
+s=socket.socket(socket.AF_UNIX)
+try:
+  s.connect("\\0${name}"); print("reached")
+except OSError as e: print("refused")'`,
+        ),
+      );
+      expect(r.stdout.trim()).toBe("refused");
+    } finally {
+      server.close();
+    }
   });
 
   it("takes every process inside down when the sandbox is killed", async () => {

@@ -60,6 +60,7 @@ import { asc, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { AuditQuery, searchAudit } from "../audit/audit.ts";
 import type { Devices } from "../auth/devices.ts";
+import { type AppLock, IDLE_CHOICES, Pin } from "../auth/lock.ts";
 import type { Chats } from "../chats/service.ts";
 import {
   attempts as attemptsTable,
@@ -131,6 +132,11 @@ import {
 export interface ApiContext {
   /** The paired device making this call; null for the CLI. */
   device: string | null;
+  /** Whether it came through The Nest (ADR-029). */
+  remote: boolean;
+  /** Its unlocked session, if any (ADR-029). */
+  session: string | undefined;
+  lock: AppLock;
   startedAt: number;
   paths: Paths;
   bus: EventBus;
@@ -468,7 +474,7 @@ export const router = {
       )
       .output(HelperAction)
       .handler(({ context: c, input }) =>
-        guard(() => c.helper.decide(input.messageId, input.index, input.confirm)),
+        guard(() => c.helper.decide(input.messageId, input.index, input.confirm, c.remote)),
       ),
     clear: base.handler(({ context: c }) => guard(() => c.helper.clear())),
   },
@@ -739,7 +745,69 @@ export const router = {
     pairAway: base
       .input(z.object({ name: z.string().min(1).max(60) }))
       .output(z.object({ link: z.string(), deviceId: z.string() }))
-      .handler(({ context: c, input }) => guard(() => c.nest.pairAway(input.name))),
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          // A phone away from home opens only with the PIN (ADR-029).
+          if (!c.lock.hasPin()) throw new Error("Set your PIN first (Settings → Security).");
+          return c.nest.pairAway(input.name);
+        }),
+      ),
+  },
+  /** The PIN that unlocks every device (ADR-029). */
+  lock: {
+    status: base
+      .output(
+        z.object({
+          pinSet: z.boolean(),
+          unlocked: z.boolean(),
+          idleMinutes: z.number(),
+          triesLeft: z.number(),
+          waitUntil: z.number().nullable(),
+          remote: z.boolean(),
+        }),
+      )
+      .handler(({ context: c }) => {
+        if (c.device === null)
+          return { ...c.lock.status("cli", undefined), unlocked: true, remote: false };
+        return { ...c.lock.status(c.device, c.session), remote: c.remote };
+      }),
+    unlock: base
+      .input(z.object({ pin: z.string().min(1).max(128) }))
+      .output(z.object({ session: z.string(), expiresAt: z.number() }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.lock.unlock(c.device ?? "cli", input.pin, c.remote)),
+      ),
+    /** The first PIN, or a new one with the current one; at home only. */
+    setPin: base
+      .input(z.object({ current: z.string().max(128).nullable(), pin: Pin }))
+      .output(z.object({ session: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.lock.setPin(c.device ?? "cli", input.current, input.pin, c.remote)),
+      ),
+    /** Lock this device, or every device. */
+    lock: base
+      .input(z.object({ everywhere: z.boolean().default(false) }))
+      .handler(({ context: c, input }) =>
+        c.lock.lock(
+          input.everywhere ? null : (c.device ?? "cli"),
+          input.everywhere ? undefined : c.session,
+        ),
+      ),
+    /** `oraknid pin reset`: the CLI only, which is me on this computer. */
+    reset: base.handler(({ context: c }) => {
+      if (c.device !== null)
+        throw new ORPCError("FORBIDDEN", {
+          message: "Only `oraknid pin reset`, on this computer, resets the PIN.",
+        });
+      c.lock.resetPin();
+    }),
+    setIdle: base
+      .input(
+        z.object({
+          minutes: z.number().refine((m) => (IDLE_CHOICES as readonly number[]).includes(m)),
+        }),
+      )
+      .handler(({ context: c, input }) => c.lock.setIdleMinutes(input.minutes)),
   },
   devices: {
     /** A short code for a new device to enter (Security → pairing). */
@@ -892,7 +960,16 @@ export const router = {
     create: base
       .input(NewJob)
       .output(z.object({ id: z.string() }))
-      .handler(({ context: c, input }) => guard(() => ({ id: c.projects.createJob(input) }))),
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          // Outside the sandbox only from home (ADR-029).
+          if (c.remote && input.unsandboxed)
+            throw new Error(
+              "A job outside the sandbox can only be made on the computer running Oraknid.",
+            );
+          return { id: c.projects.createJob(input) };
+        }),
+      ),
     start: base.input(z.object({ id: z.string() })).handler(({ context: c, input }) =>
       guard(async () => {
         // A job's tools are set up before it starts (ADR-021).
@@ -1381,7 +1458,7 @@ export const router = {
       }
     }),
     subscribe: base.input(PushSubscriptionInput).handler(({ context: c, input }) => {
-      c.notifications.subscribe(input);
+      c.notifications.subscribe(input, c.device);
     }),
     unsubscribe: base
       .input(z.object({ endpoint: z.string() }))

@@ -1,5 +1,6 @@
 import { toast } from "sonner";
 import { Loading } from "@/components/common";
+import { useConfirm } from "@/components/confirm";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -13,6 +14,7 @@ export function TerminalCard() {
     topics: ["overview"],
     refreshOn: (e) => e.type === "settings.updated",
   });
+  const { confirm, dialog } = useConfirm();
   if (on.data === undefined) return <Loading rows={1} />;
   return (
     <Card>
@@ -20,7 +22,7 @@ export function TerminalCard() {
         <CardTitle>{t("Terminal")}</CardTitle>
         <CardDescription>
           {t(
-            "A shell in the web UI, on this computer or your servers. It is a full shell as you, for any paired device: turn it on only if that is what you want. Every terminal opened is in the log.",
+            "A shell in the web UI, on this computer or your servers. It is a full shell as you: turn it on only if that is what you want. Only on this computer, never away from home; it closes when the device locks. Every terminal opened is in the log.",
           )}
         </CardDescription>
       </CardHeader>
@@ -29,17 +31,29 @@ export function TerminalCard() {
           <Switch
             id="term-on"
             checked={on.data}
-            onCheckedChange={(v) =>
+            onCheckedChange={async (v) => {
+              if (
+                v &&
+                !(await confirm(
+                  t("Turn the terminal on?"),
+                  t(
+                    "Any of your unlocked devices on this computer can then open a full shell as you. Never away from home.",
+                  ),
+                  t("Turn it on"),
+                ))
+              )
+                return;
               api.settings
                 .setTerminal({ enabled: v })
                 .then(on.reload)
-                .catch((e) => toast.error(message(e)))
-            }
+                .catch((e) => toast.error(message(e)));
+            }}
           />
           <Label htmlFor="term-on" className="font-normal">
             {on.data ? t("On") : t("Off")}
           </Label>
         </label>
+        {dialog}
       </CardContent>
     </Card>
   );

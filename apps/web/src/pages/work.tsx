@@ -383,7 +383,7 @@ export function WorkPage({ draftId }: { draftId?: string }) {
                   {!github.data?.connected ? (
                     <div className="text-xs text-muted-foreground">
                       {t("GitHub repos: connect GitHub in")}{" "}
-                      <Link href="/settings" className="underline">
+                      <Link href="/settings/connections" className="underline">
                         {t("Settings")}
                       </Link>
                       .

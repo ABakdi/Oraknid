@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { Route, Router, Switch } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
+import { LockScreen } from "@/components/lock-screen";
 import { Shell } from "@/components/shell";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { api, auth, setOnUnauthorized } from "@/lib/api";
 import { live } from "@/lib/live";
+import { unlock } from "@/lib/lock";
 import { remote } from "@/lib/remote";
 import { ThemeProvider } from "@/lib/theme";
 import { ChatsPage } from "@/pages/chats";
@@ -48,16 +50,66 @@ export function App() {
       .catch(() => {});
   }, []);
 
+  // The lock (ADR-029): paired is not enough, this device must be unlocked.
+  const [lock, setLock] = useState<
+    | { state: "checking" }
+    | { state: "locked"; pinSet: boolean; remote: boolean }
+    | { state: "open"; idleMinutes: number }
+  >({ state: "checking" });
+  const check = () => {
+    api.lock
+      .status()
+      .then((s) =>
+        setLock(
+          s.unlocked
+            ? { state: "open", idleMinutes: s.idleMinutes }
+            : { state: "locked", pinSet: s.pinSet, remote: s.remote },
+        ),
+      )
+      .catch(() => setLock({ state: "locked", pinSet: true, remote: !!remote() }));
+  };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: check reads only setters and the API
   useEffect(() => {
-    if (paired) live.start();
+    if (paired) check();
+    return unlock.onLocked(() => {
+      live.stop();
+      check();
+    });
   }, [paired]);
+
+  useEffect(() => {
+    if (paired && lock.state === "open") live.start();
+  }, [paired, lock.state]);
+
+  // Idle, this device locks itself: no touch, click or key for the chosen time.
+  const idleMinutes = lock.state === "open" ? lock.idleMinutes : 0;
+  useEffect(() => {
+    if (!idleMinutes) return;
+    let last = Date.now();
+    const seen = () => {
+      last = Date.now();
+    };
+    const kinds = ["pointerdown", "keydown", "touchstart", "wheel"] as const;
+    for (const k of kinds) window.addEventListener(k, seen, { passive: true });
+    const timer = setInterval(() => {
+      if (Date.now() - last < idleMinutes * 60_000) return;
+      void api.lock.lock({ everywhere: false }).catch(() => {});
+      unlock.locked();
+    }, 15_000);
+    return () => {
+      clearInterval(timer);
+      for (const k of kinds) window.removeEventListener(k, seen);
+    };
+  }, [idleMinutes]);
 
   // Away from home the page is the loader's frame (about:srcdoc): routes live in the hash.
   return (
     <Router hook={remote() ? useHashLocation : undefined}>
       <ThemeProvider>
         <TooltipProvider delayDuration={300}>
-          {paired ? (
+          {paired && lock.state === "checking" ? null : paired && lock.state === "locked" ? (
+            <LockScreen pinSet={lock.pinSet} remote={lock.remote} onUnlocked={check} />
+          ) : paired ? (
             <Shell>
               <Switch>
                 <Route path="/" component={OverviewPage} />
@@ -78,7 +130,8 @@ export function App() {
                 <Route path="/terminal/:target">{(p) => <TerminalPage target={p.target} />}</Route>
                 <Route path="/chats/:id">{(p) => <ChatsPage id={p.id} />}</Route>
                 <Route path="/logs" component={LogsPage} />
-                <Route path="/settings" component={SettingsPage} />
+                <Route path="/settings">{() => <SettingsPage />}</Route>
+                <Route path="/settings/:tab">{(p) => <SettingsPage tab={p.tab} />}</Route>
                 <Route>
                   <OverviewPage />
                 </Route>

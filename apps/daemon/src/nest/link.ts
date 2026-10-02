@@ -33,7 +33,7 @@ type Message =
       headers?: Record<string, string>;
       body?: string;
     }
-  | { t: "live-open"; token: string }
+  | { t: "live-open"; token: string; unlock?: string }
   | { t: "live"; frame: string }
   | { t: "live-close" }
   | { t: "ui" };
@@ -161,6 +161,16 @@ export class NestLink {
     const ws = new WebSocket(url, { headers: { authorization: `Bearer ${secret}` } });
     this.#ws = ws;
     const tunnels = new Map<number, Tunnel>();
+    // A revoked device's tunnels end now, not at its next request (Audit 2).
+    const offRevoked = this.o.bus.subscribe((e) => {
+      if (e.type !== "device.revoked") return;
+      for (const [id, t] of tunnels)
+        if (t.deviceId === (e.payload as { id?: string }).id) {
+          t.close();
+          tunnels.delete(id);
+          ws.send(JSON.stringify({ c: id, close: true }));
+        }
+    });
     ws.on("open", () => {
       this.#connected = true;
       this.#error = null;
@@ -203,6 +213,7 @@ export class NestLink {
       if (typeof m.f === "string") void tunnels.get(m.c)?.receive(m.f);
     });
     ws.on("close", () => {
+      offRevoked();
       for (const t of tunnels.values()) t.close();
       tunnels.clear();
       if (this.#connected) this.#publish("nest.disconnected", { url: c.url });
@@ -254,6 +265,11 @@ class Tunnel {
     });
   }
 
+  /** The device at the other end, once its hello was checked. */
+  get deviceId(): string | null {
+    return this.#end.deviceId;
+  }
+
   async receive(frame: string) {
     let r: ReturnType<DaemonEnd["receive"]>;
     try {
@@ -281,6 +297,7 @@ class Tunnel {
     const local = this.link.deps.localUrl();
     if (m.t === "req") {
       const token = String(m.headers?.authorization ?? "").replace(/^Bearer /, "");
+      const unlock = String(m.headers?.["x-oraknid-unlock"] ?? "");
       if (!m.path.startsWith("/api/") || !this.#owns(token)) {
         this.#reply({
           t: "res",
@@ -294,7 +311,13 @@ class Tunnel {
       try {
         const res = await fetch(`${local}${m.path}`, {
           method: m.method,
-          headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${token}`,
+            // Set here, never taken from the device: the API knows this came from away (ADR-029).
+            "x-oraknid-remote": "1",
+            ...(unlock ? { "x-oraknid-unlock": unlock } : {}),
+          },
           ...(m.body !== undefined && m.method !== "GET" ? { body: m.body } : {}),
         });
         this.#reply({
@@ -304,13 +327,13 @@ class Tunnel {
           headers: { "content-type": res.headers.get("content-type") ?? "application/json" },
           body: await res.text(),
         });
-      } catch (error) {
+      } catch {
         this.#reply({
           t: "res",
           id: m.id,
           status: 502,
           headers: {},
-          body: JSON.stringify({ message: String(error) }),
+          body: JSON.stringify({ message: "Oraknid didn't answer; try again." }),
         });
       }
       return;
@@ -318,7 +341,10 @@ class Tunnel {
     if (m.t === "live-open") {
       if (!this.#owns(m.token)) return this.#reply({ t: "live-close" });
       this.#live?.close();
-      const ws = new WebSocket(`${local.replace(/^http/, "ws")}/live?token=${m.token}`);
+      const unlock = typeof m.unlock === "string" ? `&unlock=${encodeURIComponent(m.unlock)}` : "";
+      const ws = new WebSocket(
+        `${local.replace(/^http/, "ws")}/live?token=${encodeURIComponent(m.token)}${unlock}`,
+      );
       this.#live = ws;
       ws.on("message", (data) => this.#reply({ t: "live", frame: String(data) }));
       ws.on("close", () => {

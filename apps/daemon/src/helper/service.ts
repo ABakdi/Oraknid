@@ -53,12 +53,16 @@ interface ActionDef {
   run: (d: HelperDeps, input: never) => Promise<{ result: string; link: string | null }>;
 }
 
+/** Actions only confirmed at home (ADR-029). */
+const HOME_ONLY_ACTIONS = new Set(["create_project", "add_leg"]);
+
 const ACTIONS: Record<string, ActionDef> = {
   create_project: {
     description:
       "Create a project: from a folder I have (kind folder), a new empty folder (new-folder), a new GitHub repo (github-new), one of my GitHub repos (github-clone), or a git URL (git-url).",
     input: z.object({ name: z.string().optional(), source: ProjectSource }),
-    confirm: (i: { source: { kind: string } }) => i.source.kind === "github-new",
+    // A project's folder is where agents may write: always mine to confirm (Audit 2).
+    confirm: () => true,
     run: async (d, i: { name?: string; source: z.infer<typeof ProjectSource> }) => {
       const p = await projectFrom(d, { source: i.source, ...(i.name ? { name: i.name } : {}) });
       return { result: `Project "${p.name}" at ${p.workspacePath}.`, link: "/projects" };
@@ -128,7 +132,8 @@ const ACTIONS: Record<string, ActionDef> = {
     description:
       "Add a Leg (an agent or model server). For Claude Code or Antigravity, I then log it in from its card.",
     input: NewLeg,
-    confirm: () => false,
+    // A Leg sees what The Eye sends it: always mine to confirm (Audit 2).
+    confirm: () => true,
     run: async (d, i: z.infer<typeof NewLeg>) => {
       const leg = await d.registry.create(i);
       return { result: `Leg "${leg.name}" added.`, link: `/legs/${leg.id}` };
@@ -248,7 +253,7 @@ export class Helper {
           `**${m.author === "owner" ? "Me" : "Helper"}:** ${m.text}${m.actions.length ? `\n(actions: ${m.actions.map((a) => `${a.name} → ${a.state}${a.result ? `: ${a.result}` : ""}`).join("; ")})` : ""}`,
       )
       .join("\n\n");
-    const prompt = `You are the Oraknid helper: the owner asks you, in their words, to do things in Oraknid (an orchestrator of coding agents) instead of clicking through its pages. Do them with the actions below, by their exact names and inputs. When something you need is missing (which folder, which project, a name), ask in your reply and take no action. Use only ids listed under "Oraknid now"; never invent one. A new project's folder goes inside the owner's home unless they say otherwise. Starting a job, creating a GitHub repo and deleting are confirmed by the owner before they run: propose them, and say so. Reply in a few sentences of markdown.
+    const prompt = `You are the Oraknid helper: the owner asks you, in their words, to do things in Oraknid (an orchestrator of coding agents) instead of clicking through its pages. Do them with the actions below, by their exact names and inputs. When something you need is missing (which folder, which project, a name), ask in your reply and take no action. Use only ids listed under "Oraknid now"; never invent one. A new project's folder goes inside the owner's home unless they say otherwise. Creating a project, adding a Leg, starting a job and deleting are confirmed by the owner before they run: propose them, and say so. Reply in a few sentences of markdown.
 
 # Actions
 ${catalogue()}
@@ -327,7 +332,12 @@ ${history}${
   }
 
   /** My Confirm (or Cancel) on a proposed action. */
-  async decide(messageId: string, index: number, confirm: boolean): Promise<HelperAction> {
+  async decide(
+    messageId: string,
+    index: number,
+    confirm: boolean,
+    remote = false,
+  ): Promise<HelperAction> {
     const row = this.d.db
       .select()
       .from(helperMessages)
@@ -336,6 +346,9 @@ ${history}${
     const action = (row?.actions as HelperAction[] | undefined)?.[index];
     if (!row || !action) throw new Error("No such action.");
     if (action.state !== "proposed") throw new Error("That action was already settled.");
+    // Away from home, nothing that opens a new folder or a new model to agents (ADR-029).
+    if (confirm && remote && HOME_ONLY_ACTIONS.has(action.name))
+      throw new Error("That can only be confirmed on the computer running Oraknid.");
     const settled = confirm
       ? await this.#run(action.name, action.input, action.summary)
       : { ...action, state: "cancelled" as const };
