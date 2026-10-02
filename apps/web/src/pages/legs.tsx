@@ -1,6 +1,6 @@
 import type { LegView } from "@oraknid/contracts";
-import { Bot, Plus, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { Bot, ChevronRight, Plus, RefreshCw } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Empty, ErrorNote, Loading, PageHeader, StateBadge } from "@/components/common";
 import { FindAgents } from "@/components/find-agents";
@@ -63,12 +63,25 @@ async function act(fn: () => Promise<unknown>, ok?: string) {
   }
 }
 
-export function LegsPage() {
+export function LegsPage({ focus }: { focus?: string } = {}) {
   const legs = useLive(() => api.legs.list(), {
     topics: ["overview"],
     refreshOn: (e) => e.type.startsWith("leg."),
   });
   const [adding, setAdding] = useState(false);
+  // Collapsed to one line by default; the Leg I came for is open (Web-UI → Legs).
+  const [open, setOpen] = useState<Set<string>>(() => new Set(focus ? [focus] : []));
+  const toggle = (id: string) =>
+    setOpen((o) => {
+      const n = new Set(o);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  useEffect(() => {
+    if (!focus || legs.loading) return;
+    document.getElementById(`leg-${focus}`)?.scrollIntoView({ block: "start" });
+  }, [focus, legs.loading]);
   const [profile, setProfile] = useState<{ leg: LegView; modelId: string } | null>(null);
   if (legs.error) return <ErrorNote error={legs.error} />;
   if (legs.loading) return <Loading />;
@@ -98,163 +111,191 @@ export function LegsPage() {
         </Empty>
       ) : null}
       {(legs.data ?? []).map((leg) => (
-        <Card key={leg.id}>
-          <CardHeader>
+        <Card key={leg.id} id={`leg-${leg.id}`} className="scroll-mt-4 gap-0 py-0">
+          <CardHeader className="py-3">
             <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-              <Bot className="size-4" />
-              {leg.name}
-              <StateBadge state={leg.paused ? "paused" : leg.health} />
-              <Badge variant="outline">{leg.kind}</Badge>
-              <Badge variant="outline">{leg.remote ? t("remote") : t("local")}</Badge>
-              <span className="flex-1" />
-              <Button
-                size="sm"
-                variant="ghost"
-                className="gap-1"
-                onClick={() => act(() => api.legs.test({ id: leg.id }), t("Tested."))}
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                aria-expanded={open.has(leg.id)}
+                onClick={() => toggle(leg.id)}
               >
-                <RefreshCw className="size-3.5" />
-                {t("Test")}
-              </Button>
-              {leg.kind === "claude-code" || leg.kind === "antigravity" ? (
+                <ChevronRight
+                  className={`size-4 shrink-0 transition-transform ${open.has(leg.id) ? "rotate-90" : ""}`}
+                />
+                <Bot className="size-4 shrink-0" />
+                <span className="truncate">{leg.name}</span>
+                <StateBadge state={leg.paused ? "paused" : leg.health} />
+                <Badge variant="outline" className="hidden sm:inline-flex">
+                  {leg.kind}
+                </Badge>
+                {open.has(leg.id) ? null : (
+                  <span className="hidden min-w-0 truncate text-xs font-normal text-muted-foreground md:inline">
+                    {leg.healthDetail}
+                  </span>
+                )}
+              </button>
+              {(leg.kind === "claude-code" || leg.kind === "antigravity") &&
+              leg.health !== "healthy" ? (
                 <LegLogin legId={leg.id} legName={leg.name} kind={leg.kind} />
               ) : null}
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() =>
-                  act(() =>
-                    leg.paused ? api.legs.resume({ id: leg.id }) : api.legs.pause({ id: leg.id }),
-                  )
-                }
-              >
-                {leg.paused ? t("Resume") : t("Pause")}
-              </Button>
-              <label
-                htmlFor={`enabled-${leg.id}`}
-                className="flex items-center gap-1.5 text-xs font-normal"
-              >
-                <Switch
-                  id={`enabled-${leg.id}`}
-                  checked={leg.enabled}
-                  onCheckedChange={(v) => act(() => api.legs.update({ id: leg.id, enabled: v }))}
-                />
-                {t("enabled")}
-              </label>
-              <Select
-                value={String((leg.config as { maxSessions?: number }).maxSessions ?? 1)}
-                onValueChange={(v) =>
-                  act(() => api.legs.update({ id: leg.id, maxSessions: Number(v) }))
-                }
-              >
-                <SelectTrigger className="h-8 w-36 text-xs" aria-label={t("Sessions at once")}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {[1, 2, 3, 4].map((n) => (
-                    <SelectItem key={n} value={String(n)}>
-                      {t("{n} at once", { n })}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="text-muted-foreground">
-              {leg.healthDetail}
-              {leg.limitedUntil
-                ? ` ${t("Usable again {when}.", { when: until(leg.limitedUntil) })}`
-                : ""}
-            </div>
-            {leg.setupHint ? (
-              <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 font-mono text-xs [overflow-wrap:anywhere]">
-                {leg.setupHint}
+          {open.has(leg.id) ? (
+            <CardContent className="space-y-3 border-t pt-3 pb-4 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">{leg.remote ? t("remote") : t("local")}</Badge>
+                <span className="flex-1" />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="gap-1"
+                  onClick={() => act(() => api.legs.test({ id: leg.id }), t("Tested."))}
+                >
+                  <RefreshCw className="size-3.5" />
+                  {t("Test")}
+                </Button>
+                {(leg.kind === "claude-code" || leg.kind === "antigravity") &&
+                leg.health === "healthy" ? (
+                  <LegLogin legId={leg.id} legName={leg.name} kind={leg.kind} />
+                ) : null}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() =>
+                    act(() =>
+                      leg.paused ? api.legs.resume({ id: leg.id }) : api.legs.pause({ id: leg.id }),
+                    )
+                  }
+                >
+                  {leg.paused ? t("Resume") : t("Pause")}
+                </Button>
+                <label
+                  htmlFor={`enabled-${leg.id}`}
+                  className="flex items-center gap-1.5 text-xs font-normal"
+                >
+                  <Switch
+                    id={`enabled-${leg.id}`}
+                    checked={leg.enabled}
+                    onCheckedChange={(v) => act(() => api.legs.update({ id: leg.id, enabled: v }))}
+                  />
+                  {t("enabled")}
+                </label>
+                <Select
+                  value={String((leg.config as { maxSessions?: number }).maxSessions ?? 1)}
+                  onValueChange={(v) =>
+                    act(() => api.legs.update({ id: leg.id, maxSessions: Number(v) }))
+                  }
+                >
+                  <SelectTrigger className="h-8 w-36 text-xs" aria-label={t("Sessions at once")}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[1, 2, 3, 4].map((n) => (
+                      <SelectItem key={n} value={String(n)}>
+                        {t("{n} at once", { n })}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            ) : null}
-            {leg.quota.length ? (
-              <div className="flex flex-wrap gap-2 text-xs">
-                {leg.quota.map((w) => (
-                  <Badge key={w.name} variant="secondary">
-                    {w.name}:{" "}
-                    {w.utilization === null
-                      ? t("no figure")
-                      : `${Math.round(w.utilization * 100)}%`}
-                    {w.estimated ? ` ${t("(estimated)")}` : ""}
-                    {w.resetsAt ? ` · ${until(w.resetsAt)}` : ""}
-                  </Badge>
-                ))}
+              <div className="text-muted-foreground">
+                {leg.healthDetail}
+                {leg.limitedUntil
+                  ? ` ${t("Usable again {when}.", { when: until(leg.limitedUntil) })}`
+                  : ""}
               </div>
-            ) : null}
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("Model")}</TableHead>
-                    <TableHead>{t("Best at")}</TableHead>
-                    <TableHead>{t("Takes")}</TableHead>
-                    <TableHead>{t("Quota cost")}</TableHead>
-                    <TableHead>{t("Seen")}</TableHead>
-                    <TableHead>{t("Shown")}</TableHead>
-                    <TableHead />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {leg.models.map((m) => {
-                    const best = Object.entries(m.profile.strengths)
-                      .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))
-                      .slice(0, 3)
-                      .map(([k]) => k);
-                    const seen = Object.values(m.profile.observed).reduce(
-                      (n, o) => n + (o?.attempts ?? 0),
-                      0,
-                    );
-                    return (
-                      <TableRow key={m.id} className={m.hidden ? "opacity-50" : ""}>
-                        <TableCell className="font-medium">
-                          {m.displayName}
-                          {m.effortLevels.length ? (
-                            <div className="text-xs text-muted-foreground">
-                              {m.effortLevels.join(" · ")}
-                            </div>
-                          ) : null}
-                          {m.vramBytes ? (
-                            <div className="text-xs text-muted-foreground">
-                              VRAM {bytes(m.vramBytes)}
-                            </div>
-                          ) : null}
-                        </TableCell>
-                        <TableCell className="text-xs">{best.join(", ")}</TableCell>
-                        <TableCell className="text-xs">
-                          {t("up to {d}", { d: m.profile.maxDifficulty })}
-                        </TableCell>
-                        <TableCell className="text-xs">×{m.profile.quotaWeight}</TableCell>
-                        <TableCell className="text-xs">{t("{n} attempts", { n: seen })}</TableCell>
-                        <TableCell>
-                          <Switch
-                            checked={!m.hidden}
-                            onCheckedChange={(v) =>
-                              act(() => api.legs.setModelHidden({ modelId: m.id, hidden: !v }))
-                            }
-                            aria-label={t("Shown to routing")}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setProfile({ leg, modelId: m.id })}
-                          >
-                            {t("Profile")}
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
+              {leg.setupHint ? (
+                <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 font-mono text-xs [overflow-wrap:anywhere]">
+                  {leg.setupHint}
+                </div>
+              ) : null}
+              {leg.quota.length ? (
+                <div className="flex flex-wrap gap-2 text-xs">
+                  {leg.quota.map((w) => (
+                    <Badge key={w.name} variant="secondary">
+                      {w.name}:{" "}
+                      {w.utilization === null
+                        ? t("no figure")
+                        : `${Math.round(w.utilization * 100)}%`}
+                      {w.estimated ? ` ${t("(estimated)")}` : ""}
+                      {w.resetsAt ? ` · ${until(w.resetsAt)}` : ""}
+                    </Badge>
+                  ))}
+                </div>
+              ) : null}
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t("Model")}</TableHead>
+                      <TableHead>{t("Best at")}</TableHead>
+                      <TableHead>{t("Takes")}</TableHead>
+                      <TableHead>{t("Quota cost")}</TableHead>
+                      <TableHead>{t("Seen")}</TableHead>
+                      <TableHead>{t("Shown")}</TableHead>
+                      <TableHead />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {leg.models.map((m) => {
+                      const best = Object.entries(m.profile.strengths)
+                        .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))
+                        .slice(0, 3)
+                        .map(([k]) => k);
+                      const seen = Object.values(m.profile.observed).reduce(
+                        (n, o) => n + (o?.attempts ?? 0),
+                        0,
+                      );
+                      return (
+                        <TableRow key={m.id} className={m.hidden ? "opacity-50" : ""}>
+                          <TableCell className="font-medium">
+                            {m.displayName}
+                            {m.effortLevels.length ? (
+                              <div className="text-xs text-muted-foreground">
+                                {m.effortLevels.join(" · ")}
+                              </div>
+                            ) : null}
+                            {m.vramBytes ? (
+                              <div className="text-xs text-muted-foreground">
+                                VRAM {bytes(m.vramBytes)}
+                              </div>
+                            ) : null}
+                          </TableCell>
+                          <TableCell className="text-xs">{best.join(", ")}</TableCell>
+                          <TableCell className="text-xs">
+                            {t("up to {d}", { d: m.profile.maxDifficulty })}
+                          </TableCell>
+                          <TableCell className="text-xs">×{m.profile.quotaWeight}</TableCell>
+                          <TableCell className="text-xs">
+                            {t("{n} attempts", { n: seen })}
+                          </TableCell>
+                          <TableCell>
+                            <Switch
+                              checked={!m.hidden}
+                              onCheckedChange={(v) =>
+                                act(() => api.legs.setModelHidden({ modelId: m.id, hidden: !v }))
+                              }
+                              aria-label={t("Shown to routing")}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setProfile({ leg, modelId: m.id })}
+                            >
+                              {t("Profile")}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          ) : null}
         </Card>
       ))}
       <AddLeg open={adding} onOpenChange={setAdding} />

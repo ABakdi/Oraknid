@@ -171,25 +171,38 @@ export function SkillsPage() {
                     onChange={(e) => setEditing({ ...editing, name: e.target.value })}
                   />
                 ) : null}
-                <input
-                  type="file"
-                  accept=".md,text/markdown"
-                  className="text-sm"
-                  onChange={async (e) => {
-                    const f = e.target.files?.[0];
-                    if (f)
-                      setEditing({
-                        ...editing,
-                        name: f.name.replace(/\.md$/, ""),
-                        markdown: await f.text(),
-                      });
-                  }}
-                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button asChild variant="secondary" size="sm" className="gap-1">
+                    <label className="cursor-pointer">
+                      <Upload className="size-3.5" />
+                      {t("Upload a .md file")}
+                      <input
+                        type="file"
+                        accept=".md,.markdown,text/markdown"
+                        className="sr-only"
+                        onChange={async (e) => {
+                          const f = e.target.files?.[0];
+                          if (f) setEditing({ ...editing, ...(await fromFile(f)) });
+                        }}
+                      />
+                    </label>
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    {t("or paste it below, or drop a file on it")}
+                  </span>
+                </div>
                 <Textarea
                   rows={18}
                   className="font-mono text-xs"
                   value={editing.markdown}
                   onChange={(e) => setEditing({ ...editing, markdown: e.target.value })}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={async (e) => {
+                    const f = e.dataTransfer.files[0];
+                    if (!f) return;
+                    e.preventDefault();
+                    setEditing({ ...editing, ...(await fromFile(f)) });
+                  }}
                 />
               </TabsContent>
               <TabsContent value="preview" className="max-h-[60vh] overflow-y-auto">
@@ -204,4 +217,9 @@ export function SkillsPage() {
       </Dialog>
     </div>
   );
+}
+
+/** A skill from a markdown file: its text, and its name from the file's. */
+async function fromFile(f: File) {
+  return { name: f.name.replace(/\.(md|markdown)$/i, ""), markdown: await f.text() };
 }

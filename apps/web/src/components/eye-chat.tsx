@@ -2,6 +2,7 @@ import type { EyeMessage } from "@oraknid/contracts";
 import { Eye, SendHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { Markdown } from "@/components/common";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -87,11 +88,15 @@ export function EyeChat({ jobId }: { jobId: string }) {
               >
                 <div
                   className={cn(
-                    "max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap [overflow-wrap:anywhere]",
+                    "min-w-0 max-w-[85%] rounded-lg px-3 py-2 text-sm [overflow-wrap:anywhere]",
                     m.author === "owner" ? "bg-primary text-primary-foreground" : "bg-muted",
                   )}
                 >
-                  {m.text}
+                  {m.author === "owner" ? (
+                    <div className="whitespace-pre-wrap">{m.text}</div>
+                  ) : (
+                    <Markdown text={m.text} />
+                  )}
                   {m.action ? (
                     <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
                       <Badge variant="outline" className="h-5 text-[10px]">

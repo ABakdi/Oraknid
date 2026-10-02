@@ -103,7 +103,9 @@ export function OverviewPage() {
                 <CardHeader className="px-3">
                   <CardTitle className="flex items-center gap-2 text-sm">
                     <Bot className="size-4 shrink-0" />
-                    <span className="truncate">{leg.name}</span>
+                    <Link href={`/legs/${leg.id}`} className="truncate hover:underline">
+                      {leg.name}
+                    </Link>
                     <span className="flex-1" />
                     <StateBadge state={leg.paused ? "paused" : leg.health} />
                   </CardTitle>

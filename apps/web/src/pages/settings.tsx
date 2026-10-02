@@ -26,7 +26,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
 import { api, auth, message } from "@/lib/api";
 import { ago } from "@/lib/format";
 import { t } from "@/lib/i18n";

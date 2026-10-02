@@ -64,7 +64,8 @@ export function App() {
                 <Route path="/projects" component={ProjectsPage} />
                 <Route path="/inbox">{() => <InboxPage />}</Route>
                 <Route path="/inbox/:id">{(p) => <InboxPage focus={p.id} />}</Route>
-                <Route path="/legs" component={LegsPage} />
+                <Route path="/legs">{() => <LegsPage />}</Route>
+                <Route path="/legs/:id">{(p) => <LegsPage focus={p.id} />}</Route>
                 <Route path="/skills" component={SkillsPage} />
                 <Route path="/logs" component={LogsPage} />
                 <Route path="/settings" component={SettingsPage} />

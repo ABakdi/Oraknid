@@ -1,4 +1,7 @@
 import type { ReactNode } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkBreaks from "remark-breaks";
+import remarkGfm from "remark-gfm";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { message } from "@/lib/api";
@@ -115,82 +118,38 @@ export function Loading({ rows = 3 }: { rows?: number }) {
 const keyed = <T,>(xs: T[], prefix: string) =>
   xs.map((value, n) => ({ value, key: `${prefix}${n}` }));
 
-/** Minimal markdown for Silk, skills and inbox details: headings, lists, code, bold, inline code, links. */
+/**
+ * Markdown for everything a Leg, The Eye or I write (Web-UI → Markdown):
+ * GitHub-flavoured (tables, task lists, strikethrough). Raw HTML is never
+ * rendered, links open in a new tab, and long lines wrap or scroll inside
+ * their block, never past it.
+ */
 export function Markdown({ text, className }: { text: string; className?: string }) {
-  const blocks = keyed(text.split(/\n```[a-z]*\n?/), "b");
   return (
-    <div className={cn("space-y-2 text-sm leading-relaxed [overflow-wrap:anywhere]", className)}>
-      {blocks.map((b, i) =>
-        i % 2 === 1 ? (
-          <pre key={b.key} className="overflow-x-auto rounded-md bg-muted p-2 font-mono text-xs">
-            {b.value.replace(/```$/, "")}
-          </pre>
-        ) : (
-          <div key={b.key} className="space-y-1.5">
-            {keyed(b.value.split("\n"), `${b.key}l`).map((l) =>
-              l.value.trim() ? <Line key={l.key} line={l.value} /> : null,
-            )}
-          </div>
-        ),
+    <div
+      className={cn(
+        "min-w-0 space-y-2 text-sm leading-relaxed [overflow-wrap:anywhere]",
+        "[&_h1]:text-base [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_h4]:text-sm [&_h4]:font-medium",
+        "[&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5",
+        "[&_blockquote]:border-l-2 [&_blockquote]:pl-2 [&_blockquote]:text-muted-foreground",
+        "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2",
+        "[&_:not(pre)>code]:rounded [&_:not(pre)>code]:bg-muted [&_:not(pre)>code]:px-1 [&_:not(pre)>code]:font-mono [&_:not(pre)>code]:text-[0.85em]",
+        "[&_pre]:max-w-full [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-2 [&_pre]:font-mono [&_pre]:text-xs",
+        "[&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto [&_table]:text-xs [&_td]:border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:px-2 [&_th]:py-1 [&_th]:text-left",
+        "[&_hr]:border-border",
+        className,
       )}
+    >
+      <ReactMarkdown
+        // A line break is kept: Oraknid and the Legs write line by line.
+        remarkPlugins={[remarkGfm, remarkBreaks]}
+        components={{
+          a: ({ node: _n, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+        }}
+      >
+        {text}
+      </ReactMarkdown>
     </div>
-  );
-}
-
-function Line({ line }: { line: string }) {
-  const h = line.match(/^(#{1,4})\s+(.*)/);
-  if (h) {
-    return (
-      <div className={cn("font-semibold", (h[1] as string).length <= 2 ? "text-base" : "text-sm")}>
-        {inline(h[2] as string)}
-      </div>
-    );
-  }
-  const li = line.match(/^(\s*)([-*]|\d+\.)\s+(.*)/);
-  if (li) {
-    return (
-      <div className="flex gap-2" style={{ paddingLeft: `${(li[1] as string).length * 6}px` }}>
-        <span className="text-muted-foreground">{/\d/.test(li[2] as string) ? li[2] : "•"}</span>
-        <span>{inline(li[3] as string)}</span>
-      </div>
-    );
-  }
-  if (line.startsWith(">"))
-    return (
-      <div className="border-l-2 pl-2 text-muted-foreground">
-        {inline(line.replace(/^>\s?/, ""))}
-      </div>
-    );
-  return <p>{inline(line)}</p>;
-}
-
-function inline(s: string): ReactNode[] {
-  return keyed(s.split(/(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))/g), "i").map(
-    ({ value: p, key }) => {
-      if (p.startsWith("`") && p.endsWith("`")) {
-        return (
-          <code key={key} className="rounded bg-muted px-1 font-mono text-[0.85em]">
-            {p.slice(1, -1)}
-          </code>
-        );
-      }
-      if (p.startsWith("**")) return <strong key={key}>{p.slice(2, -2)}</strong>;
-      const link = p.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-      if (link) {
-        return (
-          <a
-            key={key}
-            href={link[2]}
-            className="text-primary underline underline-offset-2"
-            target="_blank"
-            rel="noreferrer"
-          >
-            {link[1]}
-          </a>
-        );
-      }
-      return p;
-    },
   );
 }
 

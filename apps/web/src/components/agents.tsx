@@ -1,6 +1,6 @@
 import type { SessionLogEntry, SessionView } from "@oraknid/contracts";
 import { useEffect, useRef, useState } from "react";
-import { Empty, ErrorNote, Loading } from "@/components/common";
+import { Empty, ErrorNote, Loading, Markdown } from "@/components/common";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { api } from "@/lib/api";
@@ -207,9 +207,10 @@ function Line({ e }: { e: SessionLogEntry }) {
   switch (e.kind) {
     case "text":
       return (
-        <div className="my-1 whitespace-pre-wrap [overflow-wrap:anywhere]">
+        <div className="my-2 flex gap-0">
           {time}
-          {e.text}
+          {/* What the Leg says is markdown (Web-UI → Markdown). */}
+          <Markdown text={e.text} className="min-w-0 flex-1 font-sans text-[13px]" />
         </div>
       );
     case "tool":

@@ -30,13 +30,13 @@ to a model or to ask Oraknid to do things for me.
 - [ ] Other remotes (GitLab, any git URL) — last
 
 ### M8.4 — Markdown everywhere
-- [ ] What the agents and The Eye say, in session logs, the activity stream and the Eye's conversation, is rendered as markdown
+- [x] What the agents and The Eye say, in session logs, the activity stream and the Eye's conversation, is rendered as markdown
 
 ### M8.5 — Screens
-- [ ] Overview: a Leg links to its card on the Legs page
-- [ ] Legs: cards collapsed by default, opened to see and configure
-- [ ] Inbox: items readable at any width, nothing spilling out of its card
-- [ ] Skills: upload a `.md` file
+- [x] Overview: a Leg links to its card on the Legs page
+- [x] Legs: cards collapsed by default, opened to see and configure
+- [x] Inbox: items readable at any width, nothing spilling out of its card
+- [x] Skills: upload a `.md` file
 
 ### M8.6 — Chats
 - [ ] A Chats page: new chat, pick the Leg and model, talk; mostly talk and research, with projects I attach readable ([[ADR-025-Chats]])

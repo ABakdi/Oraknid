@@ -189,26 +189,35 @@ export function InboxItemCard({ item, highlight }: { item: InboxItem; highlight?
       id={`item-${item.id}`}
       className={cn("gap-3 py-4", highlight && "ring-2 ring-primary", !open && "opacity-70")}
     >
-      <CardHeader className="px-4">
-        <CardTitle className="flex flex-wrap items-center gap-2 text-sm">
+      <CardHeader className="min-w-0 space-y-1.5 px-4">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Badge variant={item.kind === "approval" ? "default" : "secondary"}>
             {item.kind === "approval" ? t("Approval") : interview ? t("Interview") : t("Question")}
           </Badge>
-          <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{item.title}</span>
-          <Link
-            href={`/jobs/${item.jobId}`}
-            className="max-w-full truncate text-xs font-normal text-muted-foreground underline-offset-2 hover:underline"
-          >
-            {item.projectName && item.jobTitle
-              ? `${item.projectName} · ${item.jobTitle}`
-              : t("the job")}
-            {item.taskTitle ? ` · ${item.taskTitle}` : ""}
-          </Link>
-          <span className="text-xs font-normal text-muted-foreground">{ago(item.createdAt)}</span>
+          <span className="flex-1" />
+          <span className="shrink-0">{ago(item.createdAt)}</span>
+        </div>
+        <CardTitle className="text-sm leading-snug [overflow-wrap:anywhere]">
+          {item.title}
         </CardTitle>
+        {/* Where it comes from, on its own line: each part may wrap, nothing squeezes the title. */}
+        <Link
+          href={`/jobs/${item.jobId}`}
+          className="block text-xs text-muted-foreground underline-offset-2 [overflow-wrap:anywhere] hover:underline"
+        >
+          {item.projectName && item.jobTitle
+            ? `${item.projectName} · ${item.jobTitle}`
+            : t("the job")}
+          {item.taskTitle ? ` · ${item.taskTitle}` : ""}
+        </Link>
       </CardHeader>
-      <CardContent className="space-y-3 px-4">
-        {item.detail ? <Markdown text={item.detail} /> : null}
+      <CardContent className="min-w-0 space-y-3 px-4">
+        {item.detail ? (
+          <Markdown
+            text={item.detail}
+            className="min-w-0 [overflow-wrap:anywhere] [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_pre]:whitespace-pre-wrap"
+          />
+        ) : null}
         {!open ? (
           <div className="text-sm text-muted-foreground">
             {item.state === "withdrawn"

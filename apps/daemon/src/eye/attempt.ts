@@ -445,7 +445,7 @@ export async function runAttempt(
       taskId,
       raisedBy: { legId: leg.legId },
       title: `${leg.legName} wants to ${r.command ? `run \`${r.command.slice(0, 80)}\`` : `use ${r.tool}`}`,
-      detail: `Task: ${task.title}\nWhy it asks: ${v.reason}.\n\n${r.command ? `\`\`\`\n${r.command}\n\`\`\`` : JSON.stringify(r.input)}`,
+      detail: `Task: ${task.title}\nWhy it asks: ${v.reason}.\n\n${r.command ? `\`\`\`\n${r.command}\n\`\`\`` : `\`\`\`json\n${JSON.stringify(r.input, null, 2)}\n\`\`\``}`,
       options: ["Approve", "Deny", ALL_LIKE_THIS],
       defaultOption: null,
     });
