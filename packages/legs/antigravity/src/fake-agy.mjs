@@ -33,10 +33,24 @@ if (
   !existsSync(token) &&
   process.env.SSH_CONNECTION
 ) {
+  // As agy 1.2.14 does: ask the terminal what it is, offer a menu, then a wrapped link with a hyperlink.
+  const url = "https://accounts.google.com/o/oauth2/auth?client=agy&state=x1";
+  process.stdout.write("\x1b[>c\x1b_Ga=q,i=31;AAAA\x1b\\");
+  let chosen = false;
   process.stdout.write(
-    "Sign in: open https://accounts.google.com/o/oauth2/auth?client=agy&state=x1\r\nEnter the authorization code: ",
+    "\r\n Welcome to the Antigravity CLI. You are currently not signed in.\r\n Select login method:\r\n > 1. Google OAuth\r\n2. Use a Google Cloud project\r\n",
   );
-  createInterface({ input: process.stdin }).on("line", (code) => {
+  createInterface({ input: process.stdin }).on("line", (raw) => {
+    // The terminal's answers to its questions come in first.
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: removing the escapes themselves
+    const code = raw.replace(/\x1b\[[^a-zA-Z]*[a-zA-Z]|\x1b_[^\x1b]*\x1b\\/g, "");
+    if (!chosen) {
+      chosen = true;
+      process.stdout.write(
+        `Open the URL below in your browser:\r\n ${url.slice(0, 30)}\r\n ${url.slice(30)}\r\n \x1b]8;;${url}\x07Click here to authenticate\x1b]8;;\x07\r\n After authenticating, copy the code displayed in the browser and paste it below:\r\n`,
+      );
+      return;
+    }
     if (code.trim() !== "good-code") {
       process.stdout.write("Invalid code, try again.\r\nEnter the authorization code: ");
       return;
@@ -52,7 +66,10 @@ if (
     console.error("error: authentication required");
     process.exit(1);
   }
-  console.log("gemini-3.8-pro-high\ngemini-3.8-flash-high");
+  console.log("Fetching available models...");
+  console.log(
+    "gemini-3.8-pro-high\tGemini 3.8 Pro (High)\ngemini-3.8-flash-high\tGemini 3.8 Flash (High)",
+  );
   process.exit(0);
 } else main();
 

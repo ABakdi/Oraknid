@@ -162,7 +162,22 @@ export function createAntigravityAdapter(): LegAdapter {
       const env = legEnv(home, plan);
       const offers = (ids: string[]) =>
         ids.map((m) => ({ model: m, displayName: m, effortLevels: [], contextWindow: null }));
-      const version = spawnSync(cfg.binary, ["--version"], { env, encoding: "utf8" });
+      // In the Leg's sandbox: outside it agy finds my desktop keyring and looks signed in (ADR-020).
+      const run = (args: string[]) => {
+        const w = plan
+          ? plan.sandbox.wrap({
+              command: cfg.binary,
+              args,
+              cwd: home,
+              writable: [home, ...plan.writable],
+              readonly: plan.readonly,
+              home,
+              env,
+            })
+          : { command: cfg.binary, args };
+        return spawnSync(w.command, w.args, { cwd: home, env, encoding: "utf8", timeout: 30_000 });
+      };
+      const version = run(["--version"]);
       if (version.status !== 0)
         return {
           ok: false,
@@ -172,28 +187,38 @@ export function createAntigravityAdapter(): LegAdapter {
           models: offers(cfg.models),
           features,
         };
-      const listed = spawnSync(cfg.binary, ["models"], { env, encoding: "utf8", timeout: 30_000 });
+      const listed = run(["models"]);
       const said = `${listed.stdout}\n${listed.stderr}`;
-      if (listed.status !== 0 || /authentication required|not (signed|logged) in/i.test(said))
+      if (
+        listed.status !== 0 ||
+        /authentication required|not (signed|logged) in|please sign in/i.test(said)
+      )
         return {
           ok: false,
-          detail: /authentication|signed|logged/i.test(said)
+          detail: /authentication|signed|logged|sign in/i.test(said)
             ? "Not signed in: press Log in on its card."
             : `agy models failed: ${said.trim().slice(0, 200)}`,
           models: offers(cfg.models),
           features,
         };
-      const ids = listed.stdout
+      // One per line: its id, a tab, its name (agy 1.2.14).
+      const listedModels = listed.stdout
         .split("\n")
-        .map((l) => /^\s*[*-]?\s*([a-z0-9][a-z0-9.-]+)\b/i.exec(l)?.[1] ?? "")
-        .filter((m) => /\d/.test(m) && m.includes("-"));
-      const models = ids.length ? ids : cfg.models;
+        .map((l) => {
+          const [id = "", name] = l.split("\t");
+          const m = /^\s*[*-]?\s*([a-z0-9][a-z0-9.-]+)\s*$/i.exec(id)?.[1] ?? "";
+          return { model: m, displayName: name?.trim() || m };
+        })
+        .filter((m) => /\d/.test(m.model) && m.model.includes("-"));
+      const models = listedModels.length
+        ? listedModels.map((m) => ({ ...m, effortLevels: [], contextWindow: null }))
+        : offers(cfg.models);
       if (!models.length)
         return { ok: false, detail: "agy listed no models.", models: [], features };
       return {
         ok: true,
         detail: `Antigravity ${version.stdout.trim()}, ${models.length} models.`,
-        models: offers(models),
+        models,
         features,
       };
     },

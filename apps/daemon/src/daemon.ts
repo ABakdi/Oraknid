@@ -127,7 +127,7 @@ export async function startDaemon(options: DaemonOptions) {
     antigravity: createAntigravityAdapter(),
   };
   const registry = new LegRegistry(db, bus, secrets, paths.legs, now);
-  const logins = new LegLogins(paths.legs);
+  const logins = new LegLogins(paths.legs, os.sandbox);
   // No Leg keeps my own ~/.claude as its config folder (Audit 1 → S1-02).
   registry.ownConfigFolders();
   const supervisor = new LegSupervisor({

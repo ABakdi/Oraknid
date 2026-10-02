@@ -72,6 +72,22 @@ against the real binary yet.
 - **Probe**: `agy --version`, then `agy models` for the model list
   (it also says whether the Leg is signed in).
 
+## Checked with the real agy (2026-10-02, 1.2.14)
+- `agy models` lists `id<TAB>name` per line; signed out, it says
+  "Please sign in to view available models".
+- Its login is in my **desktop keyring**, and outside a sandbox `agy`
+  reaches it even with no D-Bus variable set (it finds the bus under
+  `/run/user`). Inside a Leg's sandbox there's no `/run/user`: no
+  keyring, so the Leg isn't signed in, and a Leg can't read my keyring.
+  So the sign-in from the Leg's card **runs in the Leg's sandbox** too,
+  as does the health check.
+- Signing in starts by asking the terminal what it is, then a menu
+  (Google OAuth first), then the link (also as a hyperlink) and a code.
+  Oraknid answers like a plain terminal, picks Google OAuth, and shows
+  the link.
+- Still to see: whether the sign-in, with no keyring, stays in the
+  Leg's home for its sessions; and the soft-deny and quota wording.
+
 ## Consequences
 - A turn costs one `agy` start. A command allowed once is allowed for
   the rest of the session, by its exact text only.
