@@ -9,6 +9,7 @@ import { EyeChat } from "@/components/eye-chat";
 import { JobResult } from "@/components/job-result";
 import { JobSettings } from "@/components/job-settings";
 import { OrderDialog } from "@/components/order-dialog";
+import { type PageTab, PageTabs } from "@/components/page-tabs";
 import { PlanComparisonCard } from "@/components/plan-comparison";
 import { TaskDiff } from "@/components/task-diff";
 import { Badge } from "@/components/ui/badge";
@@ -39,7 +40,6 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { WebGraph } from "@/components/web-graph";
 import { api, message } from "@/lib/api";
@@ -61,7 +61,7 @@ async function act(fn: () => Promise<unknown>, done?: string) {
   }
 }
 
-export function JobPage({ id }: { id: string }) {
+export function JobPage({ id, tab }: { id: string; tab?: string }) {
   const topic = `job:${id}`;
   // Reloaded on what changes the job's view, not on every streamed line (Audit 1 → Q1-06).
   const job = useLive(() => api.jobs.get({ id }), {
@@ -105,8 +105,8 @@ export function JobPage({ id }: { id: string }) {
   const task = j.tasks.find((x) => x.id === open) ?? null;
   const running = ACTIVE.includes(j.state);
 
-  return (
-    <div className="space-y-4">
+  const header = (
+    <div className="shrink-0 space-y-2">
       <PageHeader
         title={j.title}
         sub={
@@ -218,67 +218,68 @@ export function JobPage({ id }: { id: string }) {
           {j.blockedReason ?? j.pauseReason}
         </div>
       ) : null}
+    </div>
+  );
 
-      {j.state === "completed" ? <JobResult jobId={id} /> : null}
-      <PlanComparisonCard jobId={id} />
-      <EyeChat jobId={id} />
-
-      <WebGraph tasks={j.tasks} legName={legName} onOpen={setOpen} />
-      <div className="flex justify-end">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="gap-1"
-          onClick={() => setAdding(true)}
-          disabled={j.state === "completed" || j.state === "cancelled"}
-        >
-          <Plus className="size-4" />
-          {t("Add a task")}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="gap-1"
-          onClick={() => setOrdering(true)}
-          disabled={j.state === "completed" || j.state === "cancelled"}
-        >
-          <ListOrdered className="size-4" />
-          {t("Order")}
-        </Button>
-      </div>
-
-      <Tabs defaultValue="agents">
-        <TabsList className="w-full justify-start overflow-x-auto">
-          <TabsTrigger value="agents">{t("Agents")}</TabsTrigger>
-          <TabsTrigger value="activity">{t("Activity")}</TabsTrigger>
-          <TabsTrigger value="silk">{t("Silk")}</TabsTrigger>
-          <TabsTrigger value="inbox">{t("Inbox")}</TabsTrigger>
-          <TabsTrigger value="budget">{t("Budget")}</TabsTrigger>
-          <TabsTrigger value="stats">{t("Stats")}</TabsTrigger>
-          <TabsTrigger value="settings">{t("Settings")}</TabsTrigger>
-        </TabsList>
-        <TabsContent value="agents">
-          <Agents jobId={id} />
-        </TabsContent>
-        <TabsContent value="activity">
-          <Activity jobId={id} />
-        </TabsContent>
-        <TabsContent value="silk">
-          <Silk jobId={id} />
-        </TabsContent>
-        <TabsContent value="inbox">
-          <JobInbox jobId={id} />
-        </TabsContent>
-        <TabsContent value="budget">
+  const editable = j.state !== "completed" && j.state !== "cancelled";
+  const tabs: PageTab[] = [
+    {
+      id: "web",
+      label: t("The Web"),
+      badge: j.tasks.length || undefined,
+      content: () => (
+        <div className="space-y-3">
+          <WebGraph tasks={j.tasks} legName={legName} onOpen={setOpen} />
+          <div className="flex justify-end">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1"
+              onClick={() => setAdding(true)}
+              disabled={!editable}
+            >
+              <Plus className="size-4" />
+              {t("Add a task")}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1"
+              onClick={() => setOrdering(true)}
+              disabled={!editable}
+            >
+              <ListOrdered className="size-4" />
+              {t("Order")}
+            </Button>
+          </div>
+          <PlanComparisonCard jobId={id} />
+        </div>
+      ),
+    },
+    { id: "eye", label: t("The Eye"), fill: true, content: () => <EyeChat jobId={id} full /> },
+    ...(j.state === "completed"
+      ? [{ id: "result", label: t("Result"), content: () => <JobResult jobId={id} /> }]
+      : []),
+    { id: "agents", label: t("Agents"), content: () => <Agents jobId={id} /> },
+    { id: "activity", label: t("Activity"), content: () => <Activity jobId={id} /> },
+    { id: "silk", label: t("Silk"), content: () => <Silk jobId={id} /> },
+    { id: "inbox", label: t("Inbox"), content: () => <JobInbox jobId={id} /> },
+    {
+      id: "budget",
+      label: t("Budget & stats"),
+      content: () => (
+        <div className="space-y-4">
           <Budget job={j} />
-        </TabsContent>
-        <TabsContent value="stats">
           <Stats jobId={id} />
-        </TabsContent>
-        <TabsContent value="settings">
-          <JobSettings job={j} />
-        </TabsContent>
-      </Tabs>
+        </div>
+      ),
+    },
+    { id: "settings", label: t("Settings"), content: () => <JobSettings job={j} /> },
+  ];
+
+  return (
+    <>
+      <PageTabs base={`/jobs/${id}`} tab={tab} tabs={tabs} header={header} />
 
       <TaskDrawer
         job={j}
@@ -316,7 +317,7 @@ export function JobPage({ id }: { id: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }
 

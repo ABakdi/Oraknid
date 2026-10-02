@@ -59,8 +59,8 @@ async function phone(b: Bundle) {
   });
   ws.send(end.hello());
   await opened;
-  const wait = async (pred: (m: Record<string, unknown>) => boolean) => {
-    const until = Date.now() + 3000;
+  const wait = async (pred: (m: Record<string, unknown>) => boolean, ms = 3000) => {
+    const until = Date.now() + ms;
     for (;;) {
       const i = inbox.findIndex(pred);
       if (i >= 0) return inbox.splice(i, 1)[0] as Record<string, unknown>;
@@ -165,10 +165,37 @@ describe("away from home, through The Nest (Phase 4)", () => {
     const hello = await p.wait((m) => m.t === "live" && String(m.frame).includes('"hello"'));
     expect(String(hello.frame)).toContain('"type":"hello"');
 
+    // The terminal through the tunnel: closed without full rights, a shell with them (ADR-030).
+    await api.settings.setTerminal({ enabled: true });
+    p.send({
+      t: "term-open",
+      id: 50,
+      token: b.token,
+      unlock: session,
+      target: "local",
+      cols: 80,
+      rows: 24,
+    });
+    await p.wait((m) => m.t === "term-close" && m.id === 50);
+    await api.devices.setRights({ id: b.deviceId, full: true, pin: "583920" });
+    p.send({
+      t: "term-open",
+      id: 51,
+      token: b.token,
+      unlock: session,
+      target: "local",
+      cols: 80,
+      rows: 24,
+    });
+    p.send({ t: "term-in", id: 51, f: JSON.stringify({ t: "in", d: "echo away-$((40+2))\r" }) });
+    await p.wait((m) => m.t === "term" && m.id === 51 && String(m.d).includes("away-42"), 15_000);
+    p.send({ t: "term-close", id: 51 });
+    await api.settings.setTerminal({ enabled: false });
+
     // A revoked device's tunnel ends at once, and it is refused at its next handshake.
     const ended = new Promise((ok) => p.ws.once("close", ok));
     await api.devices.revoke({ id: b.deviceId });
     await ended;
     await expect(phone(b)).rejects.toThrow(/isn't paired, or was revoked/);
-  });
+  }, 30_000);
 });

@@ -1,20 +1,12 @@
 import type { ServerSample, ServerView } from "@oraknid/contracts";
-import {
-  ChevronRight,
-  Plus,
-  RefreshCw,
-  Server,
-  SquareTerminal,
-  Trash2,
-  Upload,
-} from "lucide-react";
+import { ChevronLeft, Plus, RefreshCw, Server, SquareTerminal, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { Empty, ErrorNote, Loading, Markdown, PageHeader } from "@/components/common";
+import { type PageTab, PageTabs } from "@/components/page-tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -29,55 +21,103 @@ import { api, message } from "@/lib/api";
 import { ago, bytes } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { useLive } from "@/lib/live";
+import { cn } from "@/lib/utils";
 
 const act = (p: Promise<unknown>, ok?: string) =>
   p.then(() => ok && toast.success(ok)).catch((e) => toast.error(message(e)));
 
 /** My servers (Servers spec): state documents, oraknid-monitor, a terminal. */
-export function ServersPage() {
+export function ServersPage({ id, tab }: { id?: string; tab?: string }) {
+  const [, go] = useLocation();
   const servers = useLive(() => api.servers.list(), {
     topics: ["overview"],
     refreshOn: (e) => e.type.startsWith("server."),
   });
   const [adding, setAdding] = useState(false);
-  const [open, setOpen] = useState<Set<string>>(new Set());
   if (servers.error) return <ErrorNote error={servers.error} />;
   if (servers.loading) return <Loading />;
+  const list = servers.data ?? [];
   const add = (
-    <Button className="gap-1" onClick={() => setAdding(true)}>
+    <Button className="gap-1" size="sm" onClick={() => setAdding(true)}>
       <Plus className="size-4" />
       {t("Add a server")}
     </Button>
   );
-  return (
-    <div className="space-y-4">
-      <PageHeader
-        title={t("Servers")}
-        sub={t("What runs where: each with its state document, its readings, and a terminal.")}
-        actions={add}
-      />
-      {(servers.data ?? []).length === 0 ? (
+  if (list.length === 0)
+    return (
+      <div className="space-y-4">
+        <PageHeader
+          title={t("Servers")}
+          sub={t("What runs where: each with its state document, its readings, and a terminal.")}
+        />
         <Empty title={t("No servers yet")} action={add}>
           {t(
             "Add one over SSH: Oraknid reads what's on it (only reads), writes its state document, and shows how it's doing.",
           )}
         </Empty>
-      ) : null}
-      {(servers.data ?? []).map((s) => (
-        <ServerCard
-          key={s.id}
-          s={s}
-          open={open.has(s.id)}
-          onToggle={() =>
-            setOpen((o) => {
-              const n = new Set(o);
-              if (n.has(s.id)) n.delete(s.id);
-              else n.add(s.id);
-              return n;
-            })
-          }
-        />
-      ))}
+        <AddServer open={adding} onOpenChange={setAdding} />
+      </div>
+    );
+  // A server open: its id in the address; on a computer the first one by default.
+  const selected = list.find((x) => x.id === id);
+  const shown =
+    selected ?? (typeof window !== "undefined" && window.innerWidth >= 768 ? list[0] : undefined);
+  return (
+    <div className="-mb-24 flex h-[calc(100dvh-7.5rem)] min-h-0 gap-4 md:-mb-8 md:h-[calc(100dvh-4.5rem)]">
+      <aside
+        className={cn(
+          "flex min-h-0 w-full shrink-0 flex-col gap-2 md:w-64",
+          selected && "hidden md:flex",
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <h1 className="flex-1 text-lg font-semibold">{t("Servers")}</h1>
+          {add}
+        </div>
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+          {list.map((x) => {
+            const l = x.latest;
+            return (
+              <button
+                key={x.id}
+                type="button"
+                onClick={() => go(`/servers/${x.id}`)}
+                className={cn(
+                  "flex w-full flex-col gap-0.5 rounded-md border px-3 py-2 text-left text-sm hover:bg-accent",
+                  shown?.id === x.id && "border-primary bg-accent",
+                )}
+              >
+                <span className="flex items-center gap-2">
+                  <Server className="size-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate font-medium">{x.name}</span>
+                  <span
+                    className={cn(
+                      "size-2 shrink-0 rounded-full",
+                      x.error
+                        ? "bg-destructive"
+                        : x.setup === "ready"
+                          ? "bg-success"
+                          : "bg-warning",
+                    )}
+                  />
+                </span>
+                <span className="truncate font-mono text-xs text-muted-foreground">
+                  {x.user}@{x.host}
+                </span>
+                {l ? (
+                  <span className="text-xs text-muted-foreground">
+                    CPU {Math.round(l.cpuPercent)}% · {t("memory")} {pct(l.memUsed, l.memTotal)}% ·{" "}
+                    {t("disk")} {pct(l.diskUsed, l.diskTotal)}%
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      </aside>
+      <section className={cn("min-h-0 min-w-0 flex-1", !selected && "hidden md:block")}>
+        {shown ? <ServerDetail key={shown.id} s={shown} tab={tab} /> : null}
+      </section>
       <AddServer open={adding} onOpenChange={setAdding} />
     </div>
   );
@@ -85,54 +125,65 @@ export function ServersPage() {
 
 const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0);
 
-function ServerCard({ s, open, onToggle }: { s: ServerView; open: boolean; onToggle: () => void }) {
+/** One server: its header and actions, then Readings · State document · About in tabs. */
+function ServerDetail({ s, tab }: { s: ServerView; tab?: string }) {
   const [, go] = useLocation();
-  const l = s.latest;
-  return (
-    <Card className="gap-0 py-0">
-      <CardHeader className="py-3">
-        <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-          <button
-            type="button"
-            className="flex min-w-0 flex-1 items-center gap-2 text-left"
-            aria-expanded={open}
-            onClick={onToggle}
+  const header = (
+    <div className="shrink-0 space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="md:hidden"
+          aria-label={t("All servers")}
+          onClick={() => go("/servers")}
+        >
+          <ChevronLeft className="size-4" />
+        </Button>
+        <h2 className="min-w-0 truncate text-lg font-semibold">{s.name}</h2>
+        <Badge variant={s.error ? "destructive" : s.setup === "ready" ? "outline" : "secondary"}>
+          {s.busy ??
+            (s.error ? t("unreachable") : s.setup === "ready" ? t("ready") : t("not set up"))}
+        </Badge>
+        <span className="truncate font-mono text-xs text-muted-foreground">
+          {s.user}@{s.host}
+          {s.port !== 22 ? `:${s.port}` : ""}
+        </span>
+        <span className="flex-1" />
+        {s.setup === "new" ? (
+          <Button
+            size="sm"
+            disabled={!!s.busy}
+            onClick={() => act(api.servers.setup({ id: s.id }), t("Set up."))}
           >
-            <ChevronRight
-              className={`size-4 shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
-            />
-            <Server className="size-4 shrink-0" />
-            <span className="truncate">{s.name}</span>
-            <Badge
-              variant={s.error ? "destructive" : s.setup === "ready" ? "outline" : "secondary"}
-            >
-              {s.busy ??
-                (s.error ? t("unreachable") : s.setup === "ready" ? t("ready") : t("not set up"))}
-            </Badge>
-            <span className="hidden truncate font-mono text-xs font-normal text-muted-foreground sm:inline">
-              {s.user}@{s.host}
-              {s.port !== 22 ? `:${s.port}` : ""}
-            </span>
-            {l ? (
-              <span className="hidden text-xs font-normal text-muted-foreground md:inline">
-                · CPU {Math.round(l.cpuPercent)}% · {t("memory")} {pct(l.memUsed, l.memTotal)}% ·{" "}
-                {t("disk")} {pct(l.diskUsed, l.diskTotal)}%
-              </span>
-            ) : null}
-          </button>
-          {s.setup === "new" ? (
-            <Button
-              size="sm"
-              disabled={!!s.busy}
-              onClick={() => act(api.servers.setup({ id: s.id }), t("Set up."))}
-            >
-              {t("Set up")}
-            </Button>
-          ) : null}
-        </CardTitle>
-      </CardHeader>
+            {t("Set up")}
+          </Button>
+        ) : null}
+        <Button
+          size="sm"
+          variant="secondary"
+          className="gap-1"
+          disabled={s.setup !== "ready" || !!s.busy}
+          onClick={() => act(api.servers.discover({ id: s.id }), t("Its document is up to date."))}
+        >
+          <RefreshCw className="size-3.5" />
+          {t("Discover again")}
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="gap-1"
+          onClick={() => go(`/terminal/${s.id}`)}
+        >
+          <SquareTerminal className="size-3.5" />
+          {t("Terminal")}
+        </Button>
+      </div>
+      {s.error ? (
+        <div className="text-sm text-destructive [overflow-wrap:anywhere]">{s.error}</div>
+      ) : null}
       {s.hostKeyOffered ? (
-        <div className="mx-4 mb-3 space-y-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
+        <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
           <div>
             {t(
               "The server's host key changed. Nothing connects until you accept it, and only if you know why it changed.",
@@ -150,74 +201,73 @@ function ServerCard({ s, open, onToggle }: { s: ServerView; open: boolean; onTog
           </Button>
         </div>
       ) : null}
-      {open ? (
-        <CardContent className="space-y-4 border-t pt-3 pb-4 text-sm">
-          {s.error ? (
-            <div className="text-destructive [overflow-wrap:anywhere]">{s.error}</div>
-          ) : null}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted-foreground">
-              {s.setup === "new"
-                ? s.auth === "password"
-                  ? t(
-                      "Set up installs a key of Oraknid's own on it, deletes the password, reads what's there and installs oraknid-monitor.",
-                    )
-                  : t("Set up reads what's there (only reads) and installs oraknid-monitor.")
-                : s.lastSeenAt
-                  ? t("Seen {when}.", { when: ago(s.lastSeenAt) })
-                  : ""}
-            </span>
-            <span className="flex-1" />
-            <Button
-              size="sm"
-              variant="secondary"
-              className="gap-1"
-              disabled={s.setup !== "ready" || !!s.busy}
-              onClick={() =>
-                act(api.servers.discover({ id: s.id }), t("Its document is up to date."))
-              }
-            >
-              <RefreshCw className="size-3.5" />
-              {t("Discover again")}
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              className="gap-1"
-              onClick={() => go(`/terminal/${s.id}`)}
-            >
-              <SquareTerminal className="size-3.5" />
-              {t("Terminal")}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="gap-1"
-              onClick={() =>
-                api.servers
-                  .remove({ id: s.id })
-                  .then((r) =>
-                    toast.success(
-                      r.cleaned
-                        ? t("Removed, and Oraknid's things taken off it.")
-                        : t("Removed here; Oraknid couldn't reach it to take its things off."),
-                    ),
-                  )
-                  .catch((e) => toast.error(message(e)))
-              }
-            >
-              <Trash2 className="size-3.5" />
-              {t("Remove")}
-            </Button>
-          </div>
+    </div>
+  );
+  const tabs: PageTab[] = [
+    ...(s.setup === "ready"
+      ? [
+          {
+            id: "readings",
+            label: t("Readings"),
+            content: () => <Readings id={s.id} latest={s.latest} />,
+          },
+        ]
+      : []),
+    ...(s.stateVersion > 0
+      ? [{ id: "state", label: t("State document"), content: () => <StateDocument id={s.id} /> }]
+      : []),
+    {
+      id: "about",
+      label: t("About"),
+      content: () => (
+        <div className="space-y-3 text-sm">
           {s.description ? (
             <div className="text-muted-foreground [overflow-wrap:anywhere]">{s.description}</div>
           ) : null}
-          {s.setup === "ready" ? <Readings id={s.id} latest={l} /> : null}
-          {s.stateVersion > 0 ? <StateDocument id={s.id} /> : null}
-        </CardContent>
-      ) : null}
-    </Card>
+          <div className="text-xs text-muted-foreground">
+            {s.setup === "new"
+              ? s.auth === "password"
+                ? t(
+                    "Set up installs a key of Oraknid's own on it, deletes the password, reads what's there and installs oraknid-monitor.",
+                  )
+                : t("Set up reads what's there (only reads) and installs oraknid-monitor.")
+              : s.lastSeenAt
+                ? t("Seen {when}.", { when: ago(s.lastSeenAt) })
+                : ""}
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="gap-1 text-destructive"
+            onClick={() =>
+              api.servers
+                .remove({ id: s.id })
+                .then((r) => {
+                  toast.success(
+                    r.cleaned
+                      ? t("Removed, and Oraknid's things taken off it.")
+                      : t("Removed here; Oraknid couldn't reach it to take its things off."),
+                  );
+                  go("/servers");
+                })
+                .catch((e) => toast.error(message(e)))
+            }
+          >
+            <Trash2 className="size-3.5" />
+            {t("Remove this server")}
+          </Button>
+        </div>
+      ),
+    },
+  ];
+  return (
+    <PageTabs
+      base={`/servers/${s.id}`}
+      tab={tab}
+      tabs={tabs}
+      header={header}
+      className="mb-0 h-full md:mb-0 md:h-full"
+    />
   );
 }
 

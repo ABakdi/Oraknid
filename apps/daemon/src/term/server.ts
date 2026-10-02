@@ -96,7 +96,34 @@ export function attachTerminal(o: {
       const target = url.searchParams.get("target") ?? "local";
       const cols = Math.max(20, Math.min(500, Number(url.searchParams.get("cols")) || 80));
       const rows = Math.max(5, Math.min(200, Number(url.searchParams.get("rows")) || 24));
-      let pty: Pty;
+      // What comes while the shell starts waits for it: nothing typed is lost.
+      let pty: Pty | null = null;
+      let gone = false;
+      const early: Frame[] = [];
+      const apply = (f: Frame) => {
+        if (!pty) return early.push(f);
+        if (f.t === "in" && typeof f.d === "string") {
+          o.active?.(req);
+          pty.write(f.d);
+        }
+        if (f.t === "resize" && f.cols > 0 && f.rows > 0) pty.resize(f.cols, f.rows);
+      };
+      ws.on("message", (raw) => {
+        try {
+          apply(JSON.parse(String(raw)) as Frame);
+        } catch {}
+      });
+      ws.on("close", () => {
+        gone = true;
+        if (!pty) return;
+        pty.kill();
+        o.bus.publish({
+          type: "terminal.closed",
+          topic: "overview",
+          jobId: null,
+          payload: { target },
+        });
+      });
       try {
         pty =
           target === "local"
@@ -107,40 +134,24 @@ export function attachTerminal(o: {
         ws.close();
         return;
       }
-      // Who opened what, and when; never what is typed (ADR-028).
+      const shell = pty;
+      if (gone) {
+        shell.kill();
+        return;
+      }
+      // Who opened what, from where, and when; never what is typed (ADR-028, ADR-030).
       o.bus.publish({
         type: "terminal.opened",
         topic: "overview",
         jobId: null,
-        payload: { target, device },
+        payload: { target, device, away: url.searchParams.get("via") === "nest" },
         actor: "owner",
       });
-      pty.onData((d) => {
+      shell.onData((d) => {
         if (ws.readyState === ws.OPEN) ws.send(d);
       });
-      pty.onExit(() => ws.close());
-      ws.on("message", (raw) => {
-        let f: Frame;
-        try {
-          f = JSON.parse(String(raw)) as Frame;
-        } catch {
-          return;
-        }
-        if (f.t === "in" && typeof f.d === "string") {
-          o.active?.(req);
-          pty.write(f.d);
-        }
-        if (f.t === "resize" && f.cols > 0 && f.rows > 0) pty.resize(f.cols, f.rows);
-      });
-      ws.on("close", () => {
-        pty.kill();
-        o.bus.publish({
-          type: "terminal.closed",
-          topic: "overview",
-          jobId: null,
-          payload: { target },
-        });
-      });
+      shell.onExit(() => ws.close());
+      for (const f of early.splice(0)) apply(f);
     });
   });
 }

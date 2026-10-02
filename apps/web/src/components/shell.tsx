@@ -8,6 +8,8 @@ import {
   ListTodo,
   MessagesSquare,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   ScrollText,
   Search,
@@ -30,10 +32,18 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useLive, useLiveStatus } from "@/lib/live";
+import { store } from "@/lib/store";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
@@ -53,10 +63,85 @@ const NAV = [
 /** On a phone: four tabs and "More" (Web-UI → Layout). */
 const TABS = ["/", "/jobs", "/inbox", "/legs"];
 
+/** Pages with a side panel of their own fold the sidebar while open (Web-UI → Layout). */
+const FOLDS = [/^\/chats/, /^\/terminal/, /^\/mail/, /^\/jobs\/(?!new)[^/]+/];
+
+/** `g` then a key: where it goes (Web-UI → Keyboard). */
+const GO: Record<string, string> = {
+  o: "/",
+  j: "/jobs",
+  p: "/projects",
+  i: "/inbox",
+  l: "/legs",
+  c: "/chats",
+  s: "/servers",
+  t: "/terminal",
+  m: "/mail",
+  k: "/skills",
+  ",": "/settings",
+};
+
+/** What shortcuts there are, for `?`. */
+export const SHORTCUTS: { keys: string; does: string; where?: string }[] = [
+  { keys: "Ctrl K", does: "Search, jump or run a control" },
+  { keys: "?", does: "This list" },
+  { keys: "[", does: "Fold or unfold the sidebar" },
+  { keys: "n", does: "New work" },
+  { keys: "g o", does: "Overview" },
+  { keys: "g j", does: "Jobs" },
+  { keys: "g p", does: "Projects" },
+  { keys: "g i", does: "Inbox" },
+  { keys: "g l", does: "Legs" },
+  { keys: "g c", does: "Chats" },
+  { keys: "g s", does: "Servers" },
+  { keys: "g t", does: "Terminal" },
+  { keys: "g m", does: "Mail" },
+  { keys: "g k", does: "Skills" },
+  { keys: "g ,", does: "Settings" },
+  { keys: "1 … 9", does: "Go to that tab", where: "Pages with tabs" },
+  { keys: "Ctrl Shift Enter", does: "New terminal", where: "Terminal" },
+  { keys: "Ctrl Shift X", does: "Close this terminal", where: "Terminal" },
+  { keys: "Ctrl Shift ← / →", does: "Previous / next terminal", where: "Terminal" },
+  { keys: "Ctrl Shift 1 … 9", does: "Go to that terminal", where: "Terminal" },
+  { keys: "Ctrl Shift D", does: "Side by side", where: "Terminal" },
+  { keys: "Ctrl Shift G", does: "Grid", where: "Terminal" },
+  { keys: "Ctrl Shift F", does: "One at a time", where: "Terminal" },
+  { keys: "Select / Ctrl Shift V", does: "Copy / paste", where: "Terminal" },
+];
+
+/** Typing somewhere: single-key shortcuts stay out of the way. */
+export const typing = (e: KeyboardEvent) => {
+  const el = e.target as HTMLElement | null;
+  return (
+    !!el &&
+    (el.tagName === "INPUT" ||
+      el.tagName === "TEXTAREA" ||
+      el.tagName === "SELECT" ||
+      el.isContentEditable)
+  );
+};
+
 export function Shell({ children }: { children: ReactNode }) {
   const [location] = useLocation();
+  const [, go] = useLocation();
   const [palette, setPalette] = useState(false);
+  const [help, setHelp] = useState(false);
   const [more, setMore] = useState(false);
+  // Folded: my choice, unless this page folds it; unfolding there lasts until I leave the page.
+  const [pref, setPref] = useState(() => store.get("sidebar") === "folded");
+  const [override, setOverride] = useState<boolean | null>(null);
+  const auto = FOLDS.some((r) => r.test(location));
+  const folded = override ?? (auto || pref);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new page drops the page's own choice
+  useEffect(() => setOverride(null), [location]);
+  const toggle = () => {
+    if (auto) setOverride(!folded);
+    else {
+      store.set("sidebar", folded ? "open" : "folded");
+      setPref(!folded);
+      setOverride(null);
+    }
+  };
   const status = useLiveStatus();
   const { resolved, set } = useTheme();
   const inbox = useLive(() => api.inbox.list({ state: "open" }), { topics: ["inbox"] });
@@ -66,16 +151,30 @@ export function Shell({ children }: { children: ReactNode }) {
   });
   const open = inbox.data?.length ?? 0;
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: toggle reads the current fold
   useEffect(() => {
+    let g = 0;
     const on = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPalette((p) => !p);
+        return;
       }
+      if (e.metaKey || e.ctrlKey || e.altKey || typing(e)) return;
+      if (g && Date.now() - g < 1500 && GO[e.key]) {
+        g = 0;
+        e.preventDefault();
+        go(GO[e.key] as string);
+        return;
+      }
+      g = e.key === "g" ? Date.now() : 0;
+      if (e.key === "?") setHelp((h) => !h);
+      else if (e.key === "[") toggle();
+      else if (e.key === "n") go("/new");
     };
     window.addEventListener("keydown", on);
     return () => window.removeEventListener("keydown", on);
-  }, []);
+  }, [folded, auto]);
 
   const active = (href: string) => (href === "/" ? location === "/" : location.startsWith(href));
   const awake = system.data?.inhibitor.held;
@@ -169,25 +268,59 @@ export function Shell({ children }: { children: ReactNode }) {
 
       <div className="flex min-h-0 flex-1">
         <nav
-          className="hidden w-48 shrink-0 flex-col gap-0.5 border-r bg-sidebar p-2 md:flex"
+          className={cn(
+            "hidden shrink-0 flex-col gap-0.5 border-r bg-sidebar p-2 transition-[width] md:flex",
+            folded ? "w-14" : "w-48",
+          )}
           aria-label={t("Main")}
         >
-          {NAV.map(({ href, label, icon: Icon }) => (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                "flex items-center gap-2 rounded-md px-2.5 py-2 text-sm text-sidebar-foreground/80 hover:bg-accent hover:text-accent-foreground",
-                active(href) && "bg-accent font-medium text-accent-foreground",
-              )}
-            >
-              <Icon className="size-4" />
-              <span className="flex-1">{t(label)}</span>
-              {href === "/inbox" && open ? (
-                <Badge className="h-5 min-w-5 justify-center px-1">{open}</Badge>
-              ) : null}
-            </Link>
-          ))}
+          {NAV.map(({ href, label, icon: Icon }) => {
+            const link = (
+              <Link
+                key={href}
+                href={href}
+                aria-label={folded ? t(label) : undefined}
+                className={cn(
+                  "relative flex items-center gap-2 rounded-md px-2.5 py-2 text-sm text-sidebar-foreground/80 hover:bg-accent hover:text-accent-foreground",
+                  folded && "justify-center px-0",
+                  active(href) && "bg-accent font-medium text-accent-foreground",
+                )}
+              >
+                <Icon className="size-4 shrink-0" />
+                {folded ? null : <span className="flex-1">{t(label)}</span>}
+                {href === "/inbox" && open ? (
+                  <Badge
+                    className={cn(
+                      "h-5 min-w-5 justify-center px-1",
+                      folded && "absolute -right-1 -top-1 h-4 min-w-4 text-[10px]",
+                    )}
+                  >
+                    {open}
+                  </Badge>
+                ) : null}
+              </Link>
+            );
+            return folded ? (
+              <Tooltip key={href}>
+                <TooltipTrigger asChild>{link}</TooltipTrigger>
+                <TooltipContent side="right">{t(label)}</TooltipContent>
+              </Tooltip>
+            ) : (
+              link
+            );
+          })}
+          <div className="flex-1" />
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn("justify-start gap-2 text-muted-foreground", folded && "justify-center")}
+            onClick={toggle}
+            aria-label={folded ? t("Unfold the sidebar") : t("Fold the sidebar")}
+            title={folded ? t("Unfold the sidebar ( [ )") : t("Fold the sidebar ( [ )")}
+          >
+            {folded ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+            {folded ? null : t("Fold")}
+          </Button>
         </nav>
         <main className="min-w-0 flex-1 overflow-y-auto px-3 pb-24 pt-4 md:px-6 md:pb-8">
           {children}
@@ -248,7 +381,52 @@ export function Shell({ children }: { children: ReactNode }) {
       ) : null}
 
       <Palette open={palette} onOpenChange={setPalette} />
+      <ShortcutsDialog open={help} onOpenChange={setHelp} />
     </div>
+  );
+}
+
+/** `?`: every shortcut (Web-UI → Keyboard). */
+function ShortcutsDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85dvh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{t("Keyboard shortcuts")}</DialogTitle>
+          <DialogDescription>
+            {t("Single keys work when you aren't typing in a field.")}
+          </DialogDescription>
+        </DialogHeader>
+        <table className="w-full text-sm">
+          <tbody>
+            {SHORTCUTS.map((s) => (
+              <tr key={s.keys + s.does} className="border-b last:border-0">
+                <td className="py-1.5 pr-3 whitespace-nowrap">
+                  {s.keys.split(" ").map((k) => (
+                    <kbd
+                      key={k}
+                      className="mr-1 rounded border bg-muted px-1.5 py-0.5 font-mono text-[11px]"
+                    >
+                      {k}
+                    </kbd>
+                  ))}
+                </td>
+                <td className="py-1.5">
+                  {t(s.does)}
+                  {s.where ? <span className="text-muted-foreground"> · {t(s.where)}</span> : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </DialogContent>
+    </Dialog>
   );
 }
 

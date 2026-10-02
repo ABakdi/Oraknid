@@ -25,9 +25,10 @@ const INTENT: Record<NonNullable<EyeMessage["action"]>["intent"], string> = {
 /**
  * The prompt to The Eye (Checkpoint 1 → F1-4): I write anything, The Eye
  * decides what it is and acts, then answers in a line. The conversation
- * stays with the job.
+ * stays with the job. `full`: the whole height it's given, a conversation
+ * as in Chats (Web-UI → Job).
  */
-export function EyeChat({ jobId }: { jobId: string }) {
+export function EyeChat({ jobId, full = false }: { jobId: string; full?: boolean }) {
   const messages = useLive(() => api.jobs.conversation({ id: jobId }), {
     topics: [`job:${jobId}`],
     refreshOn: (e) => e.type === "eye.message" || e.type === "eye.replied",
@@ -40,7 +41,7 @@ export function EyeChat({ jobId }: { jobId: string }) {
   const list = messages.data ?? [];
   const last = list.at(-1);
   const thinking = last?.author === "owner";
-  const shown = all ? list : list.slice(-6);
+  const shown = all || full ? list : list.slice(-6);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll when a message arrives
   useEffect(() => {
@@ -63,12 +64,17 @@ export function EyeChat({ jobId }: { jobId: string }) {
   };
 
   return (
-    <Card className="gap-0 py-0">
-      <CardContent className="space-y-2 p-3">
+    <Card className={cn("gap-0 py-0", full && "min-h-0 flex-1")}>
+      <CardContent className={cn("space-y-2 p-3", full && "flex min-h-0 flex-1 flex-col")}>
         <div className="flex items-center gap-2 text-sm font-medium">
           <Eye className="size-4 text-primary" />
           {t("The Eye")}
-          {list.length > 6 ? (
+          {full ? (
+            <span className="font-normal text-muted-foreground">
+              {t("— instructions, questions, new work, context: it decides what it is and acts.")}
+            </span>
+          ) : null}
+          {list.length > 6 && !full ? (
             <Button
               variant="ghost"
               size="sm"
@@ -79,8 +85,16 @@ export function EyeChat({ jobId }: { jobId: string }) {
             </Button>
           ) : null}
         </div>
+        {full && !shown.length ? (
+          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+            {t("Nothing said yet. Whatever you write here, The Eye takes into account.")}
+          </div>
+        ) : null}
         {shown.length ? (
-          <div ref={box} className="max-h-72 space-y-2 overflow-y-auto">
+          <div
+            ref={box}
+            className={cn("space-y-2 overflow-y-auto", full ? "min-h-0 flex-1 pr-1" : "max-h-72")}
+          >
             {shown.map((m) => (
               <div
                 key={m.id}
@@ -127,7 +141,7 @@ export function EyeChat({ jobId }: { jobId: string }) {
         ) : null}
         <div className="flex items-end gap-2">
           <Textarea
-            rows={2}
+            rows={full ? 3 : 2}
             className="min-h-0 flex-1 resize-none"
             placeholder={t(
               "Tell The Eye anything: an instruction, a task to add, context, “stop that”, an idea for later…",
@@ -135,7 +149,11 @@ export function EyeChat({ jobId }: { jobId: string }) {
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void send();
+              // Full: Enter sends, Shift+Enter is a new line, as in Chats.
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey || (full && !e.shiftKey))) {
+                e.preventDefault();
+                void send();
+              }
             }}
             aria-label={t("Message to The Eye")}
           />

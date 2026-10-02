@@ -128,10 +128,12 @@ add, discover again, edit the document, open a terminal, remove.
 A terminal workspace (xterm.js), when turned on in Settings
 ([[ADR-028-Terminal]]): terminals in tabs, and side by side or in a grid
 (one, two columns, two by two). A new terminal is picked from cards:
-this computer, each server with its state. Shortcuts:
-`Ctrl+Shift+T` new, `Ctrl+Shift+W` close, `Ctrl+Shift+←/→` previous and
-next, `Ctrl+Shift+1…9` go to, `Ctrl+Shift+D` split, `Ctrl+Shift+G` grid,
-`Ctrl+Shift+Enter` this one alone; copy on select, `Ctrl+Shift+C/V`.
+this computer, each server. Shortcuts (the browser keeps `Ctrl+Shift+T`
+and `W` for itself, and `Ctrl+Shift+Q` quits Chrome on Linux):
+`Ctrl+Shift+Enter` new, `Ctrl+Shift+X` close, `Ctrl+Shift+←/→`
+previous and next, `Ctrl+Shift+1…9` go to, `Ctrl+Shift+D` side by side,
+`Ctrl+Shift+G` grid, `Ctrl+Shift+F` one at a time; copy on select,
+`Ctrl+Shift+V` paste.
 
 ### Mail
 

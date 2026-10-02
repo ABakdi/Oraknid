@@ -34,6 +34,17 @@ type Message =
       body?: string;
     }
   | { t: "live-open"; token: string; unlock?: string }
+  | {
+      t: "term-open";
+      id: number;
+      token: string;
+      unlock?: string;
+      target: string;
+      cols: number;
+      rows: number;
+    }
+  | { t: "term-in"; id: number; f: string }
+  | { t: "term-close"; id: number }
   | { t: "live"; frame: string }
   | { t: "live-close" }
   | { t: "ui" };
@@ -252,6 +263,8 @@ export class NestLink {
 class Tunnel {
   readonly #end: DaemonEnd;
   #live: WebSocket | null = null;
+  /** Terminals through this tunnel, for a device with full rights (ADR-030). */
+  readonly #terms = new Map<number, WebSocket>();
 
   constructor(
     private readonly link: NestLink,
@@ -361,6 +374,40 @@ class Tunnel {
       this.#live = null;
       return;
     }
+    if (m.t === "term-open") {
+      // The daemon's own /term, marked as from away: it opens only for full rights.
+      if (!this.#owns(m.token)) return this.#reply({ t: "term-close", id: m.id });
+      const q = new URLSearchParams({
+        target: m.target,
+        cols: String(m.cols),
+        rows: String(m.rows),
+        token: m.token,
+        unlock: m.unlock ?? "",
+        via: "nest",
+      });
+      const ws = new WebSocket(`${local.replace(/^http/, "ws")}/term?${q}`);
+      this.#terms.get(m.id)?.close();
+      this.#terms.set(m.id, ws);
+      ws.on("message", (data) => this.#reply({ t: "term", id: m.id, d: String(data) }));
+      ws.on("close", () => {
+        if (this.#terms.get(m.id) === ws) this.#terms.delete(m.id);
+        this.#reply({ t: "term-close", id: m.id });
+      });
+      ws.on("error", () => {});
+      return;
+    }
+    if (m.t === "term-in") {
+      const ws = this.#terms.get(m.id);
+      if (ws?.readyState === WebSocket.OPEN) ws.send(m.f);
+      // Typed before the shell's socket opened: sent once it does, in order.
+      else if (ws?.readyState === WebSocket.CONNECTING) ws.once("open", () => ws.send(m.f));
+      return;
+    }
+    if (m.t === "term-close") {
+      this.#terms.get(m.id)?.close();
+      this.#terms.delete(m.id);
+      return;
+    }
     if (m.t === "ui") {
       const html = this.link.deps.remoteUi();
       if (!html) return this.#reply({ t: "ui", part: 0, of: 1, chunk: "", missing: true });
@@ -379,5 +426,7 @@ class Tunnel {
     const live = this.#live;
     this.#live = null;
     live?.close();
+    for (const ws of this.#terms.values()) ws.close();
+    this.#terms.clear();
   }
 }

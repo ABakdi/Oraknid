@@ -73,6 +73,7 @@ function connect(b: Bundle) {
   >();
   let next = 1;
   let live: { onOpen(): void; onMessage(f: string): void; onClose(): void } | null = null;
+  const terms = new Map<number, { onData(d: string): void; onClose(): void }>();
   const ui: string[] = [];
   let started = false;
 
@@ -100,7 +101,12 @@ function connect(b: Bundle) {
         pending.get(m.id as number)?.(m as never);
         pending.delete(m.id as number);
       } else if (m.t === "live") live?.onMessage(String(m.frame));
-      else if (m.t === "live-close") {
+      else if (m.t === "term") terms.get(m.id as number)?.onData(String(m.d));
+      else if (m.t === "term-close") {
+        const h = terms.get(m.id as number);
+        terms.delete(m.id as number);
+        h?.onClose();
+      } else if (m.t === "live-close") {
         const l = live;
         live = null;
         l?.onClose();
@@ -191,6 +197,22 @@ function connect(b: Bundle) {
       const r = await call("/api/notifications/subscribe", { endpoint: j.endpoint, keys: j.keys });
       if (r.status >= 400) throw new Error("Oraknid didn't take the subscription.");
     },
+    /** A terminal through the tunnel; the daemon opens it only for a device with full rights (ADR-030). */
+    openTerm: (
+      o: { target: string; cols: number; rows: number },
+      h: { onData(d: string): void; onClose(): void },
+    ) => {
+      const id = next++;
+      terms.set(id, h);
+      send({ t: "term-open", id, token: b.token, unlock, ...o });
+      return {
+        send: (f: string) => send({ t: "term-in", id, f }),
+        close: () => {
+          terms.delete(id);
+          send({ t: "term-close", id });
+        },
+      };
+    },
     openLive: (
       h: { onOpen(): void; onMessage(f: string): void; onClose(): void },
       session?: string,
@@ -234,6 +256,10 @@ interface Transport {
     h: { onOpen(): void; onMessage(f: string): void; onClose(): void },
     session?: string,
   ): { send(frame: string): void; close(): void };
+  openTerm(
+    o: { target: string; cols: number; rows: number },
+    h: { onData(d: string): void; onClose(): void },
+  ): { send(f: string): void; close(): void };
 }
 /** The tunnel's current transport; a reconnect replaces it under the running UI. */
 let transport: Transport | null = null;
@@ -258,6 +284,7 @@ function run(html: string) {
   frame.addEventListener("load", () => {
     const channel = new MessageChannel();
     let liveConn: { send(frame: string): void; close(): void } | null = null;
+    const termConns = new Map<number, { send(f: string): void; close(): void }>();
     const port = channel.port1;
     port.onmessage = async (e) => {
       const m = e.data as {
@@ -293,6 +320,29 @@ function run(html: string) {
       else if (m.op === "live-close") {
         liveConn?.close();
         liveConn = null;
+      } else if (m.op === "term-open") {
+        const o = m as unknown as { tid: number; target: string; cols: number; rows: number };
+        termConns.get(o.tid)?.close();
+        termConns.set(
+          o.tid,
+          transport.openTerm(
+            { target: o.target, cols: o.cols, rows: o.rows },
+            {
+              onData: (d) => port.postMessage({ op: "term", tid: o.tid, d }),
+              onClose: () => {
+                termConns.delete(o.tid);
+                port.postMessage({ op: "term-closed", tid: o.tid });
+              },
+            },
+          ),
+        );
+      } else if (m.op === "term-send") {
+        const o = m as unknown as { tid: number; f: string };
+        termConns.get(o.tid)?.send(o.f);
+      } else if (m.op === "term-close") {
+        const o = m as unknown as { tid: number };
+        termConns.get(o.tid)?.close();
+        termConns.delete(o.tid);
       }
     };
     frame.contentWindow?.postMessage("oraknid-remote", "*", [channel.port2]);

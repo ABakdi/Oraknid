@@ -12,18 +12,18 @@ can't use what I use at home; and The Nest should serve other people.
 ## Milestones
 
 ### M11.1 — Pages that use their space
-- [ ] The overview's charts and legends fit a phone (nothing past the right edge)
-- [ ] Job page in tabs in the address, The Eye as a full conversation, no jump when changing tabs
-- [ ] Every other page with several concerns in tabs (Servers, Legs, Projects)
-- [ ] The sidebar folds, by hand and by itself on pages with their own panel
-- [ ] Keyboard shortcuts and their list (`?`)
+- [x] The overview's charts and legends fit a phone (nothing past the right edge): the tokens chart has its own legend, a Leg per line
+- [x] Job page in tabs in the address, The Eye as a full conversation, no jump when changing tabs (each tab scrolls inside itself)
+- [~] Every other page with several concerns in tabs: Servers done (a list beside the server, its Readings, State document and About in tabs); Legs and Projects next
+- [x] The sidebar folds, by hand (`[`) and by itself on Chats, Terminal, Mail and a job
+- [x] Keyboard shortcuts and their list (`?`)
 
 ### M11.2 — Terminal workspace
-- [ ] Tabs, side by side and grid; picking a target from cards; shortcuts
+- [x] Tabs, side by side and grid; picking a target from cards; shortcuts; copy on select
 
 ### M11.3 — Full rights for a device ([[ADR-030-Device-Rights]])
-- [ ] Chosen at pairing and on the device's row, at home, with the PIN
-- [ ] Away from home with full rights: terminal through the tunnel, servers and the rest
+- [x] Chosen at pairing and on the device's row, at home, with the PIN
+- [x] Away from home with full rights: terminal through the tunnel (its own channel), servers and the rest; tested end to end
 
 ### M11.4 — A public Nest ([[ADR-031-Public-Nest]])
 - [ ] Public mode with self-registration and its limits; private stays the default

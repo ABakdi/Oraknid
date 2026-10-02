@@ -11,8 +11,17 @@ import { RulesCard } from "@/components/rules-card";
 import { StorageCard } from "@/components/storage-card";
 import { TerminalCard } from "@/components/terminal-card";
 import { ToolsCard } from "@/components/tools-card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -683,6 +692,10 @@ function DevicesCard() {
     refreshOn: (e) => e.type.startsWith("device."),
   });
   const [code, setCode] = useState<string | null>(null);
+  // Giving or taking full rights asks for the PIN again (ADR-030).
+  const [rights, setRights] = useState<{ id: string; name: string; full: boolean } | null>(null);
+  const [pin, setPin] = useState("");
+  const remoteHere = !!remote();
   return (
     <Card>
       <CardHeader>
@@ -694,12 +707,29 @@ function DevicesCard() {
         {(d.data ?? []).map((x) => (
           <div key={x.id} className="flex items-center gap-2 text-sm">
             <span className={x.revokedAt ? "line-through opacity-60" : ""}>{x.name}</span>
+            {x.rights === "full" && !x.revokedAt ? (
+              <Badge variant="destructive" className="h-5 text-[10px]">
+                {t("full rights")}
+              </Badge>
+            ) : null}
             <span className="text-xs text-muted-foreground">
               {x.lastSeenAt
                 ? t("seen {when}", { when: ago(x.lastSeenAt) })
                 : t("paired {when}", { when: ago(x.pairedAt) })}
             </span>
             <span className="flex-1" />
+            {!x.revokedAt && !remoteHere ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setPin("");
+                  setRights({ id: x.id, name: x.name, full: x.rights !== "full" });
+                }}
+              >
+                {x.rights === "full" ? t("Take full rights") : t("Give full rights")}
+              </Button>
+            ) : null}
             {!x.revokedAt ? (
               <Button
                 size="sm"
@@ -743,6 +773,63 @@ function DevicesCard() {
             {t("Unpair this device")}
           </Button>
         </div>
+        <Dialog open={!!rights} onOpenChange={(o) => !o && setRights(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {rights?.full
+                  ? t("Give full rights to {name}?", { name: rights?.name ?? "" })
+                  : t("Take full rights from {name}?", { name: rights?.name ?? "" })}
+              </DialogTitle>
+              <DialogDescription>
+                {rights?.full
+                  ? t(
+                      "Away from home too, it can then open a terminal, reach your servers, and change projects, Legs, tools and command rules. Only your PIN stands between a thief and your computer.",
+                    )
+                  : t(
+                      "Away from home it goes back to following, answering, approving and starting jobs.",
+                    )}
+              </DialogDescription>
+            </DialogHeader>
+            <form
+              className="space-y-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!rights) return;
+                void act(
+                  () =>
+                    api.devices.setRights({ id: rights.id, full: rights.full, pin }).then(() => {
+                      setRights(null);
+                      d.reload();
+                    }),
+                  rights.full ? t("Full rights given.") : t("Full rights taken."),
+                );
+              }}
+            >
+              <Label htmlFor="rights-pin">{t("Your PIN")}</Label>
+              <Input
+                id="rights-pin"
+                type="password"
+                autoFocus
+                autoComplete="current-password"
+                value={pin}
+                onChange={(e) => setPin(e.target.value)}
+              />
+              <DialogFooter>
+                <Button type="button" variant="secondary" onClick={() => setRights(null)}>
+                  {t("Cancel")}
+                </Button>
+                <Button
+                  type="submit"
+                  variant={rights?.full ? "destructive" : "default"}
+                  disabled={!pin}
+                >
+                  {rights?.full ? t("Give full rights") : t("Take full rights")}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );

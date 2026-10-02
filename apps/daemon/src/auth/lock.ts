@@ -152,6 +152,12 @@ export class AppLock {
     pin: string,
     remote: boolean,
   ): Promise<{ session: string; expiresAt: number }> {
+    await this.verify(device, pin, remote);
+    return { session: this.#open(device), expiresAt: this.now() + SESSION_MAX_MS };
+  }
+
+  /** The PIN asked again before something big (ADR-030); wrong tries count as at the lock. */
+  async verify(device: string, pin: string, remote: boolean): Promise<void> {
     if (!this.hasPin()) throw new Error("Set a PIN first, on the computer running Oraknid.");
     const t = this.now();
     if (remote && this.#remoteBlockedUntil > t)
@@ -181,8 +187,6 @@ export class AppLock {
       );
     }
     this.#wrong.delete(device);
-    const session = this.#open(device);
-    return { session, expiresAt: t + SESSION_MAX_MS };
   }
 
   /** Whether this device's session is unlocked; a check that counts as activity unless `touch` is false. */
@@ -272,14 +276,20 @@ export const LOCK_FREE = new Set(["/lock/status", "/lock/unlock"]);
  * that opens a new way in, widens what agents may touch or sends my data
  * somewhere new. Those are done at home.
  */
-const HOME_ONLY = [
+/** Home only whatever the device's rights (ADR-030): a device can't widen itself or mint others. */
+const ALWAYS_HOME = [
   "/secrets/",
   "/nest/configure",
   "/nest/pairAway",
   "/devices/pairStart",
   "/devices/revoke",
+  "/devices/setRights",
   "/lock/setPin",
   "/lock/setIdle",
+];
+
+const HOME_ONLY = [
+  ...ALWAYS_HOME,
   "/policies/update",
   "/projects/create",
   "/projects/createFrom",
@@ -317,4 +327,6 @@ const HOME_ONLY = [
   "/jobs/setRules",
 ];
 
-export const remoteAllowed = (path: string) => !HOME_ONLY.some((p) => path.startsWith(p));
+/** What a device away from home may call: with full rights, all but ALWAYS_HOME (ADR-030). */
+export const remoteAllowed = (path: string, full = false) =>
+  !(full ? ALWAYS_HOME : HOME_ONLY).some((p) => path.startsWith(p));

@@ -12,8 +12,6 @@ import {
 import {
   type ChartConfig,
   ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
@@ -48,41 +46,68 @@ export function TokensChart({
   const config: ChartConfig = Object.fromEntries(
     series.map((s, i) => [key(s), { label: s, color: COLORS[i % COLORS.length] }]),
   );
+  const totals = series
+    .map((s, i) => ({
+      s,
+      color: COLORS[i % COLORS.length] as string,
+      n: buckets.filter((b) => b.series === s).reduce((x, b) => x + b.tokens, 0),
+    }))
+    .sort((a, b) => b.n - a.n);
   return (
-    <ChartContainer config={config} className="w-full min-w-0" style={{ height }}>
-      <AreaChart data={data} margin={{ left: 0, right: 8, top: 8 }}>
-        <CartesianGrid vertical={false} />
-        <XAxis
-          dataKey="t"
-          tickLine={false}
-          axisLine={false}
-          minTickGap={32}
-          tickFormatter={(v) =>
-            new Date(v).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-          }
-        />
-        <YAxis tickLine={false} axisLine={false} width={44} tickFormatter={(v) => fmtTokens(v)} />
-        <ChartTooltip
-          content={
-            <ChartTooltipContent
-              labelFormatter={(_, p) => new Date(p?.[0]?.payload?.t).toLocaleString()}
-            />
-          }
-        />
-        <ChartLegend content={<ChartLegendContent />} />
-        {series.map((s) => (
-          <Area
-            key={s}
-            dataKey={key(s)}
-            stackId="a"
-            type="monotone"
-            fill={`var(--color-${key(s)})`}
-            stroke={`var(--color-${key(s)})`}
-            fillOpacity={0.35}
+    <div className="min-w-0 space-y-3">
+      <ChartContainer config={config} className="w-full min-w-0" style={{ height }}>
+        <AreaChart data={data} margin={{ left: 0, right: 8, top: 8 }}>
+          <CartesianGrid vertical={false} />
+          <XAxis
+            dataKey="t"
+            tickLine={false}
+            axisLine={false}
+            minTickGap={32}
+            tickFormatter={(v) =>
+              new Date(v).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+            }
           />
-        ))}
-      </AreaChart>
-    </ChartContainer>
+          <YAxis tickLine={false} axisLine={false} width={44} tickFormatter={(v) => fmtTokens(v)} />
+          <ChartTooltip
+            content={
+              <ChartTooltipContent
+                labelFormatter={(_, p) => new Date(p?.[0]?.payload?.t).toLocaleString()}
+              />
+            }
+          />
+          {series.map((s) => (
+            <Area
+              key={s}
+              dataKey={key(s)}
+              stackId="a"
+              type="monotone"
+              fill={`var(--color-${key(s)})`}
+              stroke={`var(--color-${key(s)})`}
+              fillOpacity={0.35}
+            />
+          ))}
+        </AreaChart>
+      </ChartContainer>
+      {/* Its own legend: a Leg per line, its model under it, its total; nothing runs off a phone's edge. */}
+      <ul className="grid gap-x-4 gap-y-1.5 text-xs sm:grid-cols-2">
+        {totals.map(({ s, color, n }) => {
+          const [leg, model] = s.split(" · ");
+          return (
+            <li key={s} className="flex min-w-0 items-center gap-2" title={s}>
+              <span
+                className="size-2.5 shrink-0 rounded-[2px]"
+                style={{ backgroundColor: color }}
+              />
+              <span className="min-w-0 flex-1 truncate">
+                {leg}
+                {model ? <span className="text-muted-foreground"> · {model}</span> : null}
+              </span>
+              <span className="shrink-0 tabular-nums text-muted-foreground">{fmtTokens(n)}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 

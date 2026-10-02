@@ -1,0 +1,110 @@
+import { type ReactNode, useEffect, useState } from "react";
+import { useLocation } from "wouter";
+import { typing } from "@/components/shell";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+
+export interface PageTab {
+  id: string;
+  label: string;
+  /** A count or a word next to the label. */
+  badge?: ReactNode;
+  /** The tab fills the height it is given and scrolls inside itself (a conversation, a terminal). */
+  fill?: boolean;
+  content: () => ReactNode;
+}
+
+/**
+ * A page in tabs (Web-UI → Layout): the tab is in the address
+ * (`<base>/<tab>`), `1`…`9` switch tabs, and the page itself never
+ * scrolls: the header and the tabs stay, each tab scrolls inside, so
+ * changing tabs never jumps. A tab, once opened, stays mounted and keeps
+ * its scroll and state.
+ */
+export function PageTabs({
+  base,
+  tab,
+  tabs,
+  header,
+  className,
+}: {
+  base: string;
+  tab: string | undefined;
+  tabs: PageTab[];
+  header?: ReactNode;
+  className?: string;
+}) {
+  const [, go] = useLocation();
+  const current = tabs.find((x) => x.id === tab) ?? tabs[0];
+  const [seen, setSeen] = useState<Set<string>>(() => new Set(current ? [current.id] : []));
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only the current tab matters
+  useEffect(() => {
+    if (current && !seen.has(current.id)) setSeen(new Set([...seen, current.id]));
+  }, [current?.id]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the tabs' ids are what matter
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || typing(e)) return;
+      const n = Number(e.key);
+      const to = n >= 1 && n <= 9 ? tabs[n - 1] : undefined;
+      if (to) go(`${base}/${to.id}`, { replace: true });
+    };
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  }, [base, tabs.map((x) => x.id).join()]);
+
+  return (
+    <div
+      className={cn(
+        // The page's whole height under the app's header (and above the phone's tab bar).
+        "-mb-24 flex h-[calc(100dvh-7.5rem)] min-h-0 flex-col gap-3 md:-mb-8 md:h-[calc(100dvh-4.5rem)]",
+        className,
+      )}
+    >
+      {header}
+      <div
+        role="tablist"
+        className="flex shrink-0 gap-1 overflow-x-auto border-b [scrollbar-width:none]"
+      >
+        {tabs.map((x, i) => (
+          <button
+            key={x.id}
+            type="button"
+            role="tab"
+            aria-selected={x.id === current?.id}
+            title={i < 9 ? `${x.label} (${i + 1})` : x.label}
+            onClick={() => go(`${base}/${x.id}`, { replace: true })}
+            className={cn(
+              "-mb-px flex shrink-0 items-center gap-1.5 border-b-2 border-transparent px-3 py-2 text-sm text-muted-foreground hover:text-foreground",
+              x.id === current?.id && "border-primary font-medium text-foreground",
+            )}
+          >
+            {x.label}
+            {x.badge !== undefined && x.badge !== null && x.badge !== 0 ? (
+              <Badge variant="secondary" className="h-5 min-w-5 justify-center px-1 text-[10px]">
+                {x.badge}
+              </Badge>
+            ) : null}
+          </button>
+        ))}
+      </div>
+      {tabs
+        .filter((x) => seen.has(x.id) || x.id === current?.id)
+        .map((x) => (
+          <div
+            key={x.id}
+            role="tabpanel"
+            hidden={x.id !== current?.id}
+            className={cn(
+              "min-h-0 flex-1",
+              x.id !== current?.id && "hidden",
+              x.fill ? "flex flex-col" : "overflow-y-auto pb-6",
+            )}
+          >
+            {x.content()}
+          </div>
+        ))}
+    </div>
+  );
+}

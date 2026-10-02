@@ -474,7 +474,14 @@ export const router = {
       )
       .output(HelperAction)
       .handler(({ context: c, input }) =>
-        guard(() => c.helper.decide(input.messageId, input.index, input.confirm, c.remote)),
+        guard(() =>
+          c.helper.decide(
+            input.messageId,
+            input.index,
+            input.confirm,
+            c.remote && !c.devices.isFull(c.device),
+          ),
+        ),
       ),
     clear: base.handler(({ context: c }) => guard(() => c.helper.clear())),
   },
@@ -743,13 +750,23 @@ export const router = {
       ),
     /** A device for away: its link carries its keys in the fragment, never through The Nest. */
     pairAway: base
-      .input(z.object({ name: z.string().min(1).max(60) }))
+      .input(
+        z.object({
+          name: z.string().min(1).max(60),
+          /** Full rights from the start (ADR-030): the PIN again. */
+          full: z.boolean().default(false),
+          pin: z.string().max(128).optional(),
+        }),
+      )
       .output(z.object({ link: z.string(), deviceId: z.string() }))
       .handler(({ context: c, input }) =>
-        guard(() => {
+        guard(async () => {
           // A phone away from home opens only with the PIN (ADR-029).
           if (!c.lock.hasPin()) throw new Error("Set your PIN first (Settings → Security).");
-          return c.nest.pairAway(input.name);
+          if (input.full) await c.lock.verify(c.device ?? "cli", input.pin ?? "", false);
+          const r = await c.nest.pairAway(input.name);
+          if (input.full) c.devices.setRights(r.deviceId, true);
+          return r;
         }),
       ),
   },
@@ -764,12 +781,18 @@ export const router = {
           triesLeft: z.number(),
           waitUntil: z.number().nullable(),
           remote: z.boolean(),
+          /** This device has full rights (ADR-030). */
+          full: z.boolean(),
         }),
       )
       .handler(({ context: c }) => {
         if (c.device === null)
-          return { ...c.lock.status("cli", undefined), unlocked: true, remote: false };
-        return { ...c.lock.status(c.device, c.session), remote: c.remote };
+          return { ...c.lock.status("cli", undefined), unlocked: true, remote: false, full: true };
+        return {
+          ...c.lock.status(c.device, c.session),
+          remote: c.remote,
+          full: c.devices.isFull(c.device),
+        };
       }),
     unlock: base
       .input(z.object({ pin: z.string().min(1).max(128) }))
@@ -830,10 +853,21 @@ export const router = {
             pairedAt: z.number(),
             lastSeenAt: z.number().nullable(),
             revokedAt: z.number().nullable(),
+            rights: z.enum(["standard", "full"]),
           }),
         ),
       )
       .handler(({ context: c }) => c.devices.list()),
+    /** Full rights, away from home too (ADR-030): at home, with the PIN again. */
+    setRights: base
+      .input(z.object({ id: z.string(), full: z.boolean(), pin: z.string().max(128) }))
+      .handler(({ context: c, input }) =>
+        guard(async () => {
+          if (c.remote) throw new Error("Rights are given at home.");
+          await c.lock.verify(c.device ?? "cli", input.pin, false);
+          c.devices.setRights(input.id, input.full);
+        }),
+      ),
     revoke: base
       .input(z.object({ id: z.string() }))
       .handler(({ context: c, input }) => guard(() => c.devices.revoke(input.id))),
@@ -963,7 +997,7 @@ export const router = {
       .handler(({ context: c, input }) =>
         guard(() => {
           // Outside the sandbox only from home (ADR-029).
-          if (c.remote && input.unsandboxed)
+          if (c.remote && input.unsandboxed && !c.devices.isFull(c.device))
             throw new Error(
               "A job outside the sandbox can only be made on the computer running Oraknid.",
             );

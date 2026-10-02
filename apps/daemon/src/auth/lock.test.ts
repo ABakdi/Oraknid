@@ -121,6 +121,30 @@ describe("the lock (ADR-029)", () => {
     await expect(away.lock.setPin({ current: PIN, pin: "123456789" })).rejects.toThrow(/not away/);
   });
 
+  it("gives full rights only at home with the PIN, and then opens what away from home was closed (ADR-030)", async () => {
+    const { token, session, as, pair } = await start();
+    const phone = await pair("Phone");
+    const { session: ps } = await as(phone).lock.unlock({ pin: PIN });
+    const away = as(phone, ps, true);
+    await expect(away.settings.setTerminal({ enabled: true })).rejects.toThrow(/not away/);
+    const id = (await as(token, session).devices.list()).find((x) => x.name === "Phone")
+      ?.id as string;
+    // Not from away, not without the PIN.
+    await expect(away.devices.setRights({ id, full: true, pin: PIN })).rejects.toThrow(/not away/);
+    await expect(
+      as(token, session).devices.setRights({ id, full: true, pin: "000000" }),
+    ).rejects.toThrow(/Wrong PIN/);
+    await as(token, session).devices.setRights({ id, full: true, pin: PIN });
+    expect((await away.lock.status()).full).toBe(true);
+    await away.settings.setTerminal({ enabled: false });
+    // Still home only, whatever the rights: a device can't widen itself or mint others.
+    await expect(away.devices.pairStart()).rejects.toThrow(/not away/);
+    await expect(away.devices.setRights({ id, full: true, pin: PIN })).rejects.toThrow(/not away/);
+    await expect(away.lock.setPin({ current: PIN, pin: "123456789" })).rejects.toThrow(/not away/);
+    await as(token, session).devices.setRights({ id, full: false, pin: PIN });
+    await expect(away.settings.setTerminal({ enabled: true })).rejects.toThrow(/not away/);
+  });
+
   it("closes the live socket when its device locks", async () => {
     const { d, token, session, as } = await start();
     const ws = new WebSocket(

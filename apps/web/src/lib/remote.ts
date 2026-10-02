@@ -23,6 +23,11 @@ export interface RemoteTransport {
     send(frame: string): void;
     close(): void;
   };
+  /** A terminal through the tunnel (ADR-030): the daemon opens it only for a device with full rights. */
+  openTerm(
+    o: { target: string; cols: number; rows: number },
+    h: { onData(d: string): void; onClose(): void },
+  ): { send(f: string): void; close(): void };
 }
 
 /**
@@ -43,6 +48,8 @@ function portTransport(): RemoteTransport {
   const replies = new Map<number, { ok(v: unknown): void; fail(e: Error): void }>();
   let next = 1;
   let live: { onOpen(): void; onMessage(frame: string): void; onClose(): void } | null = null;
+  const terms = new Map<number, { onData(d: string): void; onClose(): void }>();
+  let nextTerm = 1;
   const post = (m: unknown) => (port ? port.postMessage(m) : waiting.push(m));
   const call = <T>(op: string, extra: object = {}) =>
     new Promise<T>((ok, fail) => {
@@ -73,6 +80,14 @@ function portTransport(): RemoteTransport {
         replies.delete(d.id);
         if (d.error !== undefined) r?.fail(new Error(d.error));
         else r?.ok(d.ok);
+      } else if (d.op === "term") {
+        const x = m.data as { tid: number; d: string };
+        terms.get(x.tid)?.onData(x.d);
+      } else if (d.op === "term-closed") {
+        const x = m.data as { tid: number };
+        const h = terms.get(x.tid);
+        terms.delete(x.tid);
+        h?.onClose();
       } else if (d.op === "live-open") live?.onOpen();
       else if (d.op === "live" && typeof d.frame === "string") live?.onMessage(d.frame);
       else if (d.op === "live-close") {
@@ -86,6 +101,18 @@ function portTransport(): RemoteTransport {
   transport = {
     request: (r) => call("request", { r }),
     subscribePush: () => call<void>("subscribePush"),
+    openTerm: (o, h) => {
+      const tid = nextTerm++;
+      terms.set(tid, h);
+      post({ op: "term-open", tid, ...o });
+      return {
+        send: (f) => post({ op: "term-send", tid, f }),
+        close: () => {
+          terms.delete(tid);
+          post({ op: "term-close", tid });
+        },
+      };
+    },
     openLive: (h, session) => {
       live = h;
       post({ op: "live-open", session });

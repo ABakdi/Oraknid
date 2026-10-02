@@ -1,11 +1,14 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
+import { z } from "zod";
 import type { Db } from "../db/open.ts";
 import { devices } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
+import { readSetting, writeSetting } from "../settings.ts";
 
 const MAX_FAILURES = 5;
+const FULL_RIGHTS = "devices.fullRights";
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
@@ -119,6 +122,14 @@ export class Devices {
   }
 
   list() {
+    const full = new Set(this.fullRights());
+    return this.listRows().map((d) => ({
+      ...d,
+      rights: full.has(d.id) ? ("full" as const) : ("standard" as const),
+    }));
+  }
+
+  private listRows() {
     return this.db
       .select({
         id: devices.id,
@@ -148,9 +159,46 @@ export class Devices {
     return stale.length;
   }
 
+  /** Devices with full rights (ADR-030), kept as a setting. */
+  fullRights(): string[] {
+    return readSetting(this.db, FULL_RIGHTS, z.array(z.string()), []);
+  }
+
+  isFull(id: string | null): boolean {
+    return !!id && this.fullRights().includes(id);
+  }
+
+  setRights(id: string, full: boolean) {
+    const d = this.db.select().from(devices).where(eq(devices.id, id)).get();
+    if (!d || d.revokedAt) throw new Error(`No device ${id}.`);
+    const rest = this.fullRights().filter((x) => x !== id);
+    writeSetting(
+      this.db,
+      FULL_RIGHTS,
+      z.array(z.string()),
+      full ? [...rest, id] : rest,
+      this.now(),
+    );
+    this.bus.publish({
+      type: "device.rights",
+      topic: "overview",
+      jobId: null,
+      payload: { id, name: d.name, rights: full ? "full" : "standard" },
+      actor: "owner",
+    });
+  }
+
   revoke(id: string) {
     const d = this.db.select().from(devices).where(eq(devices.id, id)).get();
     if (!d) throw new Error(`No device ${id}.`);
+    if (this.isFull(id))
+      writeSetting(
+        this.db,
+        FULL_RIGHTS,
+        z.array(z.string()),
+        this.fullRights().filter((x) => x !== id),
+        this.now(),
+      );
     this.db.update(devices).set({ revokedAt: this.now() }).where(eq(devices.id, id)).run();
     this.bus.publish({
       type: "device.revoked",

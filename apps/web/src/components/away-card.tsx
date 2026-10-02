@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { api, message } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useLive } from "@/lib/live";
@@ -136,6 +137,8 @@ export function PhoneCard() {
     refreshOn: (e) => e.type.startsWith("device."),
   });
   const [name, setName] = useState("My phone");
+  const [full, setFull] = useState(false);
+  const [pin, setPin] = useState("");
   const [pairing, setPairing] = useState<{ link: string; deviceId: string; until: number } | null>(
     null,
   );
@@ -162,7 +165,12 @@ export function PhoneCard() {
 
   const start = async () => {
     try {
-      const r = await api.nest.pairAway({ name: name.trim() || "My phone" });
+      const r = await api.nest.pairAway({
+        name: name.trim() || "My phone",
+        full,
+        ...(full ? { pin } : {}),
+      });
+      setPin("");
       setPairing({ ...r, until: Date.now() + 10 * 60_000 });
     } catch (e) {
       toast.error(message(e));
@@ -202,12 +210,43 @@ export function PhoneCard() {
             </Step>
           </ol>
         ) : !pairing ? (
-          <div className="flex flex-wrap items-end gap-2">
+          <div className="space-y-3">
             <div className="space-y-1.5">
               <Label htmlFor="phone-name">{t("Its name")}</Label>
-              <Input id="phone-name" value={name} onChange={(e) => setName(e.target.value)} />
+              <Input
+                id="phone-name"
+                className="max-w-xs"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
             </div>
-            <Button onClick={start}>{t("Show the code")}</Button>
+            <label htmlFor="phone-full" className="flex items-start gap-2">
+              <Switch id="phone-full" checked={full} onCheckedChange={setFull} className="mt-0.5" />
+              <span>
+                <span className="font-medium">{t("Full rights from this device")}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {t(
+                    "Away from home too: the terminal, your servers, projects, Legs, tools and command rules. With it, this phone is as powerful as your keyboard: only your PIN stands between a thief and your computer.",
+                  )}
+                </span>
+              </span>
+            </label>
+            {full ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="phone-pin">{t("Your PIN, to give full rights")}</Label>
+                <Input
+                  id="phone-pin"
+                  type="password"
+                  className="max-w-xs"
+                  autoComplete="current-password"
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value)}
+                />
+              </div>
+            ) : null}
+            <Button onClick={start} disabled={full && !pin}>
+              {t("Show the code")}
+            </Button>
           </div>
         ) : used ? (
           <div className="space-y-2">

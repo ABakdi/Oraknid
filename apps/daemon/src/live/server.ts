@@ -24,7 +24,13 @@ export interface LiveOptions {
  * from `lastSeq` after a reconnect.
  */
 /** Events after which every socket is checked again. */
-export const LOCKING = new Set(["lock.locked", "lock.pin-set", "lock.pin-reset", "device.revoked"]);
+export const LOCKING = new Set([
+  "lock.locked",
+  "lock.pin-set",
+  "lock.pin-reset",
+  "device.revoked",
+  "device.rights",
+]);
 
 const RELAYED = new Set([
   "job.state",

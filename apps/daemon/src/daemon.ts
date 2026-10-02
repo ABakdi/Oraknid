@@ -375,7 +375,7 @@ export async function startDaemon(options: DaemonOptions) {
         return;
       }
       // Away from home, nothing that could open a new way in (ADR-029, Audit 2).
-      if (remote && !remoteAllowed(req.path)) {
+      if (remote && !remoteAllowed(req.path, devices.isFull(who))) {
         rpcError(
           res,
           403,
@@ -405,12 +405,13 @@ export async function startDaemon(options: DaemonOptions) {
     server,
     bus,
     servers: serverService,
-    device: (req) =>
-      isLocalRequest(req, port) &&
-      // The terminal is never opened away from home (Audit 2).
-      new URL(req.url ?? "/", "http://x").searchParams.get("via") !== "nest"
-        ? unlocked(tokenOf(req.headers, req.url), unlockOf(req.headers, req.url))
-        : null,
+    device: (req) => {
+      if (!isLocalRequest(req, port)) return null;
+      const who = unlocked(tokenOf(req.headers, req.url), unlockOf(req.headers, req.url));
+      // Away from home, only for a device with full rights (Audit 2, ADR-030).
+      const away = new URL(req.url ?? "/", "http://x").searchParams.get("via") === "nest";
+      return away && !devices.isFull(who) ? null : who;
+    },
     active: (req) => {
       const who = devices.identify(tokenOf(req.headers, req.url));
       if (who && who !== "cli") lock.check(who, unlockOf(req.headers, req.url));

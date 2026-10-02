@@ -117,7 +117,9 @@ export function App() {
                 <Route path="/jobs/new">{() => <WorkPage />}</Route>
                 <Route path="/new">{() => <WorkPage />}</Route>
                 <Route path="/new/:id">{(p) => <WorkPage key={p.id} draftId={p.id} />}</Route>
-                <Route path="/jobs/:id">{(p) => <JobPage id={p.id} />}</Route>
+                <Route path="/jobs/:id/:tab?">
+                  {(p) => <JobPage key={p.id} id={p.id} tab={p.tab} />}
+                </Route>
                 <Route path="/projects" component={ProjectsPage} />
                 <Route path="/inbox">{() => <InboxPage />}</Route>
                 <Route path="/inbox/:id">{(p) => <InboxPage focus={p.id} />}</Route>
@@ -125,13 +127,14 @@ export function App() {
                 <Route path="/legs/:id">{(p) => <LegsPage focus={p.id} />}</Route>
                 <Route path="/skills" component={SkillsPage} />
                 <Route path="/chats">{() => <ChatsPage />}</Route>
-                <Route path="/servers" component={ServersPage} />
+                <Route path="/servers/:id?/:tab?">
+                  {(p) => <ServersPage id={p.id} tab={p.tab} />}
+                </Route>
                 <Route path="/terminal">{() => <TerminalPage />}</Route>
                 <Route path="/terminal/:target">{(p) => <TerminalPage target={p.target} />}</Route>
                 <Route path="/chats/:id">{(p) => <ChatsPage id={p.id} />}</Route>
                 <Route path="/logs" component={LogsPage} />
-                <Route path="/settings">{() => <SettingsPage />}</Route>
-                <Route path="/settings/:tab">{(p) => <SettingsPage tab={p.tab} />}</Route>
+                <Route path="/settings/:tab?">{(p) => <SettingsPage tab={p.tab} />}</Route>
                 <Route>
                   <OverviewPage />
                 </Route>
