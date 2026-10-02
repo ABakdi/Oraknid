@@ -88,16 +88,74 @@ export function writeMcpConfig(home: string, servers: Record<string, McpServer>)
   );
 }
 
+/** One tool step as agy reports it (seen with agy 1.2.14). */
+export interface ToolStep {
+  index: number;
+  tool: string;
+  input: Record<string, unknown>;
+  state: string;
+  output: string | null;
+  error: string | null;
+}
+
+export function toolStep(u: NonNullable<AgyEvent["step_update"]>): ToolStep | null {
+  const info = u.tool_info;
+  if (!info) return null;
+  const err = info.error as { message?: string } | undefined;
+  return {
+    index: u.step_index ?? 0,
+    tool: String(u.tool_name ?? info.name ?? "tool"),
+    input: (info.parameters ?? {}) as Record<string, unknown>,
+    state: String(u.state ?? ""),
+    output: typeof info.output === "string" ? info.output : null,
+    error: err?.message ?? null,
+  };
+}
+
+const commandOf = (step: ToolStep) =>
+  typeof step.input.CommandLine === "string" ? step.input.CommandLine : null;
+
 /**
- * A soft-denied action in a stderr notice. The exact wording isn't
- * documented (ADR-020): the command is read from `command(…)`, or
- * from backticks or quotes.
+ * What headless agy refused in one run (ADR-020): it can't ask, so a
+ * command not on the allow list is denied, reported either as an
+ * ERROR step saying so, or as a step DONE with no output while the
+ * result lists denied actions. Its stderr note is generic and not read.
  */
-export function softDenial(line: string): { command: string | null; raw: string } | null {
-  if (!/denied|not allowed|requires approval|permission/i.test(line)) return null;
-  const inCommand = /command\((.*)\)/.exec(line)?.[1];
-  const quoted = /`([^`]+)`|"([^"]+)"/.exec(line);
-  return { command: inCommand ?? quoted?.[1] ?? quoted?.[2] ?? null, raw: line.trim() };
+export function refusals(
+  steps: ToolStep[],
+  deniedActions: { action?: string; display_name?: string }[],
+  allowed: ReadonlySet<string>,
+): { command: string | null; raw: string; index: number | null }[] {
+  const out: { command: string | null; raw: string; index: number | null }[] = [];
+  const seen = new Set<string>();
+  for (const step of steps) {
+    const command = commandOf(step);
+    const refused =
+      (step.state === "ERROR" && /permission|denied/i.test(step.error ?? "")) ||
+      (deniedActions.length > 0 &&
+        step.state === "DONE" &&
+        step.output === null &&
+        command !== null &&
+        !allowed.has(command));
+    if (!refused) continue;
+    const key = command ?? `${step.tool}:${JSON.stringify(step.input)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      command,
+      raw: command ? `${step.tool}: ${command}` : `${step.tool} ${JSON.stringify(step.input)}`,
+      index: step.index,
+    });
+  }
+  // A denied action no step shows: said as it is.
+  if (deniedActions.length && !out.length)
+    for (const d of deniedActions)
+      out.push({
+        command: null,
+        raw: `${d.display_name ?? d.action ?? "an action"} was denied`,
+        index: null,
+      });
+  return out;
 }
 
 /** A quota error in a failed result (ADR-020): when it says so, and when it resets. */
@@ -110,10 +168,12 @@ export function quotaError(error: string): { resetsAt: number | null } | null {
 interface AgyEvent {
   event: string;
   init?: Record<string, unknown>;
+  conversation_id?: string;
   step_update?: {
     step_index?: number;
     state?: string;
     step_type?: string;
+    tool_name?: string;
     text_delta?: string;
     tool_info?: Record<string, unknown>;
   };
@@ -122,6 +182,7 @@ interface AgyEvent {
     status?: string;
     response?: string;
     error?: string;
+    denied_actions?: { action?: string; display_name?: string }[];
     usage?: {
       input_tokens?: number;
       output_tokens?: number;
@@ -134,7 +195,8 @@ interface AgyEvent {
 interface RunEnd {
   status: string;
   error: string | null;
-  denials: { command: string | null; raw: string }[];
+  /** What agy refused, with the tool call it belongs to (its result was held back). */
+  denials: { command: string | null; raw: string; id: string | null }[];
 }
 
 function stopTree(child: ChildProcess, signal: NodeJS.Signals) {
@@ -276,12 +338,12 @@ export function createAntigravityAdapter(): LegAdapter {
           detached: true,
         });
         current = child;
-        const denials: RunEnd["denials"] = [];
+        let denials: RunEnd["denials"] = [];
+        const held = new Map<number, string>();
+        const steps = new Map<number, ToolStep>();
         let result: AgyEvent["result"] | null = null;
-        createInterface({ input: child.stderr as NodeJS.ReadableStream }).on("line", (line) => {
-          const d = softDenial(line);
-          if (d) denials.push(d);
-        });
+        // Its stderr is a log, and its note about denials is generic: the events say what happened.
+        child.stderr?.resume();
         createInterface({ input: child.stdout as NodeJS.ReadableStream }).on("line", (line) => {
           let e: AgyEvent;
           try {
@@ -292,22 +354,48 @@ export function createAntigravityAdapter(): LegAdapter {
           if (e.event === "step_update" && e.step_update) {
             const u = e.step_update;
             if (u.text_delta) onText(u.text_delta);
-            const tool = u.tool_info;
-            if (tool) {
-              const id = String(tool.id ?? `${u.step_index ?? 0}`);
-              const name = String(tool.name ?? u.step_type ?? "tool");
-              const input = (tool.input ?? tool.args ?? {}) as Record<string, unknown>;
-              if (u.state === "ACTIVE") events.push({ type: "tool.called", id, tool: name, input });
-              else if (u.state === "DONE")
+            const step = toolStep(u);
+            if (step) {
+              const id = `${conversation ?? "agy"}:${step.index}`;
+              steps.set(step.index, step);
+              if (step.state === "ACTIVE")
+                events.push({ type: "tool.called", id, tool: step.tool, input: step.input });
+              else if (
+                step.tool === "run_command" &&
+                (step.state === "ERROR" || (step.state === "DONE" && step.output === null))
+              ) {
+                // Maybe agy's own refusal: Oraknid decides first, and the Leg hears that (ADR-020).
+                held.set(step.index, id);
+              } else if (step.state === "DONE" || step.state === "ERROR")
                 events.push({
                   type: "tool.result",
                   id,
-                  ok: !tool.error && tool.status !== "ERROR",
-                  output: String(tool.output ?? tool.error ?? ""),
+                  ok: step.state === "DONE",
+                  output: step.output ?? step.error ?? "",
                 });
             }
+          } else if (e.event === "init" && e.conversation_id) {
+            conversation ??= e.conversation_id;
           } else if (e.event === "result" && e.result) {
             result = e.result;
+            const refused = refusals([...steps.values()], e.result.denied_actions ?? [], allowed);
+            denials = refused.map((r) => ({
+              command: r.command,
+              raw: r.raw,
+              id: r.index !== null ? (held.get(r.index) ?? null) : null,
+            }));
+            // A held step that wasn't refused: its result after all.
+            const refusedSteps = new Set(refused.map((r) => r.index));
+            for (const [index, id] of held)
+              if (!refusedSteps.has(index)) {
+                const step = steps.get(index);
+                events.push({
+                  type: "tool.result",
+                  id,
+                  ok: step?.state === "DONE",
+                  output: step?.output ?? step?.error ?? "",
+                });
+              }
             conversation = e.result.conversation_id || conversation;
             const r = e.result.usage ?? {};
             usage = {
@@ -394,8 +482,9 @@ export function createAntigravityAdapter(): LegAdapter {
               const why = decision.allow
                 ? "It can't be allowed by its command text."
                 : decision.message;
-              const id = `denied-${round}-${i}`;
-              events.push({ type: "tool.called", id, tool: request.tool, input: request.input });
+              const id = d.id ?? `denied-${round}-${i}`;
+              if (!d.id)
+                events.push({ type: "tool.called", id, tool: request.tool, input: request.input });
               events.push({ type: "tool.result", id, ok: false, output: why });
               replies.push(`Denied: ${d.command ? `\`${d.command}\`` : d.raw}. ${why}`);
             }

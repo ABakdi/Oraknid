@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
   createAntigravityAdapter,
   quotaError,
-  softDenial,
+  refusals,
   writeMcpConfig,
   writeSettings,
 } from "./adapter.ts";
@@ -31,13 +31,36 @@ const homeIn = (mode: string) => {
 };
 
 describe("Antigravity adapter", () => {
-  it("reads the command out of a soft-deny notice", () => {
-    expect(softDenial("notice: permission denied for command(git push): not allowed")).toEqual({
-      command: "git push",
-      raw: "notice: permission denied for command(git push): not allowed",
+  it("reads what agy refused from its events, not from its generic note", () => {
+    const step = (state: string, CommandLine: string, extra: Record<string, unknown> = {}) => ({
+      index: 1,
+      tool: "run_command",
+      input: { CommandLine },
+      state,
+      output: null,
+      error: null,
+      ...extra,
     });
-    expect(softDenial("Tool `rm -rf x` requires approval")?.command).toBe("rm -rf x");
-    expect(softDenial("step 3 done")).toBeNull();
+    const denied = [{ action: "command", display_name: "RunCommand" }];
+    // Seen with agy 1.2.14: an ERROR step that says so, or a DONE step with no output.
+    expect(
+      refusals(
+        [
+          step("ERROR", "ls -la", {
+            error: "permission check failed: user denied permission to run command:\nls -la",
+          }),
+          step("DONE", "cat b.txt"),
+          step("DONE", "pwd", { output: "/w" }),
+          step("DONE", "npm test"),
+        ],
+        denied,
+        new Set(["npm test"]),
+      ).map((r) => r.command),
+    ).toEqual(["ls -la", "cat b.txt"]);
+    expect(refusals([step("DONE", "cat b.txt")], [], new Set())).toEqual([]);
+    expect(refusals([], denied, new Set())).toEqual([
+      { command: null, raw: "RunCommand was denied", index: null },
+    ]);
   });
 
   it("tells a quota error from another error", () => {

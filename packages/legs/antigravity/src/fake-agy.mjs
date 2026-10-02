@@ -108,7 +108,7 @@ function main() {
     const content = JSON.parse(line).message.content;
     past.push(content);
     writeFileSync(history, JSON.stringify(past));
-    out({ event: "init", init: { cwd: process.cwd(), permission_mode: "default" } });
+    out({ event: "init", conversation_id: conversation, init: { cwd: process.cwd() } });
     if (mode === "rate-limit") {
       result({
         status: "ERROR",
@@ -130,34 +130,45 @@ function main() {
       }
     }
     if (mode === "tool" && !/^Denied:/m.test(content)) {
+      // As agy 1.2.14 reports a command: tool_name, parameters, and a refusal as an ERROR step.
       const command = "echo hi";
-      if (allowed().some((r) => r.test(command))) {
-        const tool_info = { id: "t1", name: "run_command", input: { command } };
-        out({
-          event: "step_update",
-          step_update: { step_index: 1, state: "ACTIVE", step_type: "TOOL", tool_info },
-        });
+      const tool_info = { name: "run_command", parameters: { CommandLine: command } };
+      const step = (state, info) =>
         out({
           event: "step_update",
           step_update: {
+            conversation_id: conversation,
             step_index: 1,
-            state: "DONE",
-            step_type: "TOOL",
-            tool_info: { ...tool_info, output: "hi\n" },
+            state,
+            step_type: "tool",
+            tool_name: "run_command",
+            tool_info: info,
           },
         });
+      step("ACTIVE", tool_info);
+      if (allowed().some((r) => r.test(command))) {
+        step("DONE", { ...tool_info, output: "hi\n" });
         out({
           event: "step_update",
           step_update: { step_index: 2, state: "DONE", text_delta: "Ran it." },
         });
         result({ response: "Ran it." });
       } else {
-        console.error(`notice: permission denied for command(${command}): not in the allow list`);
-        out({
-          event: "step_update",
-          step_update: { step_index: 1, state: "DONE", text_delta: "I need approval." },
+        step("ERROR", {
+          ...tool_info,
+          error: {
+            type: "TOOL_ERROR",
+            message: `permission check failed for unsandboxed "${command}": user denied permission to run command:\n${command}`,
+          },
         });
-        result({ response: "I need approval." });
+        // Its stderr note is generic: the placeholder is not the command.
+        console.error(
+          'jetski: no output produced — a tool required the "command" permission that headless mode cannot prompt for, so it was auto-denied. Add an allow-rule under permissions.allow in settings.json (e.g. command(<target>)).',
+        );
+        result({
+          response: "",
+          denied_actions: [{ action: "command", display_name: "RunCommand" }],
+        });
       }
       return;
     }

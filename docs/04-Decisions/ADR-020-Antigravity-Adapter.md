@@ -85,8 +85,23 @@ against the real binary yet.
   (Google OAuth first), then the link (also as a hyperlink) and a code.
   Oraknid answers like a plain terminal, picks Google OAuth, and shows
   the link.
-- Still to see: whether the sign-in, with no keyring, stays in the
-  Leg's home for its sessions; and the soft-deny and quota wording.
+- **The sign-in stays in the Leg's home**: with no keyring, `agy`
+  writes `~/.gemini/antigravity-cli/antigravity-oauth-token` (0600) in
+  the Leg's own home. One Antigravity Leg is one Google account, like
+  Claude Code; several are possible.
+- **Tool steps** come as `step_update` with `tool_name` and
+  `tool_info.parameters` (a command is `CommandLine`, a file write
+  `TargetFile`), `output` when done; no id (the step index is used).
+- **A refusal** is in the events, not stderr: an `ERROR` step with
+  "permission check failed … user denied permission to run command",
+  or a step `DONE` with no output, and the result lists
+  `denied_actions`. The stderr note is generic (`command(<target>)` is
+  a placeholder). The adapter holds such a step's result back until
+  Oraknid has decided, so the Leg only hears Oraknid's answer. Files
+  in the workspace are written without asking.
+- `command(regex:^…$)` in `settings.json` does allow exactly that
+  command (checked).
+- Still to see: how a quota error reads.
 
 ## Consequences
 - A turn costs one `agy` start. A command allowed once is allowed for
