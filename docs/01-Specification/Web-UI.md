@@ -57,6 +57,7 @@ Eye's conversation sit beside them ([[Chats-and-Helper]]).
 │ New work │                                                    │
 │ Overview │                                                    │
 │ Projects │        main view                                   │
+│ Repos    │                                                    │
 │ Inbox    │                                                    │
 │ Mail     │                                                    │
 │ Legs     │                                                    │
@@ -81,8 +82,8 @@ Eye's conversation sit beside them ([[Chats-and-Helper]]).
   it needs, a conversation takes the whole height like Chats; changing
   tabs never jumps the page. Nothing runs off the right edge on a phone:
   long names are cut with their full text on hover, and wrap in legends.
-- **Keyboard**: `?` lists every shortcut; `g` then `o`/`p`/`i`/`l`/
-  `c`/`s`/`t`/`m`/`k`/`d`/`,` goes to Overview, Projects, Inbox, Legs,
+- **Keyboard**: `?` lists every shortcut; `g` then `o`/`p`/`r`/`i`/`l`/
+  `c`/`s`/`t`/`m`/`k`/`d`/`,` goes to Overview, Projects, Repos, Inbox, Legs,
   Chats, Servers, Terminal, Mail, Skills, Docs, Settings (`g j` went with the
   Jobs page, 2026-10-03); `1`…`9` goes to that tab on a page with tabs
   (a job's own tabs inside Work don't take them); `[` folds the sidebar; `n` new work; Ctrl+K
@@ -233,6 +234,56 @@ I go; **Start** and **Delete**. **Start** stays disabled until there is
 a goal and a project, and says why; what it waits for that can be set
 up (a Leg, a tool) is offered beside it. Its budget starts as the
 chosen project's. Once started, it lands in the project's Eye tab.
+
+### Repos (2026-10-03, [[ADR-040-Repos-Page]])
+
+My GitHub repositories at `/repos`, in the sidebar and the phone's
+More, `g r`. Read through GitHub's API by the daemon with an account's
+token (never sent to the browser), kept a minute; nothing is cloned to
+browse.
+
+- **The list** on the left: the repositories of every account (each
+  listed once) or of one, newest push first, a search (name,
+  description, project) and a visibility filter. Each row: owner/name,
+  public or private, its description, default branch, last push, the
+  account that reads it, and the project linking it. An account GitHub
+  can't read is named above the list with why. **New repository**
+  (account, name, description, private by default; with a README) opens
+  it once made; not away from home.
+- **Accounts**: with no repository open, the right side holds the same
+  GitHub card as Settings (add, check, remove) and each account's hourly
+  allowance in words ("4,983 of 5,000 requests left this hour; full
+  again at 08:51, in 30 minutes"); on a phone, **Accounts** above the
+  list opens them in a dialog.
+- **A repository** (`/repos/<owner>/<name>/<tab>/…`), with Open on
+  GitHub in its header, in tabs in the address:
+  - **Code** (`/code/<branch>/tree|blob/<path>`): a branch picker, the
+    path as links, the folder (folders first, sizes), and on the root
+    its README rendered as Markdown. A file shows with line numbers and
+    syntax colouring (highlight.js, loaded when a file opens), scrolling
+    inside its block; a binary file or one over 512 KB says so, with
+    GitHub a click away. An empty repository says nothing is pushed yet.
+  - **Commits** (`/commits/<branch>/<sha>`): a branch's history, 30 at a
+    time with Older commits; a commit with its message, author, date and
+    its diff.
+  - **Branches**: each with default and protected marked, its code and
+    its commits a click away.
+  - **Pull requests** (`/pulls/open|closed/<number>`): open or closed
+    (merged said), one with its description (Markdown), its commits and
+    its diff.
+  - **Project**: the project linking it (Open the project, New work on
+    it, which opens its Eye tab; change or unlink in its Settings), or
+    Link to a project (an existing repository through the account that
+    reads it; a project linked elsewhere asks first) and New work on it,
+    which opens New work with the repository to clone through its
+    account.
+- **Diffs**: per file, folded with a click, its status and +/− counts,
+  then the unified diff in a block that scrolls inside itself, old and
+  new line numbers, added lines green with +, removed red with −, a
+  binary file said in words. More than 25 files: each opened on demand.
+- **On a phone**: the list fills the screen, a repository opens full
+  screen with a way back; code and diffs scroll inside their block, the
+  page never sideways.
 
 ### Chats
 

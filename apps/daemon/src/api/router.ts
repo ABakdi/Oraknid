@@ -13,7 +13,20 @@ import {
   EyeModels,
   FoundAgent,
   GitHubAccount,
+  GitHubBranch,
+  GitHubCommitDetail,
+  GitHubCommitSummary,
+  GitHubFile,
+  GitHubLimit,
   GitHubLinkInput,
+  GitHubName,
+  GitHubPullDetail,
+  GitHubPullSummary,
+  GitHubRepoDetail,
+  GitHubRepoList,
+  GitHubRepoRef,
+  GitHubTree,
+  githubPage,
   HelperAction,
   HelperContext,
   HelperMessage,
@@ -149,7 +162,8 @@ import { pruneLogs, storageUsage } from "../storage/storage.ts";
 import { TERMINAL_SETTING } from "../term/server.ts";
 import type { ToolRegistry } from "../tools/registry.ts";
 import { VERSION } from "../version.ts";
-import type { GitHub } from "../workspace/github.ts";
+import { type GitHub, GitHubError } from "../workspace/github.ts";
+import type { Repos } from "../workspace/github-repos.ts";
 import type { Projects } from "../workspace/projects.ts";
 import { jobResult, mergeJob, taskDiff } from "../workspace/result.ts";
 import { projectFrom } from "../workspace/sources.ts";
@@ -203,6 +217,8 @@ export interface ApiContext {
   chats: Chats;
   /** GitHub through my token (ADR-023). */
   github: GitHub;
+  /** My repositories, read through GitHub's API (ADR-040). */
+  repos: Repos;
   /** The Oraknid helper (ADR-024). */
   helper: Helper;
   /** My servers (ADR-026). */
@@ -415,6 +431,16 @@ async function guard<T>(fn: () => Promise<T> | T): Promise<T> {
     return await fn();
   } catch (error) {
     if (error instanceof ORPCError) throw error;
+    // GitHub's refusals, already in words (ADR-040).
+    if (error instanceof GitHubError)
+      throw new ORPCError(
+        error.status === 404
+          ? "NOT_FOUND"
+          : error.status === 403 || error.status === 429
+            ? "TOO_MANY_REQUESTS"
+            : "BAD_REQUEST",
+        { message: error.message },
+      );
     if (error instanceof Error && error.constructor === Error) {
       const code =
         /^No (such |[a-z]+ )?\w*\s*[0-9A-HJKMNP-TV-Z]{26}\b|^No (job|task|project|device|session|inbox item)\b/.test(
@@ -743,11 +769,112 @@ export const router = {
             name: z.string(),
             private: z.boolean(),
             description: z.string().nullable(),
-            updatedAt: z.string(),
+            updatedAt: z.string().nullable(),
           }),
         ),
       )
       .handler(({ context: c, input }) => guard(() => c.github.repos(input?.login ?? null))),
+    // ── Repos (ADR-040): reads through an account's token, kept a minute.
+    /** The repositories of one account, or of all, with the project linking each. */
+    repoList: base
+      .input(z.object({ account: z.string().optional() }).default({}))
+      .output(GitHubRepoList)
+      .handler(({ context: c, input }) => guard(() => c.repos.list(input.account ?? null))),
+    repoInfo: base
+      .input(GitHubRepoRef)
+      .output(GitHubRepoDetail)
+      .handler(({ context: c, input }) => guard(() => c.repos.info(input))),
+    branches: base
+      .input(GitHubRepoRef.extend({ page: z.number().int().positive().default(1) }))
+      .output(githubPage(GitHubBranch))
+      .handler(({ context: c, input }) => guard(() => c.repos.branches(input, input.page))),
+    /** A directory at a ref, or every path (`recursive`). */
+    tree: base
+      .input(
+        GitHubRepoRef.extend({
+          ref: z.string().min(1),
+          path: z.string().default(""),
+          recursive: z.boolean().default(false),
+        }),
+      )
+      .output(GitHubTree)
+      .handler(({ context: c, input }) =>
+        guard(() => c.repos.tree(input, input.ref, input.path, input.recursive)),
+      ),
+    /** A file's text at a ref (512 KB at most), or that it is binary or too large. */
+    file: base
+      .input(GitHubRepoRef.extend({ ref: z.string().min(1), path: z.string().min(1) }))
+      .output(GitHubFile)
+      .handler(({ context: c, input }) => guard(() => c.repos.file(input, input.ref, input.path))),
+    readme: base
+      .input(GitHubRepoRef.extend({ ref: z.string().min(1) }))
+      .output(GitHubFile.nullable())
+      .handler(({ context: c, input }) => guard(() => c.repos.readme(input, input.ref))),
+    commits: base
+      .input(
+        GitHubRepoRef.extend({
+          branch: z.string().min(1),
+          page: z.number().int().positive().default(1),
+        }),
+      )
+      .output(githubPage(GitHubCommitSummary))
+      .handler(({ context: c, input }) =>
+        guard(() => c.repos.commits(input, input.branch, input.page)),
+      ),
+    commit: base
+      .input(GitHubRepoRef.extend({ sha: z.string().regex(/^[0-9a-fA-F]{4,64}$/) }))
+      .output(GitHubCommitDetail)
+      .handler(({ context: c, input }) => guard(() => c.repos.commit(input, input.sha))),
+    pulls: base
+      .input(
+        GitHubRepoRef.extend({
+          state: z.enum(["open", "closed"]).default("open"),
+          page: z.number().int().positive().default(1),
+        }),
+      )
+      .output(githubPage(GitHubPullSummary))
+      .handler(({ context: c, input }) =>
+        guard(() => c.repos.pulls(input, input.state, input.page)),
+      ),
+    pull: base
+      .input(GitHubRepoRef.extend({ number: z.number().int().positive() }))
+      .output(GitHubPullDetail)
+      .handler(({ context: c, input }) => guard(() => c.repos.pull(input, input.number))),
+    /** Each account's hourly allowance as GitHub last said it, in words too. */
+    limits: base.output(z.array(GitHubLimit)).handler(({ context: c }) => c.github.limits()),
+    /** A new repository of mine (with a README, so it can be cloned at once); audited. */
+    createRepo: base
+      .input(
+        z.object({
+          account: z.string().optional(),
+          name: GitHubName,
+          private: z.boolean().default(true),
+          description: z.string().max(350).optional(),
+        }),
+      )
+      .output(z.object({ account: z.string(), owner: z.string(), name: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(async () => {
+          const login = input.account ?? (await c.github.accounts())[0]?.login ?? null;
+          const repo = await c.github.createRepo(
+            {
+              name: input.name,
+              private: input.private,
+              ...(input.description ? { description: input.description } : {}),
+            },
+            login,
+          );
+          c.bus.publish({
+            type: "github.repo-created",
+            topic: "overview",
+            jobId: null,
+            payload: { fullName: repo.fullName, private: input.private },
+            actor: "owner",
+          });
+          const [owner, name] = repo.fullName.split("/") as [string, string];
+          return { account: login ?? owner, owner, name };
+        }),
+      ),
   },
   /** Chats with my models: talk and research (ADR-025). */
   chats: {

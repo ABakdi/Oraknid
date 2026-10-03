@@ -4,6 +4,7 @@ import {
   Coffee,
   Cog,
   FolderGit2,
+  GitBranch,
   Inbox,
   LayoutDashboard,
   ListTodo,
@@ -55,6 +56,7 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/projects", label: "Projects", icon: FolderGit2 },
+  { href: "/repos", label: "Repos", icon: GitBranch },
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/mail", label: "Mail", icon: Mail },
   { href: "/legs", label: "Legs", icon: Bot },
@@ -79,6 +81,7 @@ const FOLDS = [/^\/chats/, /^\/terminal/, /^\/mail/, /^\/projects\/[^/]+\/work\/
 const GO: Record<string, string> = {
   o: "/",
   p: "/projects",
+  r: "/repos",
   i: "/inbox",
   l: "/legs",
   c: "/chats",
@@ -98,6 +101,7 @@ export const SHORTCUTS: { keys: string; does: string; where?: string }[] = [
   { keys: "n", does: "New work" },
   { keys: "g o", does: "Overview" },
   { keys: "g p", does: "Projects" },
+  { keys: "g r", does: "Repos" },
   { keys: "g i", does: "Inbox" },
   { keys: "g l", does: "Legs" },
   { keys: "g c", does: "Chats" },

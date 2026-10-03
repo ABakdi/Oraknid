@@ -304,8 +304,11 @@ const HOME_ONLY = [
   "/servers/acceptHostKey",
   "/servers/editState",
   "/servers/remove",
-  "/github/setToken",
-  "/github/removeToken",
+  // GitHub's accounts, a new repository and a project's link (ADR-038, ADR-040); reading stays open.
+  "/github/addAccount",
+  "/github/removeAccount",
+  "/github/createRepo",
+  "/projects/setGitHub",
   "/mail/addAccount",
   "/mail/testAccount",
   "/mail/updateAccount",

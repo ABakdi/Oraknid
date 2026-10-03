@@ -72,6 +72,7 @@ import { ToolRegistry } from "./tools/registry.ts";
 import { VERSION } from "./version.ts";
 import { setShadowRoot } from "./workspace/git.ts";
 import { GitHub } from "./workspace/github.ts";
+import { Repos } from "./workspace/github-repos.ts";
 import { githubServer, githubTool } from "./workspace/github-tool.ts";
 import { Projects } from "./workspace/projects.ts";
 
@@ -195,6 +196,8 @@ export async function startDaemon(options: DaemonOptions) {
   });
   // GitHub through tokens I paste, several accounts (ADR-023, ADR-038).
   const github = new GitHub(secrets, db, options.github ?? {});
+  // My repositories, read through its API (ADR-040).
+  const repos = new Repos(github, projectsService);
   // Oraknid's own github tool: a project's GitHub work with its linked account (ADR-038).
   const githubToolDecl = githubTool(db);
   try {
@@ -601,6 +604,7 @@ export async function startDaemon(options: DaemonOptions) {
         decisions,
         chats,
         github,
+        repos,
         helper,
         servers: serverService,
         mail,

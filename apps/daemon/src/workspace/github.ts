@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { GitHubAccount } from "@oraknid/contracts";
+import type { GitHubAccount, GitHubLimit } from "@oraknid/contracts";
 import { z } from "zod";
 import type { Db } from "../db/open.ts";
 import type { Secrets } from "../os/secrets.ts";
@@ -17,6 +17,27 @@ import { readSetting, writeSetting } from "../settings.ts";
 export const LEGACY_TOKEN = "github.token";
 const ACCOUNTS = "github.accounts";
 const tokenKey = (login: string) => `github.token.${login}`;
+/** How long a read is kept before GitHub is asked again (with its ETag). */
+const READ_TTL = 60_000;
+/** How many reads are kept at most, the oldest dropped first. */
+const READ_KEEP = 500;
+
+/** A refusal from GitHub, said in words, with its HTTP status. */
+export class GitHubError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+/** "at 14:05, in 12 minutes". */
+function inWords(at: number, now = Date.now()): string {
+  const min = Math.max(1, Math.ceil((at - now) / 60_000));
+  const clock = new Date(at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  return `at ${clock}, in ${min} minute${min === 1 ? "" : "s"}`;
+}
 
 const Stored = z.array(
   z.object({
@@ -33,7 +54,7 @@ export interface GitHubRepo {
   name: string;
   private: boolean;
   description: string | null;
-  updatedAt: string;
+  updatedAt: string | null;
 }
 
 export interface RepoInfo {
@@ -136,6 +157,7 @@ export class GitHub {
       Stored,
       next.filter((a) => a.login),
     );
+    this.forget();
     return me.login;
   }
 
@@ -151,6 +173,8 @@ export class GitHub {
       Stored,
       list.filter((a) => a !== gone && a.login),
     );
+    this.forget();
+    this.#limits.delete(login);
   }
 
   async #tokenOf(a: Stored[number]): Promise<string> {
@@ -176,27 +200,118 @@ export class GitHub {
   }
 
   async #call<T>(path: string, init: RequestInit = {}, token?: string): Promise<T> {
-    const t = token ?? (await this.#token());
+    const res = await this.#request(path, init, token ?? (await this.#token()));
+    return (await res.json()) as T;
+  }
+
+  /** One request; GitHub's allowance noted, and every refusal said in words (BR-17). */
+  async #request(
+    path: string,
+    init: RequestInit,
+    token: string,
+    who?: string,
+    extra: Record<string, string> = {},
+  ): Promise<Response> {
     const res = await (this.o.fetch ?? fetch)(`${this.#api}${path}`, {
       ...init,
       headers: {
         accept: "application/vnd.github+json",
-        authorization: `Bearer ${t}`,
+        authorization: `Bearer ${token}`,
         "x-github-api-version": "2022-11-28",
         ...(init.body ? { "content-type": "application/json" } : {}),
+        ...extra,
       },
       signal: AbortSignal.timeout(20_000),
     });
+    const remaining = Number(res.headers.get("x-ratelimit-remaining"));
+    const limit = Number(res.headers.get("x-ratelimit-limit"));
+    const reset = Number(res.headers.get("x-ratelimit-reset"));
+    if (who && res.headers.has("x-ratelimit-remaining") && limit > 0)
+      this.#limits.set(who, { remaining, limit, resetsAt: reset * 1000 });
     if (res.status === 401) throw new Error("GitHub refused the token: it may have expired.");
-    if (!res.ok) {
+    if (
+      (res.status === 403 || res.status === 429) &&
+      res.headers.get("x-ratelimit-remaining") === "0"
+    )
+      throw new GitHubError(
+        `GitHub's hourly allowance for ${who ?? "this account"} is used up (${limit || 5000} requests); it fills again ${inWords(reset * 1000)}.`,
+        res.status,
+      );
+    if ((res.status === 403 || res.status === 429) && res.headers.has("retry-after"))
+      throw new GitHubError(
+        `GitHub asks Oraknid to slow down for ${who ?? "this account"}: try again in ${Number(res.headers.get("retry-after")) || 60} seconds.`,
+        res.status,
+      );
+    if (!res.ok && res.status !== 304) {
       const body = (await res.json().catch(() => ({}))) as {
         message?: string;
         errors?: { message?: string }[];
       };
       const why = body.errors?.map((e) => e.message).join("; ") || body.message || res.statusText;
-      throw new Error(`GitHub said no: ${why}.`);
+      throw new GitHubError(`GitHub said no: ${why}.`, res.status);
     }
-    return (await res.json()) as T;
+    return res;
+  }
+
+  /** What GitHub said last of each account's hourly allowance. */
+  readonly #limits = new Map<string, { remaining: number; limit: number; resetsAt: number }>();
+  /** Reads, briefly kept (ADR-040): an account and a path, with GitHub's ETag to ask again cheaply. */
+  readonly #cache = new Map<
+    string,
+    { at: number; etag: string | null; data: unknown; next: boolean }
+  >();
+
+  /** The accounts' allowances as last seen, in words too. */
+  limits(): GitHubLimit[] {
+    return [...this.#limits].map(([account, l]) => ({
+      account,
+      ...l,
+      words:
+        l.remaining > 0
+          ? `${l.remaining.toLocaleString("en")} of ${l.limit.toLocaleString("en")} requests left this hour; full again ${inWords(l.resetsAt)}.`
+          : `None of ${l.limit.toLocaleString("en")} requests left this hour; full again ${inWords(l.resetsAt)}.`,
+    }));
+  }
+
+  /** Forgets what was read: after a change of mine, the next read is GitHub's. */
+  forget() {
+    this.#cache.clear();
+  }
+
+  /**
+   * A read through an account's token (the first when none is named), kept
+   * for a minute; after that GitHub is asked again with the ETag, and an
+   * unchanged answer (304) costs nothing of the allowance. `next` says
+   * GitHub has another page.
+   */
+  async read<T>(path: string, login?: string | null): Promise<{ data: T; next: boolean }> {
+    const list = await this.#list();
+    const a = login ? list.find((x) => x.login === login) : list[0];
+    if (!a) await this.#token(login);
+    const account = a as Stored[number];
+    const key = `${account.login}\n${path}`;
+    const kept = this.#cache.get(key);
+    if (kept && Date.now() - kept.at < READ_TTL) return { data: kept.data as T, next: kept.next };
+    const res = await this.#request(
+      path,
+      {},
+      await this.#tokenOf(account),
+      account.login || undefined,
+      kept?.etag ? { "if-none-match": kept.etag } : {},
+    );
+    if (res.status === 304 && kept) {
+      kept.at = Date.now();
+      return { data: kept.data as T, next: kept.next };
+    }
+    const data = (await res.json()) as T;
+    const next = /<[^>]+>;\s*rel="next"/.test(res.headers.get("link") ?? "");
+    if (this.#cache.size >= READ_KEEP) {
+      const oldest = this.#cache.keys().next().value;
+      if (oldest !== undefined) this.#cache.delete(oldest);
+    }
+    this.#cache.delete(key);
+    this.#cache.set(key, { at: Date.now(), etag: res.headers.get("etag"), data, next });
+    return { data, next };
   }
 
   /** An account's repos, most recently pushed first. */
@@ -207,7 +322,7 @@ export class GitHub {
         name: string;
         private: boolean;
         description: string | null;
-        pushed_at: string;
+        pushed_at: string | null;
       }[]
     >(
       "/user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator",
@@ -254,6 +369,7 @@ export class GitHub {
       },
       token,
     );
+    this.forget();
     return { fullName: r.full_name, cloneUrl: r.clone_url };
   }
 

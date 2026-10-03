@@ -20,6 +20,7 @@ import { MailPage } from "@/pages/mail";
 import { OverviewPage } from "@/pages/overview";
 import { PairPage } from "@/pages/pair";
 import { ProjectsPage } from "@/pages/projects";
+import { ReposPage } from "@/pages/repos";
 import { ServersPage } from "@/pages/servers";
 import { SettingsPage } from "@/pages/settings";
 import { SkillsPage } from "@/pages/skills";
@@ -126,6 +127,9 @@ export function App() {
                 </Route>
                 <Route path="/projects/:id?/:tab?/:job?/:sub?">
                   {(p) => <ProjectsPage id={p.id} tab={p.tab} job={p.job} sub={p.sub} />}
+                </Route>
+                <Route path="/repos/:owner?/:name?/:tab?/*?">
+                  {(p) => <ReposPage owner={p.owner} name={p.name} tab={p.tab} rest={p["*"]} />}
                 </Route>
                 <Route path="/inbox">{() => <InboxPage />}</Route>
                 <Route path="/inbox/:id">{(p) => <InboxPage focus={p.id} />}</Route>

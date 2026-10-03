@@ -239,3 +239,67 @@
       0 0 0 9999px color-mix(in srgb, black 22%, transparent);
   }
 }
+
+/* Code in Repos (ADR-040): highlight.js's classes in Oraknid's colours, both
+   themes, each readable (AA) on a well. */
+:root {
+  --code-keyword: #5a43d1;
+  --code-string: #17703f;
+  --code-number: #9a4d00;
+  --code-title: #0a6a70;
+  --code-type: #a82a68;
+}
+.dark {
+  --code-keyword: var(--chart-1);
+  --code-string: var(--chart-5);
+  --code-number: var(--chart-2);
+  --code-title: var(--chart-3);
+  --code-type: var(--chart-4);
+}
+.hljs-comment,
+.hljs-quote {
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-doctag,
+.hljs-section {
+  color: var(--code-keyword);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-attribute,
+.hljs-template-tag {
+  color: var(--code-string);
+}
+.hljs-number,
+.hljs-literal,
+.hljs-symbol,
+.hljs-bullet {
+  color: var(--code-number);
+}
+.hljs-title,
+.hljs-name {
+  color: var(--code-title);
+}
+.hljs-type,
+.hljs-attr,
+.hljs-property,
+.hljs-params,
+.hljs-meta,
+.hljs-selector-class,
+.hljs-selector-id {
+  color: var(--code-type);
+}
+.hljs-deletion {
+  color: var(--destructive);
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 600;
+}
