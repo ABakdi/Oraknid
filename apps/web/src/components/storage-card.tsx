@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Loading } from "@/components/common";
+import { useConfirm } from "@/components/confirm";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -30,10 +31,21 @@ export function StorageCard() {
   const [chosen, setChosen] = useState<string[]>([]);
   const [age, setAge] = useState("30");
   const [busy, setBusy] = useState(false);
+  const { confirm, dialog } = useConfirm();
   if (!u.data) return <Loading rows={3} />;
   const d = u.data;
   const logs = d.jobs.reduce((n, j) => n + j.bytes, 0);
   const prune = async () => {
+    if (
+      !(await confirm(
+        t("Prune the raw logs of {n} job(s)?", { n: chosen.length }),
+        t(
+          "Their raw Leg logs older than the age you chose are deleted. Silk, stats and the audit log stay.",
+        ),
+        t("Prune"),
+      ))
+    )
+      return;
     setBusy(true);
     try {
       const r = await api.storage.prune({
@@ -124,6 +136,7 @@ export function StorageCard() {
             {t("Prune {n} job(s)", { n: chosen.length })}
           </Button>
         </div>
+        {dialog}
       </CardContent>
     </Card>
   );

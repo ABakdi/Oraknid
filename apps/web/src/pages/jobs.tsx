@@ -26,7 +26,11 @@ export function JobsPage() {
   const list = [...(jobs.data ?? [])].reverse();
   return (
     <div>
-      <PageHeader title={t("Jobs")} actions={add} />
+      <PageHeader
+        title={t("Jobs")}
+        sub={t("Newest first. A draft opens where you left it.")}
+        actions={add}
+      />
       {list.length === 0 ? (
         <Empty title={t("No jobs yet")} action={add}>
           {t(
@@ -44,7 +48,9 @@ export function JobsPage() {
                 className="flex flex-wrap items-center gap-3 px-3 py-3 hover:bg-accent/50"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="truncate font-medium">{j.title}</div>
+                  <div className="truncate font-medium" title={j.title}>
+                    {j.title}
+                  </div>
                   <div className="truncate text-xs text-muted-foreground">
                     {j.blockedReason ??
                       j.pauseReason ??

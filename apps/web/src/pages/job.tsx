@@ -1,16 +1,26 @@
 import type { Event, JobView, TaskView } from "@oraknid/contracts";
 import { Ban, ListOrdered, Pause, Play, Plus, ShieldAlert, Signpost, Undo2 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Agents } from "@/components/agents";
 import { LegComparison, TokensChart } from "@/components/charts";
-import { ErrorNote, Loading, Markdown, PageHeader, Stat, StateBadge } from "@/components/common";
+import {
+  Empty,
+  ErrorNote,
+  Loading,
+  Markdown,
+  PageHeader,
+  Stat,
+  StateBadge,
+} from "@/components/common";
+import { useConfirm } from "@/components/confirm";
 import { EyeChat } from "@/components/eye-chat";
 import { JobResult } from "@/components/job-result";
 import { JobSettings } from "@/components/job-settings";
 import { OrderDialog } from "@/components/order-dialog";
 import { type PageTab, PageTabs } from "@/components/page-tabs";
 import { PlanComparisonCard } from "@/components/plan-comparison";
+import { ToolsSetupButton } from "@/components/setup";
 import { TaskDiff } from "@/components/task-diff";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -51,6 +61,12 @@ import { describe } from "@/pages/overview";
 
 const ACTIVE = ["interviewing", "planning", "running", "verifying", "waiting"];
 
+/** The task whose drawer this history entry opened, if any. */
+const taskIn = (state: unknown): string | null =>
+  state && typeof state === "object" && typeof (state as { task?: unknown }).task === "string"
+    ? (state as { task: string }).task
+    : null;
+
 /** Runs a control and says how it went, in words (BR-17). */
 async function act(fn: () => Promise<unknown>, done?: string) {
   try {
@@ -75,9 +91,23 @@ export function JobPage({ id, tab }: { id: string; tab?: string }) {
     topics: ["overview"],
     refreshOn: (e) => e.type.startsWith("leg."),
   });
-  const [open, setOpen] = useState<string | null>(null);
+  // The task drawer is a step of its own in history: back (or Esc, or ✕) closes it.
+  const [open, setOpen] = useState<string | null>(() => taskIn(history.state));
+  useEffect(() => {
+    const on = () => setOpen(taskIn(history.state));
+    window.addEventListener("popstate", on);
+    return () => window.removeEventListener("popstate", on);
+  }, []);
+  const openTask = useCallback((taskId: string) => {
+    history.pushState({ ...(history.state ?? {}), task: taskId }, "", location.href);
+    setOpen(taskId);
+  }, []);
+  const closeTask = () => {
+    if (taskIn(history.state)) history.back();
+    else setOpen(null);
+  };
   const [redirecting, setRedirecting] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
+  const { confirm, dialog } = useConfirm();
   const [adding, setAdding] = useState(false);
   const [ordering, setOrdering] = useState(false);
 
@@ -103,12 +133,26 @@ export function JobPage({ id, tab }: { id: string; tab?: string }) {
   if (job.loading || !job.data) return <Loading rows={6} />;
   const j = job.data;
   const task = j.tasks.find((x) => x.id === open) ?? null;
+  const cancel = async () => {
+    if (
+      await confirm(
+        t("Cancel “{title}”?", { title: j.title }),
+        t(
+          "The job stops at a safe point. Its worktree and checkpoints are kept until you delete them.",
+        ),
+        t("Cancel the job"),
+        { keep: t("Keep it") },
+      )
+    )
+      void act(() => api.jobs.cancel({ id }), t("Cancelled."));
+  };
   const running = ACTIVE.includes(j.state);
 
   const header = (
     <div className="shrink-0 space-y-2">
       <PageHeader
         title={j.title}
+        back={{ fallback: "/jobs", label: t("Back") }}
         sub={
           <span className="flex flex-wrap items-center gap-2">
             <StateBadge state={j.state} />
@@ -121,6 +165,54 @@ export function JobPage({ id, tab }: { id: string; tab?: string }) {
         }
         actions={
           <>
+            {j.state !== "completed" && j.state !== "cancelled" ? (
+              <>
+                <Select
+                  value={String(j.priority)}
+                  onValueChange={(v) =>
+                    act(
+                      () => api.jobs.setPriority({ id, priority: Number(v) }),
+                      t("Priority changed."),
+                    )
+                  }
+                >
+                  <SelectTrigger className="w-36" aria-label={t("Priority")}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="5">{t("High priority")}</SelectItem>
+                    <SelectItem value="0">{t("Normal priority")}</SelectItem>
+                    <SelectItem value="-5">{t("Low priority")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={j.autonomy}
+                  onValueChange={(v) =>
+                    act(
+                      () => api.jobs.setAutonomy({ id, autonomy: v as JobView["autonomy"] }),
+                      t("Autonomy changed; the next decision uses it."),
+                    )
+                  }
+                >
+                  <SelectTrigger className="w-36" aria-label={t("Autonomy")}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="supervised">{t("Supervised")}</SelectItem>
+                    <SelectItem value="standard">{t("Standard")}</SelectItem>
+                    <SelectItem value="full">{t("Full")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="secondary" className="gap-1" onClick={() => setRedirecting(true)}>
+                  <Signpost className="size-4" />
+                  {t("Redirect")}
+                </Button>
+                <Button variant="ghost" className="gap-1 text-destructive" onClick={cancel}>
+                  <Ban className="size-4" />
+                  {t("Cancel")}
+                </Button>
+              </>
+            ) : null}
             {running ? (
               <Button
                 variant="secondary"
@@ -151,66 +243,17 @@ export function JobPage({ id, tab }: { id: string; tab?: string }) {
                 {t("Resume")}
               </Button>
             ) : null}
-            {j.state !== "completed" && j.state !== "cancelled" ? (
-              <>
-                <Button variant="secondary" className="gap-1" onClick={() => setRedirecting(true)}>
-                  <Signpost className="size-4" />
-                  {t("Redirect")}
-                </Button>
-                <Select
-                  value={String(j.priority)}
-                  onValueChange={(v) =>
-                    act(
-                      () => api.jobs.setPriority({ id, priority: Number(v) }),
-                      t("Priority changed."),
-                    )
-                  }
-                >
-                  <SelectTrigger className="w-32" aria-label={t("Priority")}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="5">{t("High priority")}</SelectItem>
-                    <SelectItem value="0">{t("Normal priority")}</SelectItem>
-                    <SelectItem value="-5">{t("Low priority")}</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={j.autonomy}
-                  onValueChange={(v) =>
-                    act(
-                      () => api.jobs.setAutonomy({ id, autonomy: v as JobView["autonomy"] }),
-                      t("Autonomy changed; the next decision uses it."),
-                    )
-                  }
-                >
-                  <SelectTrigger className="w-36" aria-label={t("Autonomy")}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="supervised">{t("Supervised")}</SelectItem>
-                    <SelectItem value="standard">{t("Standard")}</SelectItem>
-                    <SelectItem value="full">{t("Full")}</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button
-                  variant="ghost"
-                  className="gap-1 text-destructive"
-                  onClick={() => setCancelling(true)}
-                >
-                  <Ban className="size-4" />
-                  {t("Cancel")}
-                </Button>
-              </>
-            ) : null}
           </>
         }
       />
       {j.missingTools.length ? (
-        <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
-          {t("This job's skill uses {tools}, not set up yet: add it in Settings → Tools.", {
-            tools: j.missingTools.join(", "),
-          })}
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
+          <span className="min-w-0 flex-1">
+            {t("This job's skill uses {tools}, not set up yet.", {
+              tools: j.missingTools.join(", "),
+            })}
+          </span>
+          <ToolsSetupButton missing={j.missingTools} />
         </div>
       ) : null}
       {j.blockedReason || j.pauseReason ? (
@@ -229,7 +272,7 @@ export function JobPage({ id, tab }: { id: string; tab?: string }) {
       badge: j.tasks.length || undefined,
       content: () => (
         <div className="space-y-3">
-          <WebGraph tasks={j.tasks} legName={legName} onOpen={setOpen} />
+          <WebGraph tasks={j.tasks} legName={legName} onOpen={openTask} />
           <div className="flex justify-end">
             <Button
               variant="ghost"
@@ -284,39 +327,14 @@ export function JobPage({ id, tab }: { id: string; tab?: string }) {
       <TaskDrawer
         job={j}
         task={task}
-        onClose={() => setOpen(null)}
+        onClose={closeTask}
         modelName={modelName}
         legs={legs.data ?? []}
       />
       <RedirectDialog open={redirecting} onOpenChange={setRedirecting} id={id} />
       <AddTaskDialog open={adding} onOpenChange={setAdding} job={j} />
       <OrderDialog job={j} open={ordering} onOpenChange={setOrdering} />
-      <Dialog open={cancelling} onOpenChange={setCancelling}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("Cancel “{title}”?", { title: j.title })}</DialogTitle>
-            <DialogDescription>
-              {t(
-                "The job stops at a safe point. Its worktree and checkpoints are kept until you delete them.",
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="secondary" onClick={() => setCancelling(false)}>
-              {t("Keep it")}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                setCancelling(false);
-                void act(() => api.jobs.cancel({ id }), t("Cancelled."));
-              }}
-            >
-              {t("Cancel the job")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {dialog}
     </>
   );
 }
@@ -342,6 +360,7 @@ function TaskDrawer({
     (e) => e.type === "task.verified" && (e.payload as { taskId?: string }).taskId === task?.id,
   );
   const [editing, setEditing] = useState(false);
+  const { confirm, dialog } = useConfirm();
   const busy = task ? ["assigned", "running", "verifying"].includes(task.state) : false;
   const finished = task ? task.state === "done" || task.state === "skipped" : false;
   const jobRunning = ACTIVE.includes(job.state);
@@ -351,7 +370,7 @@ function TaskDrawer({
         {task ? (
           <>
             <SheetHeader>
-              <SheetTitle className="pr-6">{task.title}</SheetTitle>
+              <SheetTitle className="pr-10 [overflow-wrap:anywhere]">{task.title}</SheetTitle>
               <SheetDescription className="flex flex-wrap items-center gap-2">
                 <StateBadge state={task.state} />
                 <span>
@@ -424,12 +443,22 @@ function TaskDrawer({
                           ? t("Pause the job before rolling back.")
                           : t("Put the worktree back to before this attempt")
                       }
-                      onClick={() =>
-                        act(
-                          () => api.tasks.rollback({ taskId: task.id, attempt: i + 1 }),
-                          t("Rolled back; new files went to the trash."),
+                      aria-label={t("Roll back attempt {n}", { n: i + 1 })}
+                      onClick={async () => {
+                        if (
+                          await confirm(
+                            t("Roll back to before attempt {n}?", { n: i + 1 }),
+                            t(
+                              "The worktree goes back to how it was before this attempt; files it added go to the trash.",
+                            ),
+                            t("Roll back"),
+                          )
                         )
-                      }
+                          void act(
+                            () => api.tasks.rollback({ taskId: task.id, attempt: i + 1 }),
+                            t("Rolled back; new files went to the trash."),
+                          );
+                      }}
                     >
                       <Undo2 className="size-3" />
                     </Button>
@@ -524,13 +553,24 @@ function TaskDrawer({
                   size="sm"
                   className="text-destructive"
                   disabled={busy || finished}
-                  onClick={() =>
-                    act(
-                      () =>
-                        api.web.edit({ jobId: job.id, edits: [{ op: "remove", taskId: task.id }] }),
-                      t("Removed from the plan."),
+                  onClick={async () => {
+                    if (
+                      await confirm(
+                        t("Remove “{title}” from the plan?", { title: task.title }),
+                        t("It leaves the plan for good; add it again if you need it."),
+                        t("Remove"),
+                        { keep: t("Keep it") },
+                      )
                     )
-                  }
+                      void act(
+                        () =>
+                          api.web.edit({
+                            jobId: job.id,
+                            edits: [{ op: "remove", taskId: task.id }],
+                          }),
+                        t("Removed from the plan."),
+                      ).then(onClose);
+                  }}
                 >
                   {t("Remove")}
                 </Button>
@@ -542,6 +582,7 @@ function TaskDrawer({
               ) : null}
             </div>
             <EditTaskDialog open={editing} onOpenChange={setEditing} job={job} task={task} />
+            {dialog}
           </>
         ) : null}
       </SheetContent>
@@ -607,6 +648,9 @@ function EditTaskDialog({
           tasks={job.tasks.filter((x) => x.id !== task.id)}
         />
         <DialogFooter>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+            {t("Cancel")}
+          </Button>
           <Button
             onClick={() =>
               act(async () => {
@@ -676,6 +720,9 @@ function AddTaskDialog({
           tasks={job.tasks}
         />
         <DialogFooter>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+            {t("Cancel")}
+          </Button>
           <Button
             disabled={!ok}
             onClick={() =>
@@ -759,7 +806,7 @@ function TaskFields(p: {
         />
       </div>
       {p.tasks.length ? (
-        <fieldset className="space-y-1">
+        <fieldset className="min-w-0 space-y-1">
           <legend className="text-sm font-medium">{t("Depends on")}</legend>
           {p.tasks.map((x) => (
             <label key={x.id} className="flex items-center gap-2 text-sm">
@@ -805,6 +852,9 @@ function RedirectDialog({
           placeholder={t("e.g. Use SQLite, not Postgres.")}
         />
         <DialogFooter>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+            {t("Cancel")}
+          </Button>
           <Button
             disabled={!text.trim()}
             onClick={() =>
@@ -844,14 +894,20 @@ function Activity({ jobId }: { jobId: string }) {
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           className="max-w-xs"
+          aria-label={t("Filter the activity")}
         />
         <div className="max-h-[60vh] space-y-1 overflow-y-auto font-mono text-xs">
+          {shown.length === 0 ? (
+            <div className="font-sans text-sm text-muted-foreground">
+              {filter ? t("Nothing matches.") : t("Nothing yet.")}
+            </div>
+          ) : null}
           {shown.map((e) => (
             <details key={e.seq} className="group">
               <summary className="flex cursor-pointer gap-2 marker:content-['']">
                 <span className="shrink-0 text-muted-foreground">{clock(e.at)}</span>
                 <span className="shrink-0 text-primary">{e.type}</span>
-                <span className="truncate text-muted-foreground">{describe(e)}</span>
+                <span className="min-w-0 truncate text-muted-foreground">{describe(e)}</span>
               </summary>
               <pre className="mt-1 overflow-x-auto rounded bg-muted p-2 text-[11px]">
                 {JSON.stringify(e.payload, null, 2)}
@@ -886,10 +942,17 @@ function Silk({ jobId }: { jobId: string }) {
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
-        <Button size="sm" variant="secondary" onClick={() => setAdding((a) => !a)}>
+        <Button size="sm" variant="secondary" disabled={adding} onClick={() => setAdding(true)}>
           {t("Add a decision")}
         </Button>
       </div>
+      {silk.data && silk.data.length === 0 && !adding ? (
+        <Empty title={t("Nothing in Silk yet")}>
+          {t(
+            "What the job learns and decides lands here: answers, decisions, progress, handoffs. Add your own decision and every next session reads it.",
+          )}
+        </Empty>
+      ) : null}
       {adding ? (
         <Card>
           <CardContent className="space-y-2 pt-4">
@@ -903,20 +966,25 @@ function Silk({ jobId }: { jobId: string }) {
               value={body}
               onChange={(e) => setBody(e.target.value)}
             />
-            <Button
-              size="sm"
-              disabled={!title.trim()}
-              onClick={() =>
-                act(async () => {
-                  await api.silk.add({ jobId, taskId: null, kind: "decision", title, body });
-                  setTitle("");
-                  setBody("");
-                  setAdding(false);
-                }, t("Added to Silk."))
-              }
-            >
-              {t("Save")}
-            </Button>
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="secondary" onClick={() => setAdding(false)}>
+                {t("Cancel")}
+              </Button>
+              <Button
+                size="sm"
+                disabled={!title.trim()}
+                onClick={() =>
+                  act(async () => {
+                    await api.silk.add({ jobId, taskId: null, kind: "decision", title, body });
+                    setTitle("");
+                    setBody("");
+                    setAdding(false);
+                  }, t("Added to Silk."))
+                }
+              >
+                {t("Save")}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       ) : null}
@@ -956,7 +1024,9 @@ function JobInbox({ jobId }: { jobId: string }) {
   const items = useLive(() => api.inbox.list({ jobId }), { topics: ["inbox"], deps: [jobId] });
   const mine = items.data ?? [];
   return mine.length === 0 ? (
-    <div className="p-4 text-sm text-muted-foreground">{t("Nothing for this job.")}</div>
+    <Empty title={t("Nothing for this job")}>
+      {t("Its approvals and questions appear here, and in the inbox.")}
+    </Empty>
   ) : (
     <div className="space-y-2">
       {mine.map((i) => (
@@ -1003,12 +1073,8 @@ function Budget({ job }: { job: JobView }) {
       />
       <Stat
         label={t("Money")}
-        value={`$0.00`}
-        hint={
-          b.money.limit > 0
-            ? t("limit: {amount}", { amount: `$${b.money.limit}` })
-            : t("none may be spent")
-        }
+        value={b.money.limit > 0 ? `$${b.money.limit}` : t("None")}
+        hint={b.money.limit > 0 ? t("may be spent") : t("nothing may be spent")}
       />
       <Stat
         label={t("Quota share")}

@@ -70,12 +70,13 @@ export function InboxPage({ focus }: { focus?: string }) {
     <div className="mx-auto max-w-3xl space-y-3">
       <PageHeader
         title={t("Inbox")}
+        back={focus ? { fallback: "/inbox" } : undefined}
         sub={waiting ? t("{n} waiting for you", { n: waiting }) : t("Nothing waits for you.")}
       />
       {data.length ? (
         <div className="flex flex-wrap gap-2">
           <Input
-            className="min-w-48 flex-1"
+            className="w-full sm:w-auto sm:min-w-48 sm:flex-1"
             placeholder={t("Search the inbox…")}
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -88,7 +89,10 @@ export function InboxPage({ focus }: { focus?: string }) {
               setJob(ALL);
             }}
           >
-            <SelectTrigger className="w-40" aria-label={t("Project")}>
+            <SelectTrigger
+              className="min-w-0 flex-1 sm:w-40 sm:flex-none"
+              aria-label={t("Project")}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -101,7 +105,7 @@ export function InboxPage({ focus }: { focus?: string }) {
             </SelectContent>
           </Select>
           <Select value={job} onValueChange={setJob}>
-            <SelectTrigger className="w-44" aria-label={t("Job")}>
+            <SelectTrigger className="min-w-0 flex-1 sm:w-40 sm:flex-none" aria-label={t("Job")}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -114,7 +118,7 @@ export function InboxPage({ focus }: { focus?: string }) {
             </SelectContent>
           </Select>
           <Select value={kind} onValueChange={setKind}>
-            <SelectTrigger className="w-36" aria-label={t("Kind")}>
+            <SelectTrigger className="min-w-0 flex-1 sm:w-40 sm:flex-none" aria-label={t("Kind")}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -142,7 +146,24 @@ export function InboxPage({ focus }: { focus?: string }) {
       ) : null}
       {open.length === 0 ? (
         filtered ? (
-          <Empty title={t("Nothing matches")}>{t("No open item matches these filters.")}</Empty>
+          <Empty
+            title={t("Nothing matches")}
+            action={
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setProject(ALL);
+                  setJob(ALL);
+                  setKind(ALL);
+                  setQ("");
+                }}
+              >
+                {t("Clear the filters")}
+              </Button>
+            }
+          >
+            {t("No open item matches these filters.")}
+          </Empty>
         ) : (
           <Empty title={t("All clear")}>
             {t("Approvals and questions from every job appear here, and as notifications.")}

@@ -3,6 +3,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Loading } from "@/components/common";
+import { useConfirm } from "@/components/confirm";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -86,6 +87,7 @@ function BuiltInRow({ tool }: { tool: ToolView }) {
 
 function ServerRow({ tool }: { tool: ToolView }) {
   const [secret, setSecret] = useState<{ name: string; value: string } | null>(null);
+  const { confirm, dialog } = useConfirm();
   return (
     <div className="space-y-2 rounded-md border px-3 py-2 text-sm">
       <div className="flex flex-wrap items-center gap-2">
@@ -101,15 +103,29 @@ function ServerRow({ tool }: { tool: ToolView }) {
           size="sm"
           variant="ghost"
           aria-label={t("Remove {name}", { name: tool.name })}
-          onClick={() =>
+          onClick={async () => {
+            if (
+              !(await confirm(
+                t("Remove {name}?", { name: tool.name }),
+                tool.usedBy.length
+                  ? t("Skills that use it ({skills}) can't start a job until it is back.", {
+                      skills: tool.usedBy.join(", "),
+                    })
+                  : t("Its secrets leave the keychain."),
+                t("Remove"),
+                { keep: t("Keep it") },
+              ))
+            )
+              return;
             api.tools
               .remove({ id: tool.id })
               .then(() => toast.success(t("Removed.")))
-              .catch((e) => toast.error(message(e)))
-          }
+              .catch((e) => toast.error(message(e)));
+          }}
         >
           <Trash2 className="size-3.5" />
         </Button>
+        {dialog}
       </div>
       {tool.description ? <div className="text-muted-foreground">{tool.description}</div> : null}
       <div className="font-mono text-xs [overflow-wrap:anywhere]">
@@ -141,6 +157,9 @@ function ServerRow({ tool }: { tool: ToolView }) {
               onChange={(e) => setSecret({ ...secret, value: e.target.value })}
             />
           </div>
+          <Button size="sm" variant="secondary" onClick={() => setSecret(null)}>
+            {t("Cancel")}
+          </Button>
           <Button
             size="sm"
             disabled={!secret.name || !secret.value}
@@ -289,12 +308,12 @@ function ToolForm({ onDone }: { onDone: () => void }) {
           {t("What it returns comes from outside (mail, web pages): treat it as data")}
         </Label>
       </div>
-      <div className="flex gap-2">
+      <div className="flex justify-end gap-2">
+        <Button size="sm" variant="secondary" onClick={onDone}>
+          {t("Cancel")}
+        </Button>
         <Button size="sm" disabled={busy || !name || !command} onClick={create}>
           {t("Add")}
-        </Button>
-        <Button size="sm" variant="ghost" onClick={onDone}>
-          {t("Cancel")}
         </Button>
       </div>
     </div>

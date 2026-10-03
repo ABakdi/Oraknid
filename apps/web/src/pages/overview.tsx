@@ -1,9 +1,10 @@
 import type { Event } from "@oraknid/contracts";
 import { AlertTriangle, Bot, Cpu, HardDrive, MemoryStick, Network } from "lucide-react";
+import type { ReactNode } from "react";
 import { Link } from "wouter";
 import { Sparkline, TokensChart } from "@/components/charts";
 import { Empty, ErrorNote, Loading, PageHeader, Stat, StateBadge } from "@/components/common";
-import { Button } from "@/components/ui/button";
+import { AddLegButtons } from "@/components/setup";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { api } from "@/lib/api";
@@ -49,14 +50,7 @@ export function OverviewPage() {
   if ((legs.data ?? []).length === 0) {
     return (
       <div className="mx-auto max-w-xl pt-8">
-        <Empty
-          title={t("Add your first Leg")}
-          action={
-            <Button asChild>
-              <Link href="/legs">{t("Add a Leg")}</Link>
-            </Button>
-          }
-        >
+        <Empty title={t("Add your first Leg")} action={<AddLegButtons />}>
           {t(
             "A Leg is an agent account or a local model Oraknid can hand work to: a Claude Code login, an Ollama server… Oraknid needs at least one.",
           )}
@@ -74,23 +68,29 @@ export function OverviewPage() {
       <PageHeader title={t("Overview")} sub={t("{n} job(s) active", { n: activeJobs.length })} />
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat label={t("Tokens today")} value={tokens(tokensToday)} />
-        <Stat
-          label={t("Jobs running")}
-          value={activeJobs.filter((j) => j.state === "running").length}
-          hint={t("{n} waiting or paused", {
-            n: activeJobs.filter((j) => j.state !== "running").length,
-          })}
-        />
-        <Stat
-          label={t("Inbox")}
-          value={inbox.data?.length ?? 0}
-          hint={inbox.data?.length ? t("needs you") : t("nothing waiting")}
-        />
-        <Stat
-          label={t("Legs")}
-          value={`${(legs.data ?? []).filter((l) => l.health === "healthy").length}/${legs.data?.length ?? 0}`}
-          hint={t("healthy")}
-        />
+        <TileLink href="/jobs">
+          <Stat
+            label={t("Jobs running")}
+            value={activeJobs.filter((j) => j.state === "running").length}
+            hint={t("{n} waiting or paused", {
+              n: activeJobs.filter((j) => j.state !== "running").length,
+            })}
+          />
+        </TileLink>
+        <TileLink href="/inbox">
+          <Stat
+            label={t("Inbox")}
+            value={inbox.data?.length ?? 0}
+            hint={inbox.data?.length ? t("needs you") : t("nothing waiting")}
+          />
+        </TileLink>
+        <TileLink href="/legs">
+          <Stat
+            label={t("Legs")}
+            value={`${(legs.data ?? []).filter((l) => l.health === "healthy").length}/${legs.data?.length ?? 0}`}
+            hint={t("healthy")}
+          />
+        </TileLink>
       </div>
 
       <section aria-label={t("Legs now")}>
@@ -103,7 +103,11 @@ export function OverviewPage() {
                 <CardHeader className="px-3">
                   <CardTitle className="flex items-center gap-2 text-sm">
                     <Bot className="size-4 shrink-0" />
-                    <Link href={`/legs/${leg.id}`} className="truncate hover:underline">
+                    <Link
+                      href={`/legs/${leg.id}`}
+                      className="truncate hover:underline"
+                      title={leg.name}
+                    >
                       {leg.name}
                     </Link>
                     <span className="flex-1" />
@@ -119,7 +123,13 @@ export function OverviewPage() {
                           {a.eye ? (
                             t("thinking for The Eye")
                           ) : a.task ? (
-                            <Link href={`/jobs/${a.jobId}`}>{a.task}</Link>
+                            <Link
+                              href={`/jobs/${a.jobId}`}
+                              className="hover:underline"
+                              title={a.task}
+                            >
+                              {a.task}
+                            </Link>
                           ) : (
                             t("working")
                           )}
@@ -203,7 +213,9 @@ export function OverviewPage() {
                   href={e.jobId ? `/jobs/${e.jobId}` : "/logs"}
                   className="block rounded px-1 hover:bg-accent"
                 >
-                  <div className="truncate">{describe(e)}</div>
+                  <div className="truncate" title={describe(e)}>
+                    {describe(e) || e.type}
+                  </div>
                   <div className="text-xs text-muted-foreground">
                     {e.type} · {ago(e.at)}
                   </div>
@@ -287,6 +299,18 @@ export function OverviewPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/** A tile that opens the page it counts. */
+function TileLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="min-w-0 rounded-lg outline-none hover:[&>div]:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {children}
+    </Link>
   );
 }
 

@@ -21,6 +21,7 @@ import {
   Wand2,
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Link, useLocation } from "wouter";
 import { HelperButton } from "@/components/helper";
 import { Badge } from "@/components/ui/badge";
@@ -41,7 +42,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { api } from "@/lib/api";
+import { api, message } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useLive, useLiveStatus } from "@/lib/live";
 import { store } from "@/lib/store";
@@ -134,8 +135,11 @@ export function Shell({ children }: { children: ReactNode }) {
   const [override, setOverride] = useState<boolean | null>(null);
   const auto = FOLDS.some((r) => r.test(location));
   const folded = override ?? (auto || pref);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a new page drops the page's own choice
-  useEffect(() => setOverride(null), [location]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new page drops the page's own choice, and closes More
+  useEffect(() => {
+    setOverride(null);
+    setMore(false);
+  }, [location]);
   const toggle = () => {
     if (auto) setOverride(!folded);
     else {
@@ -162,6 +166,7 @@ export function Shell({ children }: { children: ReactNode }) {
         setPalette((p) => !p);
         return;
       }
+      if (e.key === "Escape") setMore(false);
       if (e.metaKey || e.ctrlKey || e.altKey || typing(e)) return;
       if (g && Date.now() - g < 1500 && GO[e.key]) {
         g = 0;
@@ -356,15 +361,28 @@ export function Shell({ children }: { children: ReactNode }) {
         ))}
         <button
           type="button"
+          aria-expanded={more}
           onClick={() => setMore((m) => !m)}
-          className="flex min-h-14 flex-col items-center justify-center gap-0.5 text-[11px] text-muted-foreground"
+          className={cn(
+            "flex min-h-14 flex-col items-center justify-center gap-0.5 text-[11px] text-muted-foreground",
+            (more || NAV.some((n) => !TABS.includes(n.href) && active(n.href))) && "text-primary",
+          )}
         >
           <Wand2 className="size-5" />
           {t("More")}
         </button>
       </nav>
       {more ? (
-        <div className="fixed inset-x-0 bottom-14 z-30 grid grid-cols-2 gap-1 border-t bg-background p-2 md:hidden">
+        // A tap outside closes it: nothing on a phone traps me.
+        <button
+          type="button"
+          aria-label={t("Close")}
+          className="fixed inset-0 z-[41] bg-black/40 md:hidden"
+          onClick={() => setMore(false)}
+        />
+      ) : null}
+      {more ? (
+        <div className="fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-[45] grid grid-cols-2 gap-1 border-t bg-background p-2 md:hidden">
           {[
             { href: "/new", label: "New work", icon: Plus },
             ...NAV.filter((n) => !TABS.includes(n.href)),
@@ -373,7 +391,10 @@ export function Shell({ children }: { children: ReactNode }) {
               key={href}
               href={href}
               onClick={() => setMore(false)}
-              className="flex min-h-11 items-center gap-2 rounded-md px-3 text-sm hover:bg-accent"
+              className={cn(
+                "flex min-h-11 items-center gap-2 rounded-md px-3 text-sm hover:bg-accent",
+                active(href) && "bg-accent font-medium",
+              )}
             >
               <Icon className="size-4" />
               {t(label)}
@@ -440,9 +461,12 @@ function Palette({ open, onOpenChange }: { open: boolean; onOpenChange: (o: bool
     topics: [],
     deps: [open],
   });
-  const run = (fn: () => unknown) => {
+  const run = (fn: () => unknown, done?: string) => {
     onOpenChange(false);
-    fn();
+    Promise.resolve()
+      .then(fn)
+      .then(() => done && toast.success(done))
+      .catch((e) => toast.error(message(e)));
   };
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
@@ -466,7 +490,7 @@ function Palette({ open, onOpenChange }: { open: boolean; onOpenChange: (o: bool
             <CommandItem
               key={j.id}
               value={`job ${j.title} ${j.state}`}
-              onSelect={() => run(() => go(`/jobs/${j.id}`))}
+              onSelect={() => run(() => go(j.state === "draft" ? `/new/${j.id}` : `/jobs/${j.id}`))}
             >
               <ListTodo className="size-4" />
               <span className="flex-1 truncate">{j.title}</span>
@@ -483,7 +507,9 @@ function Palette({ open, onOpenChange }: { open: boolean; onOpenChange: (o: bool
               <CommandItem
                 key={`p${j.id}`}
                 value={`pause ${j.title}`}
-                onSelect={() => run(() => api.jobs.pause({ id: j.id }))}
+                onSelect={() =>
+                  run(() => api.jobs.pause({ id: j.id }), t("Pausing at the next safe point…"))
+                }
               >
                 {t("Pause “{title}”", { title: j.title })}
               </CommandItem>
@@ -494,7 +520,7 @@ function Palette({ open, onOpenChange }: { open: boolean; onOpenChange: (o: bool
               <CommandItem
                 key={`r${j.id}`}
                 value={`resume ${j.title}`}
-                onSelect={() => run(() => api.jobs.resume({ id: j.id }))}
+                onSelect={() => run(() => api.jobs.resume({ id: j.id }), t("Resumed."))}
               >
                 {t("Resume “{title}”", { title: j.title })}
               </CommandItem>

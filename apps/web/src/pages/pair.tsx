@@ -39,7 +39,9 @@ export function PairPage({ onPaired }: { onPaired: () => void }) {
           <CardDescription>
             {t("On the machine running Oraknid, run")}{" "}
             <code className="rounded bg-muted px-1">oraknid pair</code>{" "}
-            {t("and enter the code it shows.")}
+            {t(
+              "and enter the code it shows; or, on a device already paired, open Settings → Devices & phone → Pair a new device.",
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent>

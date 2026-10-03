@@ -2,6 +2,7 @@ import { GitBranch } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Loading } from "@/components/common";
+import { useConfirm } from "@/components/confirm";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +20,7 @@ export function GitHubCard() {
   });
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
+  const { confirm, dialog } = useConfirm();
   if (!status.data) return <Loading rows={2} />;
   const s = status.data;
   return (
@@ -41,12 +43,23 @@ export function GitHubCard() {
           <Button
             variant="secondary"
             size="sm"
-            onClick={() =>
+            onClick={async () => {
+              if (
+                !(await confirm(
+                  t("Disconnect GitHub?"),
+                  t(
+                    "The token is deleted from the keychain. New projects can't use GitHub repos until you connect again.",
+                  ),
+                  t("Disconnect"),
+                  { keep: t("Stay connected") },
+                ))
+              )
+                return;
               api.github
                 .removeToken()
                 .then(() => toast.success(t("Disconnected; the token is deleted.")))
-                .catch((e) => toast.error(message(e)))
-            }
+                .catch((e) => toast.error(message(e)));
+            }}
           >
             {t("Disconnect")}
           </Button>
@@ -81,7 +94,7 @@ export function GitHubCard() {
                 }
               }}
             >
-              <div className="min-w-60 flex-1 space-y-1">
+              <div className="min-w-0 flex-1 basis-60 space-y-1">
                 <Label htmlFor="gh-token">{t("Token")}</Label>
                 <Input
                   id="gh-token"
@@ -98,6 +111,7 @@ export function GitHubCard() {
             </form>
           </>
         )}
+        {dialog}
       </CardContent>
     </Card>
   );

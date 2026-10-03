@@ -2,6 +2,7 @@ import QRCode from "qrcode";
 import type React from "react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -281,7 +282,13 @@ export function PhoneCard() {
             <Step done={!!lock.data?.pinSet}>
               {t("Your PIN is set")}{" "}
               {!lock.data?.pinSet ? (
-                <span className="text-muted-foreground">{t("(Settings → Security)")}</span>
+                <Link
+                  href="/settings/security"
+                  replace
+                  className="text-primary underline underline-offset-2"
+                >
+                  {t("Set it in Security")}
+                </Link>
               ) : null}
             </Step>
           </ol>

@@ -9,7 +9,7 @@ import { t } from "@/lib/i18n";
 import { useLive } from "@/lib/live";
 
 /** The terminal in the web UI: off until turned on (ADR-028). */
-export function TerminalCard() {
+export function TerminalCard({ onChange }: { onChange?: (on: boolean) => void } = {}) {
   const on = useLive(() => api.settings.terminal(), {
     topics: ["overview"],
     refreshOn: (e) => e.type === "settings.updated",
@@ -22,7 +22,7 @@ export function TerminalCard() {
         <CardTitle>{t("Terminal")}</CardTitle>
         <CardDescription>
           {t(
-            "A shell in the web UI, on this computer or your servers. It is a full shell as you: turn it on only if that is what you want. Only on this computer, never away from home; it closes when the device locks. Every terminal opened is in the log.",
+            "A shell in the web UI, on this computer or your servers. It is a full shell as you: turn it on only if that is what you want. Away from home it opens only on a device you gave full rights; it closes when the device locks. Every terminal opened is in the log.",
           )}
         </CardDescription>
       </CardHeader>
@@ -37,15 +37,19 @@ export function TerminalCard() {
                 !(await confirm(
                   t("Turn the terminal on?"),
                   t(
-                    "Any of your unlocked devices on this computer can then open a full shell as you. Never away from home.",
+                    "Any of your unlocked devices at home, and those with full rights away from home, can then open a full shell as you.",
                   ),
                   t("Turn it on"),
+                  { keep: t("Leave it off") },
                 ))
               )
                 return;
               api.settings
                 .setTerminal({ enabled: v })
-                .then(on.reload)
+                .then(() => {
+                  on.reload();
+                  onChange?.(v);
+                })
                 .catch((e) => toast.error(message(e)));
             }}
           />

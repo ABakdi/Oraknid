@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { Markdown } from "@/components/common";
+import { useConfirm } from "@/components/confirm";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -35,6 +36,15 @@ export function HelperButton() {
 }
 
 function Panel({ onClose }: { onClose: () => void }) {
+  const { confirm, dialog } = useConfirm();
+  // Esc closes it; a dialog open over it closes first.
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !document.querySelector("[role=dialog]")) onClose();
+    };
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  }, [onClose]);
   const talk = useLive(() => api.helper.conversation(), {
     topics: ["overview"],
     refreshOn: (e) => e.type.startsWith("helper."),
@@ -76,7 +86,18 @@ function Panel({ onClose }: { onClose: () => void }) {
           variant="ghost"
           className="size-7"
           aria-label={t("Clear the conversation")}
-          onClick={() => api.helper.clear().catch((e) => toast.error(message(e)))}
+          title={t("Clear the conversation")}
+          onClick={async () => {
+            if (
+              await confirm(
+                t("Clear the conversation?"),
+                t("What was said is gone; what the helper did stays done."),
+                t("Clear"),
+                { keep: t("Keep it") },
+              )
+            )
+              api.helper.clear().catch((e) => toast.error(message(e)));
+          }}
         >
           <Eraser className="size-3.5" />
         </Button>
@@ -84,11 +105,13 @@ function Panel({ onClose }: { onClose: () => void }) {
           size="icon"
           variant="ghost"
           className="size-7"
-          aria-label={t("Close")}
+          aria-label={t("Close (Esc)")}
+          title={t("Close (Esc)")}
           onClick={onClose}
         >
           <X className="size-3.5" />
         </Button>
+        {dialog}
       </header>
       <div ref={box} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {talk.data && count === 0 ? (

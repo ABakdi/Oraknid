@@ -128,7 +128,7 @@ export function App() {
                 <Route path="/inbox/:id">{(p) => <InboxPage focus={p.id} />}</Route>
                 <Route path="/legs">{() => <LegsPage />}</Route>
                 <Route path="/legs/:id">{(p) => <LegsPage focus={p.id} />}</Route>
-                <Route path="/skills" component={SkillsPage} />
+                <Route path="/skills/:id?">{(p) => <SkillsPage id={p.id} />}</Route>
                 <Route path="/chats">{() => <ChatsPage />}</Route>
                 <Route path="/servers/:id?/:tab?">
                   {(p) => <ServersPage id={p.id} tab={p.tab} />}
@@ -140,7 +140,7 @@ export function App() {
                 <Route path="/terminal">{() => <TerminalPage />}</Route>
                 <Route path="/terminal/:target">{(p) => <TerminalPage target={p.target} />}</Route>
                 <Route path="/chats/:id">{(p) => <ChatsPage id={p.id} />}</Route>
-                <Route path="/logs" component={LogsPage} />
+                <Route path="/logs/:tab?">{(p) => <LogsPage tab={p.tab} />}</Route>
                 <Route path="/settings/:tab?">{(p) => <SettingsPage tab={p.tab} />}</Route>
                 <Route>
                   <OverviewPage />

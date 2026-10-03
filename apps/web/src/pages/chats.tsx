@@ -3,13 +3,16 @@ import { MessageSquarePlus, Pencil, Send, Square, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
-import { Empty, ErrorNote, Loading, Markdown, PageHeader } from "@/components/common";
+import { BackButton, Empty, ErrorNote, Loading, Markdown, PageHeader } from "@/components/common";
+import { useConfirm } from "@/components/confirm";
+import { AddLegButtons } from "@/components/setup";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -45,16 +48,19 @@ export function ChatsPage({ id }: { id?: string }) {
   const list = chats.data ?? [];
   return (
     <div className="flex h-[calc(100dvh-7rem)] min-h-0 flex-col gap-3 md:h-[calc(100dvh-5rem)]">
-      <PageHeader
-        title={t("Chats")}
-        sub={t("Talk and research with any of your models. Attached projects are readable.")}
-        actions={
-          <Button className="gap-1" onClick={() => setCreating(true)}>
-            <MessageSquarePlus className="size-4" />
-            {t("New chat")}
-          </Button>
-        }
-      />
+      {/* On a phone an open chat takes the whole screen; its own header has the way back. */}
+      <div className={cn(id && "hidden md:block")}>
+        <PageHeader
+          title={t("Chats")}
+          sub={t("Talk and research with any of your models. Attached projects are readable.")}
+          actions={
+            <Button className="gap-1" onClick={() => setCreating(true)}>
+              <MessageSquarePlus className="size-4" />
+              {t("New chat")}
+            </Button>
+          }
+        />
+      </div>
       <div className="flex min-h-0 flex-1 gap-3">
         <nav
           aria-label={t("My chats")}
@@ -64,21 +70,31 @@ export function ChatsPage({ id }: { id?: string }) {
           )}
         >
           {list.length === 0 ? (
-            <Empty title={t("No chats yet")} action={null}>
-              {t("Start one with New chat.")}
+            <Empty
+              title={t("No chats yet")}
+              action={
+                <Button className="gap-1" onClick={() => setCreating(true)}>
+                  <MessageSquarePlus className="size-4" />
+                  {t("New chat")}
+                </Button>
+              }
+            >
+              {t("Talk with any of your models; attach a project and it can read it.")}
             </Empty>
           ) : null}
           {list.map((c) => (
             <button
               key={c.id}
               type="button"
-              onClick={() => go(`/chats/${c.id}`)}
+              onClick={() => go(`/chats/${c.id}`, { replace: !!id })}
               className={cn(
                 "block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-accent",
                 c.id === id && "bg-accent",
               )}
             >
-              <div className="truncate font-medium">{c.title}</div>
+              <div className="truncate font-medium" title={c.title}>
+                {c.title}
+              </div>
               <div className="truncate text-xs text-muted-foreground">
                 {c.modelLabel} · {ago(c.updatedAt)}
               </div>
@@ -86,7 +102,7 @@ export function ChatsPage({ id }: { id?: string }) {
           ))}
         </nav>
         {id ? (
-          <Conversation key={id} id={id} onGone={() => go("/chats")} />
+          <Conversation key={id} id={id} onGone={() => go("/chats", { replace: true })} />
         ) : (
           <div className="hidden flex-1 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground md:flex">
             {t("Pick a chat, or start a new one.")}
@@ -99,7 +115,7 @@ export function ChatsPage({ id }: { id?: string }) {
 }
 
 function Conversation({ id, onGone }: { id: string; onGone: () => void }) {
-  const [, go] = useLocation();
+  const { confirm, dialog } = useConfirm();
   const chat = useLive(() => api.chats.get({ id }), {
     topics: ["overview"],
     refreshOn: (e) =>
@@ -141,9 +157,7 @@ function Conversation({ id, onGone }: { id: string; onGone: () => void }) {
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col rounded-lg border bg-card">
       <header className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
-        <Button variant="ghost" size="sm" className="md:hidden" onClick={() => go("/chats")}>
-          ←
-        </Button>
+        <BackButton fallback="/chats" label={t("All chats")} className="ml-0 md:hidden" />
         {renaming !== null ? (
           <form
             className="flex min-w-0 flex-1 gap-2"
@@ -153,14 +167,25 @@ function Conversation({ id, onGone }: { id: string; onGone: () => void }) {
               setRenaming(null);
             }}
           >
-            <Input value={renaming} onChange={(e) => setRenaming(e.target.value)} autoFocus />
-            <Button size="sm" type="submit">
+            <Input
+              value={renaming}
+              aria-label={t("Name")}
+              onChange={(e) => setRenaming(e.target.value)}
+              onKeyDown={(e) => e.key === "Escape" && setRenaming(null)}
+              autoFocus
+            />
+            <Button size="sm" type="button" variant="secondary" onClick={() => setRenaming(null)}>
+              {t("Cancel")}
+            </Button>
+            <Button size="sm" type="submit" disabled={!renaming.trim()}>
               {t("Save")}
             </Button>
           </form>
         ) : (
           <>
-            <h2 className="min-w-0 flex-1 truncate font-medium">{c.title}</h2>
+            <h2 className="min-w-0 flex-1 truncate font-medium" title={c.title}>
+              {c.title}
+            </h2>
             <Button
               size="sm"
               variant="ghost"
@@ -171,7 +196,9 @@ function Conversation({ id, onGone }: { id: string; onGone: () => void }) {
             </Button>
           </>
         )}
-        <Badge variant="outline">{c.modelLabel}</Badge>
+        <Badge variant="outline" className="max-w-40 truncate" title={c.modelLabel}>
+          {c.modelLabel}
+        </Badge>
         <Select
           value=""
           onValueChange={(v) =>
@@ -185,7 +212,7 @@ function Conversation({ id, onGone }: { id: string; onGone: () => void }) {
               .catch((x) => toast.error(message(x)))
           }
         >
-          <SelectTrigger className="h-8 w-auto text-xs" aria-label={t("Attach a project")}>
+          <SelectTrigger className="h-8 w-auto max-w-56 text-xs" aria-label={t("Attach a project")}>
             <SelectValue
               placeholder={
                 attached.length
@@ -208,12 +235,26 @@ function Conversation({ id, onGone }: { id: string; onGone: () => void }) {
           variant="ghost"
           aria-label={t("Delete the chat")}
           onClick={async () => {
-            await api.chats.remove({ id }).catch((x) => toast.error(message(x)));
-            onGone();
+            if (
+              !(await confirm(
+                t("Delete “{title}”?", { title: c.title }),
+                t("The conversation is gone for good."),
+                t("Delete"),
+                { keep: t("Keep it") },
+              ))
+            )
+              return;
+            try {
+              await api.chats.remove({ id });
+              onGone();
+            } catch (x) {
+              toast.error(message(x));
+            }
           }}
         >
           <Trash2 className="size-3.5" />
         </Button>
+        {dialog}
       </header>
       <div ref={box} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {messages.map((m) => (
@@ -334,7 +375,7 @@ function NewChat({
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t("New chat")}</DialogTitle>
           <DialogDescription>
@@ -347,8 +388,11 @@ function NewChat({
           <div className="space-y-1.5">
             <Label>{t("Model")}</Label>
             {choices.length === 0 ? (
-              <div className="text-sm text-muted-foreground">
-                {t("No Leg is healthy right now.")}
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <div>{t("No Leg is healthy right now: add one, or log one in on Legs.")}</div>
+                <div className="flex flex-wrap gap-2">
+                  <AddLegButtons size="sm" />
+                </div>
               </div>
             ) : (
               <Select value={chosen?.m.id ?? ""} onValueChange={setModel}>
@@ -387,7 +431,7 @@ function NewChat({
             </div>
           ) : null}
           {(projects.data ?? []).length ? (
-            <fieldset className="space-y-1">
+            <fieldset className="min-w-0 space-y-1">
               <legend className="text-sm font-medium">{t("Projects it may read")}</legend>
               {(projects.data ?? []).map((p) => (
                 <label key={p.id} className="flex items-center gap-2 text-sm">
@@ -409,10 +453,15 @@ function NewChat({
             <Label htmlFor="first">{t("First message")}</Label>
             <Textarea id="first" rows={4} value={text} onChange={(e) => setText(e.target.value)} />
           </div>
-          <Button className="w-full" disabled={busy || !chosen} onClick={create}>
-            {t("Start the chat")}
-          </Button>
         </div>
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+            {t("Cancel")}
+          </Button>
+          <Button disabled={busy || !chosen} onClick={create}>
+            {busy ? t("Starting…") : t("Start the chat")}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
