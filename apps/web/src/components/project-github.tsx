@@ -1,4 +1,4 @@
-import type { GitHubLinkInput, ProjectView } from "@oraknid/contracts";
+import type { GitHubLinkInput, ProjectRepo, ProjectView } from "@oraknid/contracts";
 import { GitBranch } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -32,14 +32,21 @@ const slug = (s: string) =>
  * github tool uses for it. Pushing a branch there, creating it when it is
  * new and opening a pull request there run without asking.
  */
-export function ProjectGitHubCard({ project }: { project: ProjectView }) {
+export function ProjectGitHubCard({
+  project,
+  repo,
+}: {
+  project: ProjectView;
+  /** In a project of several repos, the repo whose link this is (ADR-042). */
+  repo?: ProjectRepo;
+}) {
   const accounts = useLive(() => api.github.accounts({}), {
     topics: ["overview"],
     refreshOn: (e) => e.type.startsWith("github."),
   });
   const [editing, setEditing] = useState(false);
   const { confirm, dialog } = useConfirm();
-  const link = project.github;
+  const link = repo ? repo.github : project.github;
   if (!accounts.data) return <Loading rows={1} />;
   const logins = accounts.data.map((a) => a.login).filter(Boolean);
   const unlink = async () => {
@@ -55,7 +62,7 @@ export function ProjectGitHubCard({ project }: { project: ProjectView }) {
     )
       return;
     api.projects
-      .setGitHub({ id: project.id, link: null })
+      .setGitHub({ id: project.id, link: null, ...(repo ? { repo: repo.name } : {}) })
       .then(() => toast.success(t("Unlinked.")))
       .catch((e) => toast.error(message(e)));
   };
@@ -64,7 +71,7 @@ export function ProjectGitHubCard({ project }: { project: ProjectView }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-sm">
           <GitBranch className="size-4" />
-          {t("GitHub repo")}
+          {repo ? t("GitHub repo of {name}", { name: repo.name }) : t("GitHub repo")}
         </CardTitle>
         <CardDescription>
           {t(
@@ -116,7 +123,12 @@ export function ProjectGitHubCard({ project }: { project: ProjectView }) {
           </div>
         )}
         {editing ? (
-          <LinkForm project={project} logins={logins} onDone={() => setEditing(false)} />
+          <LinkForm
+            project={project}
+            {...(repo ? { repo } : {})}
+            logins={logins}
+            onDone={() => setEditing(false)}
+          />
         ) : null}
         {dialog}
       </CardContent>
@@ -126,18 +138,26 @@ export function ProjectGitHubCard({ project }: { project: ProjectView }) {
 
 function LinkForm({
   project,
+  repo,
   logins,
   onDone,
 }: {
   project: ProjectView;
+  repo?: ProjectRepo;
   logins: string[];
   onDone: () => void;
 }) {
-  const link = project.github;
+  const link = repo ? repo.github : project.github;
   const [account, setAccount] = useState(link?.account ?? logins[0] ?? "");
   const [origin, setOrigin] = useState<"new" | "existing">(link?.origin ?? "new");
   const [owner, setOwner] = useState(link?.owner ?? logins[0] ?? "");
-  const [name, setName] = useState(link?.name ?? slug(project.name));
+  // A repo of several is named after the project and itself: site-api.
+  const [name, setName] = useState(
+    link?.name ??
+      (repo && slug(repo.name) !== slug(project.name)
+        ? `${slug(project.name)}-${slug(repo.name)}`
+        : slug(project.name)),
+  );
   const [visibility, setVisibility] = useState<"public" | "private">(link?.visibility ?? "private");
   const [busy, setBusy] = useState(false);
   const save = async () => {
@@ -150,7 +170,11 @@ function LinkForm({
         visibility,
         origin,
       };
-      await api.projects.setGitHub({ id: project.id, link: input });
+      await api.projects.setGitHub({
+        id: project.id,
+        link: input,
+        ...(repo ? { repo: repo.name } : {}),
+      });
       toast.success(t("Linked {repo}.", { repo: `${input.owner}/${input.name}` }));
       onDone();
     } catch (e) {
@@ -201,12 +225,20 @@ function LinkForm({
         </Select>
       </div>
       <div className="space-y-1">
-        <Label htmlFor="gh-owner">{t("Owner")}</Label>
-        <Input id="gh-owner" value={owner} onChange={(e) => setOwner(e.target.value)} />
+        <Label htmlFor={`gh-owner${repo ? `-${repo.name}` : ""}`}>{t("Owner")}</Label>
+        <Input
+          id={`gh-owner${repo ? `-${repo.name}` : ""}`}
+          value={owner}
+          onChange={(e) => setOwner(e.target.value)}
+        />
       </div>
       <div className="space-y-1">
-        <Label htmlFor="gh-name">{t("Name")}</Label>
-        <Input id="gh-name" value={name} onChange={(e) => setName(e.target.value)} />
+        <Label htmlFor={`gh-name${repo ? `-${repo.name}` : ""}`}>{t("Name")}</Label>
+        <Input
+          id={`gh-name${repo ? `-${repo.name}` : ""}`}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
       </div>
       <div className="space-y-1">
         <Label>{t("Who can see it")}</Label>

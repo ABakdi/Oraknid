@@ -1,14 +1,84 @@
+import { isProduction, type ServerRole } from "@oraknid/contracts";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import { Loading } from "@/components/common";
 import { AddServerButton } from "@/components/setup";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { api, message } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useLive } from "@/lib/live";
 
-/** The servers this project's jobs may use (Servers → Servers in projects). */
+const ROLES = ["testing", "staging", "production"];
+
+/**
+ * A server's role in the project (ADR-042): a word of mine, and production
+ * when it is named so or I mark it. The Eye always confirms production.
+ */
+function ServerRoleFields({
+  projectId,
+  serverId,
+  name,
+  role,
+  onSaved,
+}: {
+  projectId: string;
+  serverId: string;
+  name: string;
+  role: ServerRole | undefined;
+  onSaved: () => void;
+}) {
+  const [word, setWord] = useState(role?.role ?? "");
+  const save = (next: ServerRole) =>
+    api.projects
+      .setServerRole({ id: projectId, serverId, role: next })
+      .then(onSaved)
+      .catch((e) => toast.error(message(e)));
+  const prod = isProduction({ role: word, production: role?.production ?? null });
+  return (
+    <span data-help="project.server-role" className="flex items-center gap-2">
+      <Input
+        list="server-roles"
+        aria-label={t("Role of {name} in this project", { name })}
+        placeholder={t("role")}
+        className="h-8 w-28"
+        value={word}
+        maxLength={40}
+        onChange={(e) => setWord(e.target.value)}
+        onBlur={() => {
+          if (word.trim() !== (role?.role ?? ""))
+            void save({ role: word.trim(), production: role?.production ?? null });
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        }}
+      />
+      <datalist id="server-roles">
+        {ROLES.map((r) => (
+          <option key={r} value={r} />
+        ))}
+      </datalist>
+      <label
+        className="flex items-center gap-1 text-xs"
+        title={t("The Eye always asks before using it")}
+      >
+        <input
+          type="checkbox"
+          className="size-4"
+          checked={prod}
+          onChange={(e) => void save({ role: word.trim(), production: e.target.checked })}
+        />
+        {t("Production")}
+      </label>
+      {prod ? <Badge variant="destructive">{t("live")}</Badge> : null}
+    </span>
+  );
+}
+
+/** The servers this project's jobs may use (Servers → Servers in projects), each with its role (ADR-042). */
 export function ProjectServersCard({ projectId }: { projectId: string }) {
   const servers = useLive(() => api.servers.list(), {
     topics: ["overview"],
@@ -33,7 +103,7 @@ export function ProjectServersCard({ projectId }: { projectId: string }) {
         <CardTitle className="text-sm">{t("Servers for this project")}</CardTitle>
         <CardDescription>
           {t(
-            "Its jobs get each ticked server's state document and a way in; what they run there still goes through your approvals.",
+            "Its jobs get each ticked server's state document and a way in; what they run there still goes through your approvals. Give each a role (testing, staging, production): The Eye uses the one you name, and always asks before production.",
           )}
         </CardDescription>
       </CardHeader>
@@ -74,6 +144,16 @@ export function ProjectServersCard({ projectId }: { projectId: string }) {
               >
                 {s.busy ?? t("Set it up")}
               </Button>
+            ) : null}
+            {set.includes(s.id) && s.setup === "ready" ? (
+              <ServerRoleFields
+                key={JSON.stringify(project.serverRoles?.[s.id] ?? null)}
+                projectId={projectId}
+                serverId={s.id}
+                name={s.name}
+                role={project.serverRoles?.[s.id]}
+                onSaved={projects.reload}
+              />
             ) : null}
             <Link
               href={`/servers/${s.id}`}

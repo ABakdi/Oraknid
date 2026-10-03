@@ -103,7 +103,37 @@ export function JobResult({ jobId }: { jobId: string }) {
             </Button>
           </div>
         ) : null}
-        {r.branch ? (
+        {r.repos.length ? (
+          // A project of several repos (ADR-042): each repo's branch, its commits, merged or not.
+          <div className="space-y-3">
+            {r.repos.map((x) => (
+              <div key={x.name} className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">{x.name}</span>
+                  <code className="text-xs text-muted-foreground">{x.folder}/</code>
+                  <code className="text-xs">{x.branch}</code>
+                  <span className="text-muted-foreground">→</span>
+                  <code className="text-xs">{x.into}</code>
+                  {x.merged ? <Badge variant="secondary">{t("merged")}</Badge> : null}
+                </div>
+                {x.commits.length ? (
+                  <ul className="max-h-32 space-y-1 overflow-y-auto font-mono text-xs">
+                    {x.commits.map((c) => (
+                      <li key={c.sha} className="flex gap-2">
+                        <span className="shrink-0 text-muted-foreground">{c.sha.slice(0, 8)}</span>
+                        <span className="min-w-0 flex-1 truncate">{c.subject}</span>
+                        <span className="shrink-0 text-muted-foreground">{ago(c.at)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="text-xs text-muted-foreground">{t("No commits to merge.")}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {r.branch && !r.repos.length ? (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-muted-foreground">{t("Branch")}</span>
             <code className="text-xs">{r.branch}</code>
@@ -111,7 +141,7 @@ export function JobResult({ jobId }: { jobId: string }) {
             <code className="text-xs">{r.into}</code>
           </div>
         ) : null}
-        {r.commits.length ? (
+        {r.commits.length && !r.repos.length ? (
           <ul className="max-h-48 space-y-1 overflow-y-auto font-mono text-xs">
             {r.commits.map((c) => (
               <li key={c.sha} className="flex gap-2">

@@ -1,40 +1,372 @@
-import type { GitHubLink, ProjectView } from "@oraknid/contracts";
-import { ExternalLink, GitBranch, GitCommitHorizontal, GitPullRequest } from "lucide-react";
+import type { GitHubLink, ProjectRepo, ProjectView } from "@oraknid/contracts";
+import {
+  ExternalLink,
+  FolderGit2,
+  GitBranch,
+  GitCommitHorizontal,
+  GitPullRequest,
+  Plus,
+  RefreshCw,
+  X,
+} from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 import { Link } from "wouter";
 import { Empty, ErrorNote, Loading } from "@/components/common";
+import { useConfirm } from "@/components/confirm";
 import { ProjectGitHubCard } from "@/components/project-github";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { api } from "@/lib/api";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { api, message } from "@/lib/api";
 import { ago } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { useLive } from "@/lib/live";
 import { repoHref } from "@/pages/repos";
 
+/** A project of several repos (ADR-042): more than one, or one in a folder of the project's. */
+export const isSeveral = (repos: ProjectRepo[] | undefined) =>
+  !!repos && (repos.length > 1 || (repos.length === 1 && repos[0]?.folder !== ""));
+
 /**
- * A project's Repo tab (ADR-038, ADR-040): the GitHub repo it is linked to,
- * what's on it now (recent commits, branches, open pull requests), the way
- * into Repos for its code, and the card to link, change or unlink it.
+ * A project's Repo tab (ADR-038, ADR-040, ADR-042): the GitHub repo it is
+ * linked to, what's on it now (recent commits, branches, open pull
+ * requests), the way into Repos for its code, and the card to link, change
+ * or unlink it; for a project of several repos, each repo with its own.
+ * Its repos are listed, found again or added at the bottom (or the top,
+ * when there are several).
  */
 export function ProjectRepoTab({ project }: { project: ProjectView }) {
-  const link = project.github as GitHubLink | null;
+  const repos = project.repos ?? [];
+  if (isSeveral(repos))
+    return (
+      <div className="space-y-6">
+        <ProjectReposCard project={project} />
+        {repos.map((r) => (
+          <section key={r.name} data-help="project.repo-each" className="min-w-0 space-y-3">
+            <h3 className="flex min-w-0 flex-wrap items-baseline gap-2 text-sm font-semibold">
+              <FolderGit2 className="size-4 self-center" />
+              <span className="[overflow-wrap:anywhere]">{r.name}</span>
+              <code className="text-xs font-normal text-muted-foreground">{r.folder}/</code>
+              <span className="text-xs font-normal text-muted-foreground">
+                {r.releaseBranch} / {r.workBranch}
+              </span>
+            </h3>
+            <LinkedNow link={r.github} />
+            <ProjectGitHubCard project={project} repo={r} />
+          </section>
+        ))}
+      </div>
+    );
   return (
     <div className="space-y-4">
-      {link ? (
-        link.ready ? (
-          <RepoNow link={link} />
-        ) : (
-          <Empty title={t("Not created yet")}>
-            {t(
-              "{repo} is created on GitHub the first time a job pushes to it: its commits show here then.",
-              { repo: `${link.owner}/${link.name}` },
-            )}
-          </Empty>
-        )
-      ) : null}
+      <LinkedNow link={project.github as GitHubLink | null} />
       <ProjectGitHubCard project={project} />
+      <ProjectReposCard project={project} />
     </div>
+  );
+}
+
+function LinkedNow({ link }: { link: GitHubLink | null }) {
+  if (!link) return null;
+  if (link.ready) return <RepoNow link={link} />;
+  return (
+    <Empty title={t("Not created yet")}>
+      {t(
+        "{repo} is created on GitHub the first time a job pushes to it: its commits show here then.",
+        { repo: `${link.owner}/${link.name}` },
+      )}
+    </Empty>
+  );
+}
+
+/**
+ * The project's repos (ADR-042): each with its folder, branches and link;
+ * found again in its folder, or one added (a folder of it, a new empty
+ * one, a clone).
+ */
+export function ProjectReposCard({ project }: { project: ProjectView }) {
+  const repos = project.repos ?? [];
+  const several = isSeveral(repos);
+  const [adding, setAdding] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const { confirm, dialog } = useConfirm();
+  const detect = async () => {
+    setBusy(true);
+    try {
+      const found = await api.projects.detectRepos({ id: project.id });
+      const added = found.length - repos.length;
+      toast.success(
+        added > 0
+          ? t("Found {n} more: {names}.", {
+              n: added,
+              names: found
+                .slice(repos.length)
+                .map((r) => r.name)
+                .join(", "),
+            })
+          : t("No other repo in its folder."),
+      );
+    } catch (e) {
+      toast.error(message(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = async (r: ProjectRepo) => {
+    if (
+      !(await confirm(
+        t("Take {name} out of the project?", { name: r.name }),
+        t("Its folder and its history stay as they are; Oraknid's jobs stop working in it."),
+        t("Take it out"),
+        { keep: t("Keep it") },
+      ))
+    )
+      return;
+    api.projects
+      .removeRepo({ id: project.id, name: r.name })
+      .then(() => toast.success(t("{name} is no longer one of its repos.", { name: r.name })))
+      .catch((e) => toast.error(message(e)));
+  };
+  return (
+    <Card data-help="project.repos">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <FolderGit2 className="size-4" />
+          {several ? t("Its repos") : t("Its repo")}
+        </CardTitle>
+        <CardDescription>
+          {several
+            ? t(
+                "Each repo has its folder, its branches and its GitHub link. A job works in the ones its tasks touch, commits and merges each on its own.",
+              )
+            : project.shadow
+              ? t("Not a git repo: its checkpoints are kept in a shadow repo.")
+              : t(
+                  "Its folder is its repo. A project can also hold several repos in its folders (a site and its API): add one, or find them again.",
+                )}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        {repos.length ? (
+          <ul className="divide-y rounded-md border">
+            {repos.map((r) => (
+              <li
+                key={r.name}
+                className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2"
+              >
+                <span className="min-w-0 font-medium [overflow-wrap:anywhere]">{r.name}</span>
+                <code className="text-xs text-muted-foreground">
+                  {r.folder ? `${r.folder}/` : t("the project's folder")}
+                </code>
+                <span className="text-xs text-muted-foreground">
+                  {r.releaseBranch} / {r.workBranch}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-xs">
+                  {r.github ? (
+                    <span className="font-mono">
+                      {r.github.owner}/{r.github.name}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">{t("not on GitHub yet")}</span>
+                  )}
+                </span>
+                {several ? (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="size-8"
+                    aria-label={t("Take {name} out", { name: r.name })}
+                    onClick={() => remove(r)}
+                  >
+                    <X className="size-4" />
+                  </Button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            data-help="project.repos-add"
+            size="sm"
+            variant="secondary"
+            className="gap-1"
+            onClick={() => setAdding(true)}
+          >
+            <Plus className="size-3.5" />
+            {t("Add a repo")}
+          </Button>
+          <Button
+            data-help="project.repos-detect"
+            size="sm"
+            variant="ghost"
+            className="gap-1"
+            disabled={busy}
+            onClick={detect}
+          >
+            <RefreshCw className="size-3.5" />
+            {t("Find repos in its folder")}
+          </Button>
+        </div>
+        <AddRepo project={project} open={adding} onOpenChange={setAdding} />
+        {dialog}
+      </CardContent>
+    </Card>
+  );
+}
+
+type Source = "folder" | "new" | "github-clone" | "git-url";
+
+/** A repo added to a project (ADR-042): a folder of it, a new empty one, or a clone. */
+function AddRepo({
+  project,
+  open,
+  onOpenChange,
+}: {
+  project: ProjectView;
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+}) {
+  const [kind, setKind] = useState<Source>("folder");
+  const [folder, setFolder] = useState("");
+  const [name, setName] = useState("");
+  const [from, setFrom] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>();
+  const clean = folder.trim().replace(/^\/+|\/+$/g, "");
+  const add = async () => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const source =
+        kind === "github-clone"
+          ? { kind, folder: clean, fullName: from.trim() }
+          : kind === "git-url"
+            ? { kind, folder: clean, url: from.trim() }
+            : { kind, folder: clean };
+      const p = await api.projects.addRepo({
+        id: project.id,
+        ...(name.trim() ? { name: name.trim() } : {}),
+        source,
+      });
+      toast.success(t("{name} is one of its repos now.", { name: p.repos.at(-1)?.name ?? clean }));
+      onOpenChange(false);
+      setFolder("");
+      setName("");
+      setFrom("");
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t("Add a repo")}</DialogTitle>
+          <DialogDescription>
+            {t(
+              "A git repository in a folder of {folder}: one there already, a new empty one, or a clone.",
+              { folder: project.workspacePath },
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <div className="space-y-1">
+            <Label>{t("Where from")}</Label>
+            <Select value={kind} onValueChange={(v) => setKind(v as Source)}>
+              <SelectTrigger className="w-full" aria-label={t("Where from")}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="folder">
+                  {t("A folder of the project that is a repo")}
+                </SelectItem>
+                <SelectItem value="new">{t("A new empty repo")}</SelectItem>
+                <SelectItem value="github-clone">
+                  {t("A clone of one of my GitHub repos")}
+                </SelectItem>
+                <SelectItem value="git-url">{t("A clone of a git URL")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {kind === "github-clone" || kind === "git-url" ? (
+            <div className="space-y-1">
+              <Label htmlFor="repo-from">
+                {kind === "github-clone" ? t("Repository (owner/name)") : t("Git URL")}
+              </Label>
+              <Input
+                id="repo-from"
+                className="font-mono"
+                value={from}
+                placeholder={kind === "github-clone" ? "me/site-api" : "https://…/api.git"}
+                onChange={(e) => {
+                  setFrom(e.target.value);
+                  const last = e.target.value
+                    .split("/")
+                    .filter(Boolean)
+                    .at(-1)
+                    ?.replace(/\.git$/, "");
+                  if (!folder && last) setFolder(last);
+                }}
+              />
+            </div>
+          ) : null}
+          <div className="space-y-1">
+            <Label htmlFor="repo-folder">{t("Folder in the project")}</Label>
+            <Input
+              id="repo-folder"
+              className="font-mono"
+              placeholder="api"
+              value={folder}
+              onChange={(e) => setFolder(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="repo-name">{t("Its name in the project")}</Label>
+            <Input
+              id="repo-name"
+              placeholder={clean.split("/").at(-1) || "api"}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <ErrorNote error={error} />
+        </div>
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+            {t("Cancel")}
+          </Button>
+          <Button
+            disabled={
+              busy || !clean || ((kind === "github-clone" || kind === "git-url") && !from.trim())
+            }
+            onClick={add}
+          >
+            {t("Add")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

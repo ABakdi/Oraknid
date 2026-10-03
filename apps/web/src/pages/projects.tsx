@@ -11,7 +11,7 @@ import { EyeChat } from "@/components/eye-chat";
 import { ProjectBudgetCard } from "@/components/job-budget";
 import { type PageTab, PageTabs } from "@/components/page-tabs";
 import { ProjectNetworkCard } from "@/components/project-network";
-import { ProjectRepoTab } from "@/components/project-repo";
+import { isSeveral, ProjectReposCard, ProjectRepoTab } from "@/components/project-repo";
 import { ProjectServersCard } from "@/components/project-servers";
 import { ProjectSkillsCard } from "@/components/project-skills";
 import { currentJob, ProjectWork, ProjectWorkflow } from "@/components/project-work";
@@ -124,7 +124,9 @@ export function ProjectsPage({
                 {t("{n} job(s)", { n: p.jobCount })} ·{" "}
                 {p.shadow
                   ? t("no git (checkpoints in a shadow repo)")
-                  : `${p.releaseBranch} / ${p.workBranch}`}
+                  : isSeveral(p.repos)
+                    ? t("{n} repos", { n: p.repos.length })
+                    : `${p.releaseBranch} / ${p.workBranch}`}
               </div>
             </button>
           ))}
@@ -282,8 +284,9 @@ function ProjectDetail({
       label: t("Settings"),
       content: () => (
         <div className="space-y-4">
-          {/* Its GitHub repo is on the Repo tab; its servers here (ADR-038). */}
+          {/* Its GitHub repo is on the Repo tab; its servers, with their roles, here (ADR-038, ADR-042). */}
           <ProjectServersCard projectId={id} />
+          <ProjectReposCard project={project} />
           <ProjectActions project={project} />
           <RulesCard
             help="project.rules"
@@ -381,10 +384,14 @@ function ProjectActions({ project }: { project: ProjectView }) {
         <div>
           {project.shadow
             ? t("no git (checkpoints in a shadow repo)")
-            : t("Release branch {release}, work branch {work}", {
-                release: project.releaseBranch,
-                work: project.workBranch,
-              })}
+            : isSeveral(project.repos)
+              ? project.repos
+                  .map((r) => `${r.name}: ${r.releaseBranch} / ${r.workBranch}`)
+                  .join(" · ")
+              : t("Release branch {release}, work branch {work}", {
+                  release: project.releaseBranch,
+                  work: project.workBranch,
+                })}
         </div>
       </div>
       <div className="text-xs text-muted-foreground">
@@ -473,12 +480,20 @@ function NewProject({ open, onOpenChange }: { open: boolean; onOpenChange: (o: b
   const create = async (initGit?: boolean) => {
     setError(undefined);
     try {
-      await api.projects.create({
+      const p = await api.projects.create({
         name: name || path.split("/").filter(Boolean).at(-1) || "project",
         workspacePath: path,
         ...(initGit === undefined ? {} : { initGit }),
       });
-      toast.success(t("Project created."));
+      // A folder holding several repos is a project of several (ADR-042): said, with their names.
+      toast.success(
+        isSeveral(p.repos)
+          ? t("Project created, with {n} repos: {names}.", {
+              n: p.repos.length,
+              names: p.repos.map((r) => r.name).join(", "),
+            })
+          : t("Project created."),
+      );
       onOpenChange(false);
       setAskGit(false);
     } catch (e) {
@@ -493,7 +508,7 @@ function NewProject({ open, onOpenChange }: { open: boolean; onOpenChange: (o: b
           <DialogTitle>{t("New project")}</DialogTitle>
           <DialogDescription>
             {t(
-              "A folder on this machine. Nothing is changed in it until a job runs, and then only in a worktree.",
+              "A folder on this machine: a repo, or a folder holding several repos (a site and its API), each found. Nothing is changed in it until a job runs, and then only in a worktree.",
             )}
           </DialogDescription>
         </DialogHeader>
