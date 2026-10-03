@@ -220,11 +220,17 @@ export class Projects {
    * one once the tool has created it.
    */
   setGitHub(id: string, input: GitHubLinkInput | null, by: "owner" | "eye" = "owner") {
-    this.require(id);
+    const before = this.require(id).github;
+    // The same repo again keeps what is known of it: a new repo already created stays created.
+    const same =
+      !!input &&
+      !!before?.ready &&
+      before.owner.toLowerCase() === input.owner.toLowerCase() &&
+      before.name.toLowerCase() === input.name.toLowerCase();
     const link: GitHubLink | null = input
       ? {
           ...GitHubLinkInput.parse(input),
-          ready: input.origin === "existing",
+          ready: input.origin === "existing" || same,
           linkedAt: this.now(),
         }
       : null;

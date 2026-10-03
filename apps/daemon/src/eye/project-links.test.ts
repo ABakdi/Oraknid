@@ -401,7 +401,13 @@ describe("a project's GitHub repo, chosen once (ADR-038)", () => {
     );
     // Nothing was created.
     expect(gh.calls.some((c) => c.method === "POST")).toBe(false);
-    // Changed in the project's Settings; an account Oraknid doesn't have is refused.
+    // Changed in the project's Settings: saved again as it is, it stays ready.
+    await api.projects.setGitHub({
+      id: projectId,
+      link: { account: "me", owner: "me", name: "old-site", visibility: "public", origin: "new" },
+    });
+    expect((await api.projects.list()).find((p) => p.id === projectId)?.github?.ready).toBe(true);
+    // An account Oraknid doesn't have is refused.
     await api.projects.setGitHub({ id: projectId, link: null });
     expect((await api.projects.list()).find((p) => p.id === projectId)?.github).toBeNull();
     await expect(
