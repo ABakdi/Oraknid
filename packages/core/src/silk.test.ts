@@ -33,6 +33,55 @@ const task = {
 };
 
 describe("context pack", () => {
+  it("takes earlier jobs' standing Silk after the job's own, and cuts it first (ADR-034)", () => {
+    const earlier = [
+      entry({ jobId: "E", kind: "decision", title: "Use Web Audio", authoredBy: "owner" }),
+      entry({
+        jobId: "E",
+        kind: "architecture",
+        title: "Synth in src/synth",
+        body: "x".repeat(800),
+      }),
+      entry({ jobId: "E", kind: "fact", title: "Use SQLite", body: "an older word" }),
+      entry({ jobId: "E", kind: "later", title: "Some day, MIDI" }),
+      entry({ jobId: "E", kind: "progress", title: "T1 done" }),
+    ];
+    const own = [entry({ kind: "decision", title: "Use SQLite", authoredBy: "owner" })];
+    const big = buildContextPack({
+      task,
+      goal: "g",
+      skill: "",
+      entries: own,
+      earlier,
+      digest: "",
+      capTokens: 10_000,
+    });
+    expect(big.text).toContain("# From earlier jobs in this project");
+    expect(big.text).toContain("## Use Web Audio");
+    expect(big.text).toContain("## Synth in src/synth");
+    // Notes for later and progress stay with their job; the job's own word wins over an earlier one.
+    expect(big.text).not.toContain("MIDI");
+    expect(big.text).not.toContain("T1 done");
+    expect(big.text).not.toContain("an older word");
+    expect(big.text.indexOf("# Decisions and architecture")).toBeLessThan(
+      big.text.indexOf("# From earlier jobs in this project"),
+    );
+    // Short of room, an earlier job's entries are cut to their titles, even mine; the job's own stay.
+    const small = buildContextPack({
+      task,
+      goal: "g",
+      skill: "",
+      entries: own,
+      earlier,
+      digest: "",
+      capTokens: estimateTokens(big.text) - 150,
+    });
+    expect(small.text).toContain("## Synth in src/synth (shortened)");
+    expect(small.text).toContain("## Use SQLite\nb");
+    // Only the job's own entries are offered for a summary.
+    expect(small.shortened.every((id) => own.some((e) => e.id === id))).toBe(true);
+  });
+
   it("drops what a summary covers from the current entries", () => {
     const a = entry({ id: "a" });
     const b = entry({ id: "b" });
