@@ -13,13 +13,81 @@ import "@xyflow/react/dist/style.css";
 import ELK from "elkjs/lib/elk-api.js";
 import elkWorkerSource from "elkjs/lib/elk-worker.min.js?raw";
 import { ChevronRight } from "lucide-react";
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { StateBadge } from "@/components/common";
+import { LegAvatar, LegHandoff, type LegLook, useLegLooks } from "@/components/leg-avatar";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 type Task = JobView["tasks"][number];
-type TaskNode = Node<{ task: Task; leg: string | null; onOpen: (id: string) => void }, "task">;
+type TaskNode = Node<
+  {
+    task: Task;
+    leg: string | null;
+    /** The Leg working on it, shown as its avatar. */
+    look: LegLook | null;
+    /** It just moved from one Leg to another. */
+    handoff: { from: LegLook; to: LegLook } | null;
+    onOpen: (id: string) => void;
+  },
+  "task"
+>;
+
+/** A task moved from one Leg to another (a reassignment, a step-up, a fallback). */
+export interface Handoff {
+  taskId: string;
+  from: string;
+  to: string;
+}
+
+/**
+ * The handoffs since the tasks were last seen: a task whose Leg is not the
+ * one it last had. `seen` keeps each task's last Leg (kept while it waits
+ * between attempts); the first look only fills it.
+ */
+export function nextHandoffs(
+  seen: Map<string, string>,
+  tasks: { id: string; assignedLegId: string | null }[],
+): Handoff[] {
+  const out: Handoff[] = [];
+  for (const x of tasks) {
+    if (!x.assignedLegId) continue;
+    const before = seen.get(x.id);
+    if (before && before !== x.assignedLegId)
+      out.push({ taskId: x.id, from: before, to: x.assignedLegId });
+    seen.set(x.id, x.assignedLegId);
+  }
+  return out;
+}
+
+/** How long a handoff shows on its task. */
+export const HANDOFF_MS = 6000;
+
+/** The handoffs showing now, live: each found as the tasks change, gone after a while. */
+export function useHandoffs(tasks: { id: string; assignedLegId: string | null }[]) {
+  const seen = useRef(new Map<string, string>());
+  const [showing, setShowing] = useState<ReadonlyMap<string, Handoff>>(new Map());
+  useEffect(() => {
+    const found = nextHandoffs(seen.current, tasks);
+    if (!found.length) return;
+    setShowing((m) => new Map([...m, ...found.map((h) => [h.taskId, h] as const)]));
+    for (const h of found)
+      setTimeout(
+        () =>
+          setShowing((m) => {
+            if (m.get(h.taskId) !== h) return m;
+            const next = new Map(m);
+            next.delete(h.taskId);
+            return next;
+          }),
+        HANDOFF_MS,
+      );
+  }, [tasks]);
+  return showing;
+}
+
+/** A task shows its Leg while the Leg has it, and once it is done. */
+const WITH_LEG = ["assigned", "running", "verifying", "done"];
 
 /** A job drawn as one box (a project's compact Workflow, ADR-034 → Changed). */
 export interface FlowJob {
@@ -120,12 +188,13 @@ async function layoutGroups(groups: FlowGroup[], vertical: boolean) {
 const RUNNING_TASK = ["running", "verifying", "assigned"];
 
 const TaskCard = memo(({ data, targetPosition, sourcePosition }: NodeProps<TaskNode>) => {
-  const { task, leg } = data;
+  const { task, leg, look, handoff } = data;
   const running = RUNNING_TASK.includes(task.state);
   return (
     <button
       type="button"
       onClick={() => data.onOpen(task.id)}
+      data-handoff={handoff ? "true" : undefined}
       className={cn(
         "flex h-[76px] w-[220px] flex-col justify-between rounded-lg border bg-card px-2.5 py-2 text-left shadow-sm transition-shadow hover:shadow-md",
         running &&
@@ -137,6 +206,11 @@ const TaskCard = memo(({ data, targetPosition, sourcePosition }: NodeProps<TaskN
       <Handle type="target" position={targetPosition ?? Position.Left} className="!opacity-0" />
       <div className="line-clamp-2 text-xs font-medium leading-snug">{task.title}</div>
       <div className="flex items-center gap-1.5">
+        {handoff ? (
+          <LegHandoff from={handoff.from} to={handoff.to} />
+        ) : look ? (
+          <LegAvatar leg={look} size="xs" />
+        ) : null}
         <StateBadge state={task.state} className="h-4 px-1 text-[10px]" />
         {leg ? <span className="truncate text-[10px] text-muted-foreground">{leg}</span> : null}
         {task.attemptCount > 1 ? (
@@ -214,8 +288,9 @@ const FrameCard = memo(({ data, targetPosition, sourcePosition }: NodeProps<Fram
 const nodeTypes = { task: TaskCard, job: JobCard, frame: FrameCard };
 
 /**
- * The Web, live (Web-UI → Job): tasks coloured by state, the Leg on each
- * running task, a pulse while it works, animated edges into running work,
+ * The Web, live (Web-UI → Job): tasks coloured by state, the Leg (its avatar) on each
+ * task it has, a dot from one avatar to the next when a task moves to
+ * another Leg, a pulse while it works, animated edges into running work,
  * and nodes that glide to their new place when the plan changes. It draws
  * a job's tasks, a project's jobs as boxes (`jobs`), or every job's tasks
  * framed by job (`groups`).
@@ -252,6 +327,8 @@ export function WebGraph({
   const [positions, setPositions] = useState<
     Map<string, Place & { width?: number; height?: number }>
   >(new Map());
+  const looks = useLegLooks();
+  const handoffs = useHandoffs(framed ? inGroups : tasks);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: only the structure moves nodes
   useEffect(() => {
@@ -270,11 +347,25 @@ export function WebGraph({
       sourcePosition: vertical ? Position.Bottom : Position.Right,
     };
     const openJob = (id: string) => onOpenJob?.(id);
+    const look = (legId: string | null, fallback?: string | null): LegLook | null =>
+      (legId ? looks.get(legId) : undefined) ?? (fallback ? { name: fallback, kind: "" } : null);
+    const handoffOf = (task: Task) => {
+      const h = handoffs.get(task.id);
+      const from = h && look(h.from);
+      const to = h && look(h.to);
+      return from && to ? { from, to } : null;
+    };
     const taskNode = (task: Task, parentId?: string): TaskNode => ({
       id: task.id,
       type: "task",
       position: positions.get(task.id) ?? { x: 0, y: 0 },
-      data: { task, leg: legName(task), onOpen },
+      data: {
+        task,
+        leg: legName(task),
+        look: WITH_LEG.includes(task.state) ? look(task.assignedLegId, task.routing?.leg) : null,
+        handoff: handoffOf(task),
+        onOpen,
+      },
       draggable: false,
       ...(parentId ? { parentId } : {}),
       ...side,
@@ -308,7 +399,19 @@ export function WebGraph({
       ),
       ...tasks.map((x) => taskNode(x)),
     ];
-  }, [framed, groups, jobs, tasks, positions, legName, onOpen, onOpenJob, vertical]);
+  }, [
+    framed,
+    groups,
+    jobs,
+    tasks,
+    positions,
+    legName,
+    onOpen,
+    onOpenJob,
+    vertical,
+    looks,
+    handoffs,
+  ]);
 
   const all: { id: string; state: string; dependsOn: string[] }[] = framed
     ? [...(groups ?? []).map((g) => g.job), ...inGroups]

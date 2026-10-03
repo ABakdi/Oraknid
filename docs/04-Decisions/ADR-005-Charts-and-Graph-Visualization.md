@@ -22,6 +22,13 @@ components.
 chart component. Nodes move with a CSS transition on React Flow's
 transforms, which was enough; Motion is not used.
 
+**As built (2026-10-03):** no new library. A handoff between two Legs is
+a CSS keyframe on the task node (a dot between the two Legs' avatars,
+left out under reduced motion), not an animated edge. The charts of
+`stats.charts` are Recharts (tasks done, budget burn, cost); success and
+failure by Leg and by task kind are plain bars of divs, which wrap and
+never overflow a phone, with the legends as lists under each chart.
+
 ## Consequences
 - One styling system across charts, graph and the rest of the UI.
 - ELK in a worker keeps large graphs from freezing the UI.

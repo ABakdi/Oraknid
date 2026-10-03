@@ -17,6 +17,7 @@ import { ProjectSkillsCard } from "@/components/project-skills";
 import { currentJob, ProjectWork, ProjectWorkflow } from "@/components/project-work";
 import { RulesCard } from "@/components/rules-card";
 import { ProjectSilk } from "@/components/silk-list";
+import { StatsCharts } from "@/components/stats-charts";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -468,6 +469,13 @@ function ProjectStats({ id }: { id: string }) {
           </CardContent>
         </Card>
       ) : null}
+      <StatsCharts
+        projectId={id}
+        since={Date.now() - 30 * 86400_000}
+        bucketMs={86400_000}
+        topics={["overview"]}
+        burnTitle={t("The project's budget burn")}
+      />
     </div>
   );
 }

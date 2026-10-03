@@ -3,6 +3,7 @@ import { ShieldAlert } from "lucide-react";
 import { useState } from "react";
 import { LegComparison, TokensChart } from "@/components/charts";
 import { Loading, Stat } from "@/components/common";
+import { StatsCharts } from "@/components/stats-charts";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -231,6 +232,12 @@ export function JobStats({ jobId }: { jobId: string }) {
           </CardContent>
         </Card>
       ) : null}
+      <StatsCharts
+        jobId={jobId}
+        bucketMs={3600_000}
+        topics={[`job:${jobId}`]}
+        burnTitle={t("The job's budget burn")}
+      />
     </div>
   );
 }

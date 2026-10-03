@@ -1,6 +1,7 @@
 import type { SessionLogEntry, SessionView } from "@oraknid/contracts";
 import { useEffect, useRef, useState } from "react";
 import { Empty, ErrorNote, Loading, Markdown } from "@/components/common";
+import { LegAvatar, type LegLook, useLegLooks } from "@/components/leg-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { api } from "@/lib/api";
@@ -30,6 +31,7 @@ export function Agents({
     deps: [jobId],
   });
   const [picked, setPicked] = useState<string | null>(null);
+  const looks = useLegLooks();
   if (sessions.error) return <ErrorNote error={sessions.error} />;
   if (sessions.loading) return <Loading />;
   const list = (sessions.data ?? []).filter((s) => !taskId || s.taskId === taskId);
@@ -71,9 +73,12 @@ export function Agents({
                   : t("The Eye: {call}", { call: s.purpose })}
               </span>
             </div>
-            <div className="truncate text-xs text-muted-foreground">
-              {s.legName} · {s.model}
-              {s.effort ? ` · ${s.effort}` : ""}
+            <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+              <LegAvatar leg={looks.get(s.legId) ?? { name: s.legName, kind: "" }} size="xs" />
+              <span className="truncate">
+                {s.legName} · {s.model}
+                {s.effort ? ` · ${s.effort}` : ""}
+              </span>
             </div>
             <div className="text-xs text-muted-foreground">
               {ago(s.startedAt)} · {tokens(s.tokens)}
@@ -88,7 +93,13 @@ export function Agents({
         ))}
       </div>
       {current ? (
-        <SessionLog key={current.id} jobId={jobId} session={current} compact={compact} />
+        <SessionLog
+          key={current.id}
+          jobId={jobId}
+          session={current}
+          compact={compact}
+          look={looks.get(current.legId)}
+        />
       ) : null}
     </div>
   );
@@ -98,10 +109,12 @@ function SessionLog({
   jobId,
   session,
   compact,
+  look,
 }: {
   jobId: string;
   session: SessionView;
   compact?: boolean;
+  look?: LegLook;
 }) {
   const [entries, setEntries] = useState<SessionLogEntry[]>([]);
   const [error, setError] = useState<unknown>();
@@ -169,6 +182,7 @@ function SessionLog({
                   ? t("Stopped")
                   : (session.endReason ?? t("Ended"))}
           </Badge>
+          <LegAvatar leg={look ?? { name: session.legName, kind: "" }} size="xs" />
           <span className="truncate">
             {session.legName} · {session.model}
           </span>

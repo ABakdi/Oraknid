@@ -1,12 +1,14 @@
 import type { Event, JobView } from "@oraknid/contracts";
-import { AlertTriangle, Bot, Cpu, HardDrive, MemoryStick, Network } from "lucide-react";
+import { AlertTriangle, Cpu, HardDrive, MemoryStick, Network } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "wouter";
 import { Sparkline, TokensChart } from "@/components/charts";
 import { Empty, ErrorNote, Loading, PageHeader, Stat, StateBadge } from "@/components/common";
+import { LegAvatar } from "@/components/leg-avatar";
 import { PlanUsageCard } from "@/components/plan-usage";
 import { PauseResume } from "@/components/project-work";
 import { AddLegButtons } from "@/components/setup";
+import { StatsCharts } from "@/components/stats-charts";
 import { ACTIVE } from "@/components/task-drawer";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -118,7 +120,7 @@ export function OverviewPage() {
               <Card key={leg.id} className="min-w-0 gap-2 py-3">
                 <CardHeader className="px-3">
                   <CardTitle className="flex items-center gap-2 text-sm">
-                    <Bot className="size-4 shrink-0" />
+                    <LegAvatar leg={leg} />
                     <Link
                       href={`/legs/${leg.id}`}
                       className="truncate hover:underline"
@@ -297,6 +299,17 @@ export function OverviewPage() {
           )}
         </CardContent>
       </Card>
+
+      <section aria-label={t("The last two weeks")}>
+        <h2 className="mb-2 text-sm font-medium text-muted-foreground">
+          {t("The last two weeks")}
+        </h2>
+        <StatsCharts
+          since={Date.now() - 14 * 86400_000}
+          bucketMs={86400_000}
+          topics={["overview"]}
+        />
+      </section>
     </div>
   );
 }

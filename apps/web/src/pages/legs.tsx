@@ -1,11 +1,12 @@
 import type { LegView } from "@oraknid/contracts";
-import { Bot, ChevronRight, Plus, RefreshCw } from "lucide-react";
+import { ChevronRight, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AddLeg } from "@/components/add-leg";
 import { Empty, ErrorNote, Loading, PageHeader, StateBadge } from "@/components/common";
 import { useConfirm } from "@/components/confirm";
 import { FindAgents } from "@/components/find-agents";
+import { LegAvatar } from "@/components/leg-avatar";
 import { LegLogin } from "@/components/leg-login";
 import { LegPlanUsageDetail } from "@/components/plan-usage";
 import { Badge } from "@/components/ui/badge";
@@ -138,7 +139,7 @@ export function LegsPage({ focus }: { focus?: string } = {}) {
                 <ChevronRight
                   className={`size-4 shrink-0 transition-transform ${open.has(leg.id) ? "rotate-90" : ""}`}
                 />
-                <Bot className="size-4 shrink-0" />
+                <LegAvatar leg={leg} size="md" />
                 <span className="truncate" title={leg.name}>
                   {leg.name}
                 </span>
