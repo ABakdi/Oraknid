@@ -79,6 +79,68 @@ async function brainWith(
 }
 
 describe("The Eye's brain", () => {
+  // After the piano job (2026-10-03): the repo's part is Oraknid's, never a task.
+  it("plans no commit, merge or push task, and reads the end steps the goal asked for", async () => {
+    const reply = `\`\`\`json\n${JSON.stringify({
+      summary: "s",
+      tasks: [task("t1")],
+      jobVerify: [],
+      ending: { merge: true, push: true },
+    })}\n\`\`\``;
+    const { brain, input, sent } = await brainWith([reply]);
+    const plan = await brain.plan({ ...input, goal: "Commit it into dev and push it to GitHub" });
+    expect(plan.ending).toEqual({ merge: true, push: true });
+    for (const words of [
+      "Committing, merging and pushing are Oraknid's own steps, never tasks",
+      "never plan a task that commits into a branch, merges into dev or main, pushes",
+      'set "ending"',
+    ])
+      expect(sent[0]).toContain(words);
+    await brain.replan({ ...input, failure: "x", done: [] });
+    expect(sent.at(-1)).toContain("never plan a task that commits into a branch");
+    // A plan that says nothing of them asks for none.
+    const { brain: b2, input: i2 } = await brainWith([answer([task("t1")])]);
+    expect((await b2.plan(i2)).ending).toBeUndefined();
+  });
+
+  it("reads my request to push as an end step, not a task, and sums a finished job up", async () => {
+    const triaged = `\`\`\`json\n${JSON.stringify({
+      intent: "task",
+      reply: "Oraknid pushes it when the job ends.",
+      tasks: [],
+      ending: { push: true },
+    })}\n\`\`\``;
+    const { brain, input, sent } = await brainWith([triaged]);
+    const v = await brain.triage({
+      jobId: input.jobId,
+      cwd: input.cwd,
+      goal: "g",
+      state: "running",
+      silk: "",
+      conversation: "",
+      message: "push it to GitHub",
+    });
+    expect(v.ending).toEqual({ merge: false, push: true });
+    expect(sent[0]).toContain(
+      "Committing into a branch, merging into the work branch and pushing to GitHub are never tasks",
+    );
+    const {
+      brain: b2,
+      input: i2,
+      sent: s2,
+    } = await brainWith([
+      `\`\`\`json\n${JSON.stringify({ summary: "A piano you can play." })}\n\`\`\``,
+    ]);
+    const r = await b2.summarizeJob({
+      jobId: i2.jobId,
+      cwd: i2.cwd,
+      goal: "a piano",
+      facts: "2 tasks done",
+    });
+    expect(r.summary).toBe("A piano you can play.");
+    expect(s2[0]).toContain("what was built");
+  });
+
   it("returns a valid plan from a borrowed Leg, on the strongest model for planning", async () => {
     const { brain, input, sent } = await brainWith([answer([task("t1")])]);
     const plan = await brain.plan(input);

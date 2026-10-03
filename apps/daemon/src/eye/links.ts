@@ -44,7 +44,16 @@ export interface LinkDeps {
   now: () => number;
 }
 
-type TaskLike = { id: string; title: string; instructions: string; scope?: string[] };
+/** `ending`: no task row, the job's own end steps (Jobs-and-Projects → Ending a job). */
+type TaskLike = {
+  id: string;
+  title: string;
+  instructions: string;
+  scope?: string[];
+  ending?: boolean;
+};
+/** The task an item is about: none for the end steps. */
+const taskRef = (t: TaskLike) => (t.ending ? null : t.id);
 type JobLike = { id: string; projectId: string; goal: string };
 
 /** A task that creates, pushes to or opens a pull request on GitHub. */
@@ -173,7 +182,7 @@ const say = (d: LinkDeps, jobId: string, text: string, questions?: Question[], i
 const openItem = (d: LinkDeps, job: JobLike, task: TaskLike, title: string) =>
   d.inbox
     .list({ jobId: job.id, kind: "question", state: "open" })
-    .find((i) => i.taskId === task.id && i.title === title)?.id;
+    .find((i) => (i.taskId ?? null) === taskRef(task) && i.title === title)?.id;
 
 function ask(
   d: LinkDeps,
@@ -188,7 +197,7 @@ function ask(
   const itemId = d.inbox.open({
     kind: "question",
     jobId: job.id,
-    taskId: task.id,
+    taskId: taskRef(task),
     raisedBy: "eye",
     title,
     detail: text,

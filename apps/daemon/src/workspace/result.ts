@@ -58,8 +58,10 @@ function perRepo(db: Db, jobId: string) {
     });
 }
 
-export function jobResult(db: Db, jobId: string): JobResult {
+/** `ending`: Oraknid's own merge as the job ends (its state is still verifying). */
+export function jobResult(db: Db, jobId: string, ending = false): JobResult {
   const { job, project } = load(db, jobId);
+  const finished = ending || job.state === "completed";
   const into = project.workBranch;
   if (isSeveral(project.repos) && job.branch) {
     const repos = perRepo(db, jobId);
@@ -76,7 +78,7 @@ export function jobResult(db: Db, jobId: string): JobResult {
         ? "Already merged into each repo's work branch."
         : !withWork.length
           ? "There is nothing to merge yet."
-          : job.state !== "completed"
+          : !finished
             ? "The job isn't finished; merge it once it is completed."
             : null,
       repos: repos.map(({ name, folder, branch, into, commits, merged }) => ({
@@ -113,21 +115,26 @@ export function jobResult(db: Db, jobId: string): JobResult {
       ? `Already merged into ${into}.`
       : !commits.length
         ? "There is nothing to merge yet."
-        : job.state !== "completed"
+        : !finished
           ? "The job isn't finished; merge it once it is completed."
           : null,
     repos: [],
   };
 }
 
-/** My action: pressing Merge is the approval (BR-04). */
-export function mergeJob(db: Db, bus: EventBus, jobId: string): MergeResult {
+/**
+ * My action: pressing Merge is the approval (BR-04). `ending`: Oraknid's own
+ * step as the job ends, when the goal or my message asked for it in so many
+ * words (that request is the approval).
+ */
+export function mergeJob(db: Db, bus: EventBus, jobId: string, ending = false): MergeResult {
   const { job, project } = load(db, jobId);
-  const result = jobResult(db, jobId);
+  const result = jobResult(db, jobId, ending);
+  const actor = ending ? "eye" : "owner";
   if (result.cannotMerge || !job.branch)
     return { ok: false, reason: result.cannotMerge ?? "Nothing to merge.", conflicts: [] };
   const message = `merge: ${job.title.charAt(0).toLowerCase()}${job.title.slice(1)}`;
-  if (isSeveral(project.repos)) return mergeRepos(db, bus, jobId, message);
+  if (isSeveral(project.repos)) return mergeRepos(db, bus, jobId, message, actor);
   const r = mergeBranch(project.workspacePath, project.workBranch, job.branch, message);
   bus.publish({
     type: r.ok ? "job.merged" : "job.merge-failed",
@@ -136,7 +143,7 @@ export function mergeJob(db: Db, bus: EventBus, jobId: string): MergeResult {
     payload: r.ok
       ? { into: project.workBranch, branch: job.branch, commit: r.commit }
       : { into: project.workBranch, branch: job.branch, reason: r.reason, conflicts: r.conflicts },
-    actor: "owner",
+    actor,
   });
   return r;
 }
@@ -146,7 +153,13 @@ export function mergeJob(db: Db, bus: EventBus, jobId: string): MergeResult {
  * computed first: a conflict in one merges none, so the repos never end up
  * half merged.
  */
-function mergeRepos(db: Db, bus: EventBus, jobId: string, message: string): MergeResult {
+function mergeRepos(
+  db: Db,
+  bus: EventBus,
+  jobId: string,
+  message: string,
+  actor: "eye" | "owner",
+): MergeResult {
   const todo = perRepo(db, jobId).filter((r) => r.commits.length && !r.merged);
   const conflicts = todo.flatMap((r) =>
     mergeConflicts(r.path, r.into, r.branch).map((f) => `${r.folder}/${f}`),
@@ -157,7 +170,7 @@ function mergeRepos(db: Db, bus: EventBus, jobId: string, message: string): Merg
       topic: `job:${jobId}`,
       jobId,
       payload: { repos: todo.map((r) => r.name), reason, conflicts: files },
-      actor: "owner",
+      actor,
     });
     return { ok: false, reason, conflicts: files };
   };
@@ -177,7 +190,7 @@ function mergeRepos(db: Db, bus: EventBus, jobId: string, message: string): Merg
     topic: `job:${jobId}`,
     jobId,
     payload: { repos: done },
-    actor: "owner",
+    actor,
   });
   return { ok: true, commit: done.map((x) => `${x.repo}:${x.commit}`).join(" ") };
 }

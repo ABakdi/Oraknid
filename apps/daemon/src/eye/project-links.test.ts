@@ -102,6 +102,22 @@ async function fakeGitHub() {
           JSON.stringify({ full_name: full, clone_url: `https://github.com/${full}.git` }),
         );
       }
+      // A branch of a repo, as the built-in check reads it (ADR-038): its commit in the bare repo.
+      const br = /^\/repos\/([^/]+\/[^/]+)\/branches\/(.+)$/.exec(req.url ?? "");
+      if (br && repos.has(br[1] as string)) {
+        const sha = git(
+          join(web, `${br[1]}.git`),
+          "rev-parse",
+          "--verify",
+          "-q",
+          `refs/heads/${decodeURIComponent(br[2] as string)}`,
+        ).stdout.trim();
+        if (!sha) {
+          res.statusCode = 404;
+          return res.end('{"message":"Branch not found"}');
+        }
+        return res.end(JSON.stringify({ name: br[2], commit: { sha } }));
+      }
       const repo = /^\/repos\/([^/]+\/[^/]+)(\/pulls)?$/.exec(req.url ?? "");
       if (repo && repos.has(repo[1] as string)) {
         const full = repo[1] as string;
@@ -170,7 +186,10 @@ const PLAN: WebPlan = {
   jobVerify: [],
 };
 
-async function harness(script: (t: TurnContext) => Action[]) {
+async function harness(
+  script: (t: TurnContext) => Action[],
+  o: { plan?: WebPlan; triage?: () => unknown } = {},
+) {
   const gh = await fakeGitHub();
   const dir = mkdtempSync(join(tmpdir(), "oraknid-links-"));
   const leg = scriptedLeg(script);
@@ -181,8 +200,8 @@ async function harness(script: (t: TurnContext) => Action[]) {
     return start(s);
   };
   const brain = {
-    plan: async () => PLAN,
-    replan: async () => PLAN,
+    plan: async () => o.plan ?? PLAN,
+    replan: async () => o.plan ?? PLAN,
     summarize: async () => ({ title: "s", body: "s" }),
     evaluate: async () => ({ accepted: true, reason: "ok", missing: [] }),
     repairCheck: async ({ command }: { command: string }) => ({
@@ -190,7 +209,8 @@ async function harness(script: (t: TurnContext) => Action[]) {
       command,
       reason: "",
     }),
-    triage: async () => ({ intent: "question", reply: "Fine.", silk: null, tasks: [] }),
+    triage: async () =>
+      o.triage?.() ?? { intent: "question", reply: "Fine.", silk: null, tasks: [] },
     classifyCommand: async () => ({ decision: "allow" as const, reason: "fine" }),
     interviewRound: async () => ({ done: true, playback: "Clear.", questions: [], open: [] }),
   } as unknown as EyeBrain;
@@ -418,6 +438,98 @@ describe("a project's GitHub repo, chosen once (ADR-038)", () => {
     ).rejects.toThrow(/No GitHub account nobody/);
     await api.github.removeAccount({ login: "work" });
     expect(await d.secrets.get("github.token.work")).toBeUndefined();
+  }, 60_000);
+});
+
+// After the piano job (2026-10-03): merging into the work branch and pushing
+// are Oraknid's own steps when the job ends, never tasks for a Leg.
+describe("the repo's part is Oraknid's", () => {
+  it("merges the job into dev and pushes dev at the end, as I asked, and says so", async () => {
+    const plan: WebPlan = {
+      summary: "A metronome, then on GitHub.",
+      tasks: [
+        {
+          key: "t1",
+          title: "Add a metronome",
+          instructions: "Write metronome.txt.",
+          kind: "implement",
+          dependsOn: [],
+          scope: ["metronome.txt"],
+          verify: ["test -f metronome.txt"],
+          requiredCapabilities: ["implementation"],
+          difficulty: "low",
+        },
+      ],
+      // Oraknid's own check: run after the push, on the project's real dev.
+      jobVerify: ["oraknid github-branch dev"],
+      ending: { merge: true, push: true },
+    };
+    const { d, api, leg, gh, folder, projectId } = await harness(
+      () => [{ write: "metronome.txt", content: "tick\n" }, { say: "DONE" }],
+      {
+        plan,
+        triage: () => ({
+          intent: "task",
+          reply: "Oraknid pushes it.",
+          silk: null,
+          tasks: [],
+          ending: { push: true },
+        }),
+      },
+    );
+    await d.secrets.set("github.token", TOKEN);
+    await api.github.accounts({ check: true });
+    const started = await api.projects.talk({
+      id: projectId,
+      text: "Add a metronome, commit it into dev and push dev to GitHub, a public repo",
+    });
+    // The link is asked once, at the end: no task is about GitHub.
+    const asked = await eventually(async () =>
+      (await api.projects.conversation({ id: projectId })).find(
+        (m) => m.questions?.length && m.itemId,
+      ),
+    );
+    expect(asked.text).toContain("“Push the job's work to GitHub” needs a GitHub repo");
+    expect((await api.jobs.get({ id: started.jobId })).tasks.map((t) => t.title)).toEqual([
+      "Add a metronome",
+    ]);
+    await api.projects.answer({
+      id: projectId,
+      messageId: asked.id,
+      answers: [{ questionId: "repo", options: ["new"], text: "" }],
+    });
+    const job = await until(api, started.jobId, ["completed", "blocked"]);
+    expect(job.state, job.blockedReason ?? "").toBe("completed");
+    // dev has the job's work, merged by Oraknid; GitHub's dev is the same commit.
+    expect(git(folder, "log", "--format=%s", "dev").stdout).toContain("feat: add a metronome");
+    const local = git(folder, "rev-parse", "dev").stdout.trim();
+    expect(git(gh.bare("me/oraknid-piano"), "rev-parse", "dev").stdout.trim()).toBe(local);
+    // The Leg never did any of it.
+    expect(leg.mcpResults).toEqual([]);
+    // The summary says where it is, and leaves me nothing to merge.
+    const talk = await api.projects.conversation({ id: projectId });
+    const summary = talk.find((m) => m.action?.report?.kind === "job-done")?.action?.report;
+    expect(summary?.facts).toContainEqual({ label: "Merged into", value: "dev", href: null });
+    expect(summary?.facts).toContainEqual({
+      label: "Pushed",
+      value: "dev → me/oraknid-piano",
+      href: "https://github.com/me/oraknid-piano/tree/dev",
+    });
+    expect(summary?.todo.filter((x) => /Merge|github-branch/.test(x))).toEqual([]);
+    expect(
+      d.bus.since(0, [`job:${started.jobId}`], 2000).find((e) => e.type === "job.merged")?.actor,
+    ).toBe("eye");
+
+    // Asked again once the job has ended: done at once, said in the reply.
+    await api.projects.talk({ id: projectId, text: "push it to GitHub again" });
+    const reply = await eventually(async () =>
+      (await api.projects.conversation({ id: projectId })).find((m) =>
+        m.action?.did.includes("Pushed dev to me/oraknid-piano"),
+      ),
+    );
+    expect(reply.text).toBe(
+      "I pushed **dev** to [me/oraknid-piano](https://github.com/me/oraknid-piano/tree/dev).",
+    );
   }, 60_000);
 });
 

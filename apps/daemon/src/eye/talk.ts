@@ -1,4 +1,5 @@
 import {
+  chosenOption,
   completeAnswers,
   type EyeMessage,
   isProduction,
@@ -27,6 +28,7 @@ import { viewOf } from "../workspace/projects.ts";
 import { isSeveral } from "../workspace/repos.ts";
 import type { EyeBrain, EyeTriage } from "./brain.ts";
 import { editWeb } from "./controls.ts";
+import { type EndingDone, requestEnding } from "./ending.ts";
 
 // Talking to The Eye (The-Eye → Talking to The Eye, Checkpoint 1 → F1-4):
 // I write; one short reasoning call decides what my message is; this code
@@ -53,6 +55,11 @@ export interface TalkDeps {
   newJob?: (projectId: string, goal: string) => string;
   /** Starts a job made by `newJob`; throws a sentence when it can't. */
   startJob?: (jobId: string) => Promise<void>;
+  /**
+   * Merging and pushing an ended job's work now, as I asked (Jobs-and-Projects
+   * → Ending a job): Oraknid's own steps, never a task. Returns what it did.
+   */
+  endNow?: (jobId: string) => Promise<EndingDone>;
 }
 
 const ENDED = new Set(["completed", "cancelled"]);
@@ -237,7 +244,11 @@ export function answerInProject(
   const answers = completeAnswers(questions, given);
   const text = renderAnswers(questions, answers);
   if (a.message.itemId) {
-    d.inbox.answer(a.message.itemId, text, deviceId, answers);
+    // An item's own option, chosen through the question that says what each does (ADR-045).
+    const item = d.inbox.get(a.message.itemId);
+    const chosen = item ? chosenOption(questions, answers, item.options) : null;
+    if (chosen) d.inbox.answer(a.message.itemId, chosen, deviceId, null);
+    else d.inbox.answer(a.message.itemId, text, deviceId, answers);
     const id = recordAnswer(d, a.message.itemId) ?? "";
     return { id, jobId: a.message.jobId };
   }
@@ -400,7 +411,8 @@ function projectFacts(db: Db, row: typeof projects.$inferSelect): string {
   return [repos, srv].filter(Boolean).join("\n");
 }
 
-async function act(d: TalkDeps, jobId: string, jobState: string, text: string, v: EyeTriage) {
+async function act(d: TalkDeps, jobId: string, jobState: string, text: string, triaged: EyeTriage) {
+  let v = triaged;
   const did: string[] = [];
   const silkIds: string[] = [];
   const taskIds: string[] = [];
@@ -414,6 +426,38 @@ async function act(d: TalkDeps, jobId: string, jobState: string, text: string, v
   };
   let reply = v.reply;
   let jobRef: string | null = null;
+  // Merge and push are Oraknid's own steps at the end, never tasks (after the piano job).
+  const ending = v.ending?.merge || v.ending?.push ? v.ending : null;
+  if (ending) {
+    requestEnding(d.db, jobId, ending, "my message");
+    if (ENDED.has(jobState) && d.endNow) {
+      try {
+        const done = await d.endNow(jobId);
+        did.push(...endingWords(done));
+        reply = endingReply(done);
+      } catch (e) {
+        did.push("Not done");
+        reply = `I couldn't do it: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    } else {
+      did.push(
+        ending.push ? "Oraknid pushes it when the job ends" : "Oraknid merges it when the job ends",
+      );
+    }
+    // A request for the end steps alone adds no task.
+    if (v.intent === "task") v = { ...v, tasks: v.tasks.filter((t) => !isEndStep(t.title)) };
+    if (v.intent === "task" && !v.tasks.length) {
+      add(
+        d,
+        jobId,
+        "eye",
+        reply,
+        { intent: v.intent, did, silkIds, taskIds, jobId: jobRef },
+        { questions: normalizeQuestions(v.questions ?? []) },
+      );
+      return;
+    }
+  }
   switch (v.intent) {
     case "instruction":
       keep("decision", v.silk?.title ?? `My instruction: ${firstLine(text)}`, v.silk?.body ?? text);
@@ -511,6 +555,30 @@ async function act(d: TalkDeps, jobId: string, jobState: string, text: string, v
     { intent: v.intent, did, silkIds, taskIds, jobId: jobRef },
     { questions: normalizeQuestions(v.questions ?? []) },
   );
+}
+
+/** A task that only merges, commits into a branch or pushes: Oraknid's own step, not a task. */
+const isEndStep = (title: string) =>
+  /\b(merge|commit)\b.*\b(into|onto|to|on)\s+(the\s+)?(dev|main|master|develop|work)\b|\bpush(es|ing)?\b.*\b(github|origin|remote|branch)\b/i.test(
+    title,
+  );
+
+/** What the end steps did, as the conversation's "did" words. */
+function endingWords(done: EndingDone): string[] {
+  return [
+    ...(done.merged ? [`Merged into ${done.merged.into}`] : []),
+    ...done.pushed.map((p) => `Pushed ${p.branch} to ${p.repo}`),
+    ...(done.problems.length ? ["Not everything was done"] : []),
+  ];
+}
+
+function endingReply(done: EndingDone): string {
+  const parts = [
+    done.merged ? `I merged the job into **${done.merged.into}**.` : "",
+    ...done.pushed.map((p) => `I pushed **${p.branch}** to [${p.repo}](${p.url}).`),
+    ...done.problems.map((x) => `Not done: ${x}`),
+  ].filter(Boolean);
+  return parts.join(" ") || "There was nothing to merge or push.";
 }
 
 /** The follow-up job this conversation started, while it hasn't ended. */

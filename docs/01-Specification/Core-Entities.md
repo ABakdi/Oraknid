@@ -97,6 +97,8 @@ stateDiagram-v2
     running --> verifying: all tasks done
     verifying --> running: verification failed → new tasks
     verifying --> completed
+    verifying --> waiting: the end steps need my answer (which GitHub repo)
+    waiting --> verifying: answered
     running --> cancelled
     paused --> cancelled
     blocked --> cancelled

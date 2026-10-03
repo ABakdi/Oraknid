@@ -20,13 +20,29 @@ export const PlannedTask = z.object({
 });
 export type PlannedTask = z.infer<typeof PlannedTask>;
 
+/**
+ * Oraknid's own steps at the end of a job (Jobs-and-Projects → Ending a
+ * job; after the piano job, 2026-10-03): merging the job into the work
+ * branch and pushing to the project's linked GitHub repo are never tasks.
+ */
+export const JobEnding = z.object({
+  /** Merge the job into the work branch: only when the owner asked for it in so many words ("commit into dev", "merge it"). */
+  merge: z.boolean().default(false),
+  /** Push to the project's linked GitHub repo: the work branch when merged, else the job's branch. */
+  push: z.boolean().default(false),
+});
+export type JobEnding = z.infer<typeof JobEnding>;
+
 export const WebPlan = z.object({
   /** One paragraph: the approach, for me and for Silk. */
   summary: z.string().min(1),
   tasks: z.array(PlannedTask).min(1).max(60),
   /** Job-level verification: run when every task is done. */
   jobVerify: z.array(z.string().min(1)),
+  /** What Oraknid itself does when the job ends, as the owner asked (never tasks). */
+  ending: JobEnding.optional(),
 });
+
 export type WebPlan = z.infer<typeof WebPlan>;
 
 /** One interview round (Skills → The interview): a playback of what is understood, then a few questions. */
