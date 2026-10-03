@@ -22,6 +22,16 @@ Agents reach the internet, but none of the services running on your computer. If
 
 Add a server with its address and a password or key. Oraknid installs a key of its own, reads what runs there (only reads) and writes a **state document**: services, ports, what must not break. A small `oraknid-monitor` script reports CPU, memory, disk and network every few seconds.
 
+A server's page has tabs for what runs there, each read only while you look at it and never stored:
+
+- **Docker**: containers grouped by compose project, with their state, health, uptime, ports, CPU and memory; images, volumes and networks, with the unused ones marked.
+- **Databases**: PostgreSQL, MySQL or MariaDB, MongoDB and Redis, whether they run as services or in containers: version, state, port, and size when it can be read.
+- **Proxy & traffic**: nginx, Caddy, Traefik or HAProxy, its sites and where they send requests, its certificates and when they end (red two weeks before), its config check; then the last 15 minutes of requests, status codes, top paths and clients, and connections per port.
+- **Logs**: a service's, a container's or the proxy's log, followed live while the tab is open, or searched.
+- **Backups**, a **Terminal** on the server, and its **State document**.
+
+When something can't be read, the tab says why and what to do (for Docker, add the server's user to the `docker` group; for the proxy's logs, to `adm`): Oraknid never asks for root to look. **Restart** on a container, a database or the proxy asks you first, and every restart is in the audit log. The helper can read all of it too ("what's unhealthy on my VPS?").
+
 Give a server to a project (The Eye asks which one when the work needs a server and you have several), and that project's jobs can reach it by name (`ssh <alias>`), with its state document in mind. Anything that changes the server goes through your approvals, and the document is brought up to date after.
 
 ## Terminal

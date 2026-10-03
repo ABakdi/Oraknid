@@ -297,7 +297,18 @@ My chats with any Leg and model, like a chat app ([[Chats-and-Helper]]).
 My servers ([[Servers]]): each with its state, its state document,
 oraknid-monitor's readings live and over 24 hours, services and ports;
 add, discover again, edit the document, edit its name and description,
-open a terminal, remove.
+open a terminal, remove. A server's page is in tabs
+([[ADR-043-Server-Insight]]): **Overview** (the readings, then what was
+About), **Docker** (containers by compose project, each with Logs and
+Restart; images, volumes and networks folded), **Databases**, **Proxy &
+traffic** (sites, certificates, the config check, then the last 15
+minutes of traffic as bars, status tiles and top lists), **Logs** (a log
+picked from the server's services, containers and proxy files; Follow on
+by default, a filter while following, a search on the server when not),
+**Backups**, **Terminal** (one shell, opened with a click) and **State
+document**. Each part shows when it was read and a Refresh; what it
+couldn't read is in a yellow box with why. On a phone everything is a
+list that wraps, nothing scrolls sideways.
 
 ### Terminal
 
