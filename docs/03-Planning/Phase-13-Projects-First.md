@@ -75,6 +75,12 @@ run locally and the public site checked at 1440 and 390 px.
 ### M13.7 — Mail accounts that explain themselves ([[ADR-032-Email]] → Fixed after a failed Namecheap POP account)
 - [ ] Presets from the domain's MX, port and security together, errors in plain words, Test, failures logged
 
+### M13.8 — Plan usage in front of me ([[ADR-039-Plan-Usage-In-View]])
+- [ ] Each Claude Code Leg's windows (how full, reset, Oraknid's share) on the Overview and in the Leg's details, with how old it is
+
+### M13.9 — Repos ([[ADR-040-Repos-Page]])
+- [ ] A Repos page: accounts, repositories, and in one: code, commits with diffs, branches, pull requests, its project
+
 ## Exit criterion
 
 I ask for new work on the piano project from its Eye tab and follow it
