@@ -259,13 +259,18 @@ ensure_pnpm() {
 		return
 	fi
 	# No corepack with this Node (or one too old to check pnpm's signature): a current one, just for Oraknid.
+	own="$DIR/.tools/corepack/node_modules/.bin/corepack"
+	if [ -x "$own" ]; then
+		pnpm_shim "$own"
+		pnpm_works && return
+	fi
 	if ! have npm; then
 		[ -n "$PM" ] || detect_pm
 		[ -n "$PM" ] || die "pnpm needs corepack or npm, and neither is here"
 		install_pkgs "$(pkg npm)" || die "$PM could not install npm"
 	fi
 	run npm install --prefix "$DIR/.tools/corepack" --no-fund --no-audit --loglevel=error corepack
-	pnpm_shim "$DIR/.tools/corepack/node_modules/.bin/corepack"
+	pnpm_shim "$own"
 	pnpm_works || die "pnpm does not run through corepack"
 }
 
