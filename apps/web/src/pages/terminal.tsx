@@ -354,14 +354,26 @@ function Term({
     let disposed = false;
     let cleanup = () => {};
     // xterm.js only on this page: loaded when a terminal opens.
-    void Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit")])
+    // The font first, so the terminal measures its cells in it.
+    void Promise.all([
+      import("@xterm/xterm"),
+      import("@xterm/addon-fit"),
+      document.fonts?.load('13px "JetBrains Mono Variable"').catch(() => []),
+    ])
       .then(([{ Terminal }, { FitAddon }]) => {
         if (disposed || !box.current) return;
         const term = new Terminal({
           cursorBlink: true,
-          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          fontFamily: '"JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace',
           fontSize: 13,
-          theme: { background: "#0b0d12" },
+          // Ink, whatever the theme: a terminal stays dark (the mark's own ground).
+          theme: {
+            background: "#0e0c16",
+            foreground: "#e7e4f2",
+            cursor: "#f4a73a",
+            cursorAccent: "#0e0c16",
+            selectionBackground: "#8f7cff55",
+          },
           // A link printed in the terminal opens only as a web page, never as script (Audit 2).
           linkHandler: {
             activate: (_e, uri) => {
@@ -437,7 +449,7 @@ function Term({
   return (
     <div
       className={cn(
-        "flex h-full min-h-0 flex-col gap-1 rounded-lg border bg-[#0b0d12] p-1.5",
+        "flex h-full min-h-0 flex-col gap-1 rounded-lg border bg-[#0e0c16] p-1.5",
         focused && "ring-1 ring-primary/60",
       )}
     >

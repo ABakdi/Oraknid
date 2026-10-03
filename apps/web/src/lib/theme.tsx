@@ -32,7 +32,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     document.documentElement.classList.toggle("dark", resolved === "dark");
     document
       .querySelector('meta[name="theme-color"]')
-      ?.setAttribute("content", resolved === "dark" ? "#0b0d10" : "#f7f8fa");
+      ?.setAttribute("content", resolved === "dark" ? "#0b0a12" : "#efedf6");
   }, [resolved]);
   return (
     <Ctx.Provider
