@@ -90,6 +90,11 @@ filled in from the address, port and security together, Test's results).
 ### M13.9 — Repos ([[ADR-040-Repos-Page]])
 - [ ] A Repos page: accounts, repositories, and in one: code, commits with diffs, branches, pull requests, its project
 
+### M13.10 — The guide inside, and a helper that shows me ([[ADR-041-Docs-And-A-Guiding-Helper]])
+- [ ] Docs in the sidebar: the guide's pages, a search, Ask the helper about this
+- [ ] The helper knows the guide, a map of the screens, and my data (mail included) through the API
+- [ ] The helper navigates, highlights a control, and fills a field for me to check
+
 ## Exit criterion
 
 I ask for new work on the piano project from its Eye tab and follow it

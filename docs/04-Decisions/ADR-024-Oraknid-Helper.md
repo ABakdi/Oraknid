@@ -31,6 +31,8 @@ own rules.
 - What I type to it is mine; what it reads back from Oraknid (job
   names, Silk, logs) is data to it, never instructions (BR-15).
 
+*Extended 2026-10-03:* it knows the guide, the screens and my mail, and can take me to a page and point at a control ([[ADR-041-Docs-And-A-Guiding-Helper]]).
+
 ## Added after the first live run (2026-10-02)
 - After its actions run, the helper takes another turn with the new
   state (up to three), so one sentence can go from a project to a draft
