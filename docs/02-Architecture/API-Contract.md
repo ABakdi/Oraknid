@@ -52,7 +52,7 @@ from home once the device is unlocked.
 - **Home only for a standard device** (a device with full rights may):
   `policies.update` · `projects.create` / `createFrom` / `setPolicy` /
   `setServers` / `setServerRole` / `addRepo` / `detectRepos` /
-  `removeRepo` / `setLocalPorts` / `delete` / `setGitHub` ·
+  `removeRepo` / `updateRepo` / `setLocalPorts` / `delete` / `setGitHub` ·
   `servers.add` / `update` / `setup` / `acceptHostKey` / `editState` /
   `remove` / `restart` · `backups.createPlan` / `updatePlan` /
   `removePlan` / `prepareRestore` / `restore` / `importKey` /
