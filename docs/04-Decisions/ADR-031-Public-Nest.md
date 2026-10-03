@@ -7,7 +7,7 @@
 Oraknid connects their daemon and devices, without me adding them by
 hand. A Nest carries only end-to-end encrypted traffic, so it can be
 shared without seeing anyone's data. I also want a private Nest of my
-own (`private.oraknid.abakdi.com`).
+own (my private Nest; its address is kept out of the repository, [[ADR-035-Nest-Pages-By-Mode]]).
 
 ## Decision
 - `NEST_MODE=private` (default): the daemons in `NEST_DAEMONS` only,
@@ -38,8 +38,8 @@ own (`private.oraknid.abakdi.com`).
   address offered by default is `https://oraknid.abakdi.com`.
 - `install.sh <domain> [--public | --private] [--invite CODE | --no-invite]`
   runs one Nest per domain and moves an older single install over.
-  Mine: `oraknid.abakdi.com` public and `private.oraknid.abakdi.com`
-  private, on the same server; both deployed 2026-10-03
+  Mine: `oraknid.abakdi.com` public and my private Nest,
+  on the same server; both deployed 2026-10-03
   ([[Phase-11-Workspace]] → M11.4), my daemon still on the public one
   until I re-pair my phone.
 

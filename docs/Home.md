@@ -85,6 +85,7 @@ note and in the [[Roadmap]]. Next: those runs, then Later.
 - [[ADR-030-Device-Rights]] · [[ADR-031-Public-Nest]] — Phase 11: full rights for a chosen device; a public Nest
 - [[ADR-033-Product-Site]] — the product site at a Nest's root, the phone loader under `/app/`
 - [[ADR-032-Email]] — Phase 12: an email client, mail for agents through the broker
+- [[ADR-034-Projects-First]] · [[ADR-035-Nest-Pages-By-Mode]] — Phase 13: the project is the place, jobs its history; what a public and a private Nest show
 
 ## 05 — Checkpoints
 - [[Checkpoints-Home]] — the index

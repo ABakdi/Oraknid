@@ -28,7 +28,7 @@ can't use what I use at home; and The Nest should serve other people.
 ### M11.4 — A public Nest ([[ADR-031-Public-Nest]])
 - [x] Public mode with self-registration and its limits; private stays the default
 - [x] "Use a public Nest" in Settings registers in one click
-- [x] `oraknid.abakdi.com` public; `private.oraknid.abakdi.com` mine, on the same server (deployed 2026-10-03 with `install.sh`: the old install moved over keeping its secret and port, the private one beside it; my daemon stays on the public one until I re-pair my phone)
+- [x] `oraknid.abakdi.com` public; my private Nest, on the same server (deployed 2026-10-03 with `install.sh`: the old install moved over keeping its secret and port, the private one beside it; my daemon stays on the public one until I re-pair my phone)
 
 ### M11.5 — Polish, from using it (2026-10-03, as built)
 - [x] A way back from everything I drill into, history-aware; a job's task drawer is a step of its own ([[Web-UI]] → Going back)

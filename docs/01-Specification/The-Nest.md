@@ -54,8 +54,7 @@ flowchart LR
   daemon unseen for 30 days. Its page says it is public and can't read
   what it carries. `install.sh` runs one Nest per domain, two on one
   server if I want ([[ADR-031-Public-Nest]]). Mine are
-  `oraknid.abakdi.com`, public, and `private.oraknid.abakdi.com`, my
-  own, on the same server, both deployed 2026-10-03;
+  `oraknid.abakdi.com`, public, and my private Nest, on the same server, both deployed 2026-10-03;
   `oraknid.abakdi.com` is the address Settings offers by default. My
   daemon stays on the public one until I re-pair my phone with the
   private one ([[Phase-11-Workspace]]).
