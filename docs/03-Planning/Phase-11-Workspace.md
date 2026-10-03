@@ -31,6 +31,16 @@ can't use what I use at home; and The Nest should serve other people.
 - [ ] `oraknid.abakdi.com` public; `private.oraknid.abakdi.com` mine, on the same server
   (`install.sh` is ready for it: `--public`, one Nest per domain, the old install moved over; not deployed yet)
 
+### M11.5 — Polish, from using it (2026-10-03, as built)
+- [x] A way back from everything I drill into, history-aware; a job's task drawer is a step of its own ([[Web-UI]] → Going back)
+- [x] Touch targets of 44 px on any touch screen; the phone's More menu closes on a tap outside, Esc and navigation
+- [x] Set up in place: a Leg, a skill's tools, GitHub, a server, the terminal, a skill file, each in a dialog with the Settings card
+- [x] A second step, naming what happens, before what can't be taken back
+- [x] Missing options: rename and remove a Leg, edit a server, a skill's earlier versions, a copy of a built-in, New work from a project, older log pages
+- [x] The mark: an octopus eye on eight spider legs, violet and amber, with icons for a phone's home screen ([[Web-UI]] → Look)
+
+Tested: the back navigation's history counting (`apps/web/src/lib/nav.test.tsx`). The rest has no automated test.
+
 ## Exit criterion
 
 On my phone, The Eye's conversation fills the screen and nothing runs

@@ -28,6 +28,20 @@ own (`private.oraknid.abakdi.com`).
 - `install.sh` asks `--public` or `--private` (default private), and can
   run two Nests on one server, one per domain.
 
+## As built (2026-10-03)
+- `POST /register` and `GET /info` on The Nest; registered daemons are
+  kept in `daemons.json` on its volume with the hash of their secret.
+  Limits as decided: five registrations per address an hour, a thousand
+  daemons, ten devices each, 2 GB a day each, forgotten after 30 days
+  unseen ([[Nest-Protocol]] → Limits).
+- In Oraknid, `nest.register` (home only) registers and connects; the
+  address offered by default is `https://oraknid.abakdi.com`.
+- `install.sh <domain> [--public | --private] [--invite CODE | --no-invite]`
+  runs one Nest per domain and moves an older single install over.
+  Mine: `oraknid.abakdi.com` public and `private.oraknid.abakdi.com`
+  private, on the same server; not deployed that way yet
+  ([[Phase-11-Workspace]] → M11.4).
+
 ## Consequences
 - A public Nest sees who connects and how much, never what.
 - Someone running a public Nest could serve a changed loader to its

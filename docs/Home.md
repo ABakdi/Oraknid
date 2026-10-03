@@ -3,8 +3,9 @@
 *Always watching, many legs. A local background orchestrator that runs
 AI coding agents and local models from goal to verified completion.*
 
-**Where it stands (2026-10-01):** canon written; [[Phase-1-MVP]] is next.
-Nothing is built yet.
+**Where it stands (2026-10-03):** Phases 1 to 12 are built and tested
+on `dev`; what is left in each is hands-on (mine), named in its phase
+note and in the [[Roadmap]]. Next: those runs, then Later.
 
 ## 00 — Overview
 - [[Vision]] — why Oraknid exists, what it must feel like, pillars, MVP scope
@@ -13,7 +14,7 @@ Nothing is built yet.
 
 ## 01 — Specification
 - [[Core-Entities]] — the data model and life cycles
-- [[Business-Rules]] — the constitution, BR-1 to BR-21
+- [[Business-Rules]] — the constitution, BR-1 to BR-23
 - [[Jobs-and-Projects]] — creating, following, controlling and ending jobs
 - [[The-Eye]] — planning, routing, self-prompting, verification, evaluation
 - [[Legs-and-Capability-Profiles]] — the pool, health, profiles and learning
@@ -26,31 +27,36 @@ Nothing is built yet.
 - [[Servers]] — my servers: state documents, oraknid-monitor, terminal
 - [[Durability]] — service, sleep inhibition, crash recovery, lossless pause, watchdog
 - [[Notifications]] — desktop, web push, email, routing
-- [[Security]] — secrets, scope, command filter, prompt injection, pairing, audit
-- [[Web-UI]] — every screen, live, mobile
-- [[The-Nest]] — the remote relay *(draft, Phase 4)*
+- [[Security]] — secrets, scope, command filter, prompt injection, pairing, the PIN, device rights, mail, audit
+- [[Web-UI]] — every screen, live, mobile: tabs, shortcuts, going back, set up in place, Mail, the lock
+- [[The-Nest]] — the remote relay, private or public (Phase 4, Phase 11)
 
 ## 02 — Architecture
 - [[Architecture-Overview]] — packages, layers, data flow, paths
 - [[Leg-Adapters]] — the adapter interface; Claude Code, OpenAI-compatible, OpenCode, Antigravity, checked 2026-10-02
 - [[Persistence-and-Recovery]] — tables, write discipline, recovery, backups
 - [[Realtime-Transport]] — topics, frames, reconnect
+- [[Nest-Protocol]] — the end-to-end tunnel through The Nest, registering on a public Nest, the loader
 - [[OS-Integration]] — service, inhibitor, keychain, metrics, notifier, sandbox per OS
-- [[Sandboxing]] — worktrees, checkpoints, the bwrap wrapper
+- [[Sandboxing]] — worktrees, checkpoints, the bwrap wrapper, Landlock, a network of its own (pasta)
 - [[API-Contract]] — every procedure
 - [[Data-Map]] — where data lives, who reads it, what leaves the machine
 
 ## 03 — Planning
 - [[Roadmap]] — phases, exit criteria, changes of order
-- [[Phase-1-MVP]] ← **next**
-- [[Phase-2-OpenCode]]
-- [[Phase-3-Parallelism]]
-- [[Phase-4-The-Nest]]
-- [[Phase-5-Antigravity]]
-- [[Phase-6-Non-Coding-Skills]]
-- [[Phase-7-Eye-Decision-Models]]
-- [[Phase-8-Daily-Use]]
-- [[Phase-9-Servers]]
+- [[Phase-1-MVP]] — built
+- [[Phase-2-OpenCode]] — done
+- [[Phase-3-Parallelism]] — done
+- [[Phase-4-The-Nest]] — built and deployed
+- [[Phase-5-Antigravity]] — done
+- [[Phase-6-Non-Coding-Skills]] — built
+- [[Phase-7-Eye-Decision-Models]] — done
+- [[Phase-8-Daily-Use]] — built
+- [[Phase-9-Servers]] — built
+- [[Phase-10-Lockdown]] — built: the PIN, Audit 2's fixes, settings in tabs
+- [[Phase-11-Workspace]] — built: pages in tabs, terminal workspace, device rights, a public Nest; the two Nests to deploy
+- [[Phase-12-Email]] — built: the Mail page, IMAP and POP3, agents' drafts; real accounts to try
+- Later ← **next**: containers per job, teams
 
 ## 04 — Decisions
 - [[ADR-001-Monorepo]] — one pnpm + Turborepo monorepo with the canon inside
@@ -65,6 +71,7 @@ Nothing is built yet.
 - [[ADR-010-API-Contracts]] — Zod 4 + oRPC in Express
 - [[ADR-011-Claude-Code-Adapter]] — the Agent SDK, `canUseTool`, one config dir per account
 - [[ADR-012-Sleep-Inhibition]] — a `systemd-inhibit` holder process
+- [[ADR-013-Model-Aware-Routing]] — route to Leg + model + effort; smallest sufficient model; reserve scarce windows
 - [[ADR-014-Auto-Approval]] — rules first, then a classifier; asked only when it matters
 - [[ADR-015-OpenCode-Adapter]] — OpenCode v2 through a private server per session, every action asked
 - [[ADR-016-Parallel-Work]] — a job queue first, then tasks side by side in their own worktrees
@@ -77,14 +84,13 @@ Nothing is built yet.
 - [[ADR-029-App-Lock]] — Phase 10: a PIN on every device, checked by the daemon
 - [[ADR-030-Device-Rights]] · [[ADR-031-Public-Nest]] — Phase 11: full rights for a chosen device; a public Nest
 - [[ADR-032-Email]] — Phase 12: an email client, mail for agents through the broker
-- [[ADR-013-Model-Aware-Routing]] — route to Leg + model + effort; smallest sufficient model; reserve scarce windows
 
 ## 05 — Checkpoints
 - [[Checkpoints-Home]] — the index
 - [[Checkpoint-1]] — the first real job: too many approvals, the inbox across projects, agent output, talking to The Eye, the result
 
 ## 06 — Audit
-- [[Audit-Home]] — [[Audit-1]] (closed) and [[Audit-2]] (security, open on two items)
+- [[Audit-Home]] — [[Audit-1]] (closed) and [[Audit-2]] (nobody else drives my computer: every critical and high finding fixed; four in part, two open)
 
 ## Methodology
 - [[skill]] — Canon-Driven Development, the method this canon follows and Oraknid's first built-in skill

@@ -7,7 +7,7 @@ or documented.
 | Audit | Before | Opened | Findings | Fixed | Documented | Status |
 | :-- | :-- | :-- | :-- | :-- | :-- | :-- |
 | [[Audit-1]] | `v0.1.0` | 2026-10-01 | 61 | 56 | 5 | Closed 2026-10-01 |
-| [[Audit-2]] | the phone away from home | 2026-10-02 | 23 | 15 (+3 in part) | 5 open | Open: S2-21 needs `passt` |
+| [[Audit-2]] | the phone away from home | 2026-10-02 | 23 | 17 (+4 in part: S2-02, S2-08, S2-13, S2-15) | 2 open (S2-22, S2-23) | Open: every critical and high finding fixed; S2-21 fixed 2026-10-03; the loader pinned (S2-02) and keychain entries per data folder (S2-23) next |
 
 **Planned angles for the first audit:** security (`S1-`: sandbox
 escapes, command filter bypasses, prompt injection, API auth),

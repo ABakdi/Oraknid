@@ -21,7 +21,7 @@ sent without me ([[ADR-032-Email]]).
 ### M12.2 — The client
 - [x] Mail page: accounts and folders, a virtual list fine with 10,000 messages, the thread, search
 - [x] Compose, reply, forward, attachments; sent mail in the provider's Sent
-- [x] Safe HTML: cleaned, sandboxed, remote images blocked until allowed
+- [x] Safe HTML: cleaned, sandboxed, remote images blocked until allowed; once allowed, fetched by the daemon (public addresses only) and given to the frame inline, so the UI loads nothing from outside
 - [x] "Reconnect" on an expired or revoked account
 - [x] Accounts added, reconnected, set and removed from Mail itself; on a phone the folders in a drawer and a way back from a conversation, at 390 px
 

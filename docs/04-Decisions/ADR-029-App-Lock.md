@@ -1,6 +1,6 @@
 # ADR-029 — A PIN unlocks Oraknid on every device, enforced by the daemon
 
-**Status:** Accepted · 2026-10-02 · [[Phase-10-Lockdown]]
+**Status:** Accepted · 2026-10-02 · [[Phase-10-Lockdown]] · amended by [[ADR-030-Device-Rights]] (2026-10-03)
 
 ## Context
 Oraknid runs agents with a shell on my computer: whoever drives its UI

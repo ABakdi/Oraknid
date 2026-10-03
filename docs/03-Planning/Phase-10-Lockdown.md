@@ -21,7 +21,7 @@ lost at its bottom.
 ### M10.2 — Audit 2
 - [x] Four hostile reviews (remote, local, containment, web): [[Audit-2]]
 - [x] Every critical and high finding fixed, tested where it can be
-- [ ] Its own network namespace for every sandbox (`pasta`): needs `passt` installed (S2-21)
+- [x] Its own network namespace for every sandbox (`pasta`, package `passt`), S2-21, done 2026-10-03: the internet, none of this computer's services except the ports a project lists (Projects → Network) and a Leg's own local model; OpenCode's server port forwarded in; a Leg's sign-in keeps the host network while it lasts ([[Sandboxing]]). Without `passt`, the host network is shared and `oraknid doctor` says so
 - [ ] The loader's code pinned on the phone, or a native app (S2-02)
 
 ### M10.3 — Settings and pairing
@@ -32,6 +32,8 @@ Tested: the lock, its tries, idle and away rules, live socket and Nest
 tunnel ending on a lock or revocation (unit and end-to-end tests); a
 host abstract socket refused from the sandbox; a replayed stream header
 refused; pairing, the first PIN, the PIN pad and the tabs in Chrome.
+The network namespace (2026-10-03): a test reaches a listed port and
+is refused an unlisted one.
 
 ## Exit criterion
 
