@@ -40,6 +40,7 @@ import { forgetJob } from "./eye/attempt.ts";
 import { type EyeBrain, PoolLegBrain } from "./eye/brain.ts";
 import { startBudgetWatch } from "./eye/budgets.ts";
 import { EyeDecisions } from "./eye/decisions.ts";
+import { serverAdded } from "./eye/links.ts";
 import { eyeProgram } from "./eye/program.ts";
 import { forgetGuidance, recordAnswer, resumeConversations } from "./eye/talk.ts";
 import { Helper } from "./helper/service.ts";
@@ -269,6 +270,10 @@ export async function startDaemon(options: DaemonOptions) {
     ...(options.serverSampleSec ? { sampleEverySec: options.serverSampleSec } : {}),
   });
   serverService.start();
+  // A server added while The Eye waits for one: it asks again with it (ADR-042).
+  bus.subscribe((e) => {
+    if (e.type === "server.added") serverAdded(inbox);
+  });
   const runner = new JobRunner({
     // How many jobs run at once; the rest queue by priority (ADR-016).
     maxRunning: () => readSetting(db, MAX_RUNNING_JOBS, z.number().int().min(1), 2),
