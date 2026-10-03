@@ -19,7 +19,7 @@ import {
   Search,
   Users,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Link, useLocation } from "wouter";
 import { BackButton, Empty, ErrorNote, Loading, Markdown } from "@/components/common";
@@ -151,6 +151,17 @@ function AccountsPane() {
     topics: ["overview"],
     refreshOn: (e) => e.type.startsWith("github."),
   });
+  // Reads move the allowance without an event: asked again while it is shown.
+  const reload = useRef(limits.reload);
+  reload.current = limits.reload;
+  useEffect(() => {
+    const first = setTimeout(() => reload.current(), 3000);
+    const every = setInterval(() => reload.current(), 30_000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(every);
+    };
+  }, []);
   return (
     <>
       <GitHubCard />
