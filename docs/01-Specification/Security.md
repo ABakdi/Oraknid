@@ -11,6 +11,16 @@ sandbox limits damage, but it doesn't make that safe.
   no keychain is available, an encrypted file store is used, with a key
   derived from a passphrase I enter at daemon start. The UI says which
   one is in use.
+- Each data folder has entries of its own in the keychain (2026-10-03,
+  [[Audit-2]] S2-23): they are kept under the service
+  `oraknid:<id>`, where the id is made once and kept in the folder
+  (`keychain-id`, 0600). A second daemon on another data folder (a
+  test) never reads or replaces the first one's secrets. The entries
+  of before, all under `oraknid`, belong to the default data folder:
+  its daemon moves each one under its own service at start (copied,
+  read back, then removed; a count is logged, never a value), and one
+  it could not list moves when it is next read. A copy of a data folder
+  keeps its id, and so shares its entries.
 - Referenced by name. Resolved only when a process starts, passed by
   environment to that process only, never logged. Log output is
   scrubbed of known secret values.
