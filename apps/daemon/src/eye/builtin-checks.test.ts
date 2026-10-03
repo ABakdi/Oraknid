@@ -5,8 +5,8 @@ import type { GitHubLink } from "@oraknid/contracts";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { openDatabase } from "../db/open.ts";
-import { jobs, projects, tasks } from "../db/schema.ts";
-import { seedJob } from "../testing/fixtures.ts";
+import { jobs, tasks } from "../db/schema.ts";
+import { linkProject, seedJob } from "../testing/fixtures.ts";
 import type { GitHub } from "../workspace/github.ts";
 import { runBuiltinCheck } from "./builtin-checks.ts";
 import { adaptToGitHub } from "./links.ts";
@@ -54,7 +54,7 @@ describe("checks Oraknid answers itself about the project's repo (ADR-038)", () 
     });
     const jobId = seedJob(db, "running");
     const projectId = db.select().from(jobs).where(eq(jobs.id, jobId)).get()?.projectId as string;
-    db.update(projects).set({ github: link }).where(eq(projects.id, projectId)).run();
+    linkProject(db, projectId, link);
     // The piano task as it was planned before the link (2026-10-03).
     db.insert(tasks)
       .values({

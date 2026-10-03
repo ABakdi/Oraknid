@@ -13,10 +13,10 @@ import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Router } from "../api/router.ts";
 import { type Daemon, startDaemon } from "../daemon.ts";
-import { projects, settings } from "../db/schema.ts";
+import { settings } from "../db/schema.ts";
 import { resolvePaths } from "../paths.ts";
 import { fakeOs } from "../testing/fake-os.ts";
-import { seedJob } from "../testing/fixtures.ts";
+import { linkProject, seedJob } from "../testing/fixtures.ts";
 import { type Action, scriptedLeg, type TurnContext } from "../testing/scripted-leg.ts";
 import { judgeGitHub } from "../workspace/github-tool.ts";
 import type { EyeBrain } from "./brain.ts";
@@ -442,20 +442,15 @@ describe("the github tool's policy (ADR-038)", () => {
     // No link yet: a push goes nowhere I chose, so it asks.
     expect(verdict("push", { branch: "dev" })).toMatchObject({ verdict: "ask", gated: "push" });
     const projectId = (await daemon.jobs.get(jobId))?.projectId as string;
-    db.update(projects)
-      .set({
-        github: {
-          account: "me",
-          owner: "me",
-          name: "piano",
-          visibility: "public",
-          origin: "new",
-          ready: false,
-          linkedAt: 0,
-        },
-      })
-      .where(eq(projects.id, projectId))
-      .run();
+    linkProject(db, projectId, {
+      account: "me",
+      owner: "me",
+      name: "piano",
+      visibility: "public",
+      origin: "new",
+      ready: false,
+      linkedAt: 0,
+    });
     expect(verdict("create_repo").verdict).toBe("allow");
     expect(verdict("push", { branch: "dev" }).verdict).toBe("allow");
     expect(verdict("push", { branch: "dev", repo: "ME/Piano" }).verdict).toBe("allow");
@@ -466,20 +461,15 @@ describe("the github tool's policy (ADR-038)", () => {
       gated: "external-write",
     });
     expect(verdict("delete_repo")).toMatchObject({ verdict: "ask", gated: "external-write" });
-    db.update(projects)
-      .set({
-        github: {
-          account: "me",
-          owner: "me",
-          name: "piano",
-          visibility: "public",
-          origin: "new",
-          ready: true,
-          linkedAt: 0,
-        },
-      })
-      .where(eq(projects.id, projectId))
-      .run();
+    linkProject(db, projectId, {
+      account: "me",
+      owner: "me",
+      name: "piano",
+      visibility: "public",
+      origin: "new",
+      ready: true,
+      linkedAt: 0,
+    });
     // Created already: creating another asks.
     expect(verdict("create_repo")).toMatchObject({ verdict: "ask" });
   });

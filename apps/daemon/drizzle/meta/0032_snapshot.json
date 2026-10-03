@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "dcdf8886-e0c3-4b4f-99c5-b735ba6a8b3f",
-  "prevId": "9145642d-eb07-44db-bc26-b6c3370e2554",
+  "id": "2aa59aad-656d-4846-a440-3fe0948087ad",
+  "prevId": "dcdf8886-e0c3-4b4f-99c5-b735ba6a8b3f",
   "tables": {
     "attempts": {
       "name": "attempts",
@@ -2063,13 +2063,6 @@
           "notNull": true,
           "autoincrement": false,
           "default": "'[]'"
-        },
-        "github": {
-          "name": "github",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
         }
       },
       "indexes": {

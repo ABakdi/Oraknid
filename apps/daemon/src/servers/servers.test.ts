@@ -10,6 +10,7 @@ import { type Daemon, startDaemon } from "../daemon.ts";
 import type { EyeBrain } from "../eye/brain.ts";
 import { resolvePaths } from "../paths.ts";
 import { fakeOs } from "../testing/fake-os.ts";
+import { fakeServerTools } from "../testing/fake-server-tools.ts";
 import { fakeSsh } from "../testing/fake-ssh.ts";
 
 let daemon: Daemon | undefined;
@@ -22,7 +23,9 @@ afterEach(async () => {
 
 describe("servers (ADR-026/027)", () => {
   it("sets a server up: its own key in place of the password, discovery, the document, the monitor", async () => {
-    let ssh = await fakeSsh({ password: "pw" });
+    // Stand-in tools: what runs there is read from them, never from this machine.
+    const tools = fakeServerTools();
+    let ssh = await fakeSsh({ password: "pw", path: tools });
     closing.push(ssh.close);
     const dir = mkdtempSync(join(tmpdir(), "oraknid-servers-"));
     const docs: { previous: string; discovery: string }[] = [];
@@ -82,7 +85,7 @@ describe("servers (ADR-026/027)", () => {
     // A different host key stops everything until I accept it.
     await ssh.close();
     const home = ssh.home;
-    ssh = await fakeSsh({});
+    ssh = await fakeSsh({ path: tools });
     closing.push(ssh.close);
     // Same home, same keys: only the host key changed.
     await import("node:fs").then((fs) => fs.cpSync(home, ssh.home, { recursive: true }));

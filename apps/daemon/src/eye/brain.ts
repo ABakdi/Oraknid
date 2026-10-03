@@ -18,6 +18,12 @@ import type { LegSupervisor } from "../legs/supervisor.ts";
  * judge. Each is a short, stateless session built from Silk, answered as
  * JSON and validated.
  */
+/** The GitHub repo(s) a check may be about: one, or one per repo of a project of several. */
+export type GitHubForRepair =
+  | { repo: string; visibility: string; name?: string }
+  | { repo: string; visibility: string; name?: string }[]
+  | null;
+
 export interface EyeBrain {
   plan(input: PlanInput): Promise<WebPlan>;
   /** New tasks that fix what job-level verification found. */
@@ -67,8 +73,8 @@ export interface EyeBrain {
     output: string;
     hint: string;
     report: string;
-    /** The project's linked GitHub repo, which only Oraknid reaches (ADR-038). */
-    github?: { repo: string; visibility: string } | null;
+    /** The project's linked GitHub repo, which only Oraknid reaches (ADR-038); one per repo (ADR-042). */
+    github?: GitHubForRepair;
   }): Promise<CheckRepair>;
   /** Which of the project's skills fits this job (Skills → Skills per project). */
   pickSkill(input: {
@@ -491,14 +497,21 @@ Answer with the id of one of them in "skillId" and one sentence in "reason".`;
     output: string;
     hint: string;
     report: string;
-    github?: { repo: string; visibility: string } | null;
+    github?: GitHubForRepair;
   }) {
-    const github = i.github
-      ? `
+    const links = !i.github ? [] : Array.isArray(i.github) ? i.github : [i.github];
+    const several = links.some((l) => l.name);
+    const github = !links.length
+      ? ""
+      : several
+        ? `
 
 # GitHub
-This project's repo is ${i.github.repo} (${i.github.visibility}), chosen by its owner; it wins over anything the task says about the repo. Only Oraknid reaches it: the gh CLI and the token are never where checks run, and the workspace has no remote for it. A check about it is one of Oraknid's own: \`oraknid github-repo\` (the repo exists with that visibility) or \`oraknid github-branch <branch>\` (the branch is on it at the same commit as here). A check that relies on gh, a token or a git remote for this repo is broken: replace it with those.`
-      : "";
+This project is several repos, each with its GitHub repo chosen by its owner: ${links.map((l) => `${l.name} → ${l.repo} (${l.visibility})`).join("; ")}. They win over anything the task says about a repo. Only Oraknid reaches them: the gh CLI and the token are never where checks run, and the workspace has no remote for them. A check about one is one of Oraknid's own, naming the repo by its name in the project: \`oraknid github-repo --repo <name>\` (the repo exists with that visibility) or \`oraknid github-branch <branch> --repo <name>\` (the branch is on it at the same commit as here). A check that relies on gh, a token or a git remote for these repos is broken: replace it with those.`
+        : `
+
+# GitHub
+This project's repo is ${links[0]?.repo} (${links[0]?.visibility}), chosen by its owner; it wins over anything the task says about the repo. Only Oraknid reaches it: the gh CLI and the token are never where checks run, and the workspace has no remote for it. A check about it is one of Oraknid's own: \`oraknid github-repo\` (the repo exists with that visibility) or \`oraknid github-branch <branch>\` (the branch is on it at the same commit as here). A check that relies on gh, a token or a git remote for this repo is broken: replace it with those.`;
     const prompt = `A shell check that decides whether a task is done has failed, and it looks broken itself: ${i.hint}. Decide whether the check or the work is at fault. You may read the files in the workspace.
 
 # The task: ${i.task.title}

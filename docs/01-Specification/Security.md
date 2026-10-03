@@ -112,6 +112,15 @@ sandbox limits damage, but it doesn't make that safe.
   device, and is audited; it is a full shell as me ([[ADR-028-Terminal]]).
   Away from home it opens only on a device with full rights, through
   the tunnel ([[ADR-030-Device-Rights]]).
+- What runs on a server is read by oraknid-monitor, which only reads,
+  as the server's user: no root asked; what it can't read says why
+  ([[ADR-043-Server-Insight]]). Log sources are checked (`unit:`,
+  `container:`, `file:` with a full path and no `..`) on both sides; a
+  followed log stops on the server when its screen closes. Restarting a
+  container or a service asks first, takes `confirm: true`, only names
+  what the server has, is home only for a device without full rights,
+  and every attempt is in the audit log. What a server prints (logs,
+  names) reaches the helper as untrusted data.
 
 ## Backups (2026-10-03, [[ADR-044-Backups]])
 - A database's password is in the keychain, given to the dump on the

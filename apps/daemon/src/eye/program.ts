@@ -5,6 +5,7 @@ import {
   type JobInput,
   type MetricsSample,
   normalizeQuestions,
+  type ProjectRepo,
   renderQuestions,
   type WebPlan,
 } from "@oraknid/contracts";
@@ -35,6 +36,8 @@ import type { Servers } from "../servers/service.ts";
 import {
   attemptsFromKey,
   followUpKey,
+  JobServer,
+  jobServerKey,
   MAX_TASKS_PER_JOB,
   projectPorts,
   readSetting,
@@ -54,7 +57,9 @@ import {
   worktreeGit,
 } from "../workspace/git.ts";
 import type { GitHub } from "../workspace/github.ts";
-import type { Projects } from "../workspace/projects.ts";
+import { type Projects, viewOf } from "../workspace/projects.ts";
+import { isSeveral } from "../workspace/repos.ts";
+import { multiTreeOf, singleTree, type WorkTree } from "../workspace/tree.ts";
 import { type AttemptJob, runAttempt } from "./attempt.ts";
 import type { EyeBrain } from "./brain.ts";
 import { readInside, renderInputs } from "./inputs.ts";
@@ -92,6 +97,31 @@ export interface EyeDeps {
   maxAttempts?: number;
 }
 
+/** Where a job's work is: its folder, its tree (one repo or several), and Oraknid's places for it. */
+export interface Where {
+  cwd: string;
+  tree: WorkTree;
+  tmpDir: string;
+  trash: string;
+  projectPath: string;
+}
+
+const projectReposOf = (db: Db, projectId: string): ProjectRepo[] => {
+  const p = db.select().from(projects).where(eq(projects.id, projectId)).get();
+  return p ? viewOf(p).repos : [];
+};
+
+/** A project of several repos, as a plan and a Leg must know it (ADR-042). */
+export function reposLayout(repos: ProjectRepo[], projectPath?: string): string {
+  const list = repos
+    .map(
+      (r) =>
+        `- ${r.folder ? `\`${r.folder}/\`` : "the folder itself"}: the repo **${r.name}** (work branch ${r.workBranch})`,
+    )
+    .join("\n");
+  return `This project is several git repositories, each in its own folder:\n${list}\n\nThe job's folder mirrors the project's: each repo the job works in is there at its folder, on the job's branch, a git repository of its own. A task's scope starts with its repo's folder (\`web/src/**\`); a task that changes two repos names both folders in its scope. Each repo's changes are committed in that repo, never one commit across them; checks run from the job's folder (\`cd web && npm test\`).${projectPath ? ` A repo the job hasn't opened yet can be read in ${projectPath}/<its folder>; it appears in the job's folder when a task's scope names it.` : ""}`;
+}
+
 const slug = (s: string) =>
   s
     .toLowerCase()
@@ -115,8 +145,18 @@ export function eyeProgram(d: EyeDeps): JobProgram {
     }
     const skill = d.skills.version(job0.skillId, job0.skillVersion);
 
-    // ── The workspace: a worktree on a job branch, or the folder itself with a shadow repo.
+    // ── The workspace: a worktree on a job branch, or the folder itself with a shadow repo;
+    // in a project of several repos, the job's folder with a worktree per repo it touches (ADR-042).
+    const projectView = viewOf(project);
+    const several = isSeveral(projectView.repos);
+    const from = readSetting(d.db, followUpKey(job0.id), z.string().nullable(), null);
     const ws = await ctx.step("workspace", null, async () => {
+      if (several) {
+        const root = join(project.workspacePath, ".oraknid", "worktrees", job0.id);
+        const branch = `oraknid/${slug(job0.title)}-${job0.id.slice(-6).toLowerCase()}`;
+        d.db.update(jobs).set({ worktree: root, branch }).where(eq(jobs.id, job0.id)).run();
+        return { cwd: root, shadow: false };
+      }
       if (project.isGitRepo) {
         const wt = createWorktree(
           project.workspacePath,
@@ -124,7 +164,7 @@ export function eyeProgram(d: EyeDeps): JobProgram {
           slug(job0.title),
           { release: project.releaseBranch, work: project.workBranch },
           // A follow-up job starts from what the job it follows built.
-          readSetting(d.db, followUpKey(job0.id), z.string().nullable(), null),
+          from,
         );
         d.db
           .update(jobs)
@@ -141,14 +181,27 @@ export function eyeProgram(d: EyeDeps): JobProgram {
         .run();
       return { cwd: project.workspacePath, shadow: true };
     });
-    const g: Git = ws.shadow ? shadowRepo(ws.cwd) : worktreeGit(project.workspacePath, ws.cwd);
-    const where = {
+    const tree: WorkTree = several
+      ? multiTreeOf(
+          d.db,
+          d.db.select().from(jobs).where(eq(jobs.id, job0.id)).get() as typeof job0,
+          projectView,
+          d.tmpDir,
+          from,
+        )
+      : singleTree(
+          ws.shadow ? shadowRepo(ws.cwd) : worktreeGit(project.workspacePath, ws.cwd),
+          d.tmpDir,
+        );
+    const where: Where = {
       cwd: ws.cwd,
-      g,
+      tree,
       tmpDir: d.tmpDir,
       trash: join(project.workspacePath, ".oraknid", "trash"),
       projectPath: project.workspacePath,
     };
+    // What a plan needs to know of a project of several repos (ADR-042).
+    const layout = several ? reposLayout(projectView.repos, project.workspacePath) : "";
 
     // A Leg's permission request dies with its session: one still open is stale.
     for (const item of d.inbox.list("open")) {
@@ -197,7 +250,8 @@ export function eyeProgram(d: EyeDeps): JobProgram {
     });
 
     // The interview (Skills → The interview): the method needs my answers before any work.
-    if (skill?.interview) await interview(d, ctx, job0, skill.body, ws.cwd);
+    if (skill?.interview)
+      await interview(d, ctx, job0, skill.body, several ? project.workspacePath : ws.cwd);
 
     if (ctx.state() === "draft" || ctx.state() === "interviewing") ctx.setState("planning");
 
@@ -209,22 +263,28 @@ export function eyeProgram(d: EyeDeps): JobProgram {
         () =>
           d.brain.plan({
             jobId: job0.id,
-            cwd: ws.cwd,
+            cwd: several ? project.workspacePath : ws.cwd,
             goal: job0.goal,
             skill: skill ? skillExcerpt(skill.body, "plan phases tasks", 6000) : "",
             silk: silkText(d.silk, job0.id),
-            digest: "",
+            digest: layout,
             verify: job0.verify,
           }),
       );
       await ctx.step("web:1", plan, async () => storeWeb(d, job0.id, plan));
+    }
+    // The repos the plan's tasks name are ready before work starts (ADR-042).
+    if (several) {
+      for (const t of taskRows(d.db, ctx.jobId).filter((x) => x.state !== "done"))
+        tree.prepare(t.scope);
     }
     if (ctx.state() === "planning") ctx.setState("running");
 
     for (;;) {
       // Asked every time, before any work: approved passes through, denied stops (never skipped on a resume).
       await approvePlanIfSupervised(d, ctx);
-      await runTasks(d, ctx, where, !ws.shadow);
+      // Tasks side by side need a worktree each; a job across several repos runs them one at a time.
+      await runTasks(d, ctx, where, !ws.shadow && !several);
       if (ctx.state() === "cancelled") return;
 
       // ── Job-level verification (BR-1): only this completes a job.
@@ -296,7 +356,7 @@ export function eyeProgram(d: EyeDeps): JobProgram {
           goal: job.goal,
           skill: skill ? skillExcerpt(skill.body, "fix verification", 3000) : "",
           silk: silkText(d.silk, job.id),
-          digest: "",
+          digest: layout,
           verify: job.verify,
           failure: `\`${failed.command}\` (exit ${failed.exitCode}):\n${failed.output}`,
           done,
@@ -314,12 +374,7 @@ export function eyeProgram(d: EyeDeps): JobProgram {
 }
 
 /** Runs ready tasks one at a time (BR-19) until none is left or the job must stop. */
-async function runTasks(
-  d: EyeDeps,
-  ctx: JobContext,
-  where: { cwd: string; g: Git; tmpDir: string; trash: string; projectPath: string },
-  parallel = false,
-) {
+async function runTasks(d: EyeDeps, ctx: JobContext, where: Where, parallel = false) {
   const running = new Map<string, Promise<void>>();
   // Written by the running tasks' callbacks.
   const run: { failure: { error: unknown } | null; cancelled: boolean } = {
@@ -403,7 +458,7 @@ async function runTask(
   ctx: JobContext,
   job: typeof jobs.$inferSelect,
   task: ReturnType<typeof taskRows>[number],
-  where: { cwd: string; g: Git; tmpDir: string; trash: string; projectPath: string },
+  where: Where,
   parallel: boolean,
 ): Promise<"cancelled" | undefined> {
   // The GitHub repo or the server the task needs, asked once and saved to the project (ADR-038).
@@ -470,7 +525,17 @@ async function runTask(
         : job.tools,
     serverIds:
       d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.serverIds ?? [],
+    serverRoles:
+      d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.serverRoles ?? {},
+    // The server I chose or confirmed for this job's work on a server (ADR-042).
+    server: readSetting(d.db, jobServerKey(job.id), JobServer, { serverId: null, declined: [] })
+      .serverId,
     localPorts: projectPorts(d.db, job.projectId),
+    ...(where.tree.several
+      ? {
+          layout: reposLayout(projectReposOf(d.db, job.projectId), where.projectPath),
+        }
+      : {}),
     skillChecks: skillChecks(d.skills.version(job.skillId, job.skillVersion)?.body ?? ""),
     otherSkills: (
       d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.skillIds ?? []
@@ -487,8 +552,14 @@ async function runTask(
   if (parallel && job.branch) {
     own = createTaskWorktree(where.projectPath, job.id, task.id, job.branch);
     d.db.update(tasks).set({ worktree: own.path }).where(eq(tasks.id, task.id)).run();
-    taskWhere = { ...where, cwd: own.path, g: worktreeGit(where.projectPath, own.path) };
+    taskWhere = {
+      ...where,
+      cwd: own.path,
+      tree: singleTree(worktreeGit(where.projectPath, own.path), d.tmpDir),
+    };
   }
+  // In a project of several repos, the repos its scope names are worktrees before it starts (ADR-042).
+  taskWhere.tree.prepare(task.scope);
   const outcome = await ctx.step(
     `task:${task.id}:attempt:${attemptNo}`,
     { taskId: task.id, attemptNo },
@@ -533,7 +604,7 @@ async function runTask(
     const branch = own.branch;
     const merged = await ctx.step(`task:${task.id}:merge:${attemptNo}`, { attemptNo }, () =>
       oneMergeAtATime(job.id, async () => {
-        const m = await mergeTaskBranch(where.g, branch, `merge: ${task.title}`);
+        const m = await mergeTaskBranch(where.tree.single as Git, branch, `merge: ${task.title}`);
         if (!m.ok)
           return {
             ok: false,
@@ -552,7 +623,7 @@ async function runTask(
         );
         const failed = results.find((r) => !r.ok);
         if (failed) {
-          undoMerge(where.g);
+          undoMerge(where.tree.single as Git);
           return { ok: false, why: `\`${failed.command}\` failed once merged with the other work` };
         }
         return { ok: true, why: "" };
@@ -581,7 +652,11 @@ async function runTask(
   switch (outcome.kind) {
     case "done":
       if (outcome.commit)
-        d.db.update(tasks).set({ commit: outcome.commit }).where(eq(tasks.id, task.id)).run();
+        d.db
+          .update(tasks)
+          .set({ commit: outcome.commit, commits: outcome.commits ?? [] })
+          .where(eq(tasks.id, task.id))
+          .run();
       setTask(d, job.id, task.id, "done");
       break;
     case "retry":

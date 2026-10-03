@@ -1,7 +1,14 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Autonomy, Budget, Difficulty, MetricsSample, TaskKind } from "@oraknid/contracts";
+import {
+  type Autonomy,
+  type Budget,
+  type Difficulty,
+  isProduction,
+  type MetricsSample,
+  type TaskKind,
+} from "@oraknid/contracts";
 import {
   allowRuleFor,
   buildContextPack,
@@ -55,19 +62,9 @@ import {
   type ToolRegistry,
   type ToolRow,
 } from "../tools/registry.ts";
-import {
-  changedSince,
-  checkpoint,
-  commitAll,
-  diffStatSince,
-  type Git,
-  git,
-  hasRef,
-  restorePaths,
-  rollback,
-} from "../workspace/git.ts";
 import type { GitHub } from "../workspace/github.ts";
-import { githubLinkOf } from "../workspace/github-tool.ts";
+import { githubLinkOf, githubLinksOf } from "../workspace/github-tool.ts";
+import type { WorkTree } from "../workspace/tree.ts";
 import { waitForAnswer } from "./approvals.ts";
 import type { CheckRepair, EyeBrain } from "./brain.ts";
 import { runBuiltinCheck } from "./builtin-checks.ts";
@@ -131,6 +128,12 @@ export interface AttemptJob {
   skillChecks?: string;
   /** The servers its project gave it (Servers → Servers in projects). */
   serverIds?: string[];
+  /** Each server's role in the project (ADR-042). */
+  serverRoles?: Record<string, { role: string; production: boolean | null }>;
+  /** The server I chose or confirmed for its work on a server, "none", or not asked yet (ADR-042). */
+  server?: string | null;
+  /** A project of several repos, as a Leg must know it (ADR-042). */
+  layout?: string;
   /** Its project's ports on this computer its sandboxes may reach (Sandboxing → network). */
   localPorts?: number[];
   /** The project's other skills, whose guidance a task may get (Skills → Skills per project). */
@@ -140,7 +143,7 @@ export interface AttemptJob {
 }
 
 export type AttemptOutcome =
-  | { kind: "done"; commit: string | null }
+  | { kind: "done"; commit: string | null; commits?: { repo: string; sha: string }[] }
   | { kind: "retry"; reason: string }
   | { kind: "blocked"; reason: string; until: number | null }
   | { kind: "skipped" }
@@ -177,7 +180,7 @@ export async function runAttempt(
   d: AttemptDeps,
   job: AttemptJob,
   taskId: string,
-  ws: { cwd: string; g: Git; tmpDir: string; trash: string },
+  ws: { cwd: string; tree: WorkTree; tmpDir: string; trash: string },
   attemptNo: number,
   signal: AbortSignal,
 ): Promise<AttemptOutcome> {
@@ -323,9 +326,8 @@ export async function runAttempt(
   // outside it is still seen (Audit 1 → D1-06).
   const scopeBase = `refs/oraknid/${job.id}/${taskId}/base`;
   try {
-    await checkpoint(ws.g, ckpt, `oraknid: before ${task.title} (attempt ${attemptNo})`, ws.tmpDir);
-    if (!hasRef(ws.g, scopeBase))
-      await checkpoint(ws.g, scopeBase, `oraknid: before ${task.title}`, ws.tmpDir);
+    await ws.tree.checkpoint(ckpt, `oraknid: before ${task.title} (attempt ${attemptNo})`);
+    await ws.tree.checkpoint(scopeBase, `oraknid: before ${task.title}`, true);
   } catch (error) {
     release();
     // No attempt or task is left looking alive by a checkpoint that failed (Audit 1 → Q1-13).
@@ -541,16 +543,27 @@ export async function runAttempt(
       void summarizeShortened(d, job.id, ws.cwd, built.shortened).catch((e) =>
         console.error("silk summary failed", e),
       );
-    return [built.text, serversText, githubText()].filter(Boolean).join("\n\n");
+    return [built.text, job.layout ? `# The repos\n\n${job.layout}` : "", serversText, githubText()]
+      .filter(Boolean)
+      .join("\n\n");
   };
 
   /** How this job does GitHub work: through Oraknid's github tool, never a CLI or a token (ADR-038). */
   const githubText = () => {
     if (!toolRows.some((t) => t.name === "github" && t.command === BUILT_IN)) return "";
     const link = githubLinkOf(d.db, job.id);
-    const where = link
-      ? `This project's GitHub repository is **${link.owner}/${link.name}** (${link.visibility}), through the account ${link.account}${link.ready ? "" : "; it doesn't exist yet: `create_repo` creates it"}.`
-      : "This project has no GitHub repository linked yet: if the task needs one, say so in your report and stop; The Eye asks the owner.";
+    const repos = githubLinksOf(d.db, job.id);
+    const where = ws.tree.several
+      ? `This project is several repos; each call names one with \`repo\` (its name in the project). ${repos
+          .map((r) =>
+            r.github
+              ? `**${r.name}** (\`${r.folder}/\`) → **${r.github.owner}/${r.github.name}** (${r.github.visibility}), through ${r.github.account}${r.github.ready ? "" : "; it doesn't exist yet: `create_repo` creates it"}.`
+              : `**${r.name}** (\`${r.folder}/\`) has no GitHub repository linked yet: if the task needs one, say so in your report and stop; The Eye asks the owner.`,
+          )
+          .join(" ")}`
+      : link
+        ? `This project's GitHub repository is **${link.owner}/${link.name}** (${link.visibility}), through the account ${link.account}${link.ready ? "" : "; it doesn't exist yet: `create_repo` creates it"}.`
+        : "This project has no GitHub repository linked yet: if the task needs one, say so in your report and stop; The Eye asks the owner.";
     return `# GitHub\n\n${where}\n\nDo every GitHub action with the \`github\` tool (the oraknid-github MCP server): \`repo_info\`, \`create_repo\`, \`push\` (a local branch to the linked repo), \`open_pull_request\`. Oraknid holds the token and runs git with it. Never install or run the \`gh\` CLI, never look for or ask for a token, never add a remote with credentials or run \`git push\` yourself.`;
   };
 
@@ -657,6 +670,11 @@ export async function runAttempt(
     const known: string[] = [];
     const docs: string[] = [];
     for (const id of job.serverIds) {
+      // Its role in the project (ADR-042): what it is for, and production said loud.
+      const r = job.serverRoles?.[id];
+      const role = r?.role ? ` — ${r.role}` : "";
+      const prod = isProduction(r) ? " (production: what runs there is live)" : "";
+      const chosen = job.server === id ? " — **the server for this job's work**" : "";
       try {
         const s = await d.servers.forLeg(id);
         const keyFile = join(ssh, s.alias);
@@ -667,16 +685,21 @@ export async function runAttempt(
           `Host ${s.alias}\n  HostName ${s.host}\n  Port ${s.port}\n  User ${s.user}\n  IdentityFile ${keyFile}\n  IdentitiesOnly yes\n  StrictHostKeyChecking yes\n  UserKnownHostsFile ${join(ssh, "oraknid_known_hosts")}`,
         );
         if (s.knownHost) known.push(s.knownHost);
-        docs.push(`## ${s.name} — \`ssh ${s.alias}\`\n\n${s.state}`);
+        docs.push(`## ${s.name}${role}${prod}${chosen} — \`ssh ${s.alias}\`\n\n${s.state}`);
       } catch (error) {
+        let name = "a server";
+        try {
+          name = d.servers.row(id).name;
+        } catch {}
         docs.push(
-          `## (a server this job can't reach: ${error instanceof Error ? error.message : String(error)})`,
+          `## ${name}${role}${prod}${chosen} (this job can't reach it: ${error instanceof Error ? error.message : String(error)})`,
         );
       }
     }
     writeFileSync(join(ssh, "config"), `${config.join("\n\n")}\n`, { mode: 0o600 });
     writeFileSync(join(ssh, "oraknid_known_hosts"), `${known.join("\n")}\n`, { mode: 0o600 });
-    serversText = `# Servers this job may use\n\nReach each with its alias (\`ssh <alias>\`, \`scp\`, \`rsync\`). Read its state document first: it says what runs there and what must not break. Change only what the task needs; anything else on the server is not yours.\n\n${docs.join("\n\n")}`;
+    const named = job.server && job.server !== "none" ? job.serverIds.includes(job.server) : false;
+    serversText = `# Servers this job may use\n\nReach each with its alias (\`ssh <alias>\`, \`scp\`, \`rsync\`). Read its state document first: it says what runs there and what must not break. Change only what the task needs; anything else on the server is not yours.${named ? " Work meant for a server (a deploy) goes to the one marked as this job's, and to no other." : ""}\n\n${docs.join("\n\n")}`;
   };
 
   const openSession = async (prompt: string) => {
@@ -808,10 +831,10 @@ export async function runAttempt(
     // Edits outside the task's scope are put back whatever the step: left
     // there, the next attempt starts out of scope and trips D1 again.
     if (drift.code === "D1") {
-      const outside = (await changedSince(ws.g, scopeBase, ws.tmpDir)).filter(
+      const outside = (await ws.tree.changedSince(scopeBase)).filter(
         (p) => !inTaskScope(p, task.scope),
       );
-      restorePaths(ws.g, scopeBase, outside, ws.trash);
+      ws.tree.restorePaths(scopeBase, outside, ws.trash);
     }
     switch (next.step) {
       case "correct": {
@@ -847,7 +870,7 @@ export async function runAttempt(
         throw new EndAttempt({ kind: "retry", reason: `reassigning after ${drift.code}` });
       case "kill":
         await closeSession("kill");
-        await rollback(ws.g, ckpt, ws.tmpDir, ws.trash);
+        await ws.tree.rollback(ckpt, ws.trash);
         d.db
           .update(tasks)
           .set({ avoid: [...new Set([...task.avoid, leg.legModelId])] })
@@ -946,7 +969,7 @@ export async function runAttempt(
         continue;
       }
 
-      observed.changedPaths = await changedSince(ws.g, scopeBase, ws.tmpDir);
+      observed.changedPaths = await ws.tree.changedSince(scopeBase);
       let verified = task.verify.length === 0;
       let failure = "";
       if (task.verify.length) {
@@ -965,16 +988,21 @@ export async function runAttempt(
               runBuiltinCheck(command, {
                 ...(d.github ? { github: d.github } : {}),
                 link: githubLinkOf(d.db, job.id),
-                localCommit: (branch) => {
-                  try {
-                    return (
-                      git(ws.g, ["rev-parse", "--verify", "-q", `refs/heads/${branch}`]).trim() ||
-                      null
-                    );
-                  } catch {
-                    return null;
+                // In a project of several repos, `--repo <name>` says which (ADR-042).
+                linkFor: (repo) => {
+                  const repos = githubLinksOf(d.db, job.id);
+                  if (repo) {
+                    const r = repos.find((x) => x.name.toLowerCase() === repo.toLowerCase());
+                    if (!r)
+                      return `This project has no repo named ${repo}: its repos are ${repos.map((x) => x.name).join(", ")}.`;
+                    return r.github;
                   }
+                  const linked = repos.filter((x) => x.github);
+                  if (repos.length > 1 && linked.length > 1)
+                    return `This project has several repos: name one with --repo (${linked.map((x) => x.name).join(", ")}).`;
+                  return (repos.length === 1 ? repos[0]?.github : linked[0]?.github) ?? null;
                 },
+                localCommit: (branch, repo) => ws.tree.localCommit(branch, repo),
               }),
           });
         let results = await check();
@@ -994,8 +1022,18 @@ export async function runAttempt(
               hint,
               report: end.text,
               github: (() => {
-                const l = githubLinkOf(d.db, job.id);
-                return l ? { repo: `${l.owner}/${l.name}`, visibility: l.visibility } : null;
+                if (!ws.tree.several) {
+                  const l = githubLinkOf(d.db, job.id);
+                  return l ? { repo: `${l.owner}/${l.name}`, visibility: l.visibility } : null;
+                }
+                const repos = githubLinksOf(d.db, job.id).filter((x) => x.github);
+                return repos.length
+                  ? repos.map((x) => ({
+                      repo: `${x.github?.owner}/${x.github?.name}`,
+                      visibility: x.github?.visibility ?? "private",
+                      name: x.name,
+                    }))
+                  : null;
               })(),
             });
           } catch {
@@ -1043,7 +1081,7 @@ export async function runAttempt(
             cwd: ws.cwd,
             task: { title: task.title, instructions: task.instructions, kind: task.kind },
             report: end.text,
-            changes: await diffStatSince(ws.g, ckpt, ws.tmpDir),
+            changes: await ws.tree.diffStatSince(ckpt),
             ...(job.skillChecks ? { criteria: job.skillChecks } : {}),
           });
           verified = review.accepted;
@@ -1066,21 +1104,36 @@ export async function runAttempt(
       const drifts = detect(observed, now(), DEFAULT_THRESHOLDS);
       if (verified && !drifts.some((x) => x.code === "D1")) {
         await closeSession();
-        const commit = await commitAll(
-          ws.g,
-          `${PREFIX[task.kind as TaskKind]}: ${task.title.charAt(0).toLowerCase()}${task.title.slice(1)}`,
+        // One commit per repo the task changed, each with its own message (ADR-042).
+        const subject = `${task.title.charAt(0).toLowerCase()}${task.title.slice(1)}`;
+        const made = await ws.tree.commit((repo, several) =>
+          several && repo
+            ? `${PREFIX[task.kind as TaskKind]}(${repo}): ${subject}`
+            : `${PREFIX[task.kind as TaskKind]}: ${subject}`,
         );
+        const commit = made[0]?.sha ?? null;
+        const said = ws.tree.several
+          ? made.length
+            ? ` ${made.length === 1 ? "Commit" : "Commits"} ${made.map((c) => `${c.repo} ${c.sha.slice(0, 10)}`).join(", ")}.`
+            : ""
+          : commit
+            ? ` Commit ${commit.slice(0, 10)}.`
+            : "";
         d.silk.add({
           jobId: job.id,
           taskId,
           kind: "progress",
           title: `Done: ${task.title}`,
-          body: `${task.verify.length ? `Verified by ${task.verify.map((v) => `\`${v}\``).join(", ")}` : "No verify command (a planning task)"} on ${leg.legName} · ${leg.model}${pick.effort ? ` (${pick.effort})` : ""}.${commit ? ` Commit ${commit.slice(0, 10)}.` : ""}\n\n${(await diffStatSince(ws.g, ckpt, ws.tmpDir)).trim() || "No file changes."}`,
+          body: `${task.verify.length ? `Verified by ${task.verify.map((v) => `\`${v}\``).join(", ")}` : "No verify command (a planning task)"} on ${leg.legName} · ${leg.model}${pick.effort ? ` (${pick.effort})` : ""}.${said}\n\n${(await ws.tree.diffStatSince(ckpt)).trim() || "No file changes."}`,
           authoredBy: "eye",
         });
         d.db.update(tasks).set({ escalation: 0 }).where(eq(tasks.id, taskId)).run();
         finish("succeeded", true);
-        return { kind: "done", commit };
+        return {
+          kind: "done",
+          commit,
+          commits: ws.tree.several ? made.map((c) => ({ repo: c.repo as string, sha: c.sha })) : [],
+        };
       }
       if (drifts.length) {
         await escalate(drifts, failure);
@@ -1186,9 +1239,9 @@ function pause(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 /** What changed since a checkpoint, or nothing when git can't tell. */
-async function safeDiffStat(ws: { g: Git; tmpDir: string }, since: string): Promise<string> {
+async function safeDiffStat(ws: { tree: WorkTree }, since: string): Promise<string> {
   try {
-    return await diffStatSince(ws.g, since, ws.tmpDir);
+    return await ws.tree.diffStatSince(since);
   } catch {
     return "";
   }

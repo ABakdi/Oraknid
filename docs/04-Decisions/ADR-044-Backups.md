@@ -47,7 +47,7 @@ set up from the web interface or by asking the helper.
 - Restoring is mine: an agent can propose it, never run it.
 
 ## As built (2026-10-03, M13.13)
-- **Plans, runs, keys** in SQLite (migration 0031: `backup_plans`,
+- **Plans, runs, keys** in SQLite (migration 0033: `backup_plans`,
   `backup_runs`, `backup_keys`); passwords (`backup.plan.<id>.password`)
   and age private keys (`backup.key.<id>`) in the keychain
   ([[Servers]] → Backups, [[Data-Map]]).
@@ -88,10 +88,10 @@ set up from the web interface or by asking the helper.
   destination, and for every run; no password in its inputs, no private
   key in what it sees, no restore.
 - **Web**: Settings → Backups (plans, latest backups, keys) and
-  `ServerBackupsTab` (`components/server-backups.tsx`), which takes the
-  databases ADR-043 finds as an optional list to pick from.
-- **Not yet**: the server page's Backups tab is wired when ADR-043's
-  tabs land; a backup can't be downloaded from the web page (it's a
+  a server's Backups tab (`ServerBackupsTab`), which offers the
+  databases ADR-043 finds (`servers.databases`) to pick from in a new
+  plan: a container's by its name, a host service by its port.
+- **Not yet**: a backup can't be downloaded from the web page (it's a
   file in its folder); plans can't back up to object storage.
 
 Related: [[ADR-043-Server-Insight]] · [[ADR-026-Servers]] · [[Security]] · [[Business-Rules]] · [[ADR-041-Docs-And-A-Guiding-Helper]]

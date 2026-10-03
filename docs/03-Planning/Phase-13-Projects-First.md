@@ -254,14 +254,103 @@ right edge. The site still builds, its page list now read from
 `apps/site/docs/guide.json`.
 
 ### M13.11 — Several repos and servers, each with its role ([[ADR-042-Several-Repos-And-Servers]])
-- [ ] A project of several repos: found in its folder, each with its name, branches and GitHub link
-- [ ] Jobs across them: a worktree and branch per repo touched, checkpoints, commits, checks, merges and pushes per repo
-- [ ] Servers with a role in each project
-- [ ] The Eye picks the server I name and asks to confirm; otherwise asks with my servers and Add a new server; production always confirmed
+- [x] A project of several repos: found in its folder, each with its name, branches and GitHub link (migration 0031 moved the single link into a one-repo project's repo)
+- [~] Jobs across them: a worktree and branch per repo touched, checkpoints, commits, checks, merges and pushes per repo; tasks of such a job run one at a time, side by side not built (ADR-042 → As built)
+- [x] Servers with a role in each project
+- [x] The Eye picks the server I name and asks to confirm; otherwise asks with my servers and Add a new server; production always confirmed
+
+Tested (M13.11, 2026-10-03): `pnpm check` green. Daemon
+(`apps/daemon/src/eye/several-repos.test.ts`, real git repos in temp
+folders, a stand-in GitHub with bare repos; nothing called the real
+GitHub): a folder holding `web/` and `api/` added as a project of two
+repos with their branches; a job whose first task touches both commits
+`feat(web): …` in one and `feat(api): …` in the other, its second task
+`feat: …` in api only; its edit in `web/` outside its scope put back,
+never committed, kept in the trash under `web/`; the task's diff with
+`web/` and `api/` paths; the result listing each repo; rollback of the
+second task taking back api's file only; Merge merging each into its
+`dev`, my checkouts untouched. Repos found again (`apps/admin`), a new
+empty one added, a folder that isn't a repo refused, one taken out; a
+one-repo folder staying one repo, then made several by adding the repo
+inside it. The Eye asking once for both repos' links (`repo:api`,
+`repo:web`), the gh check becoming `oraknid github-repo --repo api` and
+`--repo web`, `push` with `repo: "web"` and `repo: "api"` landing each
+job branch on its own bare repo at the same commit, an unnamed push
+refused by the tool; the built-in checks with `--repo` and `--repo=`.
+An older database's single link moved into its repo (migration 0031),
+a shadow project left with none. Servers: "Deploy the site to
+production" asking only "Deploy to production, vps-2?" (Yes
+recommended) and the Leg told which server is the job's; no server
+named: the project's by role (production last), my other one, Add a
+new server, Go on without; Add a new server waiting until a server is
+added through the API, then asking again with it recommended, saved
+with the role I chose; production confirmed as the only server; a
+plain only server used without a question. All earlier daemon tests
+pass unchanged but two that wrote the project's link straight into the
+database (now into its repo). Web (`project-repo.test.tsx`): the Repo
+tab with two repos (the list, a section and link card per repo, the
+linked one's GitHub read for it alone), Add a repo and Find repos;
+a one-repo project as before; the servers card's roles, production
+marked, a role and a mark saved. By hand on a sample daemon (fake OS,
+a scripted Leg, a stand-in brain and GitHub, its own data folder,
+port 7561, stopped after) in headless Chromium at 1440 and 390 px: the
+Repo tab of `site` (api, web; web's GitHub repo), Settings with roles,
+the job's Result per repo, The Eye's server question with options, Add
+a new server's link and waiting question, `/servers?add=1` opening the
+dialog; nothing wider than the screen.
 
 ### M13.12 — What runs on a server ([[ADR-043-Server-Insight]])
-- [ ] Docker containers, images, volumes and compose projects; databases; the reverse proxy and its sites; traffic; logs live
-- [ ] A server's page in tabs; restart a container or a service, asked first; the helper reads it all
+- [x] Docker containers, images, volumes and compose projects; databases; the reverse proxy and its sites; traffic; logs live
+- [x] A server's page in tabs; restart a container or a service, asked first; the helper reads it all
+- [~] SQLite files from the state document, and sizes inside containers: not read yet. ADR-044 (M13.13) now keeps a database's credentials, per backup plan, but Databases doesn't use them; a SQLite file is backed up by describing it in a plan. The light reading every few minutes became a part of every discovery
+
+Tested (M13.12, 2026-10-03): `pnpm check` green. oraknid-monitor
+(`apps/daemon/src/servers/monitor.test.ts`): the real script under `sh`
+with stand-in docker, systemctl, ss, nginx, openssl, journalctl, sudo
+and pgrep printing what a real Debian server prints, and the server's
+files under a root of their own: containers with health, uptime, CPU and
+memory (MiB and GiB to bytes), a name with quotes, `<no value>` as no
+project, images in use, volumes mounted; Docker's socket refused said
+with the docker group (in the databases part too); Debian's
+`postgresql.service` left out for its cluster, versions from psql and
+redis-server, the port only when listening, a size only when readable;
+nginx -T with an upstream block, a redirect, two blocks of one name, a
+comment, a certificate ended in 2020 and one not readable; Traefik's
+routes from labels; the last 15 minutes of two access logs (combined, and
+harvest's own with no client), a line 40 minutes old out, a garbage line
+counted, queries dropped, a log not readable said with its owner;
+connections per listening port; a log's last lines, a search, a source
+refused (`;`, a relative path, `..`); a followed log ended by closing its
+input with nothing left running. Daemon (`servers/insight.test.ts`,
+through the stand-in SSH server with stand-in tools): the state
+document's discovery has the containers and sites; each part through
+the API, a second read within 20 s served from memory and `fresh` asking
+the server; log sources, a search, the journal's header dropped; a log
+followed on `/live` until `logs-close` and its process gone on the
+server, a fifth at once refused; restart without `confirm` refused, home
+only for a standard device, a container restarted, an unknown one and a
+service without root refused in words, both attempts audited. The helper
+(`helper.test.ts`) reads Docker, databases, the proxy, traffic, the log
+sources and a searched log as untrusted data. Web
+(`components/server-insight.test.tsx`): the eight tabs in order;
+containers by compose project, Restart asking first and doing nothing on
+Leave it running; Docker's refusal shown; a database, a site with its
+certificate red five days before its end, the traffic and an unreadable
+log; a log followed, stopped when another is picked or Follow is turned
+off, then searched on the server; every new `data-help` id in the help
+map (`help-map.test.ts`). On the real staging server, read-only (the new
+script copied to `/tmp`, run once, removed; nothing installed or
+restarted): every part valid JSON under dash and mawk and read by the
+contracts — 19 containers, 46 images (28 unused), 3 MongoDB containers,
+37 nginx blocks as 19 sites, 6 certificates (two already ended),
+`nginx -t` ok, 104 requests in 15 minutes from two access logs; a
+followed container log stopped with nothing left running. By hand in
+headless Chromium on a sample daemon (fake OS, its own data folder, a
+stand-in SSH server, port 7541) at 1440 and 390 px: every tab, the
+restart dialog, a log followed live and scrolled to its end, traffic
+bars and tiles; no page errors, nothing wider than the screen. Found by
+hand and fixed: a database process inside a container showed twice; the
+log picker squeezed the search on a phone.
 
 ### M13.13 — Scheduled, encrypted backups ([[ADR-044-Backups]])
 - [x] Backup plans per database (Docker or not): schedule, destination (this computer or another server), retention, credentials in the keychain

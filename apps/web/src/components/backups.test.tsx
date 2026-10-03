@@ -55,7 +55,37 @@ const restore = vi.fn(async (_: unknown) => ({ note: "Restored." }));
 
 vi.mock("@/lib/api", () => ({
   api: {
-    servers: { list: async () => SERVERS },
+    servers: {
+      list: async () => SERVERS,
+      databases: async () => ({
+        at: 1,
+        data: {
+          databases: [
+            {
+              kind: "postgres",
+              name: "shop-db",
+              source: "container",
+              version: "16.4",
+              state: "running",
+              port: 5432,
+              sizeBytes: null,
+              note: null,
+            },
+            {
+              kind: "redis",
+              name: "redis-server",
+              source: "service",
+              version: "7.2",
+              state: "active",
+              port: 6380,
+              sizeBytes: null,
+              note: null,
+            },
+          ],
+          notes: [],
+        },
+      }),
+    },
     backups: {
       plans: async () => [PLAN],
       keys: async () => keys,
@@ -97,6 +127,7 @@ const PLAN: BackupPlanView = {
 };
 
 const { PlanForm, BackupKeys, RestoreDialog } = await import("./backups");
+const { ServerBackupsTab } = await import("./server-backups");
 
 afterEach(() => {
   cleanup();
@@ -249,4 +280,16 @@ describe("restore", () => {
     expect(restore).toHaveBeenCalledWith({ token: "tok", confirm: "shop" });
     await waitFor(() => expect(close).toHaveBeenCalled());
   });
+});
+
+describe("a server's Backups tab", () => {
+  it("offers the databases found on the server: a container's by its name, a service by its port", async () => {
+    render(<ServerBackupsTab server={{ ...SERVERS[0], setup: "ready" } as ServerView} />);
+    fireEvent.click(await screen.findByRole("button", { name: "New backup plan" }));
+    await choose("Found on the server", "postgres 16.4 · container shop-db");
+    expect((screen.getByLabelText("Container name") as HTMLInputElement).value).toBe("shop-db");
+    await choose("Found on the server", "redis 7.2 · redis-server");
+    expect(screen.queryByLabelText("Container name")).toBeNull();
+    expect((screen.getByLabelText("Port") as HTMLInputElement).value).toBe("6380");
+  }, 20_000);
 });

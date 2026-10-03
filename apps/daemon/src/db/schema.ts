@@ -3,9 +3,10 @@ import type {
   BackupRetention,
   BackupSchedule,
   BackupTarget,
-  GitHubLink,
+  ProjectRepo,
   Question,
   QuestionAnswer,
+  ServerRole,
 } from "@oraknid/contracts";
 import { sql } from "drizzle-orm";
 import {
@@ -22,6 +23,14 @@ import {
 
 const json = <T>(name: string) => text(name, { mode: "json" }).$type<T>();
 
+/** A repo a job of a project of several repos works in (ADR-042). */
+export interface JobRepo {
+  name: string;
+  folder: string;
+  /** Its worktree, at its folder inside the job's folder. */
+  worktree: string;
+}
+
 export const projects = sqliteTable("projects", {
   id: text("id").primaryKey(),
   /** A shadow repo holds checkpoints when the folder is not a git repo. */
@@ -37,8 +46,15 @@ export const projects = sqliteTable("projects", {
   skillIds: json<string[]>("skill_ids").notNull().default([]),
   /** The servers its jobs may use (Servers → Servers in projects). None by default. */
   serverIds: json<string[]>("server_ids").notNull().default([]),
-  /** Its GitHub account and repository, for Oraknid's github tool (ADR-038). Null: none yet. */
-  github: json<GitHubLink | null>("github"),
+  /** Each of its servers' role in it, by server id (ADR-042). */
+  serverRoles: json<Record<string, ServerRole>>("server_roles").notNull().default({}),
+  /**
+   * Its git repositories, each with its branches and GitHub link (ADR-042):
+   * one with folder "" when the folder is the repo, several in their
+   * folders, none when it isn't one. (Its single GitHub link of ADR-038
+   * moved into its one repo, migration 0031.)
+   */
+  repos: json<ProjectRepo[]>("repos").notNull().default([]),
 });
 
 export const skills = sqliteTable(
@@ -220,6 +236,11 @@ export const jobs = sqliteTable(
     /** The job's worktree and branch (Sandboxing → Worktrees). */
     worktree: text("worktree"),
     branch: text("branch"),
+    /**
+     * In a project of several repos (ADR-042): the repos it touched, each a
+     * worktree on the job branch at its folder inside `worktree`.
+     */
+    repos: json<JobRepo[]>("repos").notNull().default([]),
     /** Job-level verification commands. */
     verify: json<string[]>("verify").notNull().default([]),
     unsandboxed: integer("unsandboxed", { mode: "boolean" }).notNull().default(false),
@@ -261,6 +282,8 @@ export const tasks = sqliteTable(
     /** Its own worktree while it runs beside others (ADR-016). */
     worktree: text("worktree"),
     commit: text("commit"),
+    /** In a project of several repos, its commit in each repo it changed (ADR-042). */
+    commits: json<{ repo: string; sha: string }[]>("commits").notNull().default([]),
     title: text("title").notNull(),
     instructions: text("instructions").notNull(),
     kind: text("kind").notNull(),

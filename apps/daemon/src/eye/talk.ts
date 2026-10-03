@@ -1,6 +1,7 @@
 import {
   completeAnswers,
   type EyeMessage,
+  isProduction,
   normalizeQuestions,
   type Question,
   type QuestionAnswer,
@@ -8,12 +9,22 @@ import {
 } from "@oraknid/contracts";
 import { and, asc, desc, eq } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
-import { eyeMessages, inboxItems, jobs, projects, taskEdges, tasks } from "../db/schema.ts";
+import {
+  eyeMessages,
+  inboxItems,
+  jobs,
+  projects,
+  servers,
+  taskEdges,
+  tasks,
+} from "../db/schema.ts";
 import type { JobRunner } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 import type { InboxStore } from "../inbox/store.ts";
 import type { SilkStore } from "../silk/store.ts";
+import { viewOf } from "../workspace/projects.ts";
+import { isSeveral } from "../workspace/repos.ts";
 import type { EyeBrain, EyeTriage } from "./brain.ts";
 import { editWeb } from "./controls.ts";
 
@@ -334,7 +345,11 @@ async function handle(d: TalkDeps, jobId: string, text: string) {
           })
           .join("\n")}`
       : "No tasks yet.",
-  ].join("\n");
+    // Its repos and servers with their roles (ADR-042): a deploy names the one I named.
+    project ? projectFacts(d.db, project) : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
   const silk = d.silk
     .current(jobId)
     .filter((e) => e.kind !== "handoff")
@@ -355,6 +370,34 @@ async function handle(d: TalkDeps, jobId: string, text: string) {
     message: text,
   });
   await act(d, jobId, job.state, text, verdict);
+}
+
+/** What triage must know of the project: its repos when several, its servers by role (ADR-042). */
+function projectFacts(db: Db, row: typeof projects.$inferSelect): string {
+  const p = viewOf(row);
+  const repos = isSeveral(p.repos)
+    ? `The project is several repos: ${p.repos.map((r) => `${r.name} (${r.folder}/)`).join(", ")}; a task's scope starts with its repo's folder.`
+    : "";
+  const names = new Map(
+    db
+      .select({ id: servers.id, name: servers.name })
+      .from(servers)
+      .all()
+      .map((s) => [s.id, s.name]),
+  );
+  const list = p.serverIds.flatMap((id) => {
+    const name = names.get(id);
+    if (!name) return [];
+    const r = p.serverRoles[id];
+    const role = [r?.role, isProduction(r) && !/^prod/i.test(r?.role ?? "") ? "production" : ""]
+      .filter(Boolean)
+      .join(", ");
+    return [role ? `${name} (${role})` : name];
+  });
+  const srv = list.length
+    ? `Its servers: ${list.join(", ")}. A task that deploys names in its title the server or the role I named ("Deploy to staging"); Oraknid confirms it with me.`
+    : "";
+  return [repos, srv].filter(Boolean).join("\n");
 }
 
 async function act(d: TalkDeps, jobId: string, jobState: string, text: string, v: EyeTriage) {

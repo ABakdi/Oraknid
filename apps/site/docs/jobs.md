@@ -6,7 +6,7 @@ A **job** is one piece of work: a goal in a project. **The Eye** is the part of 
 
 In a project, ask for it in the project's **The Eye** tab: The Eye starts a job, or adds the work to the one running. **New work** is for a first request, a new project, or a draft to keep and start later. The Eye may ask a few questions first, then writes the plan.
 
-Each job works on its own branch, in its own worktree inside your project. Your branch is never touched until you merge.
+Each job works on its own branch, in its own worktree inside your project. Your branch is never touched until you merge. In a project of several repos, the job's folder looks like the project's: each repo it works in is there at its folder, on the job's branch, and its tasks' checks run from that folder (`cd web && npm test`).
 
 ## What The Eye does
 
@@ -35,4 +35,4 @@ Some actions always wait for you: a push, a merge, a deploy, sending mail, spend
 
 ## When it's done
 
-The job's **Result**, in Work, shows where the work is (folder, branch, commits). **Merge** puts it into your work branch, after you confirm.
+The job's **Result**, in Work, shows where the work is (folder, branch, commits; for several repos, each repo's branch and commits). **Merge** puts it into your work branch, after you confirm; with several repos, each into its own work branch, and none if one of them conflicts.

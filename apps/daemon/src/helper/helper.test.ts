@@ -11,6 +11,8 @@ import type { EyeBrain, HelperTurn } from "../eye/brain.ts";
 import { resolvePaths } from "../paths.ts";
 import { fakeMail } from "../testing/fake-mail.ts";
 import { fakeOs } from "../testing/fake-os.ts";
+import { fakeServerTools } from "../testing/fake-server-tools.ts";
+import { fakeSsh } from "../testing/fake-ssh.ts";
 
 // The helper knows my data and shows me the screens (ADR-041).
 
@@ -62,11 +64,11 @@ async function until<T>(fn: () => T | Promise<T>, ms = 10_000): Promise<NonNulla
 }
 
 type Api = Awaited<ReturnType<typeof boot>>["api"];
-const settled = (api: Api, n: number) =>
+const settled = (api: Api, n: number, ms = 10_000) =>
   until(async () => {
     const c = await api.helper.conversation();
     return c.length >= n && !(await api.helper.thinking()) ? c : null;
-  });
+  }, ms);
 
 const raw = (o: { id: string; subject: string; body: string; from?: string }) =>
   [
@@ -195,6 +197,64 @@ describe("the helper (ADR-041)", () => {
     expect(read).toContain("Terminal: off");
     expect(read).toContain("the jobs' inbox items");
   }, 30_000);
+
+  it("reads what runs on a server: Docker, databases, the proxy, traffic and a log, as data (ADR-043)", async () => {
+    const ssh = await fakeSsh({
+      password: "pw",
+      path: fakeServerTools(),
+      env: { ORAKNID_MONITOR_ROOT: mkdtempSync(join(tmpdir(), "oraknid-root-")) },
+    });
+    closing.push(ssh.close);
+    let id = "";
+    const { api, prompts } = await boot((_p, n) =>
+      n === 1
+        ? {
+            reply: "Reading.",
+            actions: [
+              { name: "server_docker", input: { serverId: id }, summary: "Docker" },
+              { name: "server_databases", input: { serverId: id }, summary: "Databases" },
+              { name: "server_proxy", input: { serverId: id }, summary: "Proxy" },
+              { name: "server_traffic", input: { serverId: id }, summary: "Traffic" },
+              { name: "server_log_sources", input: { serverId: id }, summary: "Logs" },
+              {
+                name: "server_logs",
+                input: { serverId: id, source: "container:web", search: "error" },
+                summary: "A log",
+              },
+            ],
+          }
+        : { reply: "Done.", actions: [] },
+    );
+    const s = await api.servers.add({
+      name: "shop",
+      host: "127.0.0.1",
+      port: ssh.port,
+      user: "me",
+      description: "",
+      password: "pw",
+    });
+    id = s.id;
+    await api.servers.setup({ id });
+    await api.helper.send({ text: "What runs on shop?" });
+    const c = await settled(api, 2, 60_000);
+    expect(c[1]?.actions.map((a) => a.state)).toEqual(Array(6).fill("done"));
+    expect(c[1]?.actions.map((a) => a.link)).toEqual([
+      `/servers/${id}/docker`,
+      `/servers/${id}/databases`,
+      `/servers/${id}/proxy`,
+      `/servers/${id}/proxy`,
+      `/servers/${id}/logs`,
+      `/servers/${id}/logs`,
+    ]);
+    const read = prompts[1] as string;
+    expect(read).toMatch(/- web: app:1, running \(healthy\), up 2 hours/);
+    expect(read).toMatch(/- postgres 16 \(container db\)/);
+    expect(read).toContain("shop.example.com → 127.0.0.1:3000");
+    expect(read).toContain("Connections per port: 443: 1");
+    expect(read).toContain("container:web (container)");
+    expect(read).toContain("error: payment failed");
+    expect(read).toContain("what the owner's server reports");
+  }, 90_000);
 
   it("shows me things in the web app: navigate, highlight and fill end the turn there", async () => {
     const { api, prompts } = await boot(() => ({

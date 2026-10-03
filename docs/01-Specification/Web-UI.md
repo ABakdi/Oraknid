@@ -217,8 +217,25 @@ the address (`/projects/<id>/<tab>`):
   **Open on GitHub**; below, the link itself: Change and Unlink (a second
   step), or "Link a repo" (account, a new or an existing repository,
   owner, name, who can see it). A repo still to be created says so.
-- **Settings**: its **servers**, then the folder and branches, archive
-  or delete, and the project's command rules.
+  Under them, **Its repo**: the project's one repo, its folder and
+  branches, **Add a repo** and **Find repos in its folder**. A project of
+  several repos ([[ADR-042-Several-Repos-And-Servers]]) shows **Its
+  repos** first (each repo's name, folder, release / work branches and
+  GitHub repo or "not on GitHub yet", and an ✕ to take it out, with a
+  confirmation), then a section per repo with what's on its GitHub repo
+  and its own link card ("GitHub repo of api"). Add a repo is a dialog:
+  where from (a folder of the project that is a repo, a new empty repo,
+  a clone of my GitHub repo or of a git URL), the folder, its name.
+- **Settings**: its **servers**, each ticked one with its role (a word,
+  suggestions testing, staging, production, saved when I leave the
+  field) and a **Production** mark, "live" beside a production server;
+  then its repos (the same card), the folder and branches (each repo's
+  for several), archive or delete, and the project's command rules.
+- In the projects list, a project of several repos says how many; New
+  project says how many repos it found, and their names. A job's Result
+  lists each repo's branch, merged or not, and its commits; Merge
+  merges each. `/servers?add=1` opens Servers' add dialog (The Eye's link
+  when it waits for a new server).
 - **Skills**, **Servers**, **Network** (the ports on this computer its
   jobs may reach, like a local database; [[Sandboxing]]).
 
@@ -297,10 +314,21 @@ My chats with any Leg and model, like a chat app ([[Chats-and-Helper]]).
 My servers ([[Servers]]): each with its state, its state document,
 oraknid-monitor's readings live and over 24 hours, services and ports;
 add, discover again, edit the document, edit its name and description,
-open a terminal, remove. A server's **Backups** tab
-(`ServerBackupsTab`, [[ADR-044-Backups]]): its backup plans and those
-keeping their backups on it, each with its backups, and New backup plan
-with the databases found on it to pick from (or one described).
+open a terminal, remove. A server's page is in tabs
+([[ADR-043-Server-Insight]]): **Overview** (the readings, then what was
+About), **Docker** (containers by compose project, each with Logs and
+Restart; images, volumes and networks folded), **Databases**, **Proxy &
+traffic** (sites, certificates, the config check, then the last 15
+minutes of traffic as bars, status tiles and top lists), **Logs** (a log
+picked from the server's services, containers and proxy files; Follow on
+by default, a filter while following, a search on the server when not),
+**Backups** (`ServerBackupsTab`, [[ADR-044-Backups]]: its backup plans
+and those keeping their backups on it, each with its backups, and New
+backup plan with the databases found on it to pick from, or one
+described), **Terminal** (one shell, opened with a click) and **State
+document**. Each part shows when it was read and a Refresh; what it
+couldn't read is in a yellow box with why. On a phone everything is a
+list that wraps, nothing scrolls sideways.
 
 ### Terminal
 

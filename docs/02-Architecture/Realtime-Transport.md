@@ -15,6 +15,13 @@ Server frames: `hello { version, seq }`, `event { event }`, `metrics { sample }`
 `snapshot-needed { seq }`, `ping`, `error { message }` (`packages/contracts/src/live.ts`).
 Client → server: `subscribe`, `unsubscribe`, `resume { lastSeq }`.
 
+A server's log ([[ADR-043-Server-Insight]]): the client sends
+`logs-open { id, serverId, source }` and gets `log { id, lines }` (every
+250 ms, at most 500 lines at once, the rest counted) until `log-end { id,
+error }`; `logs-close { id }`, or the socket closing, ends the follower's
+input on the server, which stops it. At most four per socket; not events,
+never stored or replayed; the client opens them again after a reconnect.
+
 **Reconnect:** the client sends `lastSeq`. The server replays events with
 `seq > lastSeq` for the subscribed topics. If more than 5,000 are
 missing, it sends a `snapshot` instead.

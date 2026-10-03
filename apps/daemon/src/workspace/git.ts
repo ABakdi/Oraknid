@@ -4,6 +4,7 @@ import {
   appendFileSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -21,7 +22,15 @@ export interface Git {
   cwd: string;
   /** Extra arguments for a shadow repo (`--git-dir … --work-tree …`). */
   base: string[];
+  /**
+   * Folders of the work tree that are another repo's (ADR-042: the
+   * project's folder as one repo, with others inside it): never snapshotted
+   * or committed here.
+   */
+  exclude?: string[];
 }
+
+const excluded = (g: Git) => (g.exclude ?? []).map((p) => `:(exclude)${p}`);
 
 /**
  * Settings no repo may change for Oraknid's own git calls (Audit 1 → S1-01):
@@ -158,11 +167,18 @@ function shadowDirFor(path: string): string {
  * never from the worktree's `.git` file, which the Leg can rewrite.
  */
 export function worktreeGit(repoPath: string, worktree: string): Git {
-  const admin = join(gitDirOf({ cwd: repoPath, base: [] }), "worktrees", basename(worktree));
-  const recorded = existsSync(join(admin, "gitdir"))
-    ? readFileSync(join(admin, "gitdir"), "utf8").trim()
-    : "";
-  if (recorded !== join(worktree, ".git"))
+  const admins = join(gitDirOf({ cwd: repoPath, base: [] }), "worktrees");
+  const recordedAt = (admin: string) =>
+    existsSync(join(admin, "gitdir")) ? readFileSync(join(admin, "gitdir"), "utf8").trim() : "";
+  let admin = join(admins, basename(worktree));
+  // Two jobs' worktrees of a repo in a project of several share a folder name
+  // (`…/<job>/web`): git names their records web, web1…, so the one is looked for.
+  if (recordedAt(admin) !== join(worktree, ".git"))
+    admin =
+      (existsSync(admins) ? readdirSync(admins) : [])
+        .map((n) => join(admins, n))
+        .find((a) => recordedAt(a) === join(worktree, ".git")) ?? admin;
+  if (recordedAt(admin) !== join(worktree, ".git"))
     throw new GitError(`${worktree} is not a worktree of ${repoPath}.`);
   return { cwd: worktree, base: ["--git-dir", admin, "--work-tree", worktree] };
 }
@@ -211,6 +227,8 @@ export function createWorktree(
   branches: { release: string; work: string },
   /** A branch to start from instead of the work branch (a follow-up job). */
   from?: string | null,
+  /** Where the worktree goes: a repo's folder inside a job's folder (ADR-042). */
+  at?: string,
 ) {
   const g = { cwd: repoPath, base: [] };
   if (!ok(g, ["rev-parse", "--verify", "HEAD"])) {
@@ -223,7 +241,7 @@ export function createWorktree(
       : "HEAD";
     git(g, ["branch", branches.work, from]);
   }
-  const path = join(repoPath, ".oraknid", "worktrees", jobId);
+  const path = at ?? join(repoPath, ".oraknid", "worktrees", jobId);
   const branch = `oraknid/${slug}-${jobId.slice(-6).toLowerCase()}`;
   // A folder a crash left behind, not registered as a worktree, is set aside and made again (Audit 1 → D1-10).
   if (existsSync(path)) {
@@ -272,7 +290,15 @@ async function snapshotTree(g: Git, tmpDir: string): Promise<string> {
       try {
         await gitAsync(
           g,
-          ["add", "-A", "--", ".", ":(exclude).oraknid", ...skip.map((p) => `:(exclude)${p}`)],
+          [
+            "add",
+            "-A",
+            "--",
+            ".",
+            ":(exclude).oraknid",
+            ...excluded(g),
+            ...skip.map((p) => `:(exclude)${p}`),
+          ],
           env,
         );
         break;
@@ -321,15 +347,40 @@ export async function diffStatSince(g: Git, ref: string, tmpDir: string): Promis
   return gitAsync(g, ["diff", "--stat", `${ref}^{tree}`, tree]);
 }
 
+/** Paths shown under a repo's folder in the project (ADR-042), or as they are. */
+const prefixed = (folder?: string) =>
+  folder ? [`--src-prefix=a/${folder}/`, `--dst-prefix=b/${folder}/`] : [];
+
 /** The patch from a checkpoint to the work tree now. */
-export async function diffSince(g: Git, ref: string, tmpDir: string): Promise<string> {
+export async function diffSince(
+  g: Git,
+  ref: string,
+  tmpDir: string,
+  folder?: string,
+): Promise<string> {
   const tree = await snapshotTree(g, tmpDir);
-  return gitAsync(g, ["diff", "--no-color", "--stat", "--patch", `${ref}^{tree}`, tree]);
+  return gitAsync(g, [
+    "diff",
+    "--no-color",
+    ...prefixed(folder),
+    "--stat",
+    "--patch",
+    `${ref}^{tree}`,
+    tree,
+  ]);
 }
 
 /** One commit's patch. */
-export function commitPatch(g: Git, commit: string): Promise<string> {
-  return gitAsync(g, ["show", "--no-color", "--format=%s%n", "--stat", "--patch", commit]);
+export function commitPatch(g: Git, commit: string, folder?: string): Promise<string> {
+  return gitAsync(g, [
+    "show",
+    "--no-color",
+    ...prefixed(folder),
+    "--format=%s%n",
+    "--stat",
+    "--patch",
+    commit,
+  ]);
 }
 
 /**
@@ -368,8 +419,18 @@ export async function rollback(
 
 /** A task's verified work, as a commit on the job branch. */
 export async function commitAll(g: Git, message: string): Promise<string | null> {
-  await gitAsync(g, ["add", "-A", "."]);
-  if (ok(g, ["diff", "--cached", "--quiet"])) return null;
+  if (!(await stageAll(g))) return null;
+  return commitStaged(g, message);
+}
+
+/** Stages the whole work tree; whether there is anything to commit. */
+export async function stageAll(g: Git): Promise<boolean> {
+  await gitAsync(g, ["add", "-A", "--", ".", ...excluded(g)]);
+  return !ok(g, ["diff", "--cached", "--quiet"]);
+}
+
+/** Commits what is staged. */
+export async function commitStaged(g: Git, message: string): Promise<string> {
   await gitAsync(g, ["commit", "-q", "--no-verify", "-m", message], authorEnv());
   return git(g, ["rev-parse", "HEAD"]).trim();
 }
@@ -442,6 +503,18 @@ function checkedOutAt(repo: string, branch: string): string | null {
     else if (line === `branch refs/heads/${branch}`) return path;
   }
   return null;
+}
+
+/** The files `branch` and `into` conflict on, computed without touching anything; none: it merges. */
+export function mergeConflicts(repo: string, into: string, branch: string): string[] {
+  const r = spawnSync(
+    "git",
+    ["merge-tree", "--write-tree", "--name-only", "--no-messages", into, branch],
+    { cwd: repo, encoding: "utf8" },
+  );
+  if (r.status === 0) return [];
+  const [, ...files] = r.stdout.split("\n").filter(Boolean);
+  return files.length ? files : [(r.stderr || "the merge can't be computed").trim()];
 }
 
 export type MergeResult =

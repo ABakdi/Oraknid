@@ -296,6 +296,11 @@ const HOME_ONLY = [
   "/projects/createFrom",
   "/projects/setPolicy",
   "/projects/setServers",
+  "/projects/setServerRole",
+  // A project's repos (ADR-042): adding one may clone or make a folder on this computer.
+  "/projects/addRepo",
+  "/projects/detectRepos",
+  "/projects/removeRepo",
   "/projects/setLocalPorts",
   "/projects/delete",
   "/servers/add",
@@ -313,6 +318,8 @@ const HOME_ONLY = [
   "/backups/importKey",
   "/backups/exportKey",
   "/backups/removeKey",
+  // Restarting a container or a service on a server (ADR-043); reading stays open.
+  "/servers/restart",
   // GitHub's accounts, a new repository and a project's link (ADR-038, ADR-040); reading stays open.
   "/github/addAccount",
   "/github/removeAccount",

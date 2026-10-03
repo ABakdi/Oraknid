@@ -32,10 +32,12 @@ import {
   HelperMessage,
   InboxFilter,
   InboxItem,
+  Insight,
   JobResult,
   JobView,
   LegPlanUsage,
   LegView,
+  LogSource,
   MailAccountView,
   MailCompose,
   MailDetected,
@@ -51,6 +53,7 @@ import {
   NewMailAccount,
   NewProject,
   NewProjectFrom,
+  NewProjectRepo,
   NewServer,
   NewTool,
   NotificationChannel,
@@ -61,13 +64,22 @@ import {
   ProfileOverrides,
   ProjectBudget,
   ProjectBudgetView,
+  ProjectRepo,
   ProjectView,
   PruneRequest,
   PushSubscriptionInput,
   QuestionAnswers,
   QuietHours,
+  ServerDatabases,
+  ServerDocker,
+  ServerLogSource,
+  ServerLogs,
+  ServerProxies,
+  ServerRestart,
+  ServerRole,
   ServerSample,
   ServerState,
+  ServerTraffic,
   ServerView,
   SessionLogPage,
   SessionView,
@@ -464,6 +476,62 @@ async function guard<T>(fn: () => Promise<T> | T): Promise<T> {
 }
 
 // Procedures follow docs/02-Architecture/API-Contract.md. Later milestones add the rest.
+/** What runs on a server (ADR-043): each part read while its screen asks; restarting asked first. */
+const ServerPart = z.object({ id: z.string(), fresh: z.boolean().optional() });
+const serverInsightRoutes = {
+  docker: base
+    .input(ServerPart)
+    .output(Insight(ServerDocker))
+    .handler(({ context: c, input }) =>
+      guard(() => c.servers.insight.part(input.id, "docker", input.fresh)),
+    ),
+  databases: base
+    .input(ServerPart)
+    .output(Insight(ServerDatabases))
+    .handler(({ context: c, input }) =>
+      guard(() => c.servers.insight.part(input.id, "databases", input.fresh)),
+    ),
+  proxy: base
+    .input(ServerPart)
+    .output(Insight(ServerProxies))
+    .handler(({ context: c, input }) =>
+      guard(() => c.servers.insight.part(input.id, "proxy", input.fresh)),
+    ),
+  traffic: base
+    .input(ServerPart)
+    .output(Insight(ServerTraffic))
+    .handler(({ context: c, input }) =>
+      guard(() => c.servers.insight.part(input.id, "traffic", input.fresh)),
+    ),
+  logSources: base
+    .input(z.object({ id: z.string() }))
+    .output(z.array(ServerLogSource))
+    .handler(({ context: c, input }) => guard(() => c.servers.insight.logSources(input.id))),
+  /** A log's last lines or a search; following one is on the live socket. */
+  logs: base
+    .input(
+      z.object({
+        id: z.string(),
+        source: LogSource,
+        lines: z.number().int().min(1).max(2000).optional(),
+        search: z.string().max(200).optional(),
+      }),
+    )
+    .output(ServerLogs)
+    .handler(({ context: c, input }) =>
+      guard(() =>
+        c.servers.insight.logs(input.id, input.source, {
+          ...(input.lines ? { lines: input.lines } : {}),
+          ...(input.search ? { search: input.search } : {}),
+        }),
+      ),
+    ),
+  restart: base
+    .input(ServerRestart)
+    .output(z.object({ ok: z.literal(true) }))
+    .handler(({ context: c, input }) => guard(() => c.servers.insight.restart(input))),
+};
+
 export const router = {
   system: {
     status: base.output(SystemStatus).handler(({ context: c }) => ({
@@ -601,9 +669,18 @@ export const router = {
           ),
         ),
       ),
-    /** Its GitHub link (ADR-038): the account and repository Oraknid uses for it, or none. */
+    /**
+     * Its GitHub link (ADR-038): the account and repository Oraknid uses for
+     * it, or none. In a project of several repos, one repo's (ADR-042).
+     */
     setGitHub: base
-      .input(z.object({ id: z.string(), link: GitHubLinkInput.nullable() }))
+      .input(
+        z.object({
+          id: z.string(),
+          link: GitHubLinkInput.nullable(),
+          repo: z.string().optional(),
+        }),
+      )
       .handler(({ context: c, input }) =>
         guard(async () => {
           if (input.link) {
@@ -611,7 +688,42 @@ export const router = {
             if (!logins.includes(input.link.account))
               throw new Error(`No GitHub account ${input.link.account} in Oraknid.`);
           }
-          c.projects.setGitHub(input.id, input.link);
+          c.projects.setGitHub(input.id, input.link, "owner", input.repo ?? null);
+        }),
+      ),
+    /** A server's role in the project (ADR-042): testing, staging, production… */
+    setServerRole: base
+      .input(z.object({ id: z.string(), serverId: z.string(), role: ServerRole }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.projects.setServerRole(input.id, input.serverId, input.role)),
+      ),
+    /** Looks again for the git repositories in its folder (ADR-042). */
+    detectRepos: base
+      .input(z.object({ id: z.string() }))
+      .output(z.array(ProjectRepo))
+      .handler(({ context: c, input }) => guard(() => c.projects.detectRepos(input.id))),
+    /** A repo added to it: a folder of it, a new empty one, or a clone (ADR-042). */
+    addRepo: base
+      .input(NewProjectRepo)
+      .output(ProjectView)
+      .handler(({ context: c, input }) =>
+        guard(async () => {
+          const p = await c.projects.addRepo(
+            input,
+            (url, dest, login) => c.github.clone(url, dest, login),
+            (fullName) => c.github.cloneUrl(fullName),
+          );
+          return { ...p, jobCount: c.projects.list().find((x) => x.id === p.id)?.jobCount ?? 0 };
+        }),
+      ),
+    /** A repo no longer part of it; its folder stays (ADR-042). */
+    removeRepo: base
+      .input(z.object({ id: z.string(), name: z.string() }))
+      .output(ProjectView)
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          const p = c.projects.removeRepo(input.id, input.name);
+          return { ...p, jobCount: c.projects.list().find((x) => x.id === p.id)?.jobCount ?? 0 };
         }),
       ),
     /** Its budget across its jobs, and what they used (ADR-034). */
@@ -689,6 +801,7 @@ export const router = {
       .input(z.object({ id: z.string() }))
       .output(z.object({ cleaned: z.boolean() }))
       .handler(({ context: c, input }) => guard(() => c.servers.remove(input.id))),
+    ...serverInsightRoutes,
   },
   /** Database backups: plans, runs, keys, Verify, Restore (ADR-044). */
   backups: backupsRouter,

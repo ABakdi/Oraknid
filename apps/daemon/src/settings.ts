@@ -49,6 +49,17 @@ export const MAX_TASKS_PER_JOB = "jobs.maxTasks";
 /** The branch a follow-up job starts from: the one the job it follows built (Jobs-and-Projects). */
 export const followUpKey = (jobId: string) => `job.startFrom.${jobId}`;
 
+/**
+ * The server a job's work on a server goes to, as I chose or confirmed it
+ * (ADR-042): its id, or "none" when I said to go on without one; and one I
+ * said no to, which isn't proposed again.
+ */
+export const jobServerKey = (jobId: string) => `job.server.${jobId}`;
+export const JobServer = z.object({
+  serverId: z.string().nullable(),
+  declined: z.array(z.string()).default([]),
+});
+
 /** A project's ports on this computer its jobs' sandboxes may reach (Sandboxing → network). */
 export const projectPortsKey = (projectId: string) => `project.localPorts.${projectId}`;
 
