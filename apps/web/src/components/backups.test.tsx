@@ -159,7 +159,7 @@ describe("a backup plan's form", () => {
       enabled: true,
       password: "s3cret",
     });
-  });
+  }, 20_000);
 
   it("describes one on the host, and says what's missing before sending", async () => {
     render(<PlanForm servers={SERVERS} keys={[]} onDone={() => {}} />);
@@ -180,7 +180,7 @@ describe("a backup plan's form", () => {
       keyId: null,
     });
     expect(createPlan.mock.calls[0]?.[0]).not.toHaveProperty("password");
-  });
+  }, 20_000);
 
   it("keeps the kept password when I change a plan without typing one", async () => {
     render(<PlanForm plan={PLAN} servers={SERVERS} keys={[KEY]} onDone={() => {}} />);

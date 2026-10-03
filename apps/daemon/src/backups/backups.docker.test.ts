@@ -25,7 +25,7 @@ const closing: (() => Promise<unknown> | unknown)[] = [];
 afterEach(async () => {
   for (const c of closing.splice(0).reverse()) await c();
 });
-afterAll(removeContainers);
+afterAll(removeContainers, 120_000);
 
 const secret = (what: string) => `${what}-S3cr3t-${Math.random().toString(36).slice(2, 10)}`;
 

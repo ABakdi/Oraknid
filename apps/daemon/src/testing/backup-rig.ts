@@ -75,8 +75,11 @@ export function container(name: string, args: string[]): string {
 }
 
 export function removeContainers() {
-  for (const c of started.splice(0)) spawnSync("docker", ["rm", "-f", "-v", c]);
+  const all = started.splice(0);
+  if (all.length) spawnSync("docker", ["rm", "-f", "-v", ...all]);
 }
+// Should the test runner end the worker before its hooks: the containers go anyway.
+process.once("exit", removeContainers);
 
 export async function until(what: string, ok: () => boolean, ms = 90_000) {
   const end = Date.now() + ms;
