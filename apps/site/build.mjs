@@ -35,17 +35,11 @@ export function icon(name, cls = "icon") {
   return svg.replace("<svg ", `<svg class="${cls}" aria-hidden="true" focusable="false" `);
 }
 
-/** The guide's pages, in reading order: file, title, one line. */
-const GUIDE = [
-  ["getting-started", "Getting started", "Install it, open it, set your PIN, add a Leg."],
-  ["jobs", "Jobs and The Eye", "Starting work, following it, talking to The Eye."],
-  ["legs", "Legs", "The agents and models Oraknid hands work to."],
-  ["projects", "Projects, repos and servers", "Where work happens, and what it may reach."],
-  ["phone", "Your phone, from anywhere", "Pairing, the PIN, and The Nest."],
-  ["mail", "Mail", "Your accounts, and agents that draft for you."],
-  ["security", "Security", "What keeps your computer yours."],
-  ["nest", "Hosting a Nest", "Your own relay, private or public, in one script."],
-];
+/**
+ * The guide's pages, in reading order: file, title, one line. The web app
+ * shows the same guide on its Docs page (ADR-041), from the same files.
+ */
+const GUIDE = JSON.parse(readFileSync(join(here, "docs/guide.json"), "utf8"));
 
 const nav = (active) => `
 <header class="nav">
