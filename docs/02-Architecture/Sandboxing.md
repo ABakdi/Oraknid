@@ -32,7 +32,8 @@ bwrap --unshare-all --share-net --die-with-parent --new-session \
   --proc /proc --dev /dev --tmpfs /tmp \
   --ro-bind <toolchain dirs> \
   --bind <worktree> <worktree> \
-  --bind <leg home> <leg home> --setenv HOME <leg home> \
+  --bind <job's home on the Leg> … --setenv HOME <job's home> \
+  --bind <each linked entry of the Leg's home> <the same path> \
   --chdir <worktree> \
   --clearenv --setenv PATH … <only the variables this Leg needs> \
   -- <command>
@@ -44,6 +45,27 @@ bwrap --unshare-all --share-net --die-with-parent --new-session \
   arrives with the job settings.
 - The **Leg home** holds the Leg's config dir (e.g. `CLAUDE_CONFIG_DIR`),
   so its login and sessions persist across sessions.
+- **A home per job** (2026-10-03, [[Audit-2]] S2-08): a job's sessions
+  don't get the Leg's home but one of the job's own,
+  `legs/<leg>/jobs/<job>/home` (and, for Claude Code, its own config
+  folder beside it), beside the Leg's home, never inside it. Each entry
+  of the Leg's home and config folder is linked into it, so the Leg's
+  login and settings serve every job and a refreshed token reaches the
+  Leg; the sandbox binds those entries at their own path, never the
+  Leg's home as a whole. Not linked, so each job's own: `~/.ssh`,
+  `~/.cache`, `~/.local/state`, shell histories, OpenCode's sessions
+  (`.local/share/opencode/storage`, `snapshot`, `log`), and Claude's
+  `projects`, `todos`, `shell-snapshots`, `file-history`,
+  `session-env`, `plans`, `history.jsonl`, `debug`, `ide`. What a
+  session makes anywhere else in its home is the job's. A linked file a
+  program replaced by rename (a token written to a new file) goes back
+  to the Leg when newer, and is linked again, before the next session
+  of any job on that Leg and when the job ends. The job's home goes
+  when it is completed or cancelled. Two jobs on one Leg at once can't
+  read each other's keys, transcripts or files; a test runs both in
+  bwrap. What is still shared: what a session writes inside a linked
+  folder (its settings, `~/.config`), by design, and sessions that
+  aren't a job's (chats, The Eye's planning) use the Leg's home.
 - Verification commands run in the same wrapper, with a throwaway home
   instead of the Leg's, after the command policy has allowed them.
 - Network is shared (Legs need their APIs), so the wrapper runs under
@@ -67,8 +89,9 @@ bwrap --unshare-all --share-net --die-with-parent --new-session \
   in, from this computer's localhost to the sandbox's localhost only.
   Signing a Leg in keeps this computer's network while it lasts: the
   provider's page may call back to the Leg's login.
-- A Leg's `~/.ssh` is emptied at the start of every attempt and holds
-  only that job's servers' keys ([[ADR-026-Servers]]).
+- A job's `~/.ssh`, in its own home on the Leg, is emptied at the start
+  of every attempt and holds only that job's servers' keys
+  ([[ADR-026-Servers]]).
 
 ## Command policy
 
