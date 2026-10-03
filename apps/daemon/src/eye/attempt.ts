@@ -61,13 +61,16 @@ import {
   commitAll,
   diffStatSince,
   type Git,
+  git,
   hasRef,
   restorePaths,
   rollback,
 } from "../workspace/git.ts";
+import type { GitHub } from "../workspace/github.ts";
 import { githubLinkOf } from "../workspace/github-tool.ts";
 import { waitForAnswer } from "./approvals.ts";
 import type { CheckRepair, EyeBrain } from "./brain.ts";
+import { runBuiltinCheck } from "./builtin-checks.ts";
 
 /** The providers (Leg kinds) for which I allowed same-provider fallback (ADR-009). */
 export const SAME_PROVIDER_FALLBACK = "fallback.sameProvider";
@@ -101,6 +104,8 @@ export interface AttemptDeps {
   effects?: SideEffects;
   /** My servers, for a job whose project has some (ADR-026). */
   servers?: Servers;
+  /** GitHub, for the checks Oraknid answers itself about the project's repo (ADR-038). */
+  github?: GitHub;
   /** The machine's last few seconds of metrics: a new session waits for room (ADR-016). */
   machine?: () => MetricsSample[];
   /** Session rotation (BR-3): share of the context window. */
@@ -800,14 +805,16 @@ export async function runAttempt(
     observed.tokensSinceProgress = 0;
     observed.lastActivityAt = now();
 
+    // Edits outside the task's scope are put back whatever the step: left
+    // there, the next attempt starts out of scope and trips D1 again.
+    if (drift.code === "D1") {
+      const outside = (await changedSince(ws.g, scopeBase, ws.tmpDir)).filter(
+        (p) => !inTaskScope(p, task.scope),
+      );
+      restorePaths(ws.g, scopeBase, outside, ws.trash);
+    }
     switch (next.step) {
       case "correct": {
-        if (drift.code === "D1") {
-          const outside = (await changedSince(ws.g, scopeBase, ws.tmpDir)).filter(
-            (p) => !inTaskScope(p, task.scope),
-          );
-          restorePaths(ws.g, scopeBase, outside, ws.trash);
-        }
         await session?.session.send(
           `${correctivePrompt(drift, task.scope, task.verify)}${failure ? `\n\n${failure}` : ""}`,
         );
@@ -954,6 +961,21 @@ export async function runAttempt(
               verifyRefusal(
                 decide({ tool: "Bash", command, path: null }, policyFor(d.db, job.id, ws.cwd)),
               ),
+            builtin: (command) =>
+              runBuiltinCheck(command, {
+                ...(d.github ? { github: d.github } : {}),
+                link: githubLinkOf(d.db, job.id),
+                localCommit: (branch) => {
+                  try {
+                    return (
+                      git(ws.g, ["rev-parse", "--verify", "-q", `refs/heads/${branch}`]).trim() ||
+                      null
+                    );
+                  } catch {
+                    return null;
+                  }
+                },
+              }),
           });
         let results = await check();
         // A check that is wrong is The Eye's to fix, not the Leg's (The-Eye → A check that is wrong).
@@ -971,6 +993,10 @@ export async function runAttempt(
               output: bad.output,
               hint,
               report: end.text,
+              github: (() => {
+                const l = githubLinkOf(d.db, job.id);
+                return l ? { repo: `${l.owner}/${l.name}`, visibility: l.visibility } : null;
+              })(),
             });
           } catch {
             break;

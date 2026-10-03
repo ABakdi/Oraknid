@@ -36,6 +36,21 @@ Servers have the same question: which one, and with what rights.
   uses its state document and runs as ADR-026 says; The Eye asks which
   server once when the project has none linked.
 
+## Fixed after the piano job (2026-10-03)
+The link was asked, answered and the repo pushed, yet the task kept
+failing: it had been planned around the gh CLI, and its checks (`gh repo
+view`, `git ls-remote` on a remote Oraknid never adds) could never pass;
+the check repair didn't know the project's repo and kept them.
+- **Checks Oraknid answers itself**: `oraknid github-repo` (the linked
+  repo exists, with its visibility) and `oraknid github-branch <branch>`
+  (the branch is on it at the same commit as here), read with the
+  account's token outside the sandbox.
+- **A task meets its project's link**: before it runs, a task that needs
+  GitHub in a linked project gets a note that the link wins (name,
+  visibility, the tool, no gh), and its checks that call gh or read a
+  remote become the two above. Once per task.
+- **The check repair knows the repo** and replaces such checks itself.
+
 ## Consequences
 - ADR-023's "one account at a time" ends: several tokens, each named by
   its account.

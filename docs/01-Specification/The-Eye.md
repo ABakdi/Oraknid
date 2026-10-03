@@ -25,7 +25,7 @@ profile. I can change it any time in Settings, or per job.
   **quick** (command checks, my messages, summaries). Unset, a kind uses
   the Eye Leg, then the pool ([[ADR-022-Eye-Decision-Models]]).
 - A **shadow planner** can also plan every job, in the background,
-  never used: a job (in its project's Work tab) shows its plans beside the ones that ran,
+  never used: the job page shows its plans beside the ones that ran,
   with their measures and how the real ones fared, so I can judge a
   dedicated decision model (Jev, Kev, a local one) on my own jobs.
 
@@ -118,6 +118,26 @@ the earliest quota reset, and resumes on its own.
 After each Leg turn The Eye decides what comes next. It doesn't
 wait for me:
 
+BR-1 holds: a task is still done only when Oraknid's own run of its
+checks passes; the change of a check is visible, never silent.
+
+￼￼￼Talking to The Eye
+
+Each job has a prompt to The Eye. I write in my words: an instruction,
+a task to add, context, "stop that", "keep this for later". The Eye
+decides what it is (one short reasoning call) and acts, then answers
+me in a line:
+
+BR-1 holds: a task is still done only when Oraknid's own run of its
+checks passes; the change of a check is visible, never silent.
+
+￼￼￼Talking to The Eye
+
+Each job has a prompt to The Eye. I write in my words: an instruction,
+a task to add, context, "stop that", "keep this for later". The Eye
+decides what it is (one short reasoning call) and acts, then answers
+me in a line:
+
 - The Leg stopped with work left → continue prompt (built from the
   task, the verify results and Silk).
 - The Leg asked a question → The Eye answers from Silk if it can. If
@@ -143,29 +163,18 @@ it pass, and sending the Leg after it only burns its time (seen live
   (shown on the job), and runs the checks again. At most twice per
   turn end. **Not broken**, or no Leg can think: the failure goes to the
   Leg as usual.
+- **Checks Oraknid answers itself** (ADR-038): `oraknid github-repo` and
+  `oraknid github-branch <branch>`, about the project's linked GitHub
+  repo, run by the daemon with the account's token, not in the sandbox.
+  The Eye knows the project's repo when it looks at a check, and a check
+  that relies on `gh`, a token or a git remote for it is broken.
 
 BR-1 holds: a task is still done only when Oraknid's own run of its
 checks passes; the change of a check is visible, never silent.
 
 ## Talking to The Eye
 
-Each project has one conversation with The Eye, in its Eye tab
-([[ADR-034-Projects-First]], 2026-10-03). Its messages carry the
-project, and the conversation is the project's messages from every job
-that has started, in order; each reply links the job it touched. My
-message goes to a job:
-
-1. the newest job of the project still going (running, waiting, paused,
-   blocked, queued), as below;
-2. else the newest job that has ended, where new work starts a
-   follow-up job;
-3. else, with no job yet, a new job is made from my message (its goal),
-   with the project's skills and budget, and started. If it can't start
-   (a tool not set up, no Leg), the reply says why and it waits as a
-   draft in New work.
-
-A draft's own conversation (on New work) joins the project's once it
-starts. I write in my words: an instruction,
+Each job has a prompt to The Eye. I write in my words: an instruction,
 a task to add, context, "stop that", "keep this for later". The Eye
 decides what it is (one short reasoning call) and acts, then answers
 me in a line:
@@ -179,69 +188,10 @@ me in a line:
 | Stop / pause | Pauses the job at a safe point. |
 | A question about the job | Answers from Silk and the job's state. |
 
-New work for a job that has ended starts a **follow-up job** in the
-same project, from the ended job's branch, and the reply links to it;
-while that follow-up runs, more new work goes to it
-([[Jobs-and-Projects]] → Follow-up jobs). If the follow-up can't start,
-the message is kept for later and the reply says why. If no Leg
+New work for a job that has ended is kept for later instead. If no Leg
 can think (none healthy, or the call fails), my message is kept as my
-decision and passed on anyway: my words are never lost. Each message
-is kept with its job and its project; the project's Eye tab shows them
-all. A message an ended job passed to its follow-up is shown there
-once, where the follow-up answered it.
-
-### Questions with options (2026-10-03, [[ADR-037-Questions-With-Options]])
-
-When The Eye needs a choice from me, it asks with options rather than in
-prose: a reply in the conversation (and an interview round) carries
-**questions**, each `single`, `multi`, `text` or `confirm`, with options
-(a label and a line of detail), the one it recommends, and a typed
-"Other". I answer them one at a time ([[Web-UI]] → Questions); my
-answers go back structured and show as a short list, as my message
-answering that reply. A question The Eye's model can't shape stays
-`text`; a round written the older way (a question and its options as
-words) is upgraded when it is read, so a job resumed mid-interview goes
-on. My answers to a reply's questions reach The Eye as my next message;
-answers to a question a job waits on (an interview round, a link below)
-answer that inbox item, from the conversation or the inbox alike.
-
-## A project's GitHub repo and servers (2026-10-03, [[ADR-038-Project-Accounts]])
-
-Before a task's attempt, The Eye looks at what it needs. A task that
-creates a repo, pushes, or opens a pull request on GitHub (its title or
-instructions name GitHub or a pull request) needs the project's
-**GitHub link**; one that deploys or works on a server needs a server.
-When the project has none:
-
-- **GitHub**: The Eye asks once, in the project's conversation, with
-  options, and the job waits on the inbox item: which account (only
-  when I have several), which repository (a new one named after the
-  project, recommended; my five most recently pushed; or one I type as
-  `owner/name`, or a new name), and, for a new repo, who can see it
-  (public recommended when I asked for public, else private). With one
-  account it says it uses that one. With one account and a folder
-  whose `origin` already points to one of its repos, there is nothing
-  to choose: it links that and says so. With no account, it asks me to
-  add one in Settings and asks again once I have.
-- **A server**: with one server, it gives it to the project and says
-  so; with several, it asks which; with none, it says so once and the
-  task goes on.
-
-My answer is saved to the project (its Settings show it) and the task
-goes on; The Eye says what it linked. A project made from one of my
-GitHub repos is linked to it from the start.
-
-**The work is Oraknid's**: every session of a job gets the built-in
-`github` tool ([[ADR-021-Tools-Broker]]): `repo_info`, `create_repo`
-(the linked repo, as I chose it, empty), `push` (a local branch, under
-its name or another, to the linked repo), `open_pull_request`. The
-daemon runs git with the account's token through `GIT_ASKPASS`; the
-remote is the URL itself, so nothing is written to the repo's config.
-A Leg's context says the project's repo and tells it to use the tool,
-never the `gh` CLI, a token of its own or a `git push`. The planner and
-The Eye's triage plan GitHub work as the tool's use, with GitHub in the
-task's title, never as installing a CLI ([[Approvals-and-Autonomy]] →
-Linked work).
+decision and passed on anyway: my words are never lost. The
+conversation is kept with the job and shown on its page.
 
 ## Evaluation
 

@@ -28,7 +28,9 @@ claim?"). The thresholds and the final decision stay deterministic.
 
 Each drift event raises the task's escalation level by one step. A
 step that works (verified progress follows) resets the counter, and so
-does a task I took over and hand back: it starts fresh.
+does a task I took over and hand back: it starts fresh. D1's edits outside
+the scope are put back at every step, asking me included, so the next
+attempt doesn't start out of scope and trip D1 again (seen 2026-10-03).
 
 | Step | Action |
 | :-- | :-- |

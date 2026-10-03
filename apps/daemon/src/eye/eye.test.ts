@@ -489,6 +489,32 @@ describe("The Eye, end to end", () => {
     );
   });
 
+  it("puts out-of-scope edits back even when it asks me, so a retry doesn't start out of scope (D1)", async () => {
+    // An agent that edits package.json on every turn: the ladder climbs to
+    // asking me; by then package.json is back as it was, not left for the
+    // next attempt to trip on (the piano job, 2026-10-03).
+    const { api, id } = await eye((t) =>
+      task(t) === "Write hello.sh"
+        ? [
+            { write: "hello.sh", content: "echo hi\n" },
+            { write: "package.json", content: `{"turn":${t.turn}}\n` },
+            { say: "DONE" },
+          ]
+        : good(t),
+    );
+    const end = Date.now() + 15_000;
+    let asked: Awaited<ReturnType<typeof api.inbox.list>>[number] | undefined;
+    while (!asked && Date.now() < end) {
+      asked = (await api.inbox.list({ state: "open" })).find((i) =>
+        /keeps going wrong/.test(i.title),
+      );
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect(asked?.detail).toMatch(/outside its scope: package.json/);
+    const job = await api.jobs.get({ id });
+    expect(readFileSync(join(job.worktree as string, "package.json"), "utf8")).toBe("{}\n");
+  }, 30_000);
+
   it("does not fall back to another account of the same provider unless I allow it (ADR-009)", async () => {
     const resetsAt = Date.now() + 3600_000;
     const { api, id } = await eye(

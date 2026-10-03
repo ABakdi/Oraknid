@@ -497,6 +497,7 @@ async function runTask(
           ...(d.effects ? { effects: d.effects } : {}),
           ...(d.machine ? { machine: d.machine } : {}),
           ...(d.servers ? { servers: d.servers } : {}),
+          ...(d.github ? { github: d.github } : {}),
           ...(d.stallCheckMs ? { stallCheckMs: d.stallCheckMs } : {}),
         },
         attemptJob,

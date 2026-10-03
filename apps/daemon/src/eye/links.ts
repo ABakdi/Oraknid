@@ -10,7 +10,7 @@ import {
 } from "@oraknid/contracts";
 import { asc, eq } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
-import { eyeMessages, projects } from "../db/schema.ts";
+import { eyeMessages, projects, tasks } from "../db/schema.ts";
 import { AwaitingOwner } from "../engine/effects.ts";
 import type { JobContext } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
@@ -62,6 +62,7 @@ const project = (db: Db, id: string) => {
 export async function ensureLinks(d: LinkDeps, ctx: JobContext, job: JobLike, task: TaskLike) {
   if (d.github && d.projects && needsGitHub(task) && !project(d.db, job.projectId).github)
     await askGitHub(d, ctx, job, task);
+  if (needsGitHub(task)) adaptToGitHub(d.db, job.projectId, task.id);
   if (
     d.servers &&
     d.projects &&
@@ -69,6 +70,47 @@ export async function ensureLinks(d: LinkDeps, ctx: JobContext, job: JobLike, ta
     project(d.db, job.projectId).serverIds.length === 0
   )
     await askServer(d, ctx, job, task);
+}
+
+/** Marks a task already adapted to its project's GitHub repo. */
+const ADAPTED = "Oraknid's github tool, on";
+
+/**
+ * A task planned before its project had a GitHub repo (or written around
+ * the gh CLI) is brought to the link (ADR-038): its instructions say the
+ * linked repo wins and the tool does the work; checks that call `gh` or
+ * read a git remote become Oraknid's own (`oraknid github-…`), since the
+ * sandbox has neither gh, nor the token, nor a remote. Once per task.
+ */
+export function adaptToGitHub(db: Db, projectId: string, taskId: string) {
+  const link = project(db, projectId).github;
+  if (!link) return;
+  const row = db.select().from(tasks).where(eq(tasks.id, taskId)).get();
+  if (!row || row.instructions.includes(ADAPTED)) return;
+  const repo = `${link.owner}/${link.name}`;
+  const branch =
+    /\bpush(?:es|ing)?\s+(?:the\s+)?[`'"]?([\w./-]+)[`'"]?\s+branch\b/i.exec(
+      row.instructions,
+    )?.[1] ??
+    /\bbranch\s+[`'"]?([\w./-]+)[`'"]?/i.exec(row.instructions)?.[1] ??
+    null;
+  const verify = [
+    ...new Set(
+      (row.verify as string[]).map((v) =>
+        /(^|[\s;&|(])gh\s/.test(v)
+          ? "oraknid github-repo"
+          : /ls-remote|git\s+remote|git\s+push/.test(v)
+            ? branch
+              ? `oraknid github-branch ${branch}`
+              : "oraknid github-repo"
+            : v,
+      ),
+    ),
+  ];
+  const instructions = `${row.instructions}
+
+Note from Oraknid: this project's GitHub repo is ${repo} (${link.visibility}), chosen by its owner; it wins over anything above about the repo, its name or its visibility. Do the GitHub work with ${ADAPTED} that repo (repo_info, create_repo, push, open_pull_request); never the gh CLI, a token, or a remote of your own.`;
+  db.update(tasks).set({ instructions, verify }).where(eq(tasks.id, taskId)).run();
 }
 
 const say = (d: LinkDeps, jobId: string, text: string, questions?: Question[], itemId?: string) =>

@@ -33,10 +33,18 @@ export async function runVerify(
     signal?: AbortSignal;
     /** The command policy (Audit 1 → S1-03): a refused command is a failed check, never run. */
     refuse?: (command: string) => string | null;
+    /** Checks Oraknid answers itself (`oraknid github-…`); null: not one of them. */
+    builtin?: (command: string) => Promise<VerifyResult | null>;
   } = {},
 ): Promise<VerifyResult[]> {
   const results: VerifyResult[] = [];
   for (const command of commands) {
+    const own = await o.builtin?.(command);
+    if (own) {
+      results.push(own);
+      if (!own.ok) break;
+      continue;
+    }
     const refused = o.refuse?.(command);
     if (refused) {
       results.push({
