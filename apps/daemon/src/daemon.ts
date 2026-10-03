@@ -47,6 +47,7 @@ import { isLocalRequest } from "./http/guard.ts";
 import { InboxStore } from "./inbox/store.ts";
 import { startHealthChecks } from "./legs/health.ts";
 import { LegLogins } from "./legs/login.ts";
+import { PlanUsage } from "./legs/plan-usage.ts";
 import { LegRegistry } from "./legs/registry.ts";
 import { LegSupervisor } from "./legs/supervisor.ts";
 import { attachLive } from "./live/server.ts";
@@ -529,6 +530,17 @@ export async function startDaemon(options: DaemonOptions) {
     now,
     ...(options.healthIntervalMs ? { intervalMs: options.healthIntervalMs } : {}),
   });
+  // A Leg's plan usage in view, read while someone looks (ADR-039).
+  const planUsage = new PlanUsage({
+    db,
+    registry,
+    supervisor,
+    adapters,
+    sandbox: os.sandbox,
+    legsDir: paths.legs,
+    dataDir: paths.dataDir,
+    now,
+  });
 
   const rpc = new RPCHandler(router);
   app.use("/api", async (req, res, next) => {
@@ -553,6 +565,7 @@ export async function startDaemon(options: DaemonOptions) {
         runner,
         registry,
         health,
+        planUsage,
         logins,
         nest,
         silk,
@@ -678,6 +691,7 @@ export async function startDaemon(options: DaemonOptions) {
     registry,
     supervisor,
     health,
+    planUsage,
     silk,
     skills,
     budgets,

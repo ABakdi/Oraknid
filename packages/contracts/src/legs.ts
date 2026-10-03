@@ -108,6 +108,66 @@ export const LegView = z.object({
 });
 export type LegView = z.infer<typeof LegView>;
 
+/** One usage window of a Leg's plan, as shown (ADR-039). */
+export const PlanWindowView = z.object({
+  /** As the provider names it, e.g. "five_hour", "seven_day_opus". */
+  name: z.string(),
+  /** In words: "5 hours", "Week", "Week, Opus". */
+  label: z.string(),
+  scope: z.enum(["account", "model"]),
+  /** Share used, 0–1; null when not known. */
+  utilization: z.number().min(0).max(1).nullable(),
+  resetsAt: Timestamp.nullable(),
+  estimated: z.boolean(),
+  /** When this figure was seen: how old it is. */
+  observedAt: Timestamp,
+  source: z.enum(["usage", "session"]).nullable(),
+  /** Oraknid's own tokens in this window, by model, most first. */
+  tokens: z.array(
+    z.object({
+      legModelId: Id,
+      model: z.string(),
+      displayName: z.string(),
+      tokens: z.number().int().nonnegative(),
+    }),
+  ),
+});
+export type PlanWindowView = z.infer<typeof PlanWindowView>;
+
+/** A Leg's plan usage: its windows, fullest first (ADR-039). */
+export const LegPlanUsage = z.object({
+  legId: Id,
+  name: z.string(),
+  kind: LegKind,
+  health: LegHealth,
+  windows: z.array(PlanWindowView),
+  /** When Oraknid last asked for a fresh reading, if it did. */
+  checkedAt: Timestamp.nullable(),
+  /** What this Leg has instead of windows, or why there are none yet, in words. */
+  note: z.string().nullable(),
+});
+export type LegPlanUsage = z.infer<typeof LegPlanUsage>;
+
+/** How a Leg's windows moved: every reading, and when each filled and reset (ADR-039). */
+export const PlanHistory = z.object({
+  points: z.array(
+    z.object({
+      window: z.string(),
+      at: Timestamp,
+      utilization: z.number().min(0).max(1).nullable(),
+      resetsAt: Timestamp.nullable(),
+    }),
+  ),
+  marks: z.array(
+    z.object({
+      window: z.string(),
+      kind: z.enum(["filled", "reset"]),
+      at: Timestamp,
+    }),
+  ),
+});
+export type PlanHistory = z.infer<typeof PlanHistory>;
+
 export const ProfileOverrides = ProfileSettings.partial().extend({
   strengths: Strengths.optional(),
 });

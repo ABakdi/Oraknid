@@ -11,13 +11,14 @@ import {
   StoredProfile,
 } from "@oraknid/contracts";
 import { effectiveProfile, emptyStoredProfile, estimateUtilization } from "@oraknid/core";
-import type { LegConfig, ModelOffer, QuotaReport } from "@oraknid/leg-sdk";
-import { and, eq, gte, sum } from "drizzle-orm";
+import type { LegConfig, ModelOffer, PlanUsageReport, QuotaReport } from "@oraknid/leg-sdk";
+import { and, eq, gte, inArray, sum } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
 import { legModels, legs, sessions } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 import type { Secrets } from "../os/secrets.ts";
+import { matches, modelKey } from "./plan-usage.ts";
 
 export type LegRow = typeof legs.$inferSelect;
 export type LegModelRow = typeof legModels.$inferSelect;
@@ -293,6 +294,7 @@ export class LegRegistry {
       resetsAt: q.resetsAt,
       estimated,
       observedAt: at,
+      source: "session",
     };
     const upsert = (list: QuotaWindow[]) => [...list.filter((w) => w.name !== q.window), window];
     this.bus.atomically(() => {
@@ -324,6 +326,88 @@ export class LegRegistry {
         until,
       );
     }
+  }
+
+  /**
+   * Records a plan's windows as the backend's own reading gave them
+   * (ADR-039). A model's window goes to that model's rows ("opus" to every
+   * Opus model), or to the Leg when none of its models is that one. A
+   * window whose figure didn't change only gets its new time; one that did
+   * is an event, so its history is kept.
+   */
+  applyPlanUsage(legId: string, report: PlanUsageReport) {
+    const at = this.now();
+    const models = this.models(legId);
+    let legQuota = [...(this.require(legId).quota as QuotaWindow[])];
+    const modelQuota = new Map(models.map((m) => [m.id, [...(m.quota as QuotaWindow[])]]));
+    const changed: { window: QuotaWindow; legModelId: string | null; scope: string }[] = [];
+    const put = (list: QuotaWindow[], w: QuotaWindow) => {
+      const old = list.find((x) => x.name === w.name);
+      return {
+        list: [...list.filter((x) => x.name !== w.name), w],
+        moved: !old || old.utilization !== w.utilization || old.resetsAt !== w.resetsAt,
+      };
+    };
+    for (const r of report.windows) {
+      const window: QuotaWindow = {
+        name: r.window,
+        utilization: r.utilization,
+        resetsAt: r.resetsAt,
+        estimated: false,
+        observedAt: at,
+        source: "usage",
+        ...(r.label ? { label: r.label } : {}),
+      };
+      const key = r.scope === "model" ? modelKey(r.window) : null;
+      const owners = key ? models.filter((m) => matches(m.model, m.displayName, key)) : [];
+      if (owners.length === 0) {
+        const next = put(legQuota, window);
+        legQuota = next.list;
+        if (next.moved) changed.push({ window, legModelId: null, scope: r.scope });
+        continue;
+      }
+      let moved = false;
+      for (const m of owners) {
+        const next = put(modelQuota.get(m.id) ?? [], window);
+        modelQuota.set(m.id, next.list);
+        moved ||= next.moved;
+      }
+      if (moved) changed.push({ window, legModelId: owners[0]?.id ?? null, scope: r.scope });
+    }
+    this.bus.atomically(() => {
+      this.db.update(legs).set({ quota: legQuota }).where(eq(legs.id, legId)).run();
+      for (const [id, quota] of modelQuota)
+        this.db.update(legModels).set({ quota }).where(eq(legModels.id, id)).run();
+      for (const c of changed)
+        this.#event(legId, "leg.quota", {
+          legModelId: c.legModelId,
+          ...c.window,
+          status: (c.window.utilization ?? 0) >= 1 ? "rejected" : "allowed",
+          scope: c.scope,
+        });
+    });
+  }
+
+  /** Oraknid's tokens (in and out) on a Leg since a time, per model of `legModelIds`. */
+  tokensByModel(legId: string, legModelIds: string[], since: number) {
+    if (legModelIds.length === 0) return [];
+    return this.db
+      .select({
+        legModelId: sessions.legModelId,
+        i: sum(sessions.inputTokens),
+        o: sum(sessions.outputTokens),
+      })
+      .from(sessions)
+      .where(
+        and(
+          eq(sessions.legId, legId),
+          inArray(sessions.legModelId, legModelIds),
+          gte(sessions.startedAt, since),
+        ),
+      )
+      .groupBy(sessions.legModelId)
+      .all()
+      .map((r) => ({ legModelId: r.legModelId, tokens: Number(r.i ?? 0) + Number(r.o ?? 0) }));
   }
 
   #tokensSince(legId: string, legModelId: string | null, since: number): number {
