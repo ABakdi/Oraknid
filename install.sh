@@ -118,7 +118,8 @@ pkg() {
 	*:curl) echo curl ;;
 	zypper:node) echo nodejs24 nodejs22 ;;
 	*:node) echo nodejs ;;
-	zypper:npm) if [ -n "$NODE_PKG" ]; then echo "npm${NODE_PKG#nodejs}"; else echo npm-default; fi ;;
+	# openSUSE's npm and corepack are wrappers that need the package for Node's major version.
+	zypper:npm) echo "npm$(node -p 'process.versions.node.split(".")[0]')" ;;
 	*:npm) echo npm ;;
 	esac
 }
@@ -127,6 +128,7 @@ refresh_index() {
 	case "$PM" in
 	apt-get) as_root apt-get update -q ;;
 	apk) as_root apk update ;;
+	zypper) as_root zypper --non-interactive --quiet refresh ;;
 	pacman) [ -n "$(ls /var/lib/pacman/sync 2>/dev/null)" ] || as_root pacman -Sy --noconfirm ;;
 	esac
 }
@@ -157,6 +159,14 @@ NODE_PKG=""
 
 ensure_packages() {
 	title "Checking what this computer has"
+	# This script reads versions with awk; a minimal system may not have it.
+	if ! have awk; then
+		detect_pm
+		[ -n "$PM" ] || die "awk is missing; please install it and run this again"
+		say "awk is missing. Installing it with $PM; sudo may ask for your password."
+		refresh_index
+		install_pkgs gawk || die "$PM could not install gawk"
+	fi
 	needs=""
 	have git || needs="$needs git"
 	have bwrap || needs="$needs bwrap"
@@ -193,6 +203,8 @@ ensure_packages() {
 			done
 			if [ -n "$NODE_PKG" ]; then
 				pkgs="$pkgs $NODE_PKG"
+				# openSUSE splits corepack out, per Node version.
+				if [ "$PM" = zypper ]; then pkgs="$pkgs corepack${NODE_PKG#nodejs}"; fi
 			else
 				say "The distribution's Node is ${candidate:-not available}; I'll put Node 22 in $DIR/.tools/node."
 				NODE_LOCAL=1
@@ -272,7 +284,7 @@ ensure_pnpm() {
 		pnpm_shim "$own"
 		pnpm_works && return
 	fi
-	if ! have npm; then
+	if ! npm --version >/dev/null 2>&1; then
 		[ -n "$PM" ] || detect_pm
 		[ -n "$PM" ] || die "pnpm needs corepack or npm, and neither is here"
 		install_pkgs "$(pkg npm)" || die "$PM could not install npm"
