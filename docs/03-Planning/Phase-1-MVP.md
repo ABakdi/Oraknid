@@ -111,8 +111,8 @@ crashes and reboots.
 
 Found when the canon was checked against the brief (2026-10-03); the
 spec says them, they aren't built:
-- [ ] The Web: a Leg's avatar on its task, and a handoff animation along the edge when a task moves to another Leg ([[Web-UI]] → Job; the name shows as text)
-- [ ] Charts beyond tokens over time, success by Leg model and sparklines: cost, task throughput, success and failure by task kind, tokens per verified task, time per task, budget burn against limits ([[Web-UI]] → Charts)
+- [x] The Web: a Leg's avatar on its task (initials and a colour from its name and kind, the same on Legs, Overview and Agents), and a handoff shown on the task when it moves to another Leg: a dot from one avatar to the other, still under reduced motion (on the node, not along an edge; 2026-10-03)
+- [x] Charts beyond tokens over time, success by Leg model and sparklines: cost (once money is counted), task throughput, success and failure by Leg and by task kind, tokens and time per verified task, budget burn against limits, on Overview, a project's and a job's Budget & stats (`stats.charts`, 2026-10-03)
 - [x] Pausing a Leg pauses its running session in place: a safe point, a checkpoint and a handoff; the task waits for the Leg, or is reassigned (2026-10-03)
 - [x] Cancelling one Leg's work in a job, or on one task: its sessions end at a safe point, the tasks go on without it (`jobs.cancelLegWork`, 2026-10-03)
 

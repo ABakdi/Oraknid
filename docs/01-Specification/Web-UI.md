@@ -129,6 +129,7 @@ Eye's conversation sit beside them ([[Chats-and-Helper]]).
 | **Resources** | Per Leg and per process: CPU, RAM, GPU and VRAM (local models), disk I/O, network. Sparklines, with the full chart a click away. |
 | **Running now** | (2026-10-03, [[ADR-034-Projects-First]]) Every job going, waiting, paused or queued, across projects: its title, its project, its progress, a queued mark, and Pause or Resume on its row. A job opens in its project's Work tab. `/jobs` comes here. |
 | **Totals** | Tokens today, by Leg. Jobs running and queued (the tile goes to Running now). Inbox count. |
+| **The last two weeks** | (2026-10-03) The charts across every project (Charts, below): tasks done per day, success and failure by Leg and by task kind, the Legs compared, cost once money is counted. |
 
 ### Job
 
@@ -142,6 +143,14 @@ Eye tab at the project's Eye tab; a draft opens on New work.
   coloured by state, showing the Leg's avatar while assigned. When a
   task moves from one Leg to another, a handoff animation travels along
   the edge. A running node pulses. Clicking a node opens the task drawer.
+  As built (2026-10-03): a Leg's avatar is its initials on a colour
+  from its name and kind (each kind a family of hues), the same on its
+  tasks, Legs, Overview's Legs now and a job's Agents. A task shows it
+  while assigned, running, verifying and once done. When a task's Leg
+  changes (a reassignment, a step-up to another Leg, a fallback), the
+  task shows both avatars for six seconds with a dot travelling from
+  the first to the second, on the node rather than along an edge; under
+  reduced motion the dot is left out and an arrow stays between them.
 - **Task drawer:** instructions, scope, verify commands and their latest
   output, attempts and sessions, escalation history, checkpoints (with
   rollback), the diff, and the routing reason.
@@ -169,6 +178,29 @@ Token usage over time (stacked by Leg), cost (when any), task
 throughput, success and failure rates by Leg and task kind, Leg
 performance comparison (success, tokens per verified task, time per
 task), budget burn against limits.
+
+As built (2026-10-03, `stats.charts`):
+- **Where**: Overview, under Tokens today, "The last two weeks" (by
+  day, every project); a project's Budget & stats (by day, attempts of
+  the last 30 days, burn against the project's token limit over its
+  whole life); a job's Budget & stats in Work (by hour, burn against
+  the job's token limit).
+- **Budget burn**: the tokens used so far as a step line, the limit a
+  dashed line (red for a hard limit, amber for an alarm), the share
+  used in the legend; "No token limit is set." without one. Not on
+  Overview, which has no budget.
+- **Cost**: only once a Leg counts money; none does yet.
+- **Tasks done**: tasks verified and attempts failed per day or hour,
+  stacked, every bucket between the first and the last.
+- **Success and failure by Leg** (with its avatar) **and by task
+  kind**: a bar per row split into verified, failed, and handed on or
+  stopped, the share verified said beside it.
+- **Legs compared**: per Leg its success, tokens per verified task and
+  time per verified task (every token and minute of its attempts,
+  failed and handed-on ones included, over the tasks it verified).
+- Each chart says "Nothing yet." when empty. Legends are lists under
+  the chart, one entry per line on a phone, so nothing runs off its
+  edge; two charts side by side from 1024 px.
 
 ### Projects
 
@@ -209,7 +241,8 @@ the address (`/projects/<id>/<tab>`):
   used against it, a note while a job waits at its limit, and a dialog
   to change it; [[Budgets-and-Quotas]] → A project's budget), then
   tokens, time, tasks done, success, tokens per day and the breakdown
-  by Leg.
+  by Leg, then the charts (Charts, below: budget burn, tasks done,
+  success and failure by Leg and by task kind, the Legs compared).
 - **Repo** (after Work; [[ADR-038-Project-Accounts]] → Changed): what
   is on the linked GitHub repo (owner/name, who can see it, the account,
   its last push; the latest commits on its default branch, its branches,
