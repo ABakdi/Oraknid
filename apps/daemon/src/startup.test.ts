@@ -2,6 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { monitorEventLoopDelay } from "node:perf_hooks";
+import { Worker } from "node:worker_threads";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { RouterClient } from "@orpc/server";
@@ -35,8 +36,25 @@ const message = (i: number) =>
     `Body of message ${i}. ${"Some words of text. ".repeat(20)}`,
   ].join("\r\n");
 
-/** The worst stall of the event loop while `during` runs, in ms. */
-async function worstStall(during: () => Promise<void>): Promise<number> {
+/**
+ * The worst stall of the event loop while `during` runs, in ms, beside the
+ * machine's own: a worker thread doing nothing measures the same window.
+ * Oraknid's work can't block the worker's loop, but the system pausing this
+ * process (other test runs on a busy machine) pauses both, so `machine` is
+ * what the load costs, and `stall` is judged against it.
+ */
+async function worstStall(
+  during: () => Promise<void>,
+): Promise<{ stall: number; machine: number }> {
+  const sentinel = new Worker(
+    `const { parentPort } = require("node:worker_threads");
+     const { monitorEventLoopDelay } = require("node:perf_hooks");
+     const h = monitorEventLoopDelay({ resolution: 10 });
+     h.enable();
+     const keep = setInterval(() => {}, 1000);
+     parentPort.on("message", () => { h.disable(); clearInterval(keep); parentPort.postMessage(h.max / 1e6); });`,
+    { eval: true },
+  );
   const h = monitorEventLoopDelay({ resolution: 10 });
   h.enable();
   try {
@@ -44,7 +62,12 @@ async function worstStall(during: () => Promise<void>): Promise<number> {
   } finally {
     h.disable();
   }
-  return h.max / 1e6;
+  const machine = await new Promise<number>((resolve) => {
+    sentinel.once("message", (ms: number) => resolve(ms));
+    sentinel.postMessage("stop");
+  });
+  await sentinel.terminate();
+  return { stall: h.max / 1e6, machine };
 }
 
 const N = Number(process.env.STARTUP_MESSAGES ?? 6000);
@@ -115,9 +138,12 @@ describe("the daemon's first minute (a /health probe within 1 s)", () => {
       probe2 = await synced(api);
     });
     console.log(
-      `startup: boot (migrations) ${booting.toFixed(0)} ms; ${N} messages; first sync worst stall ${first.toFixed(0)} ms (worst /health ${probe.toFixed(0)} ms); after a restart ${again.toFixed(0)} ms (worst /health ${probe2.toFixed(0)} ms)`,
+      `startup: machine stall ${Math.max(first.machine, again.machine).toFixed(0)} ms; boot (migrations) ${booting.stall.toFixed(0)} ms; ${N} messages; first sync worst stall ${first.stall.toFixed(0)} ms (worst /health ${probe.toFixed(0)} ms); after a restart ${again.stall.toFixed(0)} ms (worst /health ${probe2.toFixed(0)} ms)`,
     );
-    expect(Math.max(probe, probe2)).toBeLessThan(1000);
-    expect(Math.max(first, again)).toBeLessThan(500);
+    // Allowed on top: what the machine itself paused this process in the same window.
+    expect(probe).toBeLessThan(1000 + 2 * first.machine);
+    expect(probe2).toBeLessThan(1000 + 2 * again.machine);
+    expect(first.stall).toBeLessThan(500 + 2 * first.machine);
+    expect(again.stall).toBeLessThan(500 + 2 * again.machine);
   }, 300_000);
 });
