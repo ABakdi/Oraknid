@@ -336,6 +336,7 @@ export class JobRunner {
               row,
               spec.describe ?? `${row.action} ${JSON.stringify(row.payload)}`,
               spec.title,
+              spec.consequences,
             );
             throw new AwaitingOwner(id, `Waiting for my approval: ${row.action}`);
           }

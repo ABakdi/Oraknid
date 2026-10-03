@@ -1,4 +1,5 @@
 import type { SideEffectState } from "@oraknid/contracts";
+import { choiceQuestion } from "@oraknid/contracts";
 import { eq, inArray } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
 import { sideEffects } from "../db/schema.ts";
@@ -21,6 +22,8 @@ export interface EffectSpec {
   describe?: string;
   /** The approval's title, when the action's name says too little. */
   title?: string;
+  /** What approving and denying lead to, said on each answer (ADR-045). */
+  consequences?: { approve: string; deny: string };
 }
 
 /** After a crash: did this action happen in the outside world? */
@@ -128,7 +131,15 @@ export class SideEffects {
   }
 
   /** Asks me to approve a gated action, once. Returns the inbox item. */
-  requestApproval(row: EffectRow, describe: string, title?: string): string {
+  requestApproval(
+    row: EffectRow,
+    describe: string,
+    title?: string,
+    consequences: { approve: string; deny: string } = {
+      approve: "It happens now.",
+      deny: "It doesn't happen, and the job stops (blocked) until you change something and resume it.",
+    },
+  ): string {
     if (row.inboxItemId) return row.inboxItemId;
     // The question and the record of it in one transaction: a crash never leaves a second one (Audit 1 → D1-13).
     return this.bus.atomically(() => {
@@ -138,9 +149,15 @@ export class SideEffects {
         taskId: row.taskId,
         raisedBy: "eye",
         title: title ?? `Approve: ${row.action}`,
-        detail: describe,
+        detail: `${describe}\n\n**If you deny it:** ${consequences.deny}`,
         options: ["Approve", "Deny"],
         defaultOption: null,
+        questions: [
+          choiceQuestion(title ?? `Approve: ${row.action}?`, [
+            { label: "Approve", detail: consequences.approve },
+            { label: "Deny", detail: consequences.deny },
+          ]),
+        ],
       });
       this.set(row.idempotencyKey, row.state as SideEffectState, { inboxItemId: id });
       return id;
@@ -161,6 +178,12 @@ export class SideEffects {
         detail: `${row.problem ?? ""}\n\nWhat it was doing: ${JSON.stringify(row.payload)}`,
         options: [HAPPENED, DID_NOT_HAPPEN],
         defaultOption: null,
+        questions: [
+          choiceQuestion(`Did "${row.action}" happen?`, [
+            { label: HAPPENED, detail: "Oraknid takes it as done and never does it again." },
+            { label: DID_NOT_HAPPEN, detail: "Oraknid does it again now." },
+          ]),
+        ],
       });
       this.set(row.idempotencyKey, row.state as SideEffectState, { inboxItemId: id });
       return id;

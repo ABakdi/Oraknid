@@ -12,6 +12,7 @@ import type {
   MailThreadSummary,
   NewMailAccount,
 } from "@oraknid/contracts";
+import { choiceQuestion } from "@oraknid/contracts";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { ImapFlow, type ImapFlowOptions } from "imapflow";
 import nodemailer from "nodemailer";
@@ -1878,6 +1879,15 @@ export class MailService {
         detail: `An agent wrote this from ${a.email}. Read it in Mail before you answer.\n\nTo: ${d.to.join(", ")}${d.cc.length ? `\nCc: ${d.cc.join(", ")}` : ""}\nSubject: ${d.subject}\n\n${d.text}`,
         options: [APPROVE, REFUSE],
         defaultOption: null,
+        questions: [
+          choiceQuestion("Send it?", [
+            { label: APPROVE, detail: "It is sent now, once, from this account." },
+            {
+              label: REFUSE,
+              detail: "It isn't sent; the draft stays in Mail, and the agent is told you refused.",
+            },
+          ]),
+        ],
       });
     this.o.db
       .update(mailDrafts)

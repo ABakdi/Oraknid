@@ -168,3 +168,40 @@ export function renderQuestions(questions: Question[]): string {
     })
     .join("\n");
 }
+
+/** The id of a question that only says what each of an item's own options does (ADR-045). */
+export const CHOICE = "choice";
+
+/**
+ * An inbox item's own options, each with a line saying what it does
+ * (ADR-045): one `single` question whose option labels are the item's
+ * options. Answered, it answers with the option itself, so whatever waits
+ * on the item reads the same words as before.
+ */
+export function choiceQuestion(
+  prompt: string,
+  options: { label: string; detail: string }[],
+  recommended: string | null = null,
+): Question {
+  const ids = options.map((_, i) => `o${i + 1}`);
+  return {
+    id: CHOICE,
+    shape: "single",
+    prompt,
+    options: options.map((o, i) => ({ id: ids[i] as string, label: o.label, detail: o.detail })),
+    recommended: ids[options.findIndex((o) => o.label === recommended)] ?? null,
+    allowOther: false,
+  };
+}
+
+/** The item's option chosen through its choice question, when the questions are only that. */
+export function chosenOption(
+  questions: Question[] | null | undefined,
+  answers: QuestionAnswer[] | null | undefined,
+  options: string[],
+): string | null {
+  const q = questions?.length === 1 ? questions[0] : null;
+  if (q?.id !== CHOICE || !q.options.every((o) => options.includes(o.label))) return null;
+  const picked = answers?.find((a) => a.questionId === CHOICE)?.options[0];
+  return q.options.find((o) => o.id === picked)?.label ?? null;
+}

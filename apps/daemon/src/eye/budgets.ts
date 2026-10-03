@@ -1,6 +1,7 @@
 import {
   ACTIVE_JOB_STATES,
   type Budget,
+  choiceQuestion,
   ProjectBudget,
   type ProjectBudgetView,
 } from "@oraknid/contracts";
@@ -176,6 +177,21 @@ export function startBudgetWatch(o: {
               detail: f.message,
               options: [RAISE_HALF, RAISE_DOUBLE, KEEP_PAUSED],
               defaultOption: RAISE_HALF,
+              questions: [
+                choiceQuestion(
+                  "Raise the budget?",
+                  [
+                    { label: RAISE_HALF, detail: "The limit goes up by half and the job resumes." },
+                    { label: RAISE_DOUBLE, detail: "The limit doubles and the job resumes." },
+                    {
+                      label: KEEP_PAUSED,
+                      detail:
+                        "The job stays paused; raise its budget later, or cancel it. Nothing is lost.",
+                    },
+                  ],
+                  RAISE_HALF,
+                ),
+              ],
             });
             const now = db.select().from(jobs).where(eq(jobs.id, jobId)).get();
             db.update(jobs)
@@ -246,6 +262,21 @@ export function startBudgetWatch(o: {
               detail: `${f.message} Raising it resumes the jobs it paused.`,
               options: [RAISE_HALF, RAISE_DOUBLE, KEEP_PAUSED],
               defaultOption: RAISE_HALF,
+              questions: [
+                choiceQuestion(
+                  "Raise the budget?",
+                  [
+                    { label: RAISE_HALF, detail: "The limit goes up by half and its jobs resume." },
+                    { label: RAISE_DOUBLE, detail: "The limit doubles and its jobs resume." },
+                    {
+                      label: KEEP_PAUSED,
+                      detail:
+                        "Its jobs stay paused; raise the project's budget later. Nothing is lost.",
+                    },
+                  ],
+                  RAISE_HALF,
+                ),
+              ],
             });
             question = `${itemId}:${f.dimension}`;
           }
