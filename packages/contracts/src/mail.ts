@@ -45,6 +45,21 @@ export const NewMailAccount = z.object({
 });
 export type NewMailAccount = z.infer<typeof NewMailAccount>;
 
+/** Who hosts an address's mail, found from its MX records, and its servers. */
+export const MailDetected = z.object({
+  name: z.string(),
+  imap: MailServer.nullable(),
+  pop: MailServer.nullable(),
+  smtp: MailServer,
+  hint: z.string().optional(),
+});
+export type MailDetected = z.infer<typeof MailDetected>;
+
+const MailCheck = z.object({ ok: z.boolean(), message: z.string() });
+/** The form's Test: the incoming server and SMTP, each on its own. */
+export const MailTestResult = z.object({ incoming: MailCheck, smtp: MailCheck });
+export type MailTestResult = z.infer<typeof MailTestResult>;
+
 export const MailAccountState = z.enum(["new", "syncing", "ready", "reconnect", "error"]);
 export type MailAccountState = z.infer<typeof MailAccountState>;
 

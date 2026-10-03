@@ -73,7 +73,16 @@ run locally and the public site checked at 1440 and 390 px.
 - [ ] The piano project's stalled push finished through it
 
 ### M13.7 — Mail accounts that explain themselves ([[ADR-032-Email]] → Fixed after a failed Namecheap POP account)
-- [ ] Presets from the domain's MX, port and security together, errors in plain words, Test, failures logged
+- [x] Presets from the domain's MX, port and security together, errors in plain words, Test, failures logged
+
+Tested (M13.7): Namecheap's server probed for real (POP3 995 and 110
+reach its login with Oraknid's client; a wrong port and security give
+the raw TLS error the fix explains). `apps/daemon/src/mail/diagnose.test.ts`
+(providers from MX, usual ports, each kind of error in words);
+`mail.test.ts` (TLS to a clear port, a refused login, a closed port,
+Test checking each side and saving nothing, a failed add logged without
+the password, Namecheap found from its MX); the form's test (servers
+filled in from the address, port and security together, Test's results).
 
 ### M13.8 — Plan usage in front of me ([[ADR-039-Plan-Usage-In-View]])
 - [ ] Each Claude Code Leg's windows (how full, reset, Oraknid's share) on the Overview and in the Leg's details, with how old it is

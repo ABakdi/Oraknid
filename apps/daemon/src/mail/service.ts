@@ -6,6 +6,7 @@ import type {
   MailDraftView,
   MailFolderView,
   MailMessageView,
+  MailProtocol,
   MailSecurity,
   MailThreadPage,
   MailThreadSummary,
@@ -29,6 +30,7 @@ import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 import type { InboxStore } from "../inbox/store.ts";
 import type { Secrets } from "../os/secrets.ts";
+import { detectServers, explain } from "./diagnose.ts";
 import { fetchImages, remoteImages } from "./images.ts";
 import {
   escapeHtml,
@@ -86,6 +88,8 @@ const LOCAL_FOLDERS = [
 ];
 
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1"]);
+/** How long checking an account waits for each server before saying so. */
+const CHECK_MS = 20_000;
 const SEEN = "\\Seen";
 const FLAGGED = "\\Flagged";
 const APPROVE = "Send";
@@ -99,6 +103,8 @@ export interface MailOptions {
   /** Where drafts' attachments wait (mail/drafts/<id>/), and POP accounts' messages (mail/local/<account>/). */
   dataDir: string;
   now?: () => number;
+  /** The domain's MX records, for finding an address's servers (tests give their own). */
+  resolveMx?: (domain: string) => Promise<{ exchange: string }[]>;
   /** Between passes over every folder (default five minutes). */
   syncEveryMs?: number;
   /** Between checks of a POP account (default two minutes). */
@@ -248,8 +254,8 @@ export class MailService {
       .map((a) => this.view(a));
   }
 
-  /** Signs in once to check the password, then keeps it in the keychain and starts syncing. */
-  async addAccount(input: NewMailAccount): Promise<MailAccountView> {
+  /** An account's row from what I typed or its provider's preset, not saved yet. */
+  #newRow(input: NewMailAccount): { row: AccountRow; protocol: MailProtocol } {
     const protocol = input.protocol ?? "imap";
     const preset = input.provider === "imap" ? null : this.#preset(input.provider);
     const incoming = protocol === "pop" ? (preset?.pop ?? input.pop) : (preset?.imap ?? input.imap);
@@ -264,8 +270,6 @@ export class MailService {
           `${s.host} without TLS would send the password in clear: use TLS or STARTTLS.`,
         );
     const email = input.email.trim().toLowerCase();
-    if (this.o.db.select().from(mailAccounts).where(eq(mailAccounts.email, email)).get())
-      throw new Error(`${email} is already connected.`);
     const id = newId(this.#now());
     const row: AccountRow = {
       id,
@@ -289,7 +293,53 @@ export class MailService {
       lastSyncAt: null,
       createdAt: this.#now(),
     };
-    await this.#check(row, input.password);
+    return { row, protocol };
+  }
+
+  /** Checks the incoming server and SMTP each on its own, for the form's Test: nothing is saved. */
+  async testAccount(input: NewMailAccount): Promise<{
+    incoming: { ok: boolean; message: string };
+    smtp: { ok: boolean; message: string };
+  }> {
+    const { row } = this.#newRow(input);
+    const run = async (check: () => Promise<void>, ok: string) => {
+      try {
+        await check();
+        return { ok: true, message: ok };
+      } catch (error) {
+        console.error(`mail: testing ${row.email}: ${(error as Error).message}`);
+        return { ok: false, message: (error as Error).message };
+      }
+    };
+    const [incoming, smtp] = await Promise.all([
+      run(
+        () => this.#checkIncoming(row, input.password),
+        `${row.protocol === "pop" ? "POP3" : "IMAP"} (${row.incomingHost}) accepted the login.`,
+      ),
+      run(() => this.#checkSmtp(row, input.password), `SMTP (${row.smtpHost}) accepted the login.`),
+    ]);
+    return { incoming, smtp };
+  }
+
+  /** Who hosts an address's mail and its servers, from the domain's MX records. */
+  detect(email: string) {
+    return detectServers(email, this.o.resolveMx);
+  }
+
+  /** Signs in once to check the password, then keeps it in the keychain and starts syncing. */
+  async addAccount(input: NewMailAccount): Promise<MailAccountView> {
+    const { row, protocol } = this.#newRow(input);
+    if (this.o.db.select().from(mailAccounts).where(eq(mailAccounts.email, row.email)).get())
+      throw new Error(`${row.email} is already connected.`);
+    const id = row.id;
+    try {
+      await this.#checkIncoming(row, input.password);
+      await this.#checkSmtp(row, input.password);
+    } catch (error) {
+      // A failed add leaves a trace I can read later, never the password.
+      console.error(`mail: adding ${row.email} failed: ${(error as Error).message}`);
+      throw error;
+    }
     await this.o.secrets.set(PASSWORD(id), input.password);
     this.o.bus.atomically(() => {
       this.o.db.insert(mailAccounts).values(row).run();
@@ -299,36 +349,50 @@ export class MailService {
             .insert(mailFolders)
             .values({ id: newId(this.#now()), accountId: id, ...f, uidValidity: "local" })
             .run();
-      this.#publish("mail.account.added", { id, email }, { kind: "owner" });
+      this.#publish("mail.account.added", { id, email: row.email }, { kind: "owner" });
     });
     this.o.hasAccounts?.();
     this.#open(id);
     return this.view(this.account(id));
   }
 
-  /** The incoming server (IMAP or POP3) and SMTP both accept the login, or the account isn't saved. */
-  async #check(row: AccountRow, pass: string) {
+  /** The incoming server (IMAP or POP3) accepts the login, or it says why in plain words. */
+  async #checkIncoming(row: AccountRow, pass: string) {
+    const server = {
+      host: row.incomingHost,
+      port: row.incomingPort,
+      security: row.incomingSecurity,
+    };
     if (row.protocol === "pop") {
       try {
-        await (await Pop3.open(this.#popOptions(row, pass))).quit();
+        await (await Pop3.open({ ...this.#popOptions(row, pass), timeoutMs: CHECK_MS })).quit();
       } catch (error) {
-        throw new Error(`POP3 (${row.incomingHost}) refused: ${problem(error)}`);
+        throw new Error(explain("POP3", server, error));
       }
-    } else {
-      const client = new ImapFlow(this.#imapOptions(row, pass, false));
-      client.on("error", () => {});
-      try {
-        await client.connect();
-        await client.logout();
-      } catch (error) {
-        throw new Error(`IMAP (${row.incomingHost}) refused: ${problem(error)}`);
-      }
+      return;
     }
-    const transport = this.#transport(row, pass);
+    const client = new ImapFlow({
+      ...this.#imapOptions(row, pass, false),
+      connectionTimeout: CHECK_MS,
+      greetingTimeout: CHECK_MS,
+    } as ConstructorParameters<typeof ImapFlow>[0]);
+    client.on("error", () => {});
+    try {
+      await client.connect();
+      await client.logout();
+    } catch (error) {
+      throw new Error(explain("IMAP", server, error));
+    }
+  }
+
+  /** SMTP accepts the login, or it says why in plain words. */
+  async #checkSmtp(row: AccountRow, pass: string) {
+    const server = { host: row.smtpHost, port: row.smtpPort, security: row.smtpSecurity };
+    const transport = this.#transport(row, pass, CHECK_MS);
     try {
       await transport.verify();
     } catch (error) {
-      throw new Error(`SMTP (${row.smtpHost}) refused: ${problem(error)}`);
+      throw new Error(explain("SMTP", server, error));
     } finally {
       transport.close();
     }
@@ -373,7 +437,8 @@ export class MailService {
   async reconnect(id: string, password?: string) {
     const a = this.account(id);
     if (password) {
-      await this.#check(a, password);
+      await this.#checkIncoming(a, password);
+      await this.#checkSmtp(a, password);
       await this.o.secrets.set(PASSWORD(id), password);
     } else if (a.state === "reconnect") throw new Error("Give the new password.");
     this.#state(id, "new", null);
@@ -426,8 +491,9 @@ export class MailService {
     };
   }
 
-  #transport(a: AccountRow, pass: string) {
+  #transport(a: AccountRow, pass: string, timeoutMs?: number) {
     return nodemailer.createTransport({
+      ...(timeoutMs ? { connectionTimeout: timeoutMs, greetingTimeout: timeoutMs } : {}),
       host: a.smtpHost,
       port: a.smtpPort,
       secure: a.smtpSecurity === "tls",

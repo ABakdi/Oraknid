@@ -21,9 +21,11 @@ import {
   LegView,
   MailAccountView,
   MailCompose,
+  MailDetected,
   MailDraftView,
   MailFolderView,
   MailMessageView,
+  MailTestResult,
   MailThreadPage,
   MetricsSample,
   NewChat,
@@ -727,6 +729,16 @@ export const router = {
       .input(NewMailAccount)
       .output(MailAccountView)
       .handler(({ context: c, input }) => guard(() => c.mail.addAccount(input))),
+    /** Who hosts an address's mail and its servers, from its MX records; null when unknown. */
+    detect: base
+      .input(z.object({ email: z.string() }))
+      .output(MailDetected.nullable())
+      .handler(({ context: c, input }) => c.mail.detect(input.email)),
+    /** Checks an account's servers without saving anything. */
+    testAccount: base
+      .input(NewMailAccount)
+      .output(MailTestResult)
+      .handler(({ context: c, input }) => guard(() => c.mail.testAccount(input))),
     updateAccount: base
       .input(
         z.object({

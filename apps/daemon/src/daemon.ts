@@ -106,7 +106,7 @@ export interface DaemonOptions {
   /** Mail timings and the providers' servers (tests). */
   mail?: Pick<
     MailOptions,
-    "syncEveryMs" | "popEveryMs" | "idleDelayMs" | "initialLimit" | "presets"
+    "syncEveryMs" | "popEveryMs" | "idleDelayMs" | "initialLimit" | "presets" | "resolveMx"
   >;
 }
 

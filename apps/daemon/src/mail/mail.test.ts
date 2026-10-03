@@ -7,7 +7,7 @@ import { decide } from "@oraknid/core";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { RouterClient } from "@orpc/server";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Router } from "../api/router.ts";
 import { type Daemon, startDaemon } from "../daemon.ts";
 import { mailAccounts, mailFolders, mailMessages } from "../db/schema.ts";
@@ -681,6 +681,59 @@ describe("mail (ADR-032)", () => {
       /Only a POP account/,
     );
   }, 30_000);
+
+  it("says in plain words why an account can't connect, tests each side, and logs a failed add without the password", async () => {
+    const mail = await fakeMail();
+    closing.push(mail.close);
+    const { api } = await boot({
+      resolveMx: async () => [{ exchange: "mx1.privateemail.com." }],
+    });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const pop = (o: Partial<Parameters<typeof api.mail.addAccount>[0]> = {}) => ({
+        provider: "imap" as const,
+        protocol: "pop" as const,
+        email: mail.user,
+        password: "app-password",
+        pop: plain(mail.popPort),
+        smtp: plain(mail.smtpPort),
+        ...o,
+      });
+      // TLS to a port that starts in clear: the OpenSSL error becomes what to change.
+      await expect(
+        api.mail.addAccount(
+          pop({ pop: { host: "127.0.0.1", port: mail.popPort, security: "tls" } }),
+        ),
+      ).rejects.toThrow(/doesn't start with TLS on this port\. Choose STARTTLS/);
+      await expect(api.mail.addAccount(pop({ password: "not-it" }))).rejects.toThrow(
+        /POP3 \(127\.0\.0\.1:\d+\) refused the login .*full address/,
+      );
+      await expect(
+        api.mail.addAccount(pop({ pop: { host: "127.0.0.1", port: 1, security: "starttls" } })),
+      ).rejects.toThrow(/refused the connection: nothing answers on port 1/);
+      const logged = errors.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(logged).toMatch(/mail: adding .* failed: POP3/);
+      expect(logged).not.toContain("not-it");
+
+      // Test checks each side on its own and saves nothing.
+      const t = await api.mail.testAccount(
+        pop({ smtp: { host: "127.0.0.1", port: 1, security: "starttls" } }),
+      );
+      expect(t.incoming).toMatchObject({ ok: true });
+      expect(t.smtp.ok).toBe(false);
+      expect(t.smtp.message).toMatch(/^SMTP \(127\.0\.0\.1:1\)/);
+      expect(await api.mail.accounts()).toEqual([]);
+
+      // The servers, found from the address's MX records.
+      expect(await api.mail.detect({ email: "me@abakdi.com" })).toMatchObject({
+        name: "Namecheap Private Email",
+        pop: { host: "mail.privateemail.com", port: 995, security: "tls" },
+        smtp: { host: "mail.privateemail.com", port: 465, security: "tls" },
+      });
+    } finally {
+      errors.mockRestore();
+    }
+  }, 60_000);
 });
 
 /** Speaks JSON-RPC to a bridge, as a Leg's MCP client would. */

@@ -307,6 +307,7 @@ const HOME_ONLY = [
   "/github/setToken",
   "/github/removeToken",
   "/mail/addAccount",
+  "/mail/testAccount",
   "/mail/updateAccount",
   "/mail/removeAccount",
   "/mail/reconnect",

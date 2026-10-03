@@ -292,6 +292,12 @@ account (off by default), file sent mail in Sent, and for POP delete
 from the server (off by default). Sign-in with Google or Microsoft
 (OAuth) waits until a few releases from now. Not from away.
 
+Adding an account: the address's servers are found from its MX records
+and filled in (Namecheap, Google, Microsoft, Zoho, Fastmail and others);
+port and security move together; **Test** checks the incoming server
+and SMTP each on its own; a refusal says in plain words what to check
+([[ADR-032-Email]] → Fixed after a failed Namecheap POP account).
+
 ### The helper
 
 A floating button at the bottom left of every screen opens the Oraknid

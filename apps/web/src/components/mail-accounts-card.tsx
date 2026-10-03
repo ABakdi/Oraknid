@@ -1,4 +1,11 @@
-import type { MailAccountView, MailProtocol, MailProvider, MailSecurity } from "@oraknid/contracts";
+import type {
+  MailAccountView,
+  MailDetected,
+  MailProtocol,
+  MailProvider,
+  MailSecurity,
+  MailTestResult,
+} from "@oraknid/contracts";
 import { ExternalLink, Mail, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -310,6 +317,15 @@ type ServerFields = { host: string; port: number; security: MailSecurity };
 /** The default port of each way in, so switching IMAP and POP moves it along. */
 const PORTS: Record<MailProtocol, number> = { imap: 993, pop: 995 };
 
+/** The usual port of each side for TLS from the start and for STARTTLS: they move together. */
+const USUAL: Record<string, { tls: number; starttls: number }> = {
+  imap: { tls: 993, starttls: 143 },
+  pop: { tls: 995, starttls: 110 },
+  smtp: { tls: 465, starttls: 587 },
+};
+const securityOf = (port: number): MailSecurity | null =>
+  [993, 995, 465].includes(port) ? "tls" : [143, 110, 587].includes(port) ? "starttls" : null;
+
 export function AddAccountForm({ onDone }: { onDone: () => void }) {
   const [provider, setProvider] = useState<MailProvider>("gmail");
   const [protocol, setProtocol] = useState<MailProtocol>("imap");
@@ -325,10 +341,45 @@ export function AddAccountForm({ onDone }: { onDone: () => void }) {
   const [smtp, setSmtp] = useState<ServerFields>({ host: "", port: 465, security: "tls" });
   const [deleteFromServer, setDeleteFromServer] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [found, setFound] = useState<MailDetected | null>(null);
+  const [tested, setTested] = useState<MailTestResult | null>(null);
+  const [testing, setTesting] = useState(false);
+  /** The servers found from the address's MX records, filled in where I typed nothing. */
+  const detect = async () => {
+    if (provider !== "imap" || !email.includes("@")) return;
+    const d = await api.mail.detect({ email }).catch(() => null);
+    setFound(d);
+    if (!d) return;
+    const theirs = protocol === "pop" ? (d.pop ?? d.imap) : (d.imap ?? d.pop);
+    if (protocol === "pop" && !d.pop && d.imap) setProtocol("imap");
+    if (theirs && !incoming.host) setIncoming(theirs);
+    if (!smtp.host) setSmtp(d.smtp);
+  };
+  const payload = () => ({
+    provider,
+    protocol,
+    email,
+    name,
+    password,
+    deleteFromServer: protocol === "pop" && deleteFromServer,
+    ...(login ? { login } : {}),
+    ...(provider === "imap"
+      ? protocol === "pop"
+        ? { pop: incoming, smtp }
+        : { imap: incoming, smtp }
+      : {}),
+  });
   const pickProtocol = (p: MailProtocol) => {
     setProtocol(p);
     // The other way's default port follows; one I typed stays.
-    if (incoming.port === PORTS[protocol]) setIncoming({ ...incoming, port: PORTS[p] });
+    const theirs = found ? (p === "pop" ? found.pop : found.imap) : null;
+    if (
+      theirs &&
+      (!incoming.host || incoming.host === (protocol === "pop" ? found?.pop : found?.imap)?.host)
+    )
+      setIncoming(theirs);
+    else if (incoming.port === PORTS[protocol]) setIncoming({ ...incoming, port: PORTS[p] });
   };
   const hint = provider === "imap" ? null : HINTS[provider];
   const server = (label: string, v: ServerFields, set: (x: ServerFields) => void, id: string) => (
@@ -350,14 +401,26 @@ export function AddAccountForm({ onDone }: { onDone: () => void }) {
             id={`${id}-port`}
             type="number"
             value={v.port}
-            onChange={(e) => set({ ...v, port: Number(e.target.value) })}
+            onChange={(e) => {
+              const port = Number(e.target.value);
+              set({ ...v, port, security: securityOf(port) ?? v.security });
+            }}
           />
         </div>
         <div className="space-y-1">
           <Label htmlFor={`${id}-security`}>{t("Security")}</Label>
           <Select
             value={v.security}
-            onValueChange={(s) => set({ ...v, security: s as MailSecurity })}
+            onValueChange={(s) => {
+              const security = s as MailSecurity;
+              const usual = USUAL[id];
+              // A usual port follows its security; one I typed stays.
+              const moved =
+                usual && (security === "tls" || security === "starttls") && securityOf(v.port)
+                  ? usual[security]
+                  : v.port;
+              set({ ...v, security, port: moved });
+            }}
           >
             <SelectTrigger id={`${id}-security`} className="w-full">
               <SelectValue />
@@ -380,25 +443,13 @@ export function AddAccountForm({ onDone }: { onDone: () => void }) {
       onSubmit={async (e) => {
         e.preventDefault();
         setBusy(true);
+        setError(null);
         try {
-          await api.mail.addAccount({
-            provider,
-            protocol,
-            email,
-            name,
-            password,
-            deleteFromServer: protocol === "pop" && deleteFromServer,
-            ...(login ? { login } : {}),
-            ...(provider === "imap"
-              ? protocol === "pop"
-                ? { pop: incoming, smtp }
-                : { imap: incoming, smtp }
-              : {}),
-          });
+          await api.mail.addAccount(payload());
           toast.success(t("Connected. Your mail is on its way."));
           onDone();
         } catch (x) {
-          toast.error(message(x));
+          setError(message(x));
         } finally {
           setBusy(false);
         }
@@ -439,6 +490,7 @@ export function AddAccountForm({ onDone }: { onDone: () => void }) {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            onBlur={() => void detect()}
           />
         </div>
         <div className="space-y-1">
@@ -480,6 +532,19 @@ export function AddAccountForm({ onDone }: { onDone: () => void }) {
         </div>
       ) : (
         <>
+          {found ? (
+            <div className="space-y-1 rounded-md bg-muted px-3 py-2 text-xs">
+              <p>
+                {t("Found from the address: {name}. Its servers are filled in below.", {
+                  name: found.name,
+                })}
+              </p>
+              {found.hint ? <p>{t(found.hint)}</p> : null}
+              {protocol === "pop" && !found.pop ? (
+                <p>{t("This provider has no POP3: use IMAP.")}</p>
+              ) : null}
+            </div>
+          ) : null}
           {server(protocol === "pop" ? "POP3" : "IMAP", incoming, setIncoming, protocol)}
           {server("SMTP", smtp, setSmtp, "smtp")}
           <div className="space-y-1">
@@ -500,9 +565,46 @@ export function AddAccountForm({ onDone }: { onDone: () => void }) {
           </Label>
         </div>
       ) : null}
-      <div className="flex gap-2">
+      {tested ? (
+        <ul className="space-y-1 text-xs" aria-label={t("Test results")}>
+          {[tested.incoming, tested.smtp].map((r) => (
+            <li
+              key={r.message}
+              className={r.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}
+            >
+              {r.ok ? "✓ " : "✗ "}
+              {r.message}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {error ? (
+        <p role="alert" className="text-xs text-destructive [overflow-wrap:anywhere]">
+          {error}
+        </p>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
         <Button type="submit" disabled={busy || !email || !password}>
           {busy ? t("Checking…") : t("Connect")}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={testing || busy || !email || !password}
+          onClick={async () => {
+            setTesting(true);
+            setError(null);
+            setTested(null);
+            try {
+              setTested(await api.mail.testAccount(payload()));
+            } catch (x) {
+              setError(message(x));
+            } finally {
+              setTesting(false);
+            }
+          }}
+        >
+          {testing ? t("Testing…") : t("Test")}
         </Button>
         <Button type="button" variant="ghost" onClick={onDone}>
           {t("Cancel")}

@@ -9,8 +9,25 @@ globalThis.ResizeObserver ??= class {
 };
 
 const addAccount = vi.fn(async (_: unknown) => ({}));
+const detect = vi.fn(async (_: unknown) => ({
+  name: "Namecheap Private Email",
+  imap: { host: "mail.privateemail.com", port: 993, security: "tls" },
+  pop: { host: "mail.privateemail.com", port: 995, security: "tls" },
+  smtp: { host: "mail.privateemail.com", port: 465, security: "tls" },
+  hint: "The mailbox's own password; the login is the full address.",
+}));
+const testAccount = vi.fn(async (_: unknown) => ({
+  incoming: { ok: true, message: "POP3 (mail.privateemail.com) accepted the login." },
+  smtp: { ok: false, message: "SMTP (mail.privateemail.com:587) gave no answer in time" },
+}));
 vi.mock("@/lib/api", () => ({
-  api: { mail: { addAccount: (x: unknown) => addAccount(x) } },
+  api: {
+    mail: {
+      addAccount: (x: unknown) => addAccount(x),
+      detect: (x: unknown) => detect(x),
+      testAccount: (x: unknown) => testAccount(x),
+    },
+  },
   message: (e: unknown) => String(e),
 }));
 
@@ -80,5 +97,30 @@ describe("adding an email account", () => {
     const sent = addAccount.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(sent).toMatchObject({ provider: "gmail", protocol: "imap", deleteFromServer: false });
     expect(sent.imap).toBeUndefined();
+  });
+
+  it("fills the servers in from the address, keeps port and security together, and tests each side", async () => {
+    render(<AddAccountForm onDone={() => {}} />);
+    pick("Another server");
+    pick("POP3");
+    type("Address", "a.bakdi@abakdi.com");
+    fireEvent.blur(screen.getByLabelText("Address"));
+    await screen.findByText(/Found from the address: Namecheap Private Email/);
+    expect((screen.getByLabelText("POP3 server") as HTMLInputElement).value).toBe(
+      "mail.privateemail.com",
+    );
+    const smtpPort = () =>
+      screen.getByLabelText("Port", { selector: "#smtp-port" }) as HTMLInputElement;
+    expect(smtpPort().value).toBe("465");
+    // Port 587 is STARTTLS: the security follows.
+    fireEvent.change(smtpPort(), { target: { value: "587" } });
+    expect(screen.getByLabelText("Security", { selector: "#smtp-security" }).textContent).toMatch(
+      /STARTTLS/,
+    );
+    type("Password", "secret");
+    fireEvent.click(screen.getByRole("button", { name: "Test" }));
+    await screen.findByText(/accepted the login/);
+    expect(screen.getByText(/gave no answer in time/)).toBeTruthy();
+    expect(addAccount).not.toHaveBeenCalled();
   });
 });
