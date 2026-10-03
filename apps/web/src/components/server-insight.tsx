@@ -702,7 +702,7 @@ export function ServerLogsTab({ server }: { server: ServerView }) {
         <select
           data-help="server.logs.source"
           aria-label={t("Which log")}
-          className="h-8 min-w-0 max-w-full flex-1 rounded-md border bg-background px-2 text-sm"
+          className="h-8 w-full min-w-0 rounded-md border bg-background px-2 text-sm sm:w-auto sm:flex-1"
           value={source ?? ""}
           onChange={(e) => setSource(e.target.value || null)}
         >
