@@ -36,7 +36,12 @@ erDiagram
 | `serverIds` | The servers its jobs may use, none by default ([[Servers]]). |
 
 Its local ports (what its jobs' sandboxes may reach on this computer)
-are a setting, `project.localPorts.<project>` ([[Sandboxing]]).
+are a setting, `project.localPorts.<project>` ([[Sandboxing]]). Its
+**budget** across its jobs (tokens and money, both optional; a new job's
+default) is a setting too, `project.budget.<project>`
+([[Budgets-and-Quotas]] → A project's budget, [[ADR-034-Projects-First]]).
+A project is where I work: its conversation with The Eye is its jobs'
+messages together, and its Silk is its jobs' Silk, kept by job.
 
 **Life cycle:** active → archived (hidden from lists, kept for stats,
 takes no new jobs; restorable) → deleted (only on my request, refused
@@ -171,11 +176,13 @@ with its time and device.
 
 ## Eye message
 
-One message in my conversation with The Eye about a job: the author
-(`owner` or `eye`), the text, and for The Eye's replies what it made of
-my message (`instruction` · `task` · `context` · `later` · `stop` ·
-`question`) and what it did (Silk entries, tasks added). Kept forever,
-with the job.
+One message in my conversation with The Eye: the job it went to and
+its project (2026-10-03, [[ADR-034-Projects-First]]; the project's
+conversation is its messages from every job), the author (`owner` or
+`eye`), the text, and for The Eye's replies what it made of my message
+(`instruction` · `task` · `context` · `later` · `stop` · `question`) and
+what it did (Silk entries, tasks added, the job it started). Kept
+forever, with the job.
 
 ## Side effect
 

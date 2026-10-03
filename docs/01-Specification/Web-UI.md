@@ -56,8 +56,7 @@ Eye's conversation sit beside them ([[Chats-and-Helper]]).
 ├──────────┬────────────────────────────────────────────────────┤
 │ New work │                                                    │
 │ Overview │                                                    │
-│ Jobs     │        main view                                   │
-│ Projects │                                                    │
+│ Projects │        main view                                   │
 │ Inbox    │                                                    │
 │ Mail     │                                                    │
 │ Legs     │                                                    │
@@ -74,27 +73,29 @@ Eye's conversation sit beside them ([[Chats-and-Helper]]).
   control (pause job, new job, approve…).
 - **The sidebar folds** to icons (a button, or `[`), remembered per
   device; pages with a side panel of their own (Chats, Terminal, Email,
-  a job) fold it by themselves while they are open.
+  a job opened in a project's Work tab) fold it by themselves while
+  they are open.
 - **Pages use their space** (2026-10-03): a page with more than one
   concern is in tabs, the tab in the address; each tab fills the height
   it needs, a conversation takes the whole height like Chats; changing
   tabs never jumps the page. Nothing runs off the right edge on a phone:
   long names are cut with their full text on hover, and wrap in legends.
-- **Keyboard**: `?` lists every shortcut; `g` then `o`/`j`/`p`/`i`/`l`/
-  `c`/`s`/`t`/`m`/`k`/`,` goes to Overview, Jobs, Projects, Inbox, Legs,
-  Chats, Servers, Terminal, Mail, Skills, Settings; `1`…`9` goes to that
-  tab on a page with tabs; `[` folds the sidebar; `n` new work; Ctrl+K
+- **Keyboard**: `?` lists every shortcut; `g` then `o`/`p`/`i`/`l`/
+  `c`/`s`/`t`/`m`/`k`/`,` goes to Overview, Projects, Inbox, Legs,
+  Chats, Servers, Terminal, Mail, Skills, Settings (`g j` went with the
+  Jobs page, 2026-10-03); `1`…`9` goes to that tab on a page with tabs
+  (a job's own tabs inside Work don't take them); `[` folds the sidebar; `n` new work; Ctrl+K
   the command palette. Single keys stay out of the way while I type.
-- **On mobile:** the sidebar becomes a bottom tab bar (Overview, Jobs,
-  Inbox, Legs, More). Every control is reachable within two taps, and
+- **On mobile:** the sidebar becomes a bottom tab bar (Overview,
+  Projects, Inbox, Legs, More). Every control is reachable within two taps, and
   touch targets are at least 44 px (buttons, fields, tabs and the close
   of every dialog, on any touch screen). More closes on a tap outside,
   on Esc and when I pick a page; nothing on a phone traps me.
 - **Going back** (2026-10-03): everything I drill into has a back
-  control before its title: a job, a draft, a Leg opened from elsewhere,
-  a skill, an inbox item, and on a phone a project, a server and a chat.
-  It goes back where I came from when that was in Oraknid, else to the
-  page above (Jobs, Projects…). Settings opened from a "Settings" link
+  control before its title: a job (back to its project's Work), a draft,
+  a Leg opened from elsewhere, a skill, an inbox item, and on a phone a
+  project, a server and a chat. It goes back where I came from when
+  that was in Oraknid, else to the page above (Projects, New work…). Settings opened from a "Settings" link
   next to a control has one too. A job's task drawer is a step of its
   own: the phone's back, Esc or ✕ close it. Every dialog closes with Esc
   and has a visible ✕; buttons sit with the main one on the right.
@@ -122,9 +123,16 @@ Eye's conversation sit beside them ([[Chats-and-Helper]]).
 | **Activity stream** | Every Leg's and The Eye's actions as they happen, filterable by job, Leg and kind. Leg output appears as condensed lines that expand. |
 | **Problems** | Errors, drift events, kills, escalations, blocked jobs. Each links to the evidence. |
 | **Resources** | Per Leg and per process: CPU, RAM, GPU and VRAM (local models), disk I/O, network. Sparklines, with the full chart a click away. |
-| **Totals** | Tokens today, by Leg. Jobs running and queued. Inbox count. |
+| **Running now** | (2026-10-03, [[ADR-034-Projects-First]]) Every job going, waiting, paused or queued, across projects: its title, its project, its progress, a queued mark, and Pause or Resume on its row. A job opens in its project's Work tab. `/jobs` comes here. |
+| **Totals** | Tokens today, by Leg. Jobs running and queued (the tile goes to Running now). Inbox count. |
 
 ### Job
+
+There is no job page ([[ADR-034-Projects-First]], 2026-10-03): a job
+is opened in its project's Work tab (below), with everything the job
+page had. `/jobs/<id>` and `/jobs/<id>/<tab>` (from notifications, push,
+old links) open the job's project at Work with that job open, its old
+Eye tab at the project's Eye tab; a draft opens on New work.
 
 - **The Web**, an animated graph that updates live. Nodes are tasks,
   coloured by state, showing the Leg's avatar while assigned. When a
@@ -133,21 +141,18 @@ Eye's conversation sit beside them ([[Chats-and-Helper]]).
 - **Task drawer:** instructions, scope, verify commands and their latest
   output, attempts and sessions, escalation history, checkpoints (with
   rollback), the diff, and the routing reason.
-- **Tabs, in the address** (`/jobs/<id>/<tab>`): The Web (first: the
-  graph and its task drawer) · The Eye (a conversation filling the page,
-  as in Chats) · Agents · Activity · Silk · Inbox (this job) · Budget &
-  stats · Result (once there is one) · Settings. A header above them
-  keeps the title, state and controls; nothing else is above the tabs.
-- **Controls** always visible: Pause / Resume, Cancel, Redirect, Edit plan,
-  autonomy level.
+- **A job opened** (`/projects/<p>/work/<job>/<part>`): a header with its
+  title, state, branch, tokens and controls, then its own tabs: Tasks
+  (its Web, the task drawer, add a task, order, the plan beside its
+  shadow) · Result (once completed) · Agents · Activity · Silk · Inbox
+  (this job) · Budget & stats · Settings. Back goes to the Work list.
+- **Controls** always visible: Pause / Resume, Cancel, Redirect, priority,
+  autonomy level; Edit plan in Tasks.
 - **Agents**: every session of the job (Legs and The Eye's reasoning),
   live or finished; opening one shows its whole output as a terminal-like
   log: text, tool calls with their commands and results, permission
   decisions, usage. It follows along while a session runs. The task
   drawer shows the task's own sessions the same way.
-- **The Eye**: its own tab, the conversation with The Eye filling it
-  like a chat, the prompt at the bottom. Each reply says what The Eye made of my message and what it
-  did.
 - **Result**: once the job is completed, where the work is (folder,
   branch, commits), Open (on this computer) and Merge into the work
   branch, with a confirmation; conflicting files are listed.
@@ -163,22 +168,55 @@ task), budget burn against limits.
 
 ### Projects
 
-A list with totals. Each project page: history of jobs, tokens and time
-spent, tasks completed, failures, breakdown by Leg, and a link to the
-workspace and its Silk mirror. A project's page is in tabs: Jobs, Stats,
-Skills, Servers, **Network** (the ports on this computer its jobs may
-reach, like a local database; [[Sandboxing]]), Commands, About. **New work** in its header starts a job
-there; its Servers tab adds a server or sets one up in place, its Skills
-tab shows which tools a skill still needs.
+A list with totals, and the project open beside it: **the place I
+work** ([[ADR-034-Projects-First]], 2026-10-03). Its page is in tabs, in
+the address (`/projects/<id>/<tab>`):
+
+- **The Eye**: the project's one conversation with The Eye, filling the
+  page like a chat. I ask for work here; The Eye passes it to the job
+  running, starts a follow-up when the last has ended, or a first job
+  ([[The-Eye]] → Talking to The Eye). Each reply links the job it
+  touched (and the follow-up it started); a line marks where the
+  conversation moves to another job. The header says which job it talks
+  to now.
+- **The Web**: the project's tasks across its jobs. The job running now
+  (else the newest) is laid out in full; each earlier job is folded to
+  one node (title, state, tasks done) in the order they ran, opened in
+  place on a click or from the row of earlier jobs above, and folded
+  again the same way. A task opens its drawer.
+- **Work**: the jobs as a timeline, newest first: title, state,
+  progress, branch, tokens, a queued mark, Pause or Resume. Opening one
+  shows it in place (Job, above); a draft opens on New work.
+- **Inbox**: the project's approvals and questions, answered in place.
+- **Silk**: the project's Silk kept by job, newest job first, the newest
+  open ([[Silk]] → Per project); a decision I add goes to the job The
+  Eye talks to now.
+- **Activity**: every job's events, live, each line naming its job.
+- **Budget & stats**: the project's budget across its jobs (what they
+  used against it, a note while a job waits at its limit, and a dialog
+  to change it; [[Budgets-and-Quotas]] → A project's budget), then
+  tokens, time, tasks done, success, tokens per day and the breakdown
+  by Leg.
+- **Settings**: the folder and branches, archive or delete, and the
+  project's command rules.
+- **Skills**, **Servers**, **Network** (the ports on this computer its
+  jobs may reach, like a local database; [[Sandboxing]]).
+
+**New work** in its header opens its Eye tab. Its Servers tab adds a
+server or sets one up in place, its Skills tab shows which tools a
+skill still needs. With a job open, the list of projects steps aside
+below 1280 px.
 
 ### New work
 
 Options on the left, my prompt and the conversation with The Eye on
-the right ([[Jobs-and-Projects]] → Starting work). The draft is saved as
-I go; **Start**, **Delete** and the drafts list in Jobs. **Start** stays
-disabled until there is a goal and a project, and says why; what it
-waits for that can be set up (a Leg, a tool) is offered beside it. New
-work from a project's page starts with that project chosen.
+the right ([[Jobs-and-Projects]] → Starting work). It is for a first
+request, a new project or a draft; more work in a project is asked in
+its Eye tab. The drafts are listed above the form. The draft is saved as
+I go; **Start** and **Delete**. **Start** stays disabled until there is
+a goal and a project, and says why; what it waits for that can be set
+up (a Leg, a tool) is offered beside it. Its budget starts as the
+chosen project's. Once started, it lands in the project's Eye tab.
 
 ### Chats
 

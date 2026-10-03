@@ -1,6 +1,6 @@
 # Budgets and Quotas
 
-**Is:** the limits I set on a job, a task or a Leg, and how Oraknid
+**Is:** the limits I set on a job, a project, a task or a Leg, and how Oraknid
 tracks every Leg's quota.
 **Is not:** billing. Oraknid never charges anything. It only measures.
 
@@ -15,11 +15,11 @@ as an alarm that tells me to come and look.
 
 | Dimension | Applies to | Default | When reached |
 | :-- | :-- | :-- | :-- |
-| Tokens (in + out) | job, task, Leg | unlimited | Stop new work, ask me (hard). |
+| Tokens (in + out) | job, project, task, Leg | unlimited | Stop new work, ask me (hard). |
 | Quota-window share | Leg, per job | 100% | Stop routing this job to that Leg until reset. |
 | Context per session | Leg | 60% of window | Rotate the session (BR-3). |
 | Wall-clock time | job, task | job: 8 h alarm | Notify me (soft). Hard only if I set it. |
-| Money | job, Leg | 0 | Only paid Legs need it. Stop and ask (hard). |
+| Money | job, project, Leg | 0 | Only paid Legs need it. Stop and ask (hard). |
 
 The quota-window share is how full this job may make any window of a
 Leg: at a hard 50%, a Leg whose `seven_day` window is at 62% is not
@@ -34,6 +34,33 @@ once. At a hard limit the job pauses at a safe point and the inbox asks:
 raise it by half, double it, or keep it paused. A job's tokens are what
 went in and out plus what was written to cache; cache reads are not
 counted.
+
+## A project's budget (2026-10-03)
+
+A project can have its own limits, across all of its jobs
+([[ADR-034-Projects-First]]): tokens, and money. Both are optional; none
+is set by default. They are a setting per project, changed in the
+project's Budget & stats tab.
+
+- **The default for a new job.** A new job in the project starts with
+  the project's limits as its own tokens and money budget (the rest as
+  any job: no quota share limit, the 8 h alarm). New work's form shows
+  them, and I can change them there. A follow-up job keeps the budget
+  of the job it follows.
+- **Across the jobs.** The project's tokens are its jobs' tokens added
+  up, counted as for a job. At 80% of a hard limit I'm warned once; a
+  soft limit only tells me once it's passed.
+- **At a hard limit** the job that would go past it pauses at a safe
+  point, and the inbox asks once, naming the project: raise it by half,
+  double it, or keep it paused. Any other job of the project running
+  meanwhile pauses too, without a second question. Raising it resumes
+  the jobs it paused; keeping them paused leaves them, and a job I
+  resume past the limit pauses and asks again.
+- Changing the project's budget starts that dimension's warnings
+  afresh.
+
+Money is measured as for a job: nothing counts money yet (paid Legs
+come later), so a money limit only matters once one does.
 
 ## Quota tracking per Leg
 
