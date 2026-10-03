@@ -161,8 +161,18 @@ export async function removeAccount(
 
 /** The servers, when it was checked, and the account's switches. */
 export function AccountSettings({ account: a, away }: { account: MailAccountView; away: boolean }) {
-  const set = (patch: { autoSend?: boolean; appendSent?: boolean; deleteFromServer?: boolean }) =>
-    act(() => api.mail.updateAccount({ id: a.id, ...patch }));
+  const set = (patch: {
+    name?: string;
+    autoSend?: boolean;
+    appendSent?: boolean;
+    deleteFromServer?: boolean;
+  }) => act(() => api.mail.updateAccount({ id: a.id, ...patch }));
+  const [name, setName] = useState(a.name);
+  const rename = () => {
+    const next = name.trim();
+    if (!next) setName(a.name);
+    else if (next !== a.name) set({ name: next });
+  };
   const toggle = (id: string, checked: boolean, label: string, on: (v: boolean) => void) => (
     <div className="flex items-start gap-2 text-xs">
       <Switch id={`${id}-${a.id}`} checked={checked} disabled={away} onCheckedChange={on} />
@@ -173,7 +183,35 @@ export function AccountSettings({ account: a, away }: { account: MailAccountView
   );
   return (
     <div className="space-y-2">
+      <form
+        className="space-y-1"
+        onSubmit={(e) => {
+          e.preventDefault();
+          rename();
+        }}
+      >
+        <Label htmlFor={`name-${a.id}`}>{t("Name")}</Label>
+        <div className="flex gap-2">
+          <Input
+            id={`name-${a.id}`}
+            value={name}
+            maxLength={60}
+            disabled={away}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={rename}
+            placeholder={a.email}
+          />
+          <Button
+            type="submit"
+            variant="outline"
+            disabled={away || !name.trim() || name.trim() === a.name}
+          >
+            {t("Rename")}
+          </Button>
+        </div>
+      </form>
       <div className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
+        {a.email} ·{" "}
         {a.protocol === "pop"
           ? t("POP3 {host} · SMTP {smtp}", { host: a.incomingHost, smtp: a.smtpHost })
           : t("IMAP {host} · SMTP {smtp}", { host: a.incomingHost, smtp: a.smtpHost })}

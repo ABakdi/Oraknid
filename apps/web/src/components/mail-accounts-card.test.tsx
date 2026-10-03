@@ -9,6 +9,7 @@ globalThis.ResizeObserver ??= class {
 };
 
 const addAccount = vi.fn(async (_: unknown) => ({}));
+const updateAccount = vi.fn(async (_: unknown) => ({}));
 const detect = vi.fn(async (_: unknown) => ({
   name: "Namecheap Private Email",
   imap: { host: "mail.privateemail.com", port: 993, security: "tls" },
@@ -26,12 +27,13 @@ vi.mock("@/lib/api", () => ({
       addAccount: (x: unknown) => addAccount(x),
       detect: (x: unknown) => detect(x),
       testAccount: (x: unknown) => testAccount(x),
+      updateAccount: (x: unknown) => updateAccount(x),
     },
   },
   message: (e: unknown) => String(e),
 }));
 
-const { AddAccountForm } = await import("./mail-accounts-card");
+const { AccountSettings, AddAccountForm } = await import("./mail-accounts-card");
 
 afterEach(() => {
   cleanup();
@@ -122,5 +124,24 @@ describe("adding an email account", () => {
     await screen.findByText(/accepted the login/);
     expect(screen.getByText(/gave no answer in time/)).toBeTruthy();
     expect(addAccount).not.toHaveBeenCalled();
+  });
+
+  it("renames an account from its settings", async () => {
+    const account = {
+      id: "a1",
+      name: "semi-pro",
+      email: "me@example.com",
+      protocol: "imap",
+      incomingHost: "imap.example.com",
+      smtpHost: "smtp.example.com",
+      autoSend: false,
+      appendSent: true,
+      deleteFromServer: false,
+      lastSyncAt: null,
+    } as unknown as Parameters<typeof AccountSettings>[0]["account"];
+    render(<AccountSettings account={account} away={false} />);
+    type("Name", "Personal");
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+    await waitFor(() => expect(updateAccount).toHaveBeenCalledWith({ id: "a1", name: "Personal" }));
   });
 });

@@ -276,7 +276,7 @@ to the list". Everything works at 390 px wide.
 - **Accounts, here**: "Add an account" under the folders (and on the
   empty page) opens the same form as Settings. Each account has a menu:
   Check for mail, Reconnect… (a new password, or the one kept after the
-  server was out of reach), Account settings… (auto-send, keep what I
+  server was out of reach), Account settings… (its name, auto-send, keep what I
   send in Sent, and for POP delete from the server), and Remove from
   Oraknid…, after a second step. Not from away, except checking.
 - **Reconnect**: an account whose login stopped working says so above
