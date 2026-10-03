@@ -260,6 +260,65 @@ export function TerminalPage({ target }: { target?: string }) {
   );
 }
 
+/**
+ * A server's Terminal tab (ADR-043): one shell on it, opened with a click
+ * (each opening is audited), closed when the page closes.
+ */
+export function ServerTerminal({ id, name }: { id: string; name: string }) {
+  const enabled = useLive(() => api.settings.terminal(), {
+    topics: ["overview"],
+    refreshOn: (e) => e.type === "settings.updated",
+  });
+  const lock = useLive(() => api.lock.status(), {
+    topics: ["overview"],
+    refreshOn: (e) => e.type === "device.rights",
+  });
+  const [open, setOpen] = useState(0);
+  if (enabled.error) return <ErrorNote error={enabled.error} />;
+  if (enabled.loading) return <Loading />;
+  if (remote() && !lock.data?.full)
+    return (
+      <Note>
+        {t(
+          "The terminal opens away from home only on a device with full rights: give them to this device at home, in Settings → Devices & phone.",
+        )}
+      </Note>
+    );
+  if (!enabled.data)
+    return (
+      <div className="max-w-2xl space-y-3">
+        <div className="text-sm text-muted-foreground">
+          {t("The terminal is off: it is a full shell as you.")}
+        </div>
+        <TerminalCard onChange={() => enabled.reload()} />
+      </div>
+    );
+  if (!open)
+    return (
+      <div className="space-y-2">
+        <div className="text-sm text-muted-foreground">
+          {t("A shell on {name} over SSH, as its user. Every terminal opened is in the log.", {
+            name,
+          })}
+        </div>
+        <Button
+          data-help="server.terminal.open"
+          size="sm"
+          className="gap-1"
+          onClick={() => setOpen(Date.now())}
+        >
+          <Server className="size-3.5" />
+          {t("Open a terminal on {name}", { name })}
+        </Button>
+      </div>
+    );
+  return (
+    <div className="h-[60dvh] min-h-64 md:h-full">
+      <Term key={open} target={id} focused visible onExit={() => setOpen(0)} />
+    </div>
+  );
+}
+
 function Note({ children }: { children: ReactNode }) {
   return (
     <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm">

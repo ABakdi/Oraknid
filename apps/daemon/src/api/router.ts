@@ -32,10 +32,12 @@ import {
   HelperMessage,
   InboxFilter,
   InboxItem,
+  Insight,
   JobResult,
   JobView,
   LegPlanUsage,
   LegView,
+  LogSource,
   MailAccountView,
   MailCompose,
   MailDetected,
@@ -68,9 +70,16 @@ import {
   PushSubscriptionInput,
   QuestionAnswers,
   QuietHours,
+  ServerDatabases,
+  ServerDocker,
+  ServerLogSource,
+  ServerLogs,
+  ServerProxies,
+  ServerRestart,
   ServerRole,
   ServerSample,
   ServerState,
+  ServerTraffic,
   ServerView,
   SessionLogPage,
   SessionView,
@@ -463,6 +472,62 @@ async function guard<T>(fn: () => Promise<T> | T): Promise<T> {
 }
 
 // Procedures follow docs/02-Architecture/API-Contract.md. Later milestones add the rest.
+/** What runs on a server (ADR-043): each part read while its screen asks; restarting asked first. */
+const ServerPart = z.object({ id: z.string(), fresh: z.boolean().optional() });
+const serverInsightRoutes = {
+  docker: base
+    .input(ServerPart)
+    .output(Insight(ServerDocker))
+    .handler(({ context: c, input }) =>
+      guard(() => c.servers.insight.part(input.id, "docker", input.fresh)),
+    ),
+  databases: base
+    .input(ServerPart)
+    .output(Insight(ServerDatabases))
+    .handler(({ context: c, input }) =>
+      guard(() => c.servers.insight.part(input.id, "databases", input.fresh)),
+    ),
+  proxy: base
+    .input(ServerPart)
+    .output(Insight(ServerProxies))
+    .handler(({ context: c, input }) =>
+      guard(() => c.servers.insight.part(input.id, "proxy", input.fresh)),
+    ),
+  traffic: base
+    .input(ServerPart)
+    .output(Insight(ServerTraffic))
+    .handler(({ context: c, input }) =>
+      guard(() => c.servers.insight.part(input.id, "traffic", input.fresh)),
+    ),
+  logSources: base
+    .input(z.object({ id: z.string() }))
+    .output(z.array(ServerLogSource))
+    .handler(({ context: c, input }) => guard(() => c.servers.insight.logSources(input.id))),
+  /** A log's last lines or a search; following one is on the live socket. */
+  logs: base
+    .input(
+      z.object({
+        id: z.string(),
+        source: LogSource,
+        lines: z.number().int().min(1).max(2000).optional(),
+        search: z.string().max(200).optional(),
+      }),
+    )
+    .output(ServerLogs)
+    .handler(({ context: c, input }) =>
+      guard(() =>
+        c.servers.insight.logs(input.id, input.source, {
+          ...(input.lines ? { lines: input.lines } : {}),
+          ...(input.search ? { search: input.search } : {}),
+        }),
+      ),
+    ),
+  restart: base
+    .input(ServerRestart)
+    .output(z.object({ ok: z.literal(true) }))
+    .handler(({ context: c, input }) => guard(() => c.servers.insight.restart(input))),
+};
+
 export const router = {
   system: {
     status: base.output(SystemStatus).handler(({ context: c }) => ({
@@ -732,6 +797,7 @@ export const router = {
       .input(z.object({ id: z.string() }))
       .output(z.object({ cleaned: z.boolean() }))
       .handler(({ context: c, input }) => guard(() => c.servers.remove(input.id))),
+    ...serverInsightRoutes,
   },
   /** The Oraknid helper: what I ask in words, done through this API (ADR-024). */
   helper: {

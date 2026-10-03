@@ -300,8 +300,57 @@ a new server's link and waiting question, `/servers?add=1` opening the
 dialog; nothing wider than the screen.
 
 ### M13.12 — What runs on a server ([[ADR-043-Server-Insight]])
-- [ ] Docker containers, images, volumes and compose projects; databases; the reverse proxy and its sites; traffic; logs live
-- [ ] A server's page in tabs; restart a container or a service, asked first; the helper reads it all
+- [x] Docker containers, images, volumes and compose projects; databases; the reverse proxy and its sites; traffic; logs live
+- [x] A server's page in tabs; restart a container or a service, asked first; the helper reads it all
+- [~] SQLite files from the state document, and sizes inside containers: wait for the credentials of ADR-044 (M13.13); the light reading every few minutes became a part of every discovery
+
+Tested (M13.12, 2026-10-03): `pnpm check` green. oraknid-monitor
+(`apps/daemon/src/servers/monitor.test.ts`): the real script under `sh`
+with stand-in docker, systemctl, ss, nginx, openssl, journalctl, sudo
+and pgrep printing what a real Debian server prints, and the server's
+files under a root of their own: containers with health, uptime, CPU and
+memory (MiB and GiB to bytes), a name with quotes, `<no value>` as no
+project, images in use, volumes mounted; Docker's socket refused said
+with the docker group (in the databases part too); Debian's
+`postgresql.service` left out for its cluster, versions from psql and
+redis-server, the port only when listening, a size only when readable;
+nginx -T with an upstream block, a redirect, two blocks of one name, a
+comment, a certificate ended in 2020 and one not readable; Traefik's
+routes from labels; the last 15 minutes of two access logs (combined, and
+harvest's own with no client), a line 40 minutes old out, a garbage line
+counted, queries dropped, a log not readable said with its owner;
+connections per listening port; a log's last lines, a search, a source
+refused (`;`, a relative path, `..`); a followed log ended by closing its
+input with nothing left running. Daemon (`servers/insight.test.ts`,
+through the stand-in SSH server with stand-in tools): the state
+document's discovery has the containers and sites; each part through
+the API, a second read within 20 s served from memory and `fresh` asking
+the server; log sources, a search, the journal's header dropped; a log
+followed on `/live` until `logs-close` and its process gone on the
+server, a fifth at once refused; restart without `confirm` refused, home
+only for a standard device, a container restarted, an unknown one and a
+service without root refused in words, both attempts audited. The helper
+(`helper.test.ts`) reads Docker, databases, the proxy, traffic, the log
+sources and a searched log as untrusted data. Web
+(`components/server-insight.test.tsx`): the eight tabs in order;
+containers by compose project, Restart asking first and doing nothing on
+Leave it running; Docker's refusal shown; a database, a site with its
+certificate red five days before its end, the traffic and an unreadable
+log; a log followed, stopped when another is picked or Follow is turned
+off, then searched on the server; every new `data-help` id in the help
+map (`help-map.test.ts`). On the real staging server, read-only (the new
+script copied to `/tmp`, run once, removed; nothing installed or
+restarted): every part valid JSON under dash and mawk and read by the
+contracts — 19 containers, 46 images (28 unused), 3 MongoDB containers,
+37 nginx blocks as 19 sites, 6 certificates (two already ended),
+`nginx -t` ok, 104 requests in 15 minutes from two access logs; a
+followed container log stopped with nothing left running. By hand in
+headless Chromium on a sample daemon (fake OS, its own data folder, a
+stand-in SSH server, port 7541) at 1440 and 390 px: every tab, the
+restart dialog, a log followed live and scrolled to its end, traffic
+bars and tiles; no page errors, nothing wider than the screen. Found by
+hand and fixed: a database process inside a container showed twice; the
+log picker squeezed the search on a phone.
 
 ### M13.13 — Scheduled, encrypted backups ([[ADR-044-Backups]])
 - [ ] Backup plans per database (Docker or not): schedule, destination (this computer or another server), retention, credentials in the keychain

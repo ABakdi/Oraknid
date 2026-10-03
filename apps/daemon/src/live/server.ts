@@ -17,7 +17,17 @@ export interface LiveOptions {
   /** Decides whether an upgrade request may connect. */
   allow: (req: IncomingMessage) => boolean;
   heartbeatMs?: number;
+  /** Follows a server's log while a screen asks (ADR-043); returns how to stop it. */
+  followLog?: (
+    serverId: string,
+    source: string,
+    push: (lines: string[]) => void,
+    end: (error: string | null) => void,
+  ) => Promise<() => void>;
 }
+
+/** At most this many logs followed at once on one socket. */
+const MAX_LOGS = 4;
 
 /**
  * The /live WebSocket (ADR-004): sequenced events per topic, with replay
@@ -41,7 +51,7 @@ const RELAYED = new Set([
   "job.merged",
 ]);
 
-export function attachLive({ server, bus, allow, heartbeatMs = 15_000 }: LiveOptions) {
+export function attachLive({ server, bus, allow, heartbeatMs = 15_000, followLog }: LiveOptions) {
   const wss = new WebSocketServer({ noServer: true });
   /** Clients subscribed to "metrics", for the ephemeral metrics stream. */
   const metricsClients = new Set<WebSocket>();
@@ -125,8 +135,55 @@ export function attachLive({ server, bus, allow, heartbeatMs = 15_000 }: LiveOpt
         case "pong":
           alive = true;
           break;
+        case "logs-open":
+          openLog(frame.id, frame.serverId, frame.source);
+          break;
+        case "logs-close":
+          logs.get(frame.id)?.();
+          logs.delete(frame.id);
+          break;
       }
     });
+
+    // Logs followed for this socket (ADR-043): each stops when its screen
+    // says so or the socket closes; nothing keeps running on the server.
+    const logs = new Map<string, () => void>();
+    function openLog(id: string, serverId: string, source: string) {
+      if (!followLog || logs.has(id)) return;
+      if (logs.size >= MAX_LOGS) {
+        send({ type: "log-end", id, error: `At most ${MAX_LOGS} logs are followed at once.` });
+        return;
+      }
+      let stop: (() => void) | null = null;
+      let closed = false;
+      // Until it has started, closing it marks it to stop as soon as it does.
+      logs.set(id, () => {
+        closed = true;
+        stop?.();
+      });
+      followLog(
+        serverId,
+        source,
+        (lines) => send({ type: "log", id, lines }),
+        (error) => {
+          logs.delete(id);
+          send({ type: "log-end", id, error });
+        },
+      ).then(
+        (s) => {
+          stop = s;
+          if (closed) s();
+        },
+        (error: unknown) => {
+          logs.delete(id);
+          send({
+            type: "log-end",
+            id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        },
+      );
+    }
 
     function replay(lastSeq: number) {
       // The client says it has everything up to lastSeq.
@@ -158,6 +215,8 @@ export function attachLive({ server, bus, allow, heartbeatMs = 15_000 }: LiveOpt
       clearInterval(heartbeat);
       metricsClients.delete(ws);
       off();
+      for (const stop of logs.values()) stop();
+      logs.clear();
     });
   });
 

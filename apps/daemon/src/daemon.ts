@@ -463,6 +463,8 @@ export async function startDaemon(options: DaemonOptions) {
       isLocalRequest(req, port) &&
       unlocked(tokenOf(req.headers, req.url), unlockOf(req.headers, req.url)) !== null,
     ...(options.heartbeatMs ? { heartbeatMs: options.heartbeatMs } : {}),
+    // A server's log, followed while its screen is open (ADR-043).
+    followLog: (id, source, push, end) => serverService.insight.follow(id, source, push, end),
   });
 
   // The terminal: off until I turn it on, paired devices only (ADR-028).
