@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Link, useLocation } from "wouter";
 import { ErrorNote, Loading, Markdown, PageHeader } from "@/components/common";
 import { useConfirm } from "@/components/confirm";
+import { QuestionsForm } from "@/components/questions";
 import { AddLegButtons, GitHubSetupButton, ToolsSetupButton } from "@/components/setup";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -818,6 +819,7 @@ function Conversation({
   const [editingGoal, setEditingGoal] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const count = talk.data?.length ?? 0;
+  const replied = new Set((talk.data ?? []).map((m) => m.replyTo).filter(Boolean));
   // biome-ignore lint/correctness/useExhaustiveDependencies: scrolls when the conversation grows
   useEffect(() => {
     box.current?.scrollTo({ top: box.current.scrollHeight });
@@ -859,22 +861,36 @@ function Conversation({
       </div>
       <div ref={box} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
         {(talk.data ?? []).map((m) => (
-          <div
-            key={m.id}
-            className={cn("flex", m.author === "owner" ? "justify-end" : "justify-start")}
-          >
-            <div
-              className={cn(
-                "min-w-0 max-w-[92%] rounded-lg px-3 py-2 text-sm md:max-w-[80%]",
-                m.author === "owner" ? "bg-primary text-primary-foreground" : "bg-muted",
-              )}
-            >
-              {m.author === "owner" ? (
-                <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{m.text}</div>
-              ) : (
-                <Markdown text={m.text} />
-              )}
+          <div key={m.id} className="space-y-1.5">
+            <div className={cn("flex", m.author === "owner" ? "justify-end" : "justify-start")}>
+              <div
+                className={cn(
+                  "min-w-0 max-w-[92%] rounded-lg px-3 py-2 text-sm md:max-w-[80%]",
+                  m.author === "owner" ? "bg-primary text-primary-foreground" : "bg-muted",
+                )}
+              >
+                {m.author === "owner" && !m.answers ? (
+                  <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{m.text}</div>
+                ) : (
+                  <Markdown text={m.text} />
+                )}
+              </div>
             </div>
+            {/* The round's questions, asked with options until I answer them (ADR-037). */}
+            {m.questions?.length && !replied.has(m.id) ? (
+              <QuestionsForm
+                questions={m.questions}
+                busy={!!thinking.data}
+                onSubmit={async (answers) => {
+                  try {
+                    await api.jobs.draftAnswer({ id: jobId, messageId: m.id, answers });
+                    thinking.reload();
+                  } catch (e) {
+                    toast.error(message(e));
+                  }
+                }}
+              />
+            ) : null}
           </div>
         ))}
         {thinking.data ? (

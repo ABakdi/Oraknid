@@ -1,9 +1,10 @@
-import type { EyeMessage, JobView } from "@oraknid/contracts";
+import type { EyeMessage, JobView, QuestionAnswer } from "@oraknid/contracts";
 import { Eye, SendHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import { Markdown } from "@/components/common";
+import { QuestionsForm } from "@/components/questions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -50,8 +51,11 @@ export function EyeChat({
   });
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [answering, setAnswering] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const list = messages.data ?? [];
+  // The questions I answered already: my answer names the message it answers (ADR-037).
+  const replied = new Set(list.map((m) => m.replyTo).filter(Boolean));
   const thinking = list.at(-1)?.author === "owner";
   const byId = new Map(jobs.map((j) => [j.id, j]));
   const going = jobs.filter((j) => !["draft", "completed", "cancelled"].includes(j.state)).at(-1);
@@ -73,6 +77,18 @@ export function EyeChat({
       toast.error(message(e));
     } finally {
       setSending(false);
+    }
+  };
+
+  const answer = async (messageId: string, answers: QuestionAnswer[]) => {
+    setAnswering(messageId);
+    try {
+      await api.projects.answer({ id: projectId, messageId, answers });
+      messages.reload();
+    } catch (e) {
+      toast.error(message(e));
+    } finally {
+      setAnswering(null);
     }
   };
 
@@ -136,7 +152,7 @@ export function EyeChat({
                         m.author === "owner" ? "bg-primary text-primary-foreground" : "bg-muted",
                       )}
                     >
-                      {m.author === "owner" ? (
+                      {m.author === "owner" && !m.answers ? (
                         <div className="whitespace-pre-wrap">{m.text}</div>
                       ) : (
                         <Markdown text={m.text} />
@@ -176,6 +192,16 @@ export function EyeChat({
                       </div>
                     </div>
                   </div>
+                  {m.questions?.length && !replied.has(m.id) ? (
+                    <div className="mt-1.5 max-w-full md:max-w-[85%]">
+                      <QuestionsForm
+                        questions={m.questions}
+                        busy={answering === m.id}
+                        disabled={archived}
+                        onSubmit={(a) => answer(m.id, a)}
+                      />
+                    </div>
+                  ) : null}
                 </div>
               );
             })}
