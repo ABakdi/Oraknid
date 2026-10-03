@@ -276,7 +276,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <div className="flex min-h-0 flex-1">
         <nav
           className={cn(
-            "hidden shrink-0 flex-col gap-0.5 border-r bg-sidebar p-2 transition-[width] md:flex",
+            "hidden shrink-0 flex-col gap-0.5 border-r bg-sidebar p-2 pb-16 transition-[width] md:flex",
             folded ? "w-14" : "w-48",
           )}
           aria-label={t("Main")}
