@@ -25,6 +25,8 @@ export const NotifyEvent = z.enum([
   "leg.unavailable",
   /** Wrong PINs, a device unpaired by them (ADR-029). */
   "security",
+  /** A database backup failed (ADR-044). */
+  "backup.failed",
 ]);
 export type NotifyEvent = z.infer<typeof NotifyEvent>;
 
