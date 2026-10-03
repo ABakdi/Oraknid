@@ -8,6 +8,7 @@ import {
   JobInput,
   JobState,
   Project,
+  RepoName,
   SilkEntry,
   Task,
 } from "./entities.ts";
@@ -64,6 +65,35 @@ export const NewProjectFrom = z.object({
   source: ProjectSource,
 });
 export type NewProjectFrom = z.infer<typeof NewProjectFrom>;
+
+/** A folder inside a project's, parts joined by "/", never leaving it. */
+const RepoFolder = z
+  .string()
+  .min(1)
+  .max(200)
+  .regex(/^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/, "a folder inside the project")
+  .refine((f) => !f.split("/").some((p) => p === "." || p === ".." || p === ".oraknid"), {
+    message: "a folder inside the project",
+  });
+
+/** A repo added to a project (ADR-042): a folder of it that is one, a new empty one, or a clone. */
+export const NewProjectRepo = z.object({
+  id: Id,
+  /** Its name in the project: the folder's last part when left out. */
+  name: RepoName.optional(),
+  source: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("folder"), folder: RepoFolder }),
+    z.object({ kind: z.literal("new"), folder: RepoFolder }),
+    z.object({
+      kind: z.literal("github-clone"),
+      folder: RepoFolder,
+      fullName: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
+      account: z.string().optional(),
+    }),
+    z.object({ kind: z.literal("git-url"), folder: RepoFolder, url: z.string().min(1) }),
+  ]),
+});
+export type NewProjectRepo = z.infer<typeof NewProjectRepo>;
 
 export const DEFAULT_BUDGET: Budget = {
   tokens: null,
@@ -164,6 +194,19 @@ export const JobResult = z.object({
   merged: z.boolean(),
   /** Why it can't be merged, when it can't (not a repo, no branch, already merged). */
   cannotMerge: z.string().nullable(),
+  /** In a project of several repos (ADR-042): each repo the job touched, its branch and commits. */
+  repos: z
+    .array(
+      z.object({
+        name: z.string(),
+        folder: z.string(),
+        branch: z.string(),
+        into: z.string(),
+        commits: z.array(z.object({ sha: z.string(), subject: z.string(), at: z.number() })),
+        merged: z.boolean(),
+      }),
+    )
+    .default([]),
 });
 export type JobResult = z.infer<typeof JobResult>;
 

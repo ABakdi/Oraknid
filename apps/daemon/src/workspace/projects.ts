@@ -1,5 +1,13 @@
-import { accessSync, constants, existsSync, rmSync, statSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import {
+  accessSync,
+  constants,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import {
   ACTIVE_JOB_STATES,
   type DraftPatch,
@@ -7,6 +15,9 @@ import {
   GitHubLinkInput,
   type NewJob,
   type NewProject,
+  type NewProjectRepo,
+  type ProjectRepo,
+  ServerRole,
 } from "@oraknid/contracts";
 import { count, eq, inArray } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
@@ -38,6 +49,7 @@ import {
 } from "../settings.ts";
 import { BUILT_IN_DEFAULT, type SkillStore } from "../skills/store.ts";
 import { detectBranches, git, isGitRepo, shadowRepo } from "./git.ts";
+import { findRepos, oneRepoLink, projectRepos, repoNameOf } from "./repos.ts";
 
 export class NotAGitRepo extends Error {}
 
@@ -64,6 +76,18 @@ export class Projects {
 
     let gitRepo = isGitRepo(path);
     let shadow = false;
+    // A folder that isn't a repo but holds several is a project of several repos (ADR-042).
+    const found = gitRepo ? [] : findRepos(path);
+    if (found.length) {
+      const repos: ProjectRepo[] = found.map((r) => ({
+        name: repoNameOf(r.folder),
+        folder: r.folder,
+        releaseBranch: r.release,
+        workBranch: r.work,
+        github: null,
+      }));
+      return this.#insert(input, path, true, false, uniqueNames(repos));
+    }
     if (!gitRepo) {
       if (input.initGit === undefined) {
         throw new NotAGitRepo(
@@ -79,6 +103,35 @@ export class Projects {
       }
     }
     const branches = detectBranches(path);
+    return this.#insert(
+      input,
+      path,
+      gitRepo,
+      shadow,
+      gitRepo
+        ? [
+            {
+              name: repoNameOf(basename(path)),
+              folder: "",
+              releaseBranch: branches.release,
+              workBranch: branches.work,
+              github: null,
+            },
+          ]
+        : [],
+    );
+  }
+
+  #insert(
+    input: NewProject,
+    path: string,
+    gitRepo: boolean,
+    shadow: boolean,
+    repos: ProjectRepo[],
+  ) {
+    const branches = repos[0]
+      ? { release: repos[0].releaseBranch, work: repos[0].workBranch }
+      : detectBranches(path);
     const id = newId(this.now());
     this.bus.atomically(() => {
       this.db
@@ -91,6 +144,7 @@ export class Projects {
           shadow,
           releaseBranch: branches.release,
           workBranch: branches.work,
+          repos,
           createdAt: this.now(),
         })
         .run();
@@ -98,16 +152,17 @@ export class Projects {
         type: "project.created",
         topic: "overview",
         jobId: null,
-        payload: { id, name: input.name, path },
+        payload: { id, name: input.name, path, repos: repos.map((r) => r.name) },
       });
     });
     return this.require(id);
   }
 
+  /** Its row, with its repos (ADR-042) and, for one repo, that repo's GitHub link (ADR-038). */
   require(id: string) {
     const p = this.db.select().from(projects).where(eq(projects.id, id)).get();
     if (!p) throw new Error(`No project ${id}.`);
-    return p;
+    return viewOf(p);
   }
 
   list() {
@@ -117,10 +172,149 @@ export class Projects {
       .orderBy(projects.id)
       .all()
       .map((p) => ({
-        ...p,
+        ...viewOf(p),
         jobCount:
           this.db.select({ n: count() }).from(jobs).where(eq(jobs.projectId, p.id)).get()?.n ?? 0,
       }));
+  }
+
+  #saveRepos(id: string, repos: ProjectRepo[], by: "owner" | "eye" = "owner") {
+    const top = repos.length === 1 && repos[0]?.folder === "" ? repos[0] : null;
+    this.bus.atomically(() => {
+      this.db
+        .update(projects)
+        .set({
+          repos,
+          isGitRepo: repos.length > 0 || this.require(id).isGitRepo,
+          ...(repos.length ? { shadow: false } : {}),
+          // A project of one repo keeps its branches where they always were.
+          ...(top ? { releaseBranch: top.releaseBranch, workBranch: top.workBranch } : {}),
+        })
+        .where(eq(projects.id, id))
+        .run();
+      this.bus.publish({
+        type: "project.repos",
+        topic: "overview",
+        jobId: null,
+        payload: { id, repos: repos.map((r) => ({ name: r.name, folder: r.folder })) },
+        actor: by,
+      });
+    });
+  }
+
+  /**
+   * Looks again for the repos in its folder (ADR-042): repos found in its
+   * folders are added; the ones it has stay, with their links. A folder
+   * that is itself a repo stays one of them.
+   */
+  detectRepos(id: string) {
+    const p = this.require(id);
+    if (this.#busy(id)) throw new Error("A job of this project is running: wait for it to end.");
+    const repos = [...p.repos];
+    if (!repos.length && isGitRepo(p.workspacePath) && !p.shadow) {
+      const b = detectBranches(p.workspacePath);
+      repos.push({
+        name: repoNameOf(basename(p.workspacePath)),
+        folder: "",
+        releaseBranch: b.release,
+        workBranch: b.work,
+        github: null,
+      });
+    }
+    for (const f of findRepos(p.workspacePath))
+      if (!repos.some((r) => r.folder === f.folder))
+        repos.push({
+          name: repoNameOf(f.folder),
+          folder: f.folder,
+          releaseBranch: f.release,
+          workBranch: f.work,
+          github: null,
+        });
+    const named = uniqueNames(repos);
+    if (JSON.stringify(named) !== JSON.stringify(p.repos)) this.#saveRepos(id, named);
+    return named;
+  }
+
+  /**
+   * A repo added to the project (ADR-042): a folder of it that is one, a new
+   * empty one (git init), or a clone. A project of one repo becomes one of
+   * several, its folder's own repo kept as the first.
+   */
+  async addRepo(
+    input: NewProjectRepo,
+    clone?: (url: string, dest: string, login?: string | null) => Promise<void>,
+    cloneUrl?: (fullName: string) => string,
+  ) {
+    const p = this.require(input.id);
+    if (this.#busy(input.id))
+      throw new Error("A job of this project is running: wait for it to end.");
+    const s = input.source;
+    const dest = join(p.workspacePath, ...s.folder.split("/"));
+    if (p.repos.some((r) => r.folder === s.folder))
+      throw new Error(`${s.folder} is already a repo of this project.`);
+    if (s.kind === "folder") {
+      if (!existsSync(dest) || !isGitRepo(dest) || !existsSync(join(dest, ".git")))
+        throw new Error(`${dest} is not a git repo.`);
+    } else if (s.kind === "new") {
+      if (existsSync(dest) && readdirSync(dest).length)
+        throw new Error(`${dest} exists and isn't empty: add it as a folder, or choose another.`);
+      mkdirSync(dest, { recursive: true });
+      git({ cwd: dest, base: [] }, ["init", "-q", "-b", "main"]);
+    } else {
+      if (existsSync(dest)) throw new Error(`${dest} exists already: choose another folder.`);
+      if (!clone) throw new Error("Cloning isn't available here.");
+      mkdirSync(dirname(dest), { recursive: true });
+      if (s.kind === "github-clone")
+        await clone(cloneUrl?.(s.fullName) ?? s.fullName, dest, s.account ?? null);
+      else await clone(s.url, dest);
+    }
+    const b = detectBranches(dest);
+    const repos = [...p.repos];
+    if (!repos.length && isGitRepo(p.workspacePath) && !p.shadow) {
+      const top = detectBranches(p.workspacePath);
+      repos.push({
+        name: repoNameOf(basename(p.workspacePath)),
+        folder: "",
+        releaseBranch: top.release,
+        workBranch: top.work,
+        github: null,
+      });
+    }
+    const name = input.name ?? repoNameOf(s.folder);
+    if (repos.some((r) => r.name === name))
+      throw new Error(`This project has a repo named ${name} already: give it another name.`);
+    repos.push({
+      name,
+      folder: s.folder,
+      releaseBranch: b.release,
+      workBranch: b.work,
+      github: null,
+    });
+    this.#saveRepos(input.id, repos);
+    return this.require(input.id);
+  }
+
+  /** A repo no longer part of the project; its folder stays as it is. */
+  removeRepo(id: string, name: string) {
+    const p = this.require(id);
+    if (this.#busy(id)) throw new Error("A job of this project is running: wait for it to end.");
+    if (!p.repos.some((r) => r.name === name)) throw new Error(`No repo ${name} in this project.`);
+    if (p.repos.length === 1) throw new Error("A project keeps at least one repo.");
+    this.#saveRepos(
+      id,
+      p.repos.filter((r) => r.name !== name),
+    );
+    return this.require(id);
+  }
+
+  /** One of its jobs is going: its repos stay as they are until it ends. */
+  #busy(id: string) {
+    return this.db
+      .select({ state: jobs.state })
+      .from(jobs)
+      .where(eq(jobs.projectId, id))
+      .all()
+      .some((j) => (ACTIVE_JOB_STATES as readonly string[]).includes(j.state));
   }
 
   /** Archived: hidden from the lists, kept for stats (Core-Entities → Project). */
@@ -197,30 +391,57 @@ export class Projects {
   }
 
   /** The servers its jobs may use (Servers → Servers in projects). */
-  setServers(id: string, serverIds: string[]) {
-    this.require(id);
+  setServers(
+    id: string,
+    serverIds: string[],
+    roles?: Record<string, ServerRole>,
+    by: "owner" | "eye" = "owner",
+  ) {
+    const p = this.require(id);
     for (const s of serverIds)
       if (!this.db.select().from(servers).where(eq(servers.id, s)).get())
         throw new Error(`No server ${s}.`);
+    // A server kept keeps its role; one let go loses it.
+    const serverRoles = Object.fromEntries(
+      serverIds.flatMap((s) => {
+        const r = roles?.[s] ?? p.serverRoles[s];
+        return r ? [[s, ServerRole.parse(r)]] : [];
+      }),
+    );
     this.bus.atomically(() => {
-      this.db.update(projects).set({ serverIds }).where(eq(projects.id, id)).run();
+      this.db.update(projects).set({ serverIds, serverRoles }).where(eq(projects.id, id)).run();
       this.bus.publish({
         type: "project.servers",
         topic: "overview",
         jobId: null,
-        payload: { id, serverIds },
-        actor: "owner",
+        payload: { id, serverIds, serverRoles },
+        actor: by,
       });
     });
   }
 
+  /** A server's role in the project (ADR-042): a word, and production when marked or so named. */
+  setServerRole(id: string, serverId: string, role: ServerRole, by: "owner" | "eye" = "owner") {
+    const p = this.require(id);
+    const ids = p.serverIds.includes(serverId) ? p.serverIds : [...p.serverIds, serverId];
+    this.setServers(id, ids, { ...p.serverRoles, [serverId]: ServerRole.parse(role) }, by);
+  }
+
   /**
-   * Its GitHub link (ADR-038): the account and repository Oraknid's github
-   * tool uses for it, or none. A repo that exists is ready at once; a new
-   * one once the tool has created it.
+   * Its GitHub link (ADR-038), for one of its repos (ADR-042; the only one
+   * when not named): the account and repository Oraknid's github tool uses
+   * for it, or none. A repo that exists is ready at once; a new one once the
+   * tool has created it.
    */
-  setGitHub(id: string, input: GitHubLinkInput | null, by: "owner" | "eye" = "owner") {
-    const before = this.require(id).github;
+  setGitHub(
+    id: string,
+    input: GitHubLinkInput | null,
+    by: "owner" | "eye" = "owner",
+    repoName?: string | null,
+  ) {
+    const p = this.require(id);
+    const repo = pickRepo(p.repos, repoName);
+    const before = repo.github;
     // The same repo again keeps what is known of it: a new repo already created stays created.
     const same =
       !!input &&
@@ -234,34 +455,31 @@ export class Projects {
           linkedAt: this.now(),
         }
       : null;
-    this.bus.atomically(() => {
-      this.db.update(projects).set({ github: link }).where(eq(projects.id, id)).run();
-      this.bus.publish({
-        type: "project.github",
-        topic: "overview",
-        jobId: null,
-        payload: { id, github: link },
-        actor: by === "owner" ? "owner" : "eye",
-      });
-    });
+    this.#setLink(id, repo.name, link, by);
     return link;
   }
 
-  /** The new repo of its link exists now (the github tool created it). */
-  githubCreated(id: string) {
-    const p = this.require(id);
-    if (!p.github || p.github.ready) return;
-    const link = { ...p.github, ready: true };
+  #setLink(id: string, repoName: string, link: GitHubLink | null, by: "owner" | "eye") {
+    const repos = this.require(id).repos.map((r) =>
+      r.name === repoName ? { ...r, github: link } : r,
+    );
     this.bus.atomically(() => {
-      this.db.update(projects).set({ github: link }).where(eq(projects.id, id)).run();
+      this.db.update(projects).set({ repos }).where(eq(projects.id, id)).run();
       this.bus.publish({
         type: "project.github",
         topic: "overview",
         jobId: null,
-        payload: { id, github: link },
-        actor: "eye",
+        payload: { id, repo: repoName, github: link },
+        actor: by === "owner" ? "owner" : "eye",
       });
     });
+  }
+
+  /** The new repo of a link exists now (the github tool created it). */
+  githubCreated(id: string, repoName?: string | null) {
+    const repo = pickRepo(this.require(id).repos, repoName);
+    if (!repo.github || repo.github.ready) return;
+    this.#setLink(id, repo.name, { ...repo.github, ready: true }, "eye");
   }
 
   /** The skills its jobs may use; The Eye picks one per job (Skills → Skills per project). */
@@ -403,6 +621,39 @@ export class Projects {
     });
     return id;
   }
+}
+
+type ProjectRow = typeof projects.$inferSelect;
+
+/** A project as the API shows it: its repos (ADR-042), and its one repo's link (ADR-038). */
+export function viewOf(p: ProjectRow) {
+  return { ...p, repos: projectRepos(p), github: oneRepoLink(p) };
+}
+
+/** The repo named, or the only one; a project of several must name it. */
+export function pickRepo(repos: ProjectRepo[], name?: string | null): ProjectRepo {
+  if (!repos.length) throw new Error("This project isn't a git repository.");
+  if (name) {
+    const r = repos.find((x) => x.name === name);
+    if (!r)
+      throw new Error(
+        `No repo ${name} in this project (its repos: ${repos.map((x) => x.name).join(", ")}).`,
+      );
+    return r;
+  }
+  if (repos.length > 1) throw new Error(`Name the repo: ${repos.map((x) => x.name).join(", ")}.`);
+  return repos[0] as ProjectRepo;
+}
+
+/** Two repos never share a name: a second `web` becomes `web-2`. */
+function uniqueNames(repos: ProjectRepo[]): ProjectRepo[] {
+  const seen = new Set<string>();
+  return repos.map((r) => {
+    let name = r.name;
+    for (let n = 2; seen.has(name); n++) name = `${r.name}-${n}`;
+    seen.add(name);
+    return { ...r, name };
+  });
 }
 
 const firstLine = (goal: string) => {

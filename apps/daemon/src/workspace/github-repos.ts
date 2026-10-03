@@ -95,7 +95,7 @@ interface ApiContent {
 
 /** What the projects tell: which links which repository. */
 export interface ProjectLinks {
-  list(): { id: string; name: string; github: GitHubLink | null }[];
+  list(): { id: string; name: string; repos: { github: GitHubLink | null }[] }[];
 }
 
 const q = (s: string) => encodeURIComponent(s);
@@ -167,9 +167,11 @@ export class Repos {
   /** The project linking each repository (owner/name, any case). */
   #links(): Map<string, GitHubLinkedProject> {
     const m = new Map<string, GitHubLinkedProject>();
+    // Each repo of a project of several has its own (ADR-042).
     for (const p of this.projects.list())
-      if (p.github)
-        m.set(`${p.github.owner}/${p.github.name}`.toLowerCase(), { id: p.id, name: p.name });
+      for (const r of p.repos)
+        if (r.github)
+          m.set(`${r.github.owner}/${r.github.name}`.toLowerCase(), { id: p.id, name: p.name });
     return m;
   }
 
@@ -244,7 +246,8 @@ export class Repos {
     const key = `${ref.owner}/${ref.name}`.toLowerCase();
     const linked = this.projects
       .list()
-      .find((p) => p.github && `${p.github.owner}/${p.github.name}`.toLowerCase() === key)?.github;
+      .flatMap((p) => p.repos.map((r) => r.github))
+      .find((l) => l && `${l.owner}/${l.name}`.toLowerCase() === key);
     if (linked && accounts.includes(linked.account)) return linked.account;
     const owner = accounts.find((a) => a.toLowerCase() === ref.owner.toLowerCase());
     if (owner) return owner;
