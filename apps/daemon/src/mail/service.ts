@@ -763,6 +763,7 @@ export class MailService {
             { uid: true, flags: true },
             { uid: true },
           )) {
+            await breathe();
             present.add(m.uid);
             const h = held.get(m.uid);
             const flags = [...(m.flags ?? [])].sort();
@@ -770,17 +771,20 @@ export class MailService {
               updates.push({ id: h.id, flags });
           }
           const gone = [...held.values()].filter((h) => !present.has(h.uid)).map((h) => h.id);
-          this.o.db.transaction((tx) => {
-            for (const u of updates)
-              tx.update(mailMessages)
-                .set({ flags: u.flags })
-                .where(eq(mailMessages.id, u.id))
-                .run();
-            for (let i = 0; i < gone.length; i += 500)
-              tx.delete(mailMessages)
-                .where(inArray(mailMessages.id, gone.slice(i, i + 500)))
-                .run();
-          });
+          await inSlices(updates, (slice) =>
+            this.o.db.transaction((tx) => {
+              for (const u of slice)
+                tx.update(mailMessages)
+                  .set({ flags: u.flags })
+                  .where(eq(mailMessages.id, u.id))
+                  .run();
+            }),
+          );
+          for (let i = 0; i < gone.length; i += 500)
+            this.o.db
+              .delete(mailMessages)
+              .where(inArray(mailMessages.id, gone.slice(i, i + 500)))
+              .run();
         }
         // New since the last UID; the first time, only the latest messages.
         const limit = this.o.initialLimit ?? 10_000;
@@ -798,6 +802,7 @@ export class MailService {
           ? client.fetch(range, query)
           : client.fetch(`${lastUid + 1}:*`, query, { uid: true });
         for await (const m of fetched) {
+          await breathe();
           if (m.uid <= lastUid) continue; // "n:*" past the end answers with the last message
           const h = await parseHeaders(m.headers ?? Buffer.alloc(0));
           const date =
@@ -832,14 +837,18 @@ export class MailService {
           });
           lastUid = Math.max(lastUid, m.uid);
         }
-        this.o.db.transaction((tx) => {
-          for (const { row: r, gm } of rows) {
-            r.threadId = this.#threadOf(r, gm);
-            tx.insert(mailMessages).values(r).onConflictDoNothing().run();
-            newIds.push(r.id);
-            subjects.push(r.subject);
-          }
-        });
+        // In slices, the event loop let go between them: one transaction of a first sync's
+        // thousands of rows held it for over a second (`oraknid status` timed out).
+        await inSlices(rows, (slice) =>
+          this.o.db.transaction((tx) => {
+            for (const { row: r, gm } of slice) {
+              r.threadId = this.#threadOf(r, gm);
+              tx.insert(mailMessages).values(r).onConflictDoNothing().run();
+              newIds.push(r.id);
+              subjects.push(r.subject);
+            }
+          }),
+        );
         // The newest messages get their bodies now: snippets in the list, quick to open.
         if (prefetch && newIds.length) await this.#bodies(client, newIds.slice(-20), true);
       } else {
@@ -2098,6 +2107,26 @@ export class MailService {
 
   audit(actor: Actor, action: string, payload: Record<string, unknown>) {
     this.#audit(actor, action, payload);
+  }
+}
+
+let lastBreath = performance.now();
+/**
+ * In a long loop, lets the event loop go once 20 ms have passed since it last
+ * did. A FETCH of thousands of messages arrives buffered: its items come as
+ * microtasks, so a `for await` over them never let a timer or a request in.
+ */
+export async function breathe() {
+  if (performance.now() - lastBreath < 20) return;
+  await new Promise<void>((r) => setImmediate(r));
+  lastBreath = performance.now();
+}
+
+/** Rows handled a slice at a time, the event loop let go between slices (`/health` stays quick). */
+export async function inSlices<T>(rows: T[], fn: (slice: T[]) => void, size = 200) {
+  for (let i = 0; i < rows.length; i += size) {
+    if (i > 0) await new Promise<void>((r) => setImmediate(r));
+    fn(rows.slice(i, i + size));
   }
 }
 
