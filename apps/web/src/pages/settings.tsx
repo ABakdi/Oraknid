@@ -82,14 +82,14 @@ export function SettingsPage({ tab }: { tab?: string }) {
     general: () =>
       wrap(
         <>
-          <Section title={t("This computer")}>
+          <Section help="settings.computer" title={t("This computer")}>
             <SystemCard />
             <StorageCard />
           </Section>
-          <Section title={t("Notifications")}>
+          <Section help="settings.notifications" title={t("Notifications")}>
             <NotificationsCard />
           </Section>
-          <Section title={t("Look")}>
+          <Section help="settings.theme" title={t("Look")}>
             <ThemeCard />
           </Section>
         </>,
@@ -97,10 +97,10 @@ export function SettingsPage({ tab }: { tab?: string }) {
     work: () =>
       wrap(
         <>
-          <Section title={t("The Eye")}>
+          <Section help="settings.eye" title={t("The Eye")}>
             <EyeCard />
           </Section>
-          <Section title={t("Running jobs")}>
+          <Section help="settings.jobs" title={t("Running jobs")}>
             <JobsLimitCard />
             <FallbackCard />
           </Section>
@@ -109,13 +109,13 @@ export function SettingsPage({ tab }: { tab?: string }) {
     security: () =>
       wrap(
         <>
-          <Section title={t("Unlocking")}>
+          <Section help="settings.lock" title={t("Unlocking")}>
             <LockCard />
           </Section>
-          <Section title={t("What agents may run")}>
+          <Section help="settings.rules" title={t("What agents may run")}>
             <PolicyCard />
           </Section>
-          <Section title={t("Terminal")}>
+          <Section help="settings.terminal" title={t("Terminal")}>
             <TerminalCard />
           </Section>
         </>,
@@ -123,13 +123,13 @@ export function SettingsPage({ tab }: { tab?: string }) {
     devices: () =>
       wrap(
         <>
-          <Section title={t("Your phone, from anywhere")}>
+          <Section help="settings.phone" title={t("Your phone, from anywhere")}>
             <PhoneCard />
           </Section>
-          <Section title={t("Paired devices")}>
+          <Section help="settings.devices" title={t("Paired devices")}>
             <DevicesCard />
           </Section>
-          <Section title={t("The Nest")}>
+          <Section help="settings.nest" title={t("The Nest")}>
             <AwayCard />
           </Section>
         </>,
@@ -137,13 +137,13 @@ export function SettingsPage({ tab }: { tab?: string }) {
     connections: () =>
       wrap(
         <>
-          <Section title={t("Email accounts")}>
+          <Section help="settings.mail" title={t("Email accounts")}>
             <MailAccountsCard />
           </Section>
-          <Section title={t("GitHub")}>
+          <Section help="settings.github" title={t("GitHub")}>
             <GitHubCard />
           </Section>
-          <Section title={t("Tools for skills")}>
+          <Section help="settings.tools" title={t("Tools for skills")}>
             <ToolsCard />
           </Section>
         </>,
@@ -168,9 +168,18 @@ export function SettingsPage({ tab }: { tab?: string }) {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  help,
+  children,
+}: {
+  title: string;
+  /** Its id in the help map (ADR-041). */
+  help?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="space-y-3">
+    <section className="space-y-3" data-help={help}>
       <h2 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
         {title}
       </h2>
@@ -625,7 +634,11 @@ function JobsLimitCard() {
             )
           }
         >
-          <SelectTrigger className="w-40" aria-label={t("Jobs at once")}>
+          <SelectTrigger
+            data-help="settings.jobs-at-once"
+            className="w-40"
+            aria-label={t("Jobs at once")}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -645,7 +658,11 @@ function JobsLimitCard() {
             )
           }
         >
-          <SelectTrigger className="w-52" aria-label={t("Tasks at once in a job")}>
+          <SelectTrigger
+            data-help="settings.tasks-at-once"
+            className="w-52"
+            aria-label={t("Tasks at once in a job")}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

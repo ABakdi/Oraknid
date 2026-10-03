@@ -102,6 +102,7 @@ export function AwayCard() {
         ) : null}
         <div className="flex flex-wrap gap-2">
           <Button
+            data-help="settings.nest-public"
             size="sm"
             variant={mode === "public" ? "default" : "outline"}
             aria-pressed={mode === "public"}
@@ -259,7 +260,7 @@ export function PhoneCard() {
   };
 
   return (
-    <Card>
+    <Card data-help="settings.pair-phone">
       <CardHeader>
         <CardTitle>{t("Pair your phone")}</CardTitle>
         <CardDescription>

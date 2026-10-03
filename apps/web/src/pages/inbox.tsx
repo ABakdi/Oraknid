@@ -77,6 +77,7 @@ export function InboxPage({ focus }: { focus?: string }) {
       {data.length ? (
         <div className="flex flex-wrap gap-2">
           <Input
+            data-help="inbox.search"
             className="w-full sm:w-auto sm:min-w-48 sm:flex-1"
             placeholder={t("Search the inbox…")}
             value={q}
@@ -91,6 +92,7 @@ export function InboxPage({ focus }: { focus?: string }) {
             }}
           >
             <SelectTrigger
+              data-help="inbox.project"
               className="min-w-0 flex-1 sm:w-40 sm:flex-none"
               aria-label={t("Project")}
             >
@@ -106,7 +108,11 @@ export function InboxPage({ focus }: { focus?: string }) {
             </SelectContent>
           </Select>
           <Select value={job} onValueChange={setJob}>
-            <SelectTrigger className="min-w-0 flex-1 sm:w-40 sm:flex-none" aria-label={t("Job")}>
+            <SelectTrigger
+              data-help="inbox.job"
+              className="min-w-0 flex-1 sm:w-40 sm:flex-none"
+              aria-label={t("Job")}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -119,7 +125,11 @@ export function InboxPage({ focus }: { focus?: string }) {
             </SelectContent>
           </Select>
           <Select value={kind} onValueChange={setKind}>
-            <SelectTrigger className="min-w-0 flex-1 sm:w-40 sm:flex-none" aria-label={t("Kind")}>
+            <SelectTrigger
+              data-help="inbox.kind"
+              className="min-w-0 flex-1 sm:w-40 sm:flex-none"
+              aria-label={t("Kind")}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

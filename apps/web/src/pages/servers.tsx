@@ -33,7 +33,7 @@ export function ServersPage({ id, tab }: { id?: string; tab?: string }) {
   if (servers.loading) return <Loading />;
   const list = servers.data ?? [];
   const add = (
-    <Button className="gap-1" size="sm" onClick={() => setAdding(true)}>
+    <Button data-help="servers.add" className="gap-1" size="sm" onClick={() => setAdding(true)}>
       <Plus className="size-4" />
       {t("Add a server")}
     </Button>
@@ -189,6 +189,7 @@ function ServerDetail({ s, tab }: { s: ServerView; tab?: string }) {
           </Button>
         ) : null}
         <Button
+          data-help="server.discover"
           size="sm"
           variant="secondary"
           className="gap-1"
@@ -199,6 +200,7 @@ function ServerDetail({ s, tab }: { s: ServerView; tab?: string }) {
           {t("Discover again")}
         </Button>
         <Button
+          data-help="server.terminal"
           size="sm"
           variant="secondary"
           className="gap-1"

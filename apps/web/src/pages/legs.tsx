@@ -90,7 +90,7 @@ export function LegsPage({ focus }: { focus?: string } = {}) {
   if (legs.error) return <ErrorNote error={legs.error} />;
   if (legs.loading) return <Loading />;
   const add = (
-    <Button className="gap-1" onClick={() => setAdding(true)}>
+    <Button data-help="legs.add" className="gap-1" onClick={() => setAdding(true)}>
       <Plus className="size-4" />
       {t("Add a Leg")}
     </Button>
@@ -128,6 +128,7 @@ export function LegsPage({ focus }: { focus?: string } = {}) {
           <CardHeader className="py-3">
             <CardTitle className="flex flex-wrap items-center gap-2 text-base">
               <button
+                data-help="legs.card"
                 type="button"
                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
                 aria-expanded={open.has(leg.id)}

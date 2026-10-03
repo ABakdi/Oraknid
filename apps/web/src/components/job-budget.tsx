@@ -252,7 +252,7 @@ export function ProjectBudgetCard({ projectId, jobIds }: { projectId: string; jo
   if (!view.data) return <Loading rows={2} />;
   const { budget: b, used, asking } = view.data;
   return (
-    <Card>
+    <Card data-help="project.budget">
       <CardHeader>
         <CardTitle className="text-sm">{t("The project's budget")}</CardTitle>
       </CardHeader>

@@ -224,3 +224,18 @@
 .react-flow__controls-button:hover {
   background: var(--accent);
 }
+
+/* The helper's ring around a control it points at (ADR-041); still under prefers-reduced-motion. */
+@keyframes help-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 0 color-mix(in srgb, var(--eye) 55%, transparent),
+      0 0 0 9999px color-mix(in srgb, black 22%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 10px color-mix(in srgb, var(--eye) 0%, transparent),
+      0 0 0 9999px color-mix(in srgb, black 22%, transparent);
+  }
+}

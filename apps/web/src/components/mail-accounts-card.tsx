@@ -123,7 +123,13 @@ export function MailAccountsCard() {
             <AddAccountForm onDone={() => setAdding(false)} />
           </div>
         ) : (
-          <Button size="sm" variant="secondary" className="gap-1" onClick={() => setAdding(true)}>
+          <Button
+            data-help="settings.mail-add"
+            size="sm"
+            variant="secondary"
+            className="gap-1"
+            onClick={() => setAdding(true)}
+          >
             <Plus className="size-3.5" />
             {t("Add an account")}
           </Button>
@@ -174,7 +180,7 @@ export function AccountSettings({ account: a, away }: { account: MailAccountView
     else if (next !== a.name) set({ name: next });
   };
   const toggle = (id: string, checked: boolean, label: string, on: (v: boolean) => void) => (
-    <div className="flex items-start gap-2 text-xs">
+    <div data-help={`mail.account.${id}`} className="flex items-start gap-2 text-xs">
       <Switch id={`${id}-${a.id}`} checked={checked} disabled={away} onCheckedChange={on} />
       <Label htmlFor={`${id}-${a.id}`} className="text-xs leading-snug font-normal">
         {label}
@@ -184,6 +190,7 @@ export function AccountSettings({ account: a, away }: { account: MailAccountView
   return (
     <div className="space-y-2">
       <form
+        data-help="mail.account.name"
         className="space-y-1"
         onSubmit={(e) => {
           e.preventDefault();
@@ -524,6 +531,7 @@ export function AddAccountForm({ onDone }: { onDone: () => void }) {
           <Label htmlFor="mail-email">{t("Address")}</Label>
           <Input
             id="mail-email"
+            data-help="mail.add.address"
             type="email"
             required
             value={email}
@@ -537,6 +545,7 @@ export function AddAccountForm({ onDone }: { onDone: () => void }) {
           </Label>
           <Input
             id="mail-password"
+            data-help="mail.add.password"
             type="password"
             required
             autoComplete="off"
@@ -626,6 +635,7 @@ export function AddAccountForm({ onDone }: { onDone: () => void }) {
           {busy ? t("Checking…") : t("Connect")}
         </Button>
         <Button
+          data-help="mail.add.test"
           type="button"
           variant="outline"
           disabled={testing || busy || !email || !password}

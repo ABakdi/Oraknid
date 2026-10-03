@@ -28,7 +28,7 @@ export function ProjectServersCard({ projectId }: { projectId: string }) {
       .then(projects.reload)
       .catch((e) => toast.error(message(e)));
   return (
-    <Card>
+    <Card data-help="project.servers">
       <CardHeader>
         <CardTitle className="text-sm">{t("Servers for this project")}</CardTitle>
         <CardDescription>

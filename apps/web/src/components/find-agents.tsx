@@ -65,7 +65,13 @@ export function FindAgents({ size = "default" }: { size?: "default" | "sm" } = {
   const fresh = (found ?? []).filter((f) => f.usedBy.length === 0 && !made.has(f.where));
   return (
     <>
-      <Button variant="secondary" size={size} className="gap-1" onClick={look}>
+      <Button
+        data-help="legs.find"
+        variant="secondary"
+        size={size}
+        className="gap-1"
+        onClick={look}
+      >
         <Search className="size-4" />
         {t("Find agents on this machine")}
       </Button>

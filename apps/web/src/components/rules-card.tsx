@@ -18,6 +18,7 @@ export function RulesCard({
   load,
   save,
   scope,
+  help,
 }: {
   title: string;
   description: string;
@@ -25,6 +26,8 @@ export function RulesCard({
   save: (r: Rules) => Promise<unknown>;
   /** Reloads when it changes (a project id). */
   scope: string;
+  /** Its id in the help map (ADR-041). */
+  help?: string;
 }) {
   const p = useLive(load, { topics: [], deps: [scope] });
   const [allow, setAllow] = useState<string | null>(null);
@@ -42,7 +45,7 @@ export function RulesCard({
       .filter(Boolean);
   const id = `rules-${scope}`;
   return (
-    <Card>
+    <Card data-help={help}>
       <CardHeader>
         <CardTitle className="text-sm">{title}</CardTitle>
         <CardDescription>{description}</CardDescription>

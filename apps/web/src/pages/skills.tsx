@@ -91,6 +91,7 @@ export function SkillsPage({ id }: { id?: string }) {
   };
   const create = (
     <Button
+      data-help="skills.new"
       className="gap-1"
       onClick={() => setEditing({ id: null, name: "", markdown: TEMPLATE })}
     >

@@ -180,6 +180,7 @@ export function TerminalPage({ target }: { target?: string }) {
           ))}
         </div>
         <Button
+          data-help="terminal.new"
           variant="ghost"
           size="icon"
           title={t("New terminal (Ctrl+Shift+Enter)")}
@@ -188,7 +189,7 @@ export function TerminalPage({ target }: { target?: string }) {
         >
           <Plus className="size-4" />
         </Button>
-        <div className="flex rounded-md border p-0.5">
+        <div data-help="terminal.layout" className="flex rounded-md border p-0.5">
           {(
             [
               ["one", Maximize2, t("One at a time (Ctrl+Shift+F)")],

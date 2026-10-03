@@ -54,7 +54,7 @@ export function ChatsPage({ id }: { id?: string }) {
           title={t("Chats")}
           sub={t("Talk and research with any of your models. Attached projects are readable.")}
           actions={
-            <Button className="gap-1" onClick={() => setCreating(true)}>
+            <Button data-help="chats.new" className="gap-1" onClick={() => setCreating(true)}>
               <MessageSquarePlus className="size-4" />
               {t("New chat")}
             </Button>

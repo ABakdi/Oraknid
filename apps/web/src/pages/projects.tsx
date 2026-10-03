@@ -56,7 +56,7 @@ export function ProjectsPage({
   if (projects.error) return <ErrorNote error={projects.error} />;
   if (projects.loading) return <Loading />;
   const add = (
-    <Button className="gap-1" size="sm" onClick={() => setCreating(true)}>
+    <Button data-help="projects.new" className="gap-1" size="sm" onClick={() => setCreating(true)}>
       <Plus className="size-4" />
       {t("New project")}
     </Button>
@@ -194,6 +194,7 @@ function ProjectDetail({
       </span>
       <span className="flex-1 sm:hidden" />
       <Button
+        data-help="project.new-work"
         size="sm"
         className="shrink-0 gap-1"
         disabled={!!project.archivedAt}
@@ -264,6 +265,7 @@ function ProjectDetail({
         <div className="space-y-4">
           <ProjectActions project={project} />
           <RulesCard
+            help="project.rules"
             scope={id}
             title={t("Commands in this project")}
             description={t(
@@ -370,10 +372,16 @@ function ProjectActions({ project }: { project: ProjectView }) {
           : t("Archive hides it from the lists and New work and keeps its stats.")}
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" size="sm" onClick={archive}>
+        <Button data-help="project.archive" variant="secondary" size="sm" onClick={archive}>
           {project.archivedAt ? t("Restore") : t("Archive")}
         </Button>
-        <Button variant="ghost" size="sm" className="text-destructive" onClick={remove}>
+        <Button
+          data-help="project.delete"
+          variant="ghost"
+          size="sm"
+          className="text-destructive"
+          onClick={remove}
+        >
           {t("Delete")}
         </Button>
       </div>
