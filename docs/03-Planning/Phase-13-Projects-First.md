@@ -259,6 +259,16 @@ right edge. The site still builds, its page list now read from
 - [ ] Servers with a role in each project
 - [ ] The Eye picks the server I name and asks to confirm; otherwise asks with my servers and Add a new server; production always confirmed
 
+### M13.12 — What runs on a server ([[ADR-043-Server-Insight]])
+- [ ] Docker containers, images, volumes and compose projects; databases; the reverse proxy and its sites; traffic; logs live
+- [ ] A server's page in tabs; restart a container or a service, asked first; the helper reads it all
+
+### M13.13 — Scheduled, encrypted backups ([[ADR-044-Backups]])
+- [ ] Backup plans per database (Docker or not): schedule, destination (this computer or another server), retention, credentials in the keychain
+- [ ] Encryption with age: keys made and kept in the web interface
+- [ ] Runs recorded, failures notified, Verify; Restore always mine
+- [ ] The helper sets plans up, runs and verifies them
+
 ## Exit criterion
 
 I ask for new work on the piano project from its Eye tab and follow it

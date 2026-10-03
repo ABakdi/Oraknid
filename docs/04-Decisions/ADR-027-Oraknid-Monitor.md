@@ -23,6 +23,8 @@ mean another port and another secret.
 - **Later**: a collector that keeps samples on the server while
   Oraknid is off, to fill the gaps.
 
+*Extended 2026-10-03:* Docker, databases, the reverse proxy, traffic and logs ([[ADR-043-Server-Insight]]).
+
 ## As built (2026-10-02)
 - Tried on a real Debian server: its `awk` is mawk, which printed large
   numbers (memory, network bytes) in e-notation and broke the reading.
