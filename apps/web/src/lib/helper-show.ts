@@ -11,7 +11,27 @@ export interface Shown {
   ok: boolean;
   /** Why not, in words. */
   why?: string;
+  /**
+   * The control is in a modal dialog (or a drawer): while it is open, the
+   * rest of the page, the helper's panel too, can't be clicked or typed in.
+   */
+  modal?: boolean;
 }
+
+/** A modal dialog or drawer holding the control, if one does. */
+export const modalOf = (el: Element): HTMLElement | null =>
+  el.closest<HTMLElement>(
+    '[data-slot="dialog-content"],[data-slot="sheet-content"],[role="alertdialog"],[role="dialog"][aria-modal="true"]',
+  );
+
+/** Whether a modal dialog or drawer is open now. */
+export const modalOpen = () =>
+  !!document.querySelector(
+    '[data-slot="dialog-content"],[data-slot="sheet-content"],[role="alertdialog"],[role="dialog"][aria-modal="true"]',
+  );
+
+/** Said under the ring when the helper must wait for a dialog to close. */
+export const DIALOG_NOTE = "Close this dialog to get back to the helper.";
 
 export interface ShowDeps {
   /** Where I am now. */
@@ -180,10 +200,9 @@ export async function show(
     const value = str("value") ?? "";
     if (!setValue(el, value)) return { ok: false, why: `"${c.name}" isn't a field.` };
   }
-  rings.set({
-    el,
-    note: str("note") ?? (action.name === "fill" ? "Filled in: check it, then save." : c.name),
-    at: d.location(),
-  });
-  return { ok: true };
+  const modal = !!modalOf(el);
+  const note = str("note") ?? (action.name === "fill" ? "Filled in: check it, then save." : c.name);
+  const said = modal ? `${note}${/[.!?…]$/.test(note) ? "" : "."} ${DIALOG_NOTE}` : note;
+  rings.set({ el, note: said, at: d.location() });
+  return modal ? { ok: true, modal } : { ok: true };
 }

@@ -73,7 +73,11 @@ or unlink it below. Settings keeps the project's servers.
   (`github.token`): referred to, never read out or copied.
 - **The link** is a column of the project (account, owner, name,
   visibility, new or existing, created yet). A project made from one of
-  my GitHub repos is linked to it.
+  my GitHub repos is linked to it. New work's "A new GitHub repo" makes
+  it on the account I pick (2026-10-03): with more than one account, a
+  GitHub account picker under it, the default first and chosen; the
+  default sends none, as before (the API's `account` was there, the
+  page had used the default only).
 - **When The Eye asks**: before a task's attempt, when its title or
   instructions name GitHub or a pull request (GitHub), or a deploy or
   "the server" (a server). The planner is told to name GitHub in such a

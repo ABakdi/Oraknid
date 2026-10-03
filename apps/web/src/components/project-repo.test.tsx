@@ -68,6 +68,7 @@ const addRepo = vi.fn(async (x: { source: { folder: string } }) => ({
 }));
 const detectRepos = vi.fn(async () => [...SITE.repos, repo("admin", null)]);
 const removeRepo = vi.fn(async () => SITE);
+const updateRepo = vi.fn(async (_: unknown) => SITE);
 const setGitHub = vi.fn(async () => {});
 const setServerRole = vi.fn(async (_: unknown) => {});
 const repoInfo = vi.fn(async (x: { owner: string; name: string }) => ({
@@ -97,6 +98,7 @@ vi.mock("@/lib/api", () => ({
       addRepo: (x: { source: { folder: string } }) => addRepo(x),
       detectRepos: () => detectRepos(),
       removeRepo: () => removeRepo(),
+      updateRepo: (x: unknown) => updateRepo(x),
       setGitHub: () => setGitHub(),
       setServers: async () => {},
       setServerRole: (x: unknown) => setServerRole(x),
@@ -171,6 +173,45 @@ describe("a project's Repo tab with two repos (ADR-042)", () => {
     );
   });
 
+  it("renames a repo and changes its branches, sending only what changed", async () => {
+    inRouter(<ProjectRepoTab project={SITE} />);
+    fireEvent.click(screen.getByRole("button", { name: "Change api" }));
+    const dialog = screen.getByRole("dialog");
+    const save = within(dialog).getByRole("button", { name: "Save" }) as HTMLButtonElement;
+    // Nothing changed yet: nothing to save.
+    expect(save.disabled).toBe(true);
+    fireEvent.change(within(dialog).getByLabelText("Its name in the project"), {
+      target: { value: "backend" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Work branch"), {
+      target: { value: " develop " },
+    });
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
+    await waitFor(() =>
+      expect(updateRepo).toHaveBeenCalledWith({
+        id: "P1",
+        name: "api",
+        rename: "backend",
+        workBranch: "develop",
+      }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("says why a change is refused and keeps the dialog open", async () => {
+    updateRepo.mockRejectedValueOnce(new Error("bad..name isn't a branch name git accepts."));
+    inRouter(<ProjectRepoTab project={SITE} />);
+    fireEvent.click(screen.getByRole("button", { name: "Change web" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Release branch"), {
+      target: { value: "bad..name" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(await within(dialog).findByText(/isn't a branch name/)).toBeTruthy();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
   it("keeps a project of one repo as it was, with its repo below", async () => {
     const one: ProjectView = {
       ...SITE,
@@ -183,6 +224,8 @@ describe("a project's Repo tab with two repos (ADR-042)", () => {
     expect(screen.getByText("Its repo")).toBeTruthy();
     expect(screen.getByText("the project's folder")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Take piano out/ })).toBeNull();
+    // Its branches can still be changed.
+    expect(screen.getByRole("button", { name: "Change piano" })).toBeTruthy();
   });
 });
 

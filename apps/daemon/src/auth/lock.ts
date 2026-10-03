@@ -301,6 +301,7 @@ export const HOME_ONLY = [
   "/projects/addRepo",
   "/projects/detectRepos",
   "/projects/removeRepo",
+  "/projects/updateRepo",
   "/projects/setLocalPorts",
   "/projects/delete",
   "/servers/add",

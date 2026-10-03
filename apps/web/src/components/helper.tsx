@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { api, message } from "@/lib/api";
 import { guideFor } from "@/lib/guide";
 import { screensText } from "@/lib/help-map";
-import { type Ask, onAsk, show } from "@/lib/helper-show";
+import { type Ask, modalOpen, onAsk, type Shown, show } from "@/lib/helper-show";
 import { t } from "@/lib/i18n";
 import { useLive } from "@/lib/live";
 import { cn } from "@/lib/utils";
@@ -20,13 +20,25 @@ const CLIENT = new Set<string>(HELPER_CLIENT_ACTIONS);
 /** On a phone the panel covers the page: it steps aside while the helper shows me something. */
 const phone = () => typeof matchMedia === "function" && matchMedia("(max-width: 767px)").matches;
 
-/** Shows one action of the helper's in this browser; says so when it can't. */
+/** Which action of which message: what the browser tells the helper about. */
+export interface ShownAt {
+  messageId: string;
+  index: number;
+  /** Its state as the helper last recorded it. */
+  state: HelperAction["state"];
+}
+
+/**
+ * Shows one action of the helper's in this browser; says so when it can't,
+ * and tells the helper, so its next reply knows (ADR-041). Shown after all
+ * (Show me again), the helper hears that too.
+ */
 function useShow() {
   const [location, go] = useLocation();
   const here = useRef(location);
   here.current = location;
   return useCallback(
-    async (a: Pick<HelperAction, "name" | "input">) => {
+    async (a: Pick<HelperAction, "name" | "input">, at?: ShownAt): Promise<Shown> => {
       const r = await show(a, {
         location: () => here.current,
         go: (to) => {
@@ -35,7 +47,16 @@ function useShow() {
         },
       });
       if (!r.ok) toast.error(r.why ?? t("I couldn't show that."));
-      return r.ok;
+      if (at && (!r.ok || at.state === "failed"))
+        api.helper
+          .shown({
+            messageId: at.messageId,
+            index: at.index,
+            ok: r.ok,
+            ...(r.why ? { why: r.why } : {}),
+          })
+          .catch(() => {});
+      return r;
     },
     [go],
   );
@@ -49,9 +70,13 @@ function useShow() {
  */
 export function HelperButton() {
   const [open, setOpen] = useState(false);
+  const isOpen = useRef(open);
+  isOpen.current = open;
   // Stepped aside on a phone while it shows me something; a tap brings it back.
   const [aside, setAside] = useState(false);
   const [about, setAbout] = useState<Ask | null>(null);
+  // Stepped aside for a dialog the helper pointed into: back once it closes.
+  const [forDialog, setForDialog] = useState(false);
   const talk = useLive(() => api.helper.conversation(), {
     topics: ["overview"],
     refreshOn: (e) => e.type.startsWith("helper."),
@@ -63,15 +88,34 @@ export function HelperButton() {
   const run = useShow();
 
   const showMe = useCallback(
-    (a: Pick<HelperAction, "name" | "input">) => {
-      if (phone()) {
+    async (a: Pick<HelperAction, "name" | "input">, at?: ShownAt) => {
+      const small = phone();
+      if (small) {
         setOpen(false);
         setAside(true);
       }
-      return run(a);
+      const r = await run(a, at);
+      // In a modal dialog nothing outside it takes a click or a key, the panel neither:
+      // it steps aside (the ring says so) and comes back when the dialog closes.
+      if (r.ok && r.modal && !small && isOpen.current) {
+        setOpen(false);
+        setAside(true);
+        setForDialog(true);
+      }
+      return r.ok;
     },
     [run],
   );
+  useEffect(() => {
+    if (!forDialog) return;
+    const tick = setInterval(() => {
+      if (modalOpen()) return;
+      setForDialog(false);
+      setAside(false);
+      setOpen(true);
+    }, 250);
+    return () => clearInterval(tick);
+  }, [forDialog]);
 
   // What the helper shows me runs once, here, for the replies to what I sent from here:
   // the messages there were when I sent are left alone (another tab, an earlier turn).
@@ -84,11 +128,15 @@ export function HelperButton() {
     if (!todo.length) return;
     for (const m of todo) known.add(m.id);
     const actions = todo.flatMap((m) =>
-      m.actions.filter((a) => CLIENT.has(a.name) && a.state === "done"),
+      m.actions.flatMap((a, index) =>
+        CLIENT.has(a.name) && a.state === "done"
+          ? [{ a, at: { messageId: m.id, index, state: a.state } }]
+          : [],
+      ),
     );
     answered.current = true;
     void (async () => {
-      for (const a of actions) await showMe(a);
+      for (const { a, at } of actions) await showMe(a, at);
     })();
   }, [talk.data, showMe]);
   // The turn over (it answered, and no longer thinks): later messages are not mine to show.
@@ -112,6 +160,7 @@ export function HelperButton() {
   );
 
   const toggle = () => {
+    setForDialog(false);
     if (aside) {
       setAside(false);
       setOpen(true);
@@ -175,7 +224,7 @@ function Panel({
   onAbout: (a: Ask | null) => void;
   /** I sent: what the helper shows in answer runs here. */
   onSent: () => void;
-  onShow: (a: HelperAction) => Promise<boolean>;
+  onShow: (a: HelperAction, at?: ShownAt) => Promise<boolean>;
   onClose: () => void;
 }) {
   const { confirm, dialog } = useConfirm();
@@ -342,7 +391,7 @@ function Bubble({
 }: {
   m: HelperMessage;
   onSettled: () => void;
-  onShow: (a: HelperAction) => Promise<boolean>;
+  onShow: (a: HelperAction, at?: ShownAt) => Promise<boolean>;
 }) {
   const mine = m.author === "owner";
   return (
@@ -385,7 +434,7 @@ function Action({
   messageId: string;
   index: number;
   onSettled: () => void;
-  onShow: (a: HelperAction) => Promise<boolean>;
+  onShow: (a: HelperAction, at?: ShownAt) => Promise<boolean>;
 }) {
   const [, go] = useLocation();
   const [busy, setBusy] = useState(false);
@@ -421,7 +470,7 @@ function Action({
           {a.name} {JSON.stringify(a.input)}
         </div>
       ) : null}
-      {a.result && !client ? (
+      {a.result && (!client || a.state === "failed") ? (
         <div className="text-muted-foreground [overflow-wrap:anywhere]">{a.result}</div>
       ) : null}
       <div className="flex flex-wrap gap-1">
@@ -441,8 +490,13 @@ function Action({
             </Button>
           </>
         ) : null}
-        {client && a.state === "done" ? (
-          <Button size="sm" variant="secondary" className="h-7" onClick={() => void onShow(a)}>
+        {client && (a.state === "done" || a.state === "failed") ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-7"
+            onClick={() => void onShow(a, { messageId, index, state: a.state })}
+          >
             {a.name === "navigate" ? t("Open again") : t("Show me again")}
           </Button>
         ) : null}

@@ -352,6 +352,14 @@ export const CONTROLS: HelpControl[] = [
     where: "New work → Options, first",
   },
   {
+    id: "work.github-account",
+    page: "new",
+    name: "GitHub account",
+    does: "Which of my GitHub accounts a new project's new GitHub repo is made on; the first (the default) unless I pick another.",
+    where:
+      "New work → Options, under the project, when it is a new GitHub repo and I have more than one account",
+  },
+  {
     id: "work.skill",
     page: "new",
     name: "Method (skill)",
@@ -494,6 +502,15 @@ export const CONTROLS: HelpControl[] = [
     name: "Find repos in its folder",
     does: "Looks again for git repositories in the project's folders (two folders down) and adds the new ones.",
     where: "The project's repos card, on the Repo tab",
+  },
+  {
+    id: "project.repo-edit",
+    page: "projects",
+    tab: "repo",
+    needsItem: true,
+    name: "Change a repo",
+    does: "Renames one of the project's repos, or changes its release branch (jobs start from it) and work branch (jobs merge into it). Not while one of its jobs runs.",
+    where: "The pencil on a repo's row in the project's repos card, on the Repo tab",
   },
   {
     id: "project.repo-each",

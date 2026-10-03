@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api, message } from "@/lib/api";
+import { goPrefix } from "@/lib/go-prefix";
 import { t } from "@/lib/i18n";
 import { jobHref } from "@/lib/links";
 import { useLive, useLiveStatus } from "@/lib/live";
@@ -167,9 +168,15 @@ export function Shell({ children }: { children: ReactNode }) {
   });
   const open = inbox.data?.length ?? 0;
 
+  // `g` then a key: in the capture phase, so no page's own shortcut sees that key.
+  useEffect(() => {
+    const on = goPrefix(GO, (to) => go(to), typing);
+    window.addEventListener("keydown", on, true);
+    return () => window.removeEventListener("keydown", on, true);
+  }, [go]);
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: toggle reads the current fold
   useEffect(() => {
-    let g = 0;
     const on = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
@@ -178,13 +185,6 @@ export function Shell({ children }: { children: ReactNode }) {
       }
       if (e.key === "Escape") setMore(false);
       if (e.metaKey || e.ctrlKey || e.altKey || typing(e)) return;
-      if (g && Date.now() - g < 1500 && GO[e.key]) {
-        g = 0;
-        e.preventDefault();
-        go(GO[e.key] as string);
-        return;
-      }
-      g = e.key === "g" ? Date.now() : 0;
       if (e.key === "?") setHelp((h) => !h);
       else if (e.key === "[") toggle();
       else if (e.key === "n") go("/new");

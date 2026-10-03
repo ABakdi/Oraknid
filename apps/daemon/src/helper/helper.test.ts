@@ -298,6 +298,48 @@ describe("the helper (ADR-041)", () => {
     expect(p).not.toMatch(/## open_page\n/);
   }, 30_000);
 
+  it("hears back when a highlight couldn't be shown, and its next round knows", async () => {
+    const { api, prompts } = await boot((_p, n) =>
+      n === 1
+        ? {
+            reply: "Here it is.",
+            actions: [
+              {
+                name: "highlight",
+                input: { id: "settings.terminal" },
+                summary: "The terminal switch",
+              },
+            ],
+          }
+        : { reply: "Sorry, try Settings → Security.", actions: [] },
+    );
+    await api.helper.send({ text: "Where is the terminal switch?" });
+    const c = await settled(api, 2);
+    const id = c[1]?.id as string;
+    // The browser says it couldn't.
+    const failed = await api.helper.shown({
+      messageId: id,
+      index: 0,
+      ok: false,
+      why: '"Terminal" isn\'t on the screen now.',
+    });
+    expect(failed.state).toBe("failed");
+    expect((await api.helper.conversation())[1]?.actions[0]).toMatchObject({
+      state: "failed",
+      result: expect.stringContaining("isn't on the screen now"),
+    });
+    await api.helper.send({ text: "I don't see it" });
+    await settled(api, 4);
+    expect(prompts[1]).toMatch(
+      /highlight → failed: It couldn't be shown in the browser: .*isn't on/,
+    );
+    // Shown after all (Show me again): done again. Not for an unknown action or one the daemon ran.
+    expect((await api.helper.shown({ messageId: id, index: 0, ok: true })).state).toBe("done");
+    await expect(api.helper.shown({ messageId: id, index: 3, ok: false })).rejects.toThrow(
+      /No such action/,
+    );
+  }, 30_000);
+
   it("refuses a context too large", async () => {
     const { api } = await boot(() => ({ reply: "ok", actions: [] }));
     await expect(

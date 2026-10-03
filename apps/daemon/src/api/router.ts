@@ -66,6 +66,7 @@ import {
   ProjectBudget,
   ProjectBudgetView,
   ProjectRepo,
+  ProjectRepoPatch,
   ProjectView,
   PruneRequest,
   PushSubscriptionInput,
@@ -847,6 +848,16 @@ export const router = {
           return { ...p, jobCount: c.projects.list().find((x) => x.id === p.id)?.jobCount ?? 0 };
         }),
       ),
+    /** A repo renamed, or its release and work branches changed (ADR-042). */
+    updateRepo: base
+      .input(ProjectRepoPatch)
+      .output(ProjectView)
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          const p = c.projects.updateRepo(input);
+          return { ...p, jobCount: c.projects.list().find((x) => x.id === p.id)?.jobCount ?? 0 };
+        }),
+      ),
     /** A repo no longer part of it; its folder stays (ADR-042). */
     removeRepo: base
       .input(z.object({ id: z.string(), name: z.string() }))
@@ -962,6 +973,20 @@ export const router = {
             c.remote && !c.devices.isFull(c.device),
           ),
         ),
+      ),
+    /** What became of an action shown in my browser: not shown, and why (ADR-041). */
+    shown: base
+      .input(
+        z.object({
+          messageId: z.string(),
+          index: z.number().int().min(0),
+          ok: z.boolean(),
+          why: z.string().max(500).optional(),
+        }),
+      )
+      .output(HelperAction)
+      .handler(({ context: c, input }) =>
+        guard(() => c.helper.shown(input.messageId, input.index, input.ok, input.why)),
       ),
     clear: base.handler(({ context: c }) => guard(() => c.helper.clear())),
   },
