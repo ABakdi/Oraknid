@@ -54,7 +54,7 @@ export interface GitHubRepo {
   name: string;
   private: boolean;
   description: string | null;
-  updatedAt: string;
+  updatedAt: string | null;
 }
 
 export interface RepoInfo {
@@ -322,7 +322,7 @@ export class GitHub {
         name: string;
         private: boolean;
         description: string | null;
-        pushed_at: string;
+        pushed_at: string | null;
       }[]
     >(
       "/user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator",

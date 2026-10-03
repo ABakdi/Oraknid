@@ -765,7 +765,7 @@ export const router = {
             name: z.string(),
             private: z.boolean(),
             description: z.string().nullable(),
-            updatedAt: z.string(),
+            updatedAt: z.string().nullable(),
           }),
         ),
       )

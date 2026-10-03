@@ -95,6 +95,8 @@ describe("Repos (ADR-040)", () => {
       "work:me/piano",
       "work:acme/site",
     ]);
+    // New work's picker takes an empty repository too (nothing pushed: no time).
+    expect((await api.github.repos()).find((r) => r.fullName === "me/empty")?.updatedAt).toBeNull();
     await expect(api.github.repoList({ account: "nobody" })).rejects.toThrow(
       /No GitHub account nobody/,
     );
