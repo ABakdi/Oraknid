@@ -120,3 +120,23 @@ export async function cancelLegWork(
   await Promise.allSettled(hit.map((r) => r.ended));
   return hit.length;
 }
+
+/**
+ * "Give it to another Leg" (ADR-045): the task no longer uses the Leg it
+ * kept going wrong on; with one picked, it goes to that Leg.
+ */
+export function giveToLeg(
+  db: Db,
+  jobId: string,
+  taskId: string,
+  fromLegId: string,
+  toLegId: string | null,
+) {
+  change(db, jobId, (w) => {
+    w.taskAvoid[taskId] = [...new Set([...(w.taskAvoid[taskId] ?? []), fromLegId])].filter(
+      (id) => id !== toLegId,
+    );
+    if (toLegId) w.waitFor[taskId] = toLegId;
+    else delete w.waitFor[taskId];
+  });
+}

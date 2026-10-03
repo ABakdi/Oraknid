@@ -137,6 +137,7 @@ import {
 } from "../eye/controls.ts";
 import type { EyeDecisions } from "../eye/decisions.ts";
 import { draftAnswer, draftStart, draftTalk, isThinking } from "../eye/draft.ts";
+import { endSteps } from "../eye/ending.ts";
 import { cancelLegWork, pauseLegSessions, readLegWork } from "../eye/leg-work.ts";
 import {
   GlobalPolicy,
@@ -394,6 +395,8 @@ const talkDeps = (c: ApiContext) => ({
   startJob: async (id: string) => {
     await startJob(c, id);
   },
+  endNow: (id: string) =>
+    endSteps({ db: c.jobs.db, bus: c.bus, github: c.github, projects: c.projects }, id),
 });
 
 const SkillSummary = z.object({

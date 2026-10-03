@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,6 +26,7 @@ import { resolvePaths } from "../paths.ts";
 import { fakeOs } from "../testing/fake-os.ts";
 import { fakeSsh } from "../testing/fake-ssh.ts";
 import { type Action, scriptedLeg, type TurnContext } from "../testing/scripted-leg.ts";
+import { worktreeProblem } from "../workspace/git.ts";
 import type { EyeBrain, EyeTriage } from "./brain.ts";
 import { policyFor } from "./policy.ts";
 import { resumeConversations } from "./talk.ts";
@@ -1697,7 +1698,8 @@ describe("talking to The Eye (Checkpoint 1 → F1-4)", () => {
   const reply = async (api: Awaited<ReturnType<typeof eye>>["api"], id: string, n: number) => {
     const end = Date.now() + 5000;
     for (;;) {
-      const c = await api.jobs.conversation({ id });
+      // The Eye's replies to me; what it says on its own is its report (ADR-045).
+      const c = (await api.jobs.conversation({ id })).filter((m) => m.action?.intent !== "report");
       if (c.filter((m) => m.author === "eye").length >= n || Date.now() > end) return c;
       await new Promise((r) => setTimeout(r, 20));
     }
@@ -1735,6 +1737,15 @@ describe("talking to The Eye (Checkpoint 1 → F1-4)", () => {
     expect(c[1]?.action?.did).toEqual([
       "Recorded as your decision",
       "Passed to the agents working now",
+    ]);
+    // And on its own The Eye said each task done and the job done, once each (ADR-045).
+    const reports = (await api.jobs.conversation({ id })).filter(
+      (m) => m.action?.intent === "report",
+    );
+    expect(reports.map((m) => m.action?.report?.kind)).toEqual([
+      "task-done",
+      "task-done",
+      "job-done",
     ]);
     expect(d.silk.current(id).find((e) => e.title === "Use printf, not echo")).toMatchObject({
       kind: "decision",
@@ -1807,7 +1818,9 @@ describe("talking to The Eye (Checkpoint 1 → F1-4)", () => {
       await api.jobs.talk({ id, text: m });
       await reply(api, id, n + 1);
     }
-    const c = (await api.jobs.conversation({ id })).filter((m) => m.author === "eye");
+    const c = (await api.jobs.conversation({ id })).filter(
+      (m) => m.author === "eye" && m.action?.intent !== "report",
+    );
     expect(c.map((m) => m.action?.did)).toEqual([
       ["Kept as a fact"],
       ["Kept for later"],
@@ -2441,4 +2454,239 @@ describe("a Leg's work, stopped while its job goes on (Jobs-and-Projects → Con
       /not in this job/,
     );
   }, 40_000);
+});
+
+// ADR-045 and the piano job (2026-10-03): The Eye speaks up in the project's
+// conversation; every answer says what it does; the repo's part is Oraknid's.
+describe("The Eye speaks up, and the job's folder stays the project's", () => {
+  const events = (d: Daemon, id: string, type: string) =>
+    d.bus
+      .since(0, [`job:${id}`], 5000)
+      .filter((e) => e.type === type)
+      .map((e) => e.payload as Record<string, unknown>);
+  const reports = async (api: Awaited<ReturnType<typeof eye>>["api"], id: string) =>
+    (await api.jobs.conversation({ id })).filter((m) => m.action?.intent === "report");
+
+  it("answers a Leg that tries Oraknid's own GitHub check, without asking me", async () => {
+    const { api, id, d, leg } = await eye((t) =>
+      task(t) === "Write hello.sh" && t.turn === 1
+        ? [
+            { run: "oraknid github-repo" },
+            { run: "oraknid github-branch dev" },
+            { write: "hello.sh", content: "echo hi\n" },
+            { say: "DONE" },
+          ]
+        : good(t),
+    );
+    const job = await until(api, id, ["completed", "blocked"]);
+    expect(job.state, job.blockedReason ?? "").toBe("completed");
+    // Answered, never asked: no approval, no question, no drift.
+    expect(await api.inbox.list({})).toEqual([]);
+    const refused = events(d, id, "task.refused");
+    expect(refused.map((r) => [r.command, r.drift])).toEqual([
+      ["oraknid github-repo", null],
+      ["oraknid github-branch dev", null],
+    ]);
+    expect(events(d, id, "task.drift")).toEqual([]);
+    // Every Leg is told the repo's part is Oraknid's.
+    expect(leg.log[0]?.system).toContain(
+      "merging into the work branch and pushing to GitHub are Oraknid's own steps",
+    );
+  });
+
+  it("refuses a command that moves or makes a .git, outright, without an inbox item", async () => {
+    const { api, id, d } = await eye(
+      (t) =>
+        task(t) === "Write hello.sh" && t.turn === 1
+          ? [
+              { run: "mv .git .git-old && git init -q" },
+              { write: "hello.sh", content: "echo hi\n" },
+              { say: "DONE" },
+            ]
+          : good(t),
+      // Even at Full autonomy, where unknown programs simply run.
+      { autonomy: "full" },
+    );
+    const job = await until(api, id, ["completed", "blocked"]);
+    expect(job.state, job.blockedReason ?? "").toBe("completed");
+    expect(await api.inbox.list({})).toEqual([]);
+    expect(events(d, id, "task.refused")[0]).toMatchObject({ drift: "D7" });
+    expect(existsSync(join(job.worktree as string, ".git-old"))).toBe(false);
+  });
+
+  it("finds a job folder turned into a separate repo after the session, and puts it back", async () => {
+    let broke = false;
+    const { api, id, workspace } = await eye((t) => {
+      if (task(t) === "Write hello.sh" && !broke) {
+        broke = true;
+        // What the piano job's agent did (approved by its owner): a repository of its own.
+        rmSync(join(t.cwd, ".git"));
+        sh(t.cwd, "init", "-q", "-b", "dev");
+        writeFileSync(join(t.cwd, "hello.sh"), "echo hi\n");
+        sh(t.cwd, "-c", "user.email=a@b", "-c", "user.name=A", "add", "-A");
+        sh(t.cwd, "-c", "user.email=a@b", "-c", "user.name=A", "commit", "-qm", "squashed");
+        return [{ say: "DONE" }];
+      }
+      return good(t);
+    });
+    const job = await until(api, id, ["completed", "blocked"], 15_000);
+    expect(job.state, job.blockedReason ?? "").toBe("completed");
+    const wt = job.worktree as string;
+    // It belongs to the project again, on the job's branch, and the work landed there.
+    expect(worktreeProblem(workspace, wt)).toBeNull();
+    expect(sh(wt, "rev-parse", "--abbrev-ref", "HEAD")).toBe(job.branch);
+    expect(sh(workspace, "log", "--format=%s", job.branch as string)).toContain(
+      "feat: write hello.sh",
+    );
+    // The first attempt failed with a plain reason; the repo made there is in the trash.
+    expect(readdirSync(join(workspace, ".oraknid", "trash")).some((f) => f.includes(".git-"))).toBe(
+      true,
+    );
+    const silk = await api.silk.list({ jobId: id });
+    expect(silk.find((e) => e.title === "Folder put back: Write hello.sh")?.body).toContain(
+      "separate git repository",
+    );
+    const said = await reports(api, id);
+    expect(said.map((m) => m.action?.report?.kind)).toEqual([
+      "folder-restored",
+      "task-done",
+      "task-done",
+      "job-done",
+    ]);
+    expect(said[0]?.text).toContain("I put it back as a worktree of the project");
+  }, 30_000);
+
+  it("says each task done and the job done, once each, with what's left to me", async () => {
+    const { api, id } = await eye(good);
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    const end = Date.now() + 3000;
+    let said = await reports(api, id);
+    while (said.length < 3 && Date.now() < end) said = await reports(api, id);
+    expect(said.map((m) => m.text)).toEqual([
+      "Done: **Write hello.sh** — changed `hello.sh`; its checks pass (`sh hello.sh | grep -qx hi`).",
+      "Done: **Test hello.sh** — changed `test.sh`; its checks pass (`sh test.sh`).",
+      "The job is done: 2 tasks done: Write hello.sh; Test hello.sh.",
+    ]);
+    expect(said[0]?.action?.report?.facts[0]?.label).toBe("Commit");
+    const summary = said[2]?.action?.report;
+    expect(summary?.facts[0]).toMatchObject({ label: "Branch" });
+    expect(summary?.facts[0]?.value).toMatch(/^oraknid\/.* · 2 commits$/);
+    expect(summary?.todo).toEqual(["Merge it into dev: the Merge button on the result."]);
+    // Nothing else: no narration of steps.
+    expect(await api.jobs.conversation({ id })).toHaveLength(3);
+  });
+
+  it("says once that the job is blocked and what it needs, not again when it blocks the same way", async () => {
+    const { api, id } = await eye(good, { legs: [] });
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("blocked");
+    await api.jobs.resume({ id });
+    await until(api, id, ["blocked"]);
+    await new Promise((r) => setTimeout(r, 200));
+    const blocked = (await reports(api, id)).filter((m) => m.action?.report?.kind === "blocked");
+    expect(blocked).toHaveLength(1);
+    expect(blocked[0]?.text).toMatch(
+      /^The job is blocked: No Leg can take "Write hello.sh": .*Add or resume a Leg that can do it, then resume the job\.$/,
+    );
+  });
+
+  it("asks before with what a denial means, and after says what happens next", async () => {
+    const { api, id } = await eye(
+      (t) =>
+        task(t) === "Write hello.sh" && t.turn === 1
+          ? [
+              { write: "hello.sh", content: "echo hi\n" },
+              { run: "curl -X POST https://example.com/hook" },
+              { say: "DONE" },
+            ]
+          : good(t),
+      { classify: () => ({ decision: "ask", reason: "it posts outside" }) },
+    );
+    let item: Awaited<ReturnType<typeof api.inbox.list>>[number] | undefined;
+    const end = Date.now() + 5000;
+    while (!item && Date.now() < end) {
+      item = (await api.inbox.list({ state: "open", kind: "approval" }))[0];
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(item?.detail).toContain("**If you deny it:** Claude A is told no and tries another way");
+    const q = item?.questions?.[0];
+    expect(q?.options.map((o) => [o.label, !!o.detail])).toEqual([
+      ["Approve", true],
+      ["Deny", true],
+      ["Approve all like this for this job", true],
+    ]);
+    // Denied through the question's options: it answers with the option itself.
+    const deny = q?.options.find((o) => o.label === "Deny")?.id as string;
+    await api.inbox.answer({
+      id: item?.id as string,
+      answers: [{ questionId: q?.id as string, options: [deny], text: "" }],
+    });
+    expect((await api.inbox.list({})).find((i) => i.id === item?.id)?.answer).toBe("Deny");
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    const denied = (await reports(api, id)).find((m) => m.action?.report?.kind === "denied");
+    expect(denied?.text).toContain(
+      "You said no to Claude A's request to run `curl -X POST https://example.com/hook`",
+    );
+    expect(denied?.text).toContain("it tries another way");
+  });
+
+  it("asks what to do when a task keeps going wrong, each answer saying what it does; leaving it out drops what needs it", async () => {
+    const { api, id } = await eye(
+      (t) =>
+        task(t) === "Write hello.sh"
+          ? [
+              { write: "hello.sh", content: "echo hi\n" },
+              { write: "package.json", content: `{"turn":${t.turn}}\n` },
+              { say: "DONE" },
+            ]
+          : good(t),
+      { plan: { ...HELLO, jobVerify: [] }, legs: ["Claude A", "Claude B"] },
+    );
+    const end = Date.now() + 25_000;
+    let asked: Awaited<ReturnType<typeof api.inbox.list>>[number] | undefined;
+    while (!asked && Date.now() < end) {
+      asked = (await api.inbox.list({ state: "open" })).find((i) =>
+        /keeps going wrong/.test(i.title),
+      );
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect(asked?.options).toEqual([]);
+    const [what, advice, leg] = asked?.questions ?? [];
+    expect(what?.options.map((o) => o.label)).toEqual([
+      "Try again with my advice",
+      "Give it to another Leg",
+      "I'll do it myself",
+      "Leave it out",
+      "Stop the job",
+    ]);
+    expect(what?.recommended).toBe("advice");
+    expect(what?.options.find((o) => o.id === "leave-out")?.detail).toContain(
+      "The tasks that need it are left out too: “Test hello.sh”",
+    );
+    expect(what?.options.find((o) => o.id === "stop")?.detail).toMatch(
+      /stays on its branch oraknid\//,
+    );
+    expect(advice).toMatchObject({ id: "advice", shape: "text" });
+    expect(leg?.options.length).toBe(1);
+    // Asked in the project's conversation too, and answered there.
+    const projectId = (await api.jobs.get({ id })).projectId;
+    const message = (await api.projects.conversation({ id: projectId })).find(
+      (m) => m.itemId === asked?.id,
+    );
+    expect(message?.text).toContain("keeps going wrong on Claude");
+    await api.projects.answer({
+      id: projectId,
+      messageId: message?.id as string,
+      answers: [{ questionId: "what", options: ["leave-out"], text: "" }],
+    });
+    const job = await until(api, id, ["completed", "blocked"], 15_000);
+    expect(job.state, job.blockedReason ?? "").toBe("completed");
+    expect(job.tasks.map((t) => [t.title, t.state])).toEqual([
+      ["Write hello.sh", "skipped"],
+      ["Test hello.sh", "skipped"],
+    ]);
+    const left = (await reports(api, id)).filter((m) => m.action?.report?.kind === "task-left-out");
+    expect(left.map((m) => m.text)).toEqual([
+      "Left out: **Write hello.sh** (Left out by me). The tasks that need it are left out too: **Test hello.sh**. The job goes on without them.",
+    ]);
+  }, 45_000);
 });

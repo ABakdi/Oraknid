@@ -6,11 +6,13 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 // Git for The Eye (Sandboxing → Worktrees, Drift-Control → Checkpoints):
 // worktrees per job, checkpoints on private refs, rollback, diffs.
@@ -671,4 +673,94 @@ export async function mergeTaskBranch(
 /** Takes back the merge just made (its checks failed on the merged tree). */
 export function undoMerge(jobG: Git) {
   git(jobG, ["reset", "-q", "--hard", "HEAD^1"]);
+}
+
+/** A folder's own idea of its `.git`, read without asking git (which would walk up to a parent). */
+function realOrSelf(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
+/** The record (`<common>/worktrees/<name>`) of the worktree at `folder`, if git still has one. */
+function worktreeRecord(repoPath: string, folder: string): string | null {
+  const admins = join(gitDirOf({ cwd: repoPath, base: [] }), "worktrees");
+  if (!existsSync(admins)) return null;
+  const want = new Set([join(folder, ".git"), join(realOrSelf(folder), ".git")]);
+  for (const name of readdirSync(admins)) {
+    const file = join(admins, name, "gitdir");
+    if (!existsSync(file)) continue;
+    if (want.has(readFileSync(file, "utf8").trim())) return join(admins, name);
+  }
+  return null;
+}
+
+/**
+ * Whether a job's folder is still a worktree of its project (Jobs-and-Projects
+ * → Ending a job, after the piano job, 2026-10-03): its `.git` is a file that
+ * points to a record in the project's repository, and that record points
+ * back. Null when it is; otherwise what went wrong, in plain words.
+ */
+export function worktreeProblem(repoPath: string, folder: string): string | null {
+  const dotgit = join(folder, ".git");
+  let isDir = false;
+  try {
+    isDir = statSync(dotgit).isDirectory();
+  } catch {
+    return "its .git was removed, so it no longer belongs to the project's repository";
+  }
+  if (isDir) return "it was turned into a separate git repository (a .git folder of its own)";
+  const m = /^gitdir:\s*(.+)$/m.exec(readFileSync(dotgit, "utf8"));
+  if (!m) return "its .git file was changed";
+  const admin = realOrSelf(resolve(folder, (m[1] as string).trim()));
+  const common = realOrSelf(gitDirOf({ cwd: repoPath, base: [] }));
+  if (dirname(admin) !== join(common, "worktrees")) return "its .git points to another repository";
+  const back = existsSync(join(admin, "gitdir"))
+    ? realOrSelf(dirname(readFileSync(join(admin, "gitdir"), "utf8").trim()))
+    : "";
+  if (back !== realOrSelf(folder))
+    return "the project's repository no longer knows it as a worktree";
+  return null;
+}
+
+/**
+ * Puts a job's folder back as a worktree of the project on `branch`,
+ * keeping its files as they are: whatever stands in for its `.git` is moved
+ * to `trash`, the worktree's link is written again (its record made again
+ * when git lost it), and the index is set to the branch's tip, so the
+ * files' content shows as changes on the job branch. Returns where the
+ * replaced `.git` went, if anything was there.
+ */
+export function restoreWorktree(
+  repoPath: string,
+  folder: string,
+  branch: string,
+  trash: string,
+): string | null {
+  const dotgit = join(folder, ".git");
+  let kept: string | null = null;
+  if (existsSync(dotgit)) {
+    mkdirSync(trash, { recursive: true });
+    kept = join(trash, `${basename(folder)}.git-${Date.now()}`);
+    renameSync(dotgit, kept);
+  }
+  let admin = worktreeRecord(repoPath, folder);
+  if (admin) {
+    writeFileSync(dotgit, `gitdir: ${admin}\n`);
+  } else {
+    // Git lost the record (pruned, or deleted with the .git): a new one, made beside the folder
+    // without a checkout, then moved in, so no file of the folder is touched.
+    const g = { cwd: repoPath, base: [] };
+    const beside = `${folder}.restoring-${Date.now()}`;
+    git(g, ["worktree", "add", "-q", "-f", "--no-checkout", beside, branch]);
+    admin = /^gitdir:\s*(.+)$/m.exec(readFileSync(join(beside, ".git"), "utf8"))?.[1]?.trim() ?? "";
+    renameSync(join(beside, ".git"), dotgit);
+    rmSync(beside, { recursive: true, force: true });
+    writeFileSync(join(admin, "gitdir"), `${dotgit}\n`);
+  }
+  // The index follows the branch's tip; the files stay as the Leg left them.
+  git(worktreeGit(repoPath, folder), ["reset", "-q"]);
+  return kept;
 }

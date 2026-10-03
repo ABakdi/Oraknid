@@ -30,6 +30,68 @@ describe("permission policy", () => {
     expect(v.reason).toContain(why);
   });
 
+  // After the piano job (2026-10-03): the job's folder stays a worktree of its project.
+  it.each([
+    "mv .git .git.old",
+    "rm -rf .git",
+    "rm -rf ./.git && git init",
+    "cp -r ../../.git .",
+    "git init",
+    "git init -b dev .",
+    "git -C . init",
+    "cd web && git init",
+    "echo 'gitdir: /x' > .git",
+    "sed -i 's/x/y/' .git",
+    "rsync -a /tmp/repo/.git/ ./.git/",
+    "ls ../../.git/worktrees && rm -rf ../../.git/worktrees/job",
+    "git worktree remove --force .",
+    "git worktree prune",
+  ])("refuses `%s` outright, at any autonomy", (command) => {
+    for (const autonomy of ["supervised", "standard", "full"] as const) {
+      const v = decide(
+        bash(command),
+        ctx({ autonomy, rules: [{ level: "job", allow: [".*"], deny: [] }] }),
+      );
+      expect(v, command).toMatchObject({ verdict: "deny", drift: "D7" });
+    }
+  });
+
+  it.each([
+    "cat .gitignore",
+    "echo node_modules >> .gitignore",
+    "rm -rf .github/workflows/old.yml",
+    "git status && git log --oneline -3",
+    "git init /tmp/scratch-repo",
+    "git worktree list",
+    "cp src/a.ts src/b.ts",
+  ])("still allows `%s`", (command) => {
+    expect(decide(bash(command), ctx({ autonomy: "full" })).verdict).toBe("allow");
+  });
+
+  it("refuses a file edit inside a .git", () => {
+    const v = decide({ tool: "Write", command: null, path: "/w/.git/config" }, ctx());
+    expect(v).toMatchObject({ verdict: "deny", drift: "D7" });
+    expect(decide({ tool: "Write", command: null, path: "/w/.gitignore" }, ctx()).verdict).toBe(
+      "allow",
+    );
+  });
+
+  it("answers a Leg trying Oraknid's own checks, without a drift and without asking", () => {
+    for (const command of [
+      "oraknid github-repo",
+      "oraknid github-branch dev",
+      "cd . && oraknid github-branch dev --repo web",
+    ]) {
+      for (const autonomy of ["supervised", "standard", "full"] as const) {
+        const v = decide(bash(command), ctx({ autonomy }));
+        expect(v).toMatchObject({ verdict: "deny", drift: null });
+        expect(v.verdict === "deny" && v.message).toContain("Oraknid runs this check itself");
+      }
+    }
+    // Anything else called oraknid is an unfamiliar program, as before.
+    expect(decide(bash("oraknid status"), ctx()).verdict).toBe("classify");
+  });
+
   it("asks before gated actions, and lets a waiver or Full autonomy through where allowed", () => {
     expect(decide(bash("git push origin dev"), ctx())).toMatchObject({
       verdict: "ask",

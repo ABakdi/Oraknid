@@ -41,6 +41,7 @@ import {
   MAX_TASKS_PER_JOB,
   projectPorts,
   readSetting,
+  writeSetting,
 } from "../settings.ts";
 import type { SilkStore } from "../silk/store.ts";
 import type { SkillStore } from "../skills/store.ts";
@@ -60,14 +61,18 @@ import {
   worktreeGit,
 } from "../workspace/git.ts";
 import type { GitHub } from "../workspace/github.ts";
+import { githubLinkOf } from "../workspace/github-tool.ts";
 import { type Projects, viewOf } from "../workspace/projects.ts";
 import { isSeveral } from "../workspace/repos.ts";
 import { MultiTree, multiTreeOf, singleTree, type WorkTree } from "../workspace/tree.ts";
 import { type AttemptJob, runAttempt } from "./attempt.ts";
 import type { EyeBrain } from "./brain.ts";
+import { parseBuiltinCheck, runBuiltinCheck } from "./builtin-checks.ts";
+import { endingKey, JobEndingState, readEnding, requestEnding, runEnding } from "./ending.ts";
 import { readInside, renderInputs } from "./inputs.ts";
 import { ensureLinks } from "./links.ts";
 import { policyFor } from "./policy.ts";
+import { dependentsOf } from "./questions.ts";
 import { runVerify, verifyRefusal } from "./verify.ts";
 
 export interface EyeDeps {
@@ -192,10 +197,9 @@ export function eyeProgram(d: EyeDeps): JobProgram {
           d.tmpDir,
           from,
         )
-      : singleTree(
-          ws.shadow ? shadowRepo(ws.cwd) : worktreeGit(project.workspacePath, ws.cwd),
-          d.tmpDir,
-        );
+      : ws.shadow
+        ? singleTree(shadowRepo(ws.cwd), d.tmpDir)
+        : singleTree(worktreeGit(project.workspacePath, ws.cwd), d.tmpDir, project.workspacePath);
     const where: Where = {
       cwd: ws.cwd,
       tree,
@@ -294,13 +298,16 @@ export function eyeProgram(d: EyeDeps): JobProgram {
       const job = d.db.select().from(jobs).where(eq(jobs.id, ctx.jobId)).get() as typeof job0;
       ctx.setState("verifying");
       const round = job.verifyRound;
+      // Oraknid's own checks of the repo on GitHub (ADR-038) run after its end steps, below.
+      const own = job.verify.filter((v) => parseBuiltinCheck(v));
+      const checks = job.verify.filter((v) => !parseBuiltinCheck(v));
       const results = await ctx.step(
         `job-verify:${round}`,
         { round, verify: job.verify },
         (signal) =>
-          job.verify.length
+          checks.length
             ? runVerify(
-                job.verify,
+                checks,
                 ws.cwd,
                 job.unsandboxed ? null : sandboxPlan(firstLeg(d), d.sandbox, d.legsDir),
                 {
@@ -318,6 +325,42 @@ export function eyeProgram(d: EyeDeps): JobProgram {
       );
       const failed = results.find((r) => !r.ok);
       if (!failed) {
+        // The repo's part is Oraknid's: merge and push as asked, then its GitHub checks (after the piano job).
+        const ending = await runEnding(
+          {
+            db: d.db,
+            bus: d.bus,
+            inbox: d.inbox,
+            now: d.now,
+            ...(d.github ? { github: d.github } : {}),
+            ...(d.projects ? { projects: d.projects } : {}),
+          },
+          ctx,
+          job,
+        );
+        if (own.length)
+          await ctx.step(`job-verify-github:${round}`, { round, own }, async () => {
+            const out: string[] = [];
+            for (const command of own) {
+              const r = await runBuiltinCheck(command, {
+                ...(d.github ? { github: d.github } : {}),
+                link: githubLinkOf(d.db, job.id),
+                linkFor: (repo) => githubLinkOf(d.db, job.id, repo),
+                // The project's own branch, never one a Leg made in the job's folder.
+                localCommit: (branch, repo) => where.tree.localCommit(branch, repo),
+              });
+              if (r && !r.ok) out.push(`\`${command}\`: ${r.output}`);
+            }
+            if (out.length) {
+              const e = readEnding(d.db, job.id);
+              const done = e.done ?? ending ?? { merged: null, pushed: [], problems: [] };
+              writeSetting(d.db, endingKey(job.id), JobEndingState, {
+                ...e,
+                done: { ...done, problems: [...done.problems, ...out] },
+              });
+            }
+            return out;
+          });
         d.silk.add({
           jobId: job.id,
           kind: "progress",
@@ -645,7 +688,7 @@ async function runTask(
     taskWhere = {
       ...where,
       cwd: own.path,
-      tree: singleTree(worktreeGit(where.projectPath, own.path), d.tmpDir),
+      tree: singleTree(worktreeGit(where.projectPath, own.path), d.tmpDir, where.projectPath),
     };
   }
   if (own) {
@@ -757,9 +800,18 @@ async function runTask(
     case "retry":
       setTask(d, job.id, task.id, "ready", outcome.reason);
       break;
-    case "skipped":
-      setTask(d, job.id, task.id, "skipped", "Skipped by me.");
+    case "skipped": {
+      // Left out by me (ADR-045): with the tasks that need it, when I chose so.
+      const dropped = outcome.dependents ? dependentsOf(d.db, job.id, task.id) : [];
+      setTask(d, job.id, task.id, "skipped", "Left out by me.", {
+        dropped: dropped.map((t) => t.title),
+      });
+      for (const t of dropped)
+        setTask(d, job.id, t.id, "skipped", `Left out with “${task.title}”, which it needs.`, {
+          with: task.id,
+        });
       break;
+    }
     case "owner-held":
       d.db
         .update(tasks)
@@ -967,6 +1019,10 @@ async function approvePlanIfSupervised(d: EyeDeps, ctx: JobContext) {
       payload: { version, tasks: pending.length },
       gated: true,
       title: version === 1 ? "Approve the plan" : `Approve the plan, version ${version}`,
+      consequences: {
+        approve: "Work starts on these tasks.",
+        deny: "Nothing runs and the job stops (blocked): tell The Eye what to change, then resume it.",
+      },
       describe: `${summary?.body.split("\n\n")[0] ?? ""}\n\n${pending
         .map(
           (t) =>
@@ -986,6 +1042,7 @@ function setTask(
   taskId: string,
   state: string,
   reason: string | null = null,
+  extra: Record<string, unknown> = {},
 ) {
   d.bus.atomically(() => {
     d.db.update(tasks).set({ state, leaseUntil: null }).where(eq(tasks.id, taskId)).run();
@@ -993,7 +1050,7 @@ function setTask(
       type: "task.state",
       topic: `job:${jobId}`,
       jobId,
-      payload: { taskId, to: state, reason },
+      payload: { taskId, to: state, reason, ...extra },
     });
   });
 }
@@ -1062,6 +1119,8 @@ function storeWeb(d: EyeDeps, jobId: string, plan: WebPlan) {
       }
     }
     const verify = [...new Set([...job.verify, ...plan.jobVerify])];
+    // Merging and pushing, as the goal asked: Oraknid's own steps at the end, never tasks.
+    requestEnding(d.db, jobId, plan.ending, "the goal");
     d.db
       .update(jobs)
       .set({ webVersion: job.webVersion + 1, verify })

@@ -1,5 +1,6 @@
 import {
   type Actor,
+  chosenOption,
   completeAnswers,
   type InboxFilter,
   type InboxItem,
@@ -152,9 +153,14 @@ export class InboxStore {
       const questions = item.questions as Question[] | null;
       const answers =
         structured && questions?.length ? completeAnswers(questions, structured) : null;
-      // An option of the item (e.g. "Enough, start") stays itself; answers are said as a list.
+      // An option of the item (e.g. "Enough, start") stays itself, chosen as a button or through
+      // the question that says what each does (ADR-045); other answers are said as a list.
+      const chosen = chosenOption(questions, answers, item.options);
       const answer =
-        answers && !item.options.includes(given) ? renderAnswers(questions ?? [], answers) : given;
+        chosen ??
+        (answers && !item.options.includes(given)
+          ? renderAnswers(questions ?? [], answers)
+          : given);
       if (item.state === "withdrawn")
         throw new Error("That question was withdrawn: nothing waits for it any more.");
       if (item.state !== "open") throw new Error("That item was already answered.");
@@ -166,7 +172,7 @@ export class InboxStore {
         .set({
           state: "answered",
           answer,
-          answers: item.options.includes(given) ? null : answers,
+          answers: item.options.includes(answer) ? null : answers,
           answeredAt: this.now(),
           answeredByDeviceId: deviceId,
         })

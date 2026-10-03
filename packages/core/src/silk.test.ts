@@ -120,6 +120,21 @@ describe("context pack", () => {
     expect(pack.text).toContain("`pnpm test auth`");
   });
 
+  it("names Oraknid's own GitHub checks as its own, not the Leg's to run (after the piano job)", () => {
+    const pack = buildContextPack({
+      task: { ...task, verify: ["pnpm test auth", "oraknid github-branch dev"] },
+      goal: "A todo app",
+      skill: "",
+      entries: [],
+      digest: "",
+      capTokens: 10_000,
+    });
+    expect(pack.text).toContain("- `pnpm test auth`\n");
+    expect(pack.text).toContain(
+      "- `oraknid github-branch dev` — Oraknid's own check of GitHub, run after you finish; there is no `oraknid` command for you, so don't run it",
+    );
+  });
+
   it("leaves superseded entries out", () => {
     const old = entry({ title: "Use Postgres" });
     const pack = buildContextPack({

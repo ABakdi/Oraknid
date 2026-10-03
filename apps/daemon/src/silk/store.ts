@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Actor, SilkByJob, SilkEntry, SilkKind } from "@oraknid/contracts";
+import { choiceQuestion } from "@oraknid/contracts";
 import { current, parseMirrorEdits, renderMirror } from "@oraknid/core";
 import { and, asc, desc, eq, lt } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
@@ -218,6 +219,18 @@ export class SilkStore {
           )}\n\nThe mirror is in the job's folder, where its Legs work too. Import only edits you made: imported entries become yours, and every later session trusts them.`,
         options: [IMPORT, DISCARD],
         defaultOption: null,
+        questions: [
+          choiceQuestion(`Import my edits to Silk (${t.file})?`, [
+            {
+              label: IMPORT,
+              detail: "They become your Silk entries, and every later session trusts them.",
+            },
+            {
+              label: DISCARD,
+              detail: "Oraknid's version is written back to the mirror; Silk stays as it is.",
+            },
+          ]),
+        ],
       });
       this.db
         .update(silkMirror)

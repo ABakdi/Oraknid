@@ -43,6 +43,7 @@ import { startBudgetWatch } from "./eye/budgets.ts";
 import { EyeDecisions } from "./eye/decisions.ts";
 import { serverAdded } from "./eye/links.ts";
 import { eyeProgram } from "./eye/program.ts";
+import { startEyeReports } from "./eye/reports.ts";
 import { forgetGuidance, recordAnswer, resumeConversations } from "./eye/talk.ts";
 import { Helper } from "./helper/service.ts";
 import { isLocalRequest } from "./http/guard.ts";
@@ -553,6 +554,8 @@ export async function startDaemon(options: DaemonOptions) {
     }
   });
 
+  // The Eye speaks up in each project's conversation: a task done, the job done, blocked (ADR-045).
+  startEyeReports({ db, bus, inbox, brain, now });
   const audit = startAuditExport(db, join(paths.logs, "audit"));
   const backups = startNightlyBackups(db, paths.backups, now);
   const budgets = startBudgetWatch({

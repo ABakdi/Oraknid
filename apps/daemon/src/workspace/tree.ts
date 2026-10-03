@@ -18,9 +18,11 @@ import {
   hasRef,
   removeTaskWorktree,
   restorePaths,
+  restoreWorktree,
   rollback,
   stageAll,
   worktreeGit,
+  worktreeProblem,
 } from "./git.ts";
 import { inRepo, repoOfPath, reposOfScope } from "./repos.ts";
 
@@ -57,11 +59,45 @@ export interface WorkTree {
   localCommit(branch: string, repo?: string | null): string | null;
   /** The plain git handle of a single work tree; null for several repos. */
   single: Git | null;
+  /**
+   * Each worktree of the project in the job's folder that no longer belongs
+   * to it, and why (after the piano job, 2026-10-03). Empty when all is well
+   * (and always for a shadow repo).
+   */
+  strayed(): { folder: string; problem: string }[];
+  /** Puts each one back as a worktree on its branch, its files kept; what replaced its .git goes to `trash`. */
+  putBack(trash: string): void;
 }
 
-/** One work tree: what every job had before ADR-042. */
-export function singleTree(g: Git, tmpDir: string): WorkTree {
+/** The branch a worktree has checked out, read from its record (what its folder says can't be trusted). */
+function branchOf(g: Git): string | null {
+  try {
+    return git(g, ["symbolic-ref", "--short", "HEAD"]).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * One work tree: what every job had before ADR-042. `repoPath`: the project's
+ * repository when it is a worktree of it (none for a shadow repo).
+ */
+export function singleTree(g: Git, tmpDir: string, repoPath?: string): WorkTree {
+  // Read while the worktree is sound: a Leg may break its link later.
+  const branch = repoPath ? branchOf(g) : null;
+  const strayed = () => {
+    if (!repoPath) return [];
+    const problem = worktreeProblem(repoPath, g.cwd);
+    return problem ? [{ folder: g.cwd, problem }] : [];
+  };
   return {
+    strayed,
+    putBack: (trash) => {
+      if (!repoPath || !strayed().length) return;
+      const b = branch ?? branchOf(g);
+      if (!b) throw new Error(`${g.cwd}: its branch is unknown, so it can't be put back.`);
+      restoreWorktree(repoPath, g.cwd, b, trash);
+    },
     cwd: g.cwd,
     several: false,
     single: g,
@@ -177,6 +213,36 @@ export class MultiTree implements WorkTree {
 
   get cwd() {
     return this.o.root;
+  }
+
+  /** Each repo's worktree that no longer belongs to its repo; a repository made at the top of the folder too. */
+  strayed(): { folder: string; problem: string }[] {
+    const out = this.opened().flatMap(({ repo, path }) => {
+      const problem = worktreeProblem(this.#repoPath(repo), path);
+      return problem ? [{ folder: path, problem }] : [];
+    });
+    if (!this.o.repos.some((r) => r.folder === "") && existsSync(join(this.o.root, ".git")))
+      out.push({
+        folder: this.o.root,
+        problem: "a git repository was made at the top of the job's folder, around its repos",
+      });
+    return out;
+  }
+
+  putBack(trash: string) {
+    for (const { repo, path } of this.opened()) {
+      if (!worktreeProblem(this.#repoPath(repo), path)) continue;
+      const end = this.o.jobId.slice(-6).toLowerCase();
+      const g = this.#open.get(repo.name)?.g;
+      const branch =
+        (g ? branchOf(g) : null) ?? this.o.task?.branch ?? `oraknid/${this.o.slug}-${end}`;
+      restoreWorktree(this.#repoPath(repo), path, branch, trash);
+    }
+    const top = join(this.o.root, ".git");
+    if (!this.o.repos.some((r) => r.folder === "") && existsSync(top)) {
+      mkdirSync(trash, { recursive: true });
+      renameSync(top, join(trash, `job.git-${Date.now()}`));
+    }
   }
 
   /** The repos open now, in the project's order. */

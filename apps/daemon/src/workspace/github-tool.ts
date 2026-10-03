@@ -215,7 +215,7 @@ export function githubServer(d: GitHubToolDeps): BuiltInServer {
       const name = String(m.params?.name ?? "");
       const args = (m.params?.arguments ?? {}) as Record<string, unknown>;
       try {
-        return text(m.id, await call(d, session.jobId, name, args));
+        return text(m.id, await githubCall(d, session.jobId, name, args));
       } catch (error) {
         return text(m.id, error instanceof Error ? error.message : String(error), true);
       }
@@ -230,7 +230,8 @@ const NO_LINK =
 const noLinkFor = (r: ProjectRepo) =>
   `The repo ${r.name} of this project has no GitHub repository linked yet. Don't work around it (no gh CLI, no token, no remote of your own): say in your report that it needs a GitHub repo, and The Eye asks the owner.`;
 
-async function call(
+/** One call of the github tool, as a Leg makes it, or as Oraknid does its own end-of-job push. */
+export async function githubCall(
   d: GitHubToolDeps,
   jobId: string | null,
   name: string,
