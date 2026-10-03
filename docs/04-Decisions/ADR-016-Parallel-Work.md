@@ -67,5 +67,8 @@ job side by side.
   after its merge.
 - Durability: a task's worktree and branch are recorded before its
   attempt; recovery merges or re-runs as the journal says.
+- In a project of several repos (2026-10-03, [[ADR-042-Several-Repos-And-Servers]]),
+  a task's "worktree" is a folder of worktrees, one per repo it touches,
+  and its merge is all or nothing across them.
 
 Related: [[Phase-3-Parallelism]] · [[ADR-003-Job-Execution-Engine]] · [[Sandboxing]] · [[Business-Rules]]

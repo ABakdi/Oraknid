@@ -130,9 +130,12 @@ diff are per repo, its paths shown under its folder; a repo opened after
 a checkpoint counts from where its worktree started. A task's verified
 work is one commit in each repo it changed, each with its own message
 (`feat(web): …` and `feat(api): …` when it changed both), never one
-commit across them. Planning reads the project's own folders; tasks of
-such a job run one at a time (side by side needs a worktree per task per
-repo: not built). The job's result lists each repo's branch and commits;
+commit across them. Planning reads the project's own folders. Tasks side
+by side (Several jobs, below) work there too: each task gets a folder
+of its own with a worktree per repo it touches, from the job branch's
+tips, and is merged into every repo it changed, or into none when one
+conflicts or its checks fail once merged (then it is redone on top of
+the newer work). The job's result lists each repo's branch and commits;
 **Merge** computes every repo's merge first and merges each job branch
 into its repo's work branch, or none when one conflicts. A project of
 one repo works as before.

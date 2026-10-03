@@ -83,7 +83,21 @@ I name, asking only to confirm.
   Files outside every repo (no repo at the top) are changes too: out of
   scope, they go to the trash. A task's commits are one per repo it
   changed, `feat(web): …` when it changed several, kept on the task
-  (`tasks.commits`). Tasks of such a job run one at a time.
+  (`tasks.commits`).
+- **Tasks side by side** (2026-10-03), as ADR-016 does for one repo:
+  above one task at a time, a task gets a folder of its own
+  (`.oraknid/worktrees/<job>-t-<task>`) mirroring the job's, each repo it
+  touches a worktree on the task's branch (`<job branch>--t-<task>`, the
+  same name in every repo) from the job branch's tip in that repo; a
+  repo the job hadn't opened is opened in the job's folder first. Its
+  checkpoints and scope count from where its worktrees started
+  (`refs/oraknid/<job>/t-<task>/start`). Verified, it is merged one task
+  of the job at a time: every repo it changed is computed first (`git
+  merge-tree`), none is merged when one conflicts, then each is merged
+  into the job's worktree of that repo and the task's checks run on the
+  job's folder; checks that fail take every repo's merge back (each to
+  its commit before). Not merged, the task is redone in a fresh folder
+  from the job's newer tips; merged, its folder and branches go.
 - **Merge** computes every repo's merge (`git merge-tree`) before
   merging any: a conflict in one merges none.
 - **The github tool** takes `repo`: a repo's name in the project, or an
@@ -102,9 +116,7 @@ I name, asking only to confirm.
   Eye in that job, not my answers. The question that waits for a new
   server is an inbox item answered by itself when a server is added
   (the `server.added` event).
-- **Not built**: tasks side by side in a job across several repos (it
-  needs a worktree per task per repo and an all-or-nothing merge of
-  them); renaming a repo or changing its branches in the UI (a repo
+- **Not built**: renaming a repo or changing its branches in the UI (a repo
   taken out and added again takes the branches it has).
 
 Related: [[ADR-038-Project-Accounts]] · [[ADR-026-Servers]] · [[Jobs-and-Projects]] · [[ADR-016-Parallel-Work]] · [[ADR-037-Questions-With-Options]]
