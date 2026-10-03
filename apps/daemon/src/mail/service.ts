@@ -167,6 +167,9 @@ export class MailService {
 
   /** Connects every account, answers approvals, and settles sends a crash interrupted. */
   start() {
+    // OAuth app secrets saved before sign-in by OAuth was taken out (ADR-032 → Changed after building).
+    for (const p of ["google", "microsoft"])
+      void this.o.secrets.delete(`mail.oauth.${p}.secret`).catch(() => {});
     // At most once (BR-6): a send caught mid-way may have gone out; I check Sent before retrying.
     this.o.db
       .update(mailDrafts)
