@@ -15,15 +15,21 @@ import {
   Forward,
   Hourglass,
   Inbox,
+  LogOut,
   Mail,
   MailOpen,
+  MoreHorizontal,
+  PanelLeft,
   Paperclip,
   PenSquare,
+  Plug,
+  Plus,
   RefreshCw,
   Reply,
   ReplyAll,
   Search,
   Send,
+  Settings2,
   Star,
   Trash2,
 } from "lucide-react";
@@ -31,6 +37,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Link, useLocation } from "wouter";
 import { Empty, ErrorNote, Loading } from "@/components/common";
+import { useConfirm } from "@/components/confirm";
+import {
+  ACCOUNT_STATE,
+  AccountSettings,
+  AddAccountDialog,
+  ReconnectDialog,
+  removeAccount,
+} from "@/components/mail-accounts-card";
 import { Composer, type Draft } from "@/components/mail-composer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,15 +59,24 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api, message } from "@/lib/api";
 import { ago, bytes } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { live, useLive } from "@/lib/live";
 import { cleanMailHtml, textMail } from "@/lib/mail-html";
+import { remote } from "@/lib/remote";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
@@ -84,11 +107,16 @@ interface ThreadActions {
   unread(): void;
 }
 
+/** An account's dialogs, opened from its menu in the folder list. */
+type Managing = { kind: "settings" | "reconnect"; account: MailAccountView } | null;
+
 /**
  * Mail (Web-UI → Mail, ADR-032): accounts and folders, a virtual list of
- * conversations, the open one. Three panes on a wide screen, one at a time
- * on a phone. Keys: c write, / search, j/k next and previous, e archive,
- * # delete, r reply, a reply all, f forward, s star, u unread, Esc back.
+ * conversations, the open one. Three panes on a wide screen; on a phone
+ * the list, with the folders in a drawer, or the open conversation.
+ * Accounts are added, reconnected, set and removed here too. Keys: c
+ * write, / search, j/k next and previous, e archive, # delete, r reply,
+ * a reply all, f forward, s star, u unread, Esc back.
  */
 export function MailPage({
   account,
@@ -111,10 +139,16 @@ export function MailPage({
   });
   const [composing, setComposing] = useState<Draft | null>(null);
   const [query, setQuery] = useState("");
+  // On a phone: the folders, in a drawer over the list.
+  const [drawer, setDrawer] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [managing, setManaging] = useState<Managing>(null);
+  const { confirm, dialog } = useConfirm();
   const search = useRef<HTMLInputElement>(null);
   const threads = useRef<MailThreadSummary[]>([]);
   const actions = useRef<ThreadActions | null>(null);
   const threadId = thread ? decodeURIComponent(thread) : undefined;
+  const away = !!remote();
 
   const list = accounts.data ?? [];
   const current = list.find((a) => a.id === account) ?? list[0];
@@ -129,10 +163,10 @@ export function MailPage({
   const inbox = folders.data?.find((f) => f.specialUse === "\\Inbox");
   const folderId = folder ?? inbox?.id;
 
-  // /mail opens the first account's inbox.
+  // /mail, or an account, opens its inbox.
   useEffect(() => {
-    if (!account && current && inbox) go(`/mail/${current.id}/${inbox.id}`, { replace: true });
-  }, [account, current, inbox, go]);
+    if (!folder && current && inbox) go(`/mail/${current.id}/${inbox.id}`, { replace: true });
+  }, [folder, current, inbox, go]);
 
   const base = current && folderId ? `/mail/${current.id}/${folderId}` : "/mail";
   const open = useCallback(
@@ -200,78 +234,97 @@ export function MailPage({
   if (accounts.loading) return <Loading />;
   if (!current)
     return (
-      <Empty
-        title={t("No mail account yet")}
-        action={
-          <Button asChild>
-            <Link href="/settings/connections">{t("Add an account")}</Link>
-          </Button>
-        }
-      >
-        {t(
-          "Connect Gmail, Outlook or any IMAP account in Settings → Connections. Oraknid keeps it in step with the server, and agents can read and draft, never send without you.",
-        )}
-      </Empty>
+      <>
+        <Empty
+          title={t("No mail account yet")}
+          action={
+            away ? undefined : (
+              <Button className="gap-1" onClick={() => setAdding(true)}>
+                <Plus className="size-4" />
+                {t("Add an account")}
+              </Button>
+            )
+          }
+        >
+          {away
+            ? t("Accounts are added on the computer running Oraknid, not away from home.")
+            : t(
+                "Connect Gmail, Outlook or any IMAP or POP3 account. Oraknid keeps your mail here, and agents can read and draft, never send without you.",
+              )}
+        </Empty>
+        <AddAccountDialog open={adding} onOpenChange={setAdding} />
+      </>
     );
 
   const waiting = (drafts.data ?? []).filter((d) => d.state === "waiting");
-  const pane = threadId ? "thread" : folder ? "list" : "folders";
+  const pane = threadId ? "thread" : "list";
+  const folderName =
+    folderId === WAITING
+      ? t("Waiting for you")
+      : (folders.data?.find((f) => f.id === folderId)?.name ?? "");
+  const sidebar = (onPick: () => void) => (
+    <MailSidebar
+      accounts={list}
+      current={current}
+      folders={folders.data ?? []}
+      folderId={folderId}
+      waiting={waiting.length}
+      away={away}
+      onPick={onPick}
+      onWrite={() => {
+        onPick();
+        write();
+      }}
+      onAdd={() => {
+        onPick();
+        setAdding(true);
+      }}
+      onManage={(m) => {
+        onPick();
+        setManaging(m);
+      }}
+      onRemove={(a) => {
+        onPick();
+        void removeAccount(a, confirm).then((gone) => gone && go("/mail"));
+      }}
+    />
+  );
 
   return (
     <div className="flex h-[calc(100dvh-7rem)] min-h-0 flex-col gap-2 md:h-[calc(100dvh-5rem)]">
       <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[14rem_minmax(18rem,24rem)_1fr]">
         <nav
           aria-label={t("Accounts and folders")}
-          className={cn(
-            "min-h-0 space-y-3 overflow-y-auto lg:block",
-            pane === "folders" ? "block" : "hidden",
-          )}
+          className="hidden min-h-0 space-y-3 overflow-y-auto lg:block"
         >
-          <Button className="w-full gap-1" onClick={() => write()}>
-            <PenSquare className="size-4" />
-            {t("Write")}
-            <kbd className="ml-auto rounded border border-primary-foreground/40 px-1 text-[10px]">
-              c
-            </kbd>
-          </Button>
-          {waiting.length ? (
-            <Link
-              href={`/mail/${current.id}/${WAITING}`}
-              className={cn(
-                "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent",
-                folderId === WAITING && "bg-accent font-medium",
-              )}
-            >
-              <Hourglass className="size-4 text-warning" />
-              <span className="flex-1">{t("Waiting for you")}</span>
-              <Badge>{waiting.length}</Badge>
-            </Link>
-          ) : null}
-          {list.map((a) => (
-            <AccountFolders
-              key={a.id}
-              account={a}
-              open={a.id === current.id}
-              folders={a.id === current.id ? (folders.data ?? []) : []}
-              folderId={folderId}
-            />
-          ))}
+          {sidebar(() => {})}
         </nav>
+        <Sheet open={drawer} onOpenChange={setDrawer}>
+          <SheetContent side="left" className="w-80 max-w-[85vw] gap-2 overflow-y-auto p-3 pt-10">
+            <SheetHeader className="sr-only">
+              <SheetTitle>{t("Accounts and folders")}</SheetTitle>
+              <SheetDescription>{t("Pick a folder, or manage an account.")}</SheetDescription>
+            </SheetHeader>
+            <nav aria-label={t("Accounts and folders")} className="space-y-3">
+              {sidebar(() => setDrawer(false))}
+            </nav>
+          </SheetContent>
+        </Sheet>
         <section
           aria-label={t("Conversations")}
-          className={cn("flex min-h-0 flex-col gap-2 lg:flex", pane === "list" ? "flex" : "hidden")}
+          className={cn("min-h-0 flex-col gap-2 lg:flex", pane === "list" ? "flex" : "hidden")}
         >
           <div className="flex items-center gap-1">
             <Button
               variant="ghost"
               size="icon"
-              className="lg:hidden"
-              aria-label={t("Folders")}
-              onClick={() => go("/mail")}
+              className="shrink-0 lg:hidden"
+              aria-label={t("Folders and accounts")}
+              onClick={() => setDrawer(true)}
             >
-              <ArrowLeft className="size-4" />
+              <PanelLeft className="size-4" />
             </Button>
-            <div className="relative flex-1">
+            <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute top-2 left-2 size-4 text-muted-foreground" />
               <Input
                 ref={search}
@@ -291,6 +344,7 @@ export function MailPage({
                 <Button
                   variant="ghost"
                   size="icon"
+                  className="shrink-0"
                   aria-label={t("Check for mail")}
                   onClick={() => act(() => api.mail.sync({ id: current.id }))}
                 >
@@ -298,11 +352,35 @@ export function MailPage({
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                {t("New mail arrives on its own; this checks every folder now.")}
+                {current.protocol === "pop"
+                  ? t("Oraknid checks every two minutes; this checks now.")
+                  : t("New mail arrives on its own; this checks every folder now.")}
               </TooltipContent>
             </Tooltip>
+            <Button
+              size="icon"
+              className="shrink-0 lg:hidden"
+              aria-label={t("Write")}
+              onClick={() => write()}
+            >
+              <PenSquare className="size-4" />
+            </Button>
           </div>
-          <AccountState account={current} />
+          {/* Where I am, on a phone, where the folders are out of sight. */}
+          <button
+            type="button"
+            className="flex items-center gap-1 truncate px-1 text-left text-xs text-muted-foreground lg:hidden"
+            onClick={() => setDrawer(true)}
+          >
+            <span className="truncate">
+              {current.name} · {folderName}
+            </span>
+            <ChevronDown className="size-3 shrink-0" />
+          </button>
+          <AccountState
+            account={current}
+            onReconnect={() => setManaging({ kind: "reconnect", account: current })}
+          />
           {folderId === WAITING ? (
             <WaitingList
               drafts={waiting}
@@ -351,6 +429,22 @@ export function MailPage({
         </section>
       </div>
       <Composer draft={composing} accounts={list} onClose={() => setComposing(null)} />
+      <AddAccountDialog open={adding} onOpenChange={setAdding} />
+      {managing?.kind === "reconnect" ? (
+        <ReconnectDialog
+          account={list.find((a) => a.id === managing.account.id) ?? managing.account}
+          open
+          onOpenChange={(o) => !o && setManaging(null)}
+        />
+      ) : null}
+      {managing?.kind === "settings" ? (
+        <AccountDialog
+          account={list.find((a) => a.id === managing.account.id) ?? managing.account}
+          away={away}
+          onClose={() => setManaging(null)}
+        />
+      ) : null}
+      {dialog}
     </div>
   );
 }
@@ -364,32 +458,152 @@ const FOLDER_ICON: Record<string, typeof Inbox> = {
   "\\Junk": MailOpen,
 };
 
+/** Write, what waits for me, every account with its folders and its menu, and adding one. */
+function MailSidebar({
+  accounts,
+  current,
+  folders,
+  folderId,
+  waiting,
+  away,
+  onPick,
+  onWrite,
+  onAdd,
+  onManage,
+  onRemove,
+}: {
+  accounts: MailAccountView[];
+  current: MailAccountView;
+  folders: MailFolderView[];
+  folderId: string | undefined;
+  waiting: number;
+  away: boolean;
+  onPick: () => void;
+  onWrite: () => void;
+  onAdd: () => void;
+  onManage: (m: NonNullable<Managing>) => void;
+  onRemove: (a: MailAccountView) => void;
+}) {
+  return (
+    <>
+      <Button className="w-full gap-1" onClick={onWrite}>
+        <PenSquare className="size-4" />
+        {t("Write")}
+        <kbd className="ml-auto hidden rounded border border-primary-foreground/40 px-1 text-[10px] lg:inline">
+          c
+        </kbd>
+      </Button>
+      {waiting ? (
+        <Link
+          href={`/mail/${current.id}/${WAITING}`}
+          onClick={onPick}
+          className={cn(
+            "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent",
+            folderId === WAITING && "bg-accent font-medium",
+          )}
+        >
+          <Hourglass className="size-4 text-warning" />
+          <span className="flex-1">{t("Waiting for you")}</span>
+          <Badge>{waiting}</Badge>
+        </Link>
+      ) : null}
+      {accounts.map((a) => (
+        <AccountFolders
+          key={a.id}
+          account={a}
+          open={a.id === current.id}
+          folders={a.id === current.id ? folders : []}
+          folderId={folderId}
+          away={away}
+          onPick={onPick}
+          onManage={onManage}
+          onRemove={onRemove}
+        />
+      ))}
+      {away ? null : (
+        <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={onAdd}>
+          <Plus className="size-4" />
+          {t("Add an account")}
+        </Button>
+      )}
+    </>
+  );
+}
+
 function AccountFolders({
   account,
   open,
   folders,
   folderId,
+  away,
+  onPick,
+  onManage,
+  onRemove,
 }: {
   account: MailAccountView;
   open: boolean;
   folders: MailFolderView[];
   folderId: string | undefined;
+  away: boolean;
+  onPick: () => void;
+  onManage: (m: NonNullable<Managing>) => void;
+  onRemove: (a: MailAccountView) => void;
 }) {
   return (
     <div>
-      <Link
-        href={`/mail/${account.id}`}
-        className="flex items-center gap-2 rounded-md px-2 py-1 text-xs font-medium tracking-wide text-muted-foreground uppercase hover:text-foreground"
-      >
-        <span className="flex-1 truncate">{account.name}</span>
-        {account.state === "reconnect" || account.state === "error" ? (
-          <span className="size-2 rounded-full bg-destructive" title={t("needs attention")}>
-            <span className="sr-only">{t("needs attention")}</span>
-          </span>
-        ) : account.unread ? (
-          <span>{account.unread}</span>
-        ) : null}
-      </Link>
+      <div className="flex items-center gap-1">
+        <Link
+          href={`/mail/${account.id}`}
+          onClick={onPick}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-xs font-medium tracking-wide text-muted-foreground uppercase hover:text-foreground"
+        >
+          <span className="flex-1 truncate">{account.name}</span>
+          {account.state === "reconnect" || account.state === "error" ? (
+            <span className="size-2 rounded-full bg-destructive" title={t("needs attention")}>
+              <span className="sr-only">{t("needs attention")}</span>
+            </span>
+          ) : account.unread ? (
+            <span>{account.unread}</span>
+          ) : null}
+        </Link>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 shrink-0"
+              aria-label={t("{name}: account menu", { name: account.name })}
+            >
+              <MoreHorizontal className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onSelect={() => act(() => api.mail.sync({ id: account.id }), t("Checking for mail."))}
+            >
+              <RefreshCw className="size-4" />
+              {t("Check for mail")}
+            </DropdownMenuItem>
+            {away ? null : (
+              <>
+                <DropdownMenuItem onSelect={() => onManage({ kind: "reconnect", account })}>
+                  <Plug className="size-4" />
+                  {t("Reconnect…")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => onManage({ kind: "settings", account })}>
+                  <Settings2 className="size-4" />
+                  {t("Account settings…")}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" onSelect={() => onRemove(account)}>
+                  <LogOut className="size-4" />
+                  {t("Remove from Oraknid…")}
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
       {open ? (
         <ul className="mt-1 space-y-0.5">
           {folders.map((f) => {
@@ -398,6 +612,7 @@ function AccountFolders({
               <li key={f.id}>
                 <Link
                   href={`/mail/${account.id}/${f.id}`}
+                  onClick={onPick}
                   className={cn(
                     "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent",
                     f.id === folderId && "bg-accent font-medium",
@@ -418,10 +633,45 @@ function AccountFolders({
   );
 }
 
+/** An account's state and switches, from its menu: no trip to Settings. */
+function AccountDialog({
+  account: a,
+  away,
+  onClose,
+}: {
+  account: MailAccountView;
+  away: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="[overflow-wrap:anywhere]">{a.name}</DialogTitle>
+          <DialogDescription className="flex flex-wrap items-center gap-2">
+            <span className="[overflow-wrap:anywhere]">{a.email}</span>
+            <Badge
+              variant={a.state === "reconnect" || a.state === "error" ? "destructive" : "outline"}
+            >
+              {t(ACCOUNT_STATE[a.state])}
+            </Badge>
+          </DialogDescription>
+        </DialogHeader>
+        {a.error ? <div className="text-xs text-destructive">{a.error}</div> : null}
+        <AccountSettings account={a} away={away} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /** "Reconnect" when the login stopped working; the error otherwise. Never a silent failure. */
-function AccountState({ account }: { account: MailAccountView }) {
-  const [asking, setAsking] = useState(false);
-  const [password, setPassword] = useState("");
+function AccountState({
+  account,
+  onReconnect,
+}: {
+  account: MailAccountView;
+  onReconnect: () => void;
+}) {
   if (account.state === "syncing" && !account.lastSyncAt)
     return (
       <div className="text-xs text-muted-foreground">
@@ -429,17 +679,12 @@ function AccountState({ account }: { account: MailAccountView }) {
       </div>
     );
   if (account.state !== "reconnect" && account.state !== "error") return null;
-  const reconnect = async () => {
-    if (account.auth === "password") return setAsking(true);
-    const { url } = await api.mail.oauthStart({ provider: account.auth, accountId: account.id });
-    window.open(url, "_blank", "noopener");
-  };
   return (
     <div
       role="alert"
       className="space-y-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm"
     >
-      <div className="text-destructive">
+      <div className="text-destructive [overflow-wrap:anywhere]">
         {account.state === "reconnect"
           ? t("{email} needs signing in again: {error}", {
               email: account.email,
@@ -450,49 +695,17 @@ function AccountState({ account }: { account: MailAccountView }) {
               error: account.error ?? "",
             })}
       </div>
-      {account.state === "reconnect" ? (
-        <Button size="sm" onClick={() => act(reconnect)}>
+      {account.state === "reconnect" && !remote() ? (
+        <Button size="sm" onClick={onReconnect}>
           {t("Reconnect")}
         </Button>
       ) : null}
-      <Dialog open={asking} onOpenChange={setAsking}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("Reconnect {email}", { email: account.email })}</DialogTitle>
-            <DialogDescription>
-              {t(
-                "Give its new password (an app password for Gmail and Outlook). It goes to the keychain.",
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <form
-            className="flex gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void act(async () => {
-                await api.mail.reconnect({ id: account.id, password });
-                setPassword("");
-                setAsking(false);
-              }, t("Connected again."));
-            }}
-          >
-            <Input
-              type="password"
-              autoComplete="off"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            <Button type="submit" disabled={!password}>
-              {t("Reconnect")}
-            </Button>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
 
 /**
+
  * A folder's conversations, as many as it has: only the rows on screen
  * are drawn, and pages of a hundred are fetched as they come into view.
  */
@@ -834,14 +1047,9 @@ function ThreadView({
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
       <div className="flex flex-wrap items-center gap-0.5">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="lg:hidden"
-          aria-label={t("Back")}
-          onClick={onBack}
-        >
+        <Button variant="ghost" size="sm" className="gap-1 px-2 lg:hidden" onClick={onBack}>
           <ArrowLeft className="size-4" />
+          {t("Back to the list")}
         </Button>
         {icon(t("Archive"), "e", Archive, archive)}
         {icon(t("Delete"), "#", Trash2, remove)}

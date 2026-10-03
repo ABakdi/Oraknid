@@ -1,11 +1,19 @@
-import type { MailAccountView, MailProvider, MailSecurity } from "@oraknid/contracts";
-import { Mail, Plus, Trash2 } from "lucide-react";
+import type { MailAccountView, MailProtocol, MailProvider, MailSecurity } from "@oraknid/contracts";
+import { ExternalLink, Mail, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Loading } from "@/components/common";
+import { useConfirm } from "@/components/confirm";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -31,7 +39,7 @@ async function act(fn: () => Promise<unknown>, ok?: string) {
   }
 }
 
-const STATE: Record<MailAccountView["state"], string> = {
+export const ACCOUNT_STATE: Record<MailAccountView["state"], string> = {
   new: "connecting",
   syncing: "syncing",
   ready: "up to date",
@@ -40,30 +48,20 @@ const STATE: Record<MailAccountView["state"], string> = {
 };
 
 /**
- * Email accounts (ADR-032): Gmail, Outlook and any IMAP server, with a
- * password (app password) now, or OAuth once I add Google's or Microsoft's
- * app ids. Passwords and tokens go to the keychain. Adding and removing
- * accounts is done at home, never from away (ADR-029).
+ * Email accounts (ADR-032): Gmail, Outlook and any IMAP or POP3 server,
+ * with a password (an app password for Gmail and Outlook). Passwords go
+ * to the keychain. Adding and removing accounts is done at home, never
+ * from away (ADR-029). The Mail page offers the same, account by account.
  */
 export function MailAccountsCard() {
   const accounts = useLive(() => api.mail.accounts(), {
     topics: ["mail"],
-    refreshOn: (e) => e.type.startsWith("mail.account") || e.type === "mail.oauth.updated",
-  });
-  const oauth = useLive(() => api.mail.oauthSettings(), {
-    topics: ["mail"],
-    refreshOn: (e) => e.type === "mail.oauth.updated",
+    refreshOn: (e) => e.type.startsWith("mail.account"),
   });
   const [adding, setAdding] = useState(false);
+  const { confirm, dialog } = useConfirm();
   const away = !!remote();
-  if (!accounts.data || !oauth.data) return <Loading rows={2} />;
-  const google = oauth.data.google.clientId && oauth.data.google.hasSecret;
-  const microsoft = oauth.data.microsoft.clientId && oauth.data.microsoft.hasSecret;
-  const signIn = (provider: "google" | "microsoft") =>
-    act(async () => {
-      const { url } = await api.mail.oauthStart({ provider });
-      window.open(url, "_blank", "noopener");
-    });
+  if (!accounts.data) return <Loading rows={2} />;
   return (
     <Card>
       <CardHeader>
@@ -73,7 +71,7 @@ export function MailAccountsCard() {
         </CardTitle>
         <CardDescription>
           {t(
-            "Your mail in Oraknid, kept in step with the server. Agents with the email tool can read, sort and draft; what they write waits for your approval unless you turn on auto-send for the account.",
+            "Your mail in Oraknid, by IMAP (kept in step with the server) or POP3 (downloaded here). Agents with the email tool can read, sort and draft; what they write waits for your approval unless you turn on auto-send for the account.",
           )}
         </CardDescription>
       </CardHeader>
@@ -82,7 +80,30 @@ export function MailAccountsCard() {
           <div className="text-muted-foreground">{t("No account yet.")}</div>
         ) : null}
         {accounts.data.map((a) => (
-          <AccountRow key={a.id} a={a} away={away} />
+          <div key={a.id} className="space-y-2 rounded-md border px-3 py-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">{a.name}</span>
+              {a.name !== a.email ? <span className="text-muted-foreground">{a.email}</span> : null}
+              <Badge
+                variant={a.state === "reconnect" || a.state === "error" ? "destructive" : "outline"}
+              >
+                {t(ACCOUNT_STATE[a.state])}
+              </Badge>
+              <span className="flex-1" />
+              {away ? null : (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label={t("Remove {name}", { name: a.email })}
+                  onClick={() => void removeAccount(a, confirm)}
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              )}
+            </div>
+            {a.error ? <div className="text-xs text-destructive">{a.error}</div> : null}
+            <AccountSettings account={a} away={away} />
+          </div>
         ))}
         {away ? (
           <div className="text-xs text-muted-foreground">
@@ -91,97 +112,173 @@ export function MailAccountsCard() {
             )}
           </div>
         ) : adding ? (
-          <AddAccount onDone={() => setAdding(false)} />
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="secondary" className="gap-1" onClick={() => setAdding(true)}>
-              <Plus className="size-3.5" />
-              {t("Add an account")}
-            </Button>
-            {google ? (
-              <Button size="sm" variant="secondary" onClick={() => signIn("google")}>
-                {t("Connect with Google")}
-              </Button>
-            ) : null}
-            {microsoft ? (
-              <Button size="sm" variant="secondary" onClick={() => signIn("microsoft")}>
-                {t("Connect with Microsoft")}
-              </Button>
-            ) : null}
+          <div className="rounded-md border p-3">
+            <AddAccountForm onDone={() => setAdding(false)} />
           </div>
+        ) : (
+          <Button size="sm" variant="secondary" className="gap-1" onClick={() => setAdding(true)}>
+            <Plus className="size-3.5" />
+            {t("Add an account")}
+          </Button>
         )}
-        {away ? null : <OAuthApps redirectUri={oauth.data.redirectUri} settings={oauth.data} />}
       </CardContent>
+      {dialog}
     </Card>
   );
 }
 
-function AccountRow({ a, away }: { a: MailAccountView; away: boolean }) {
+/** Out of Oraknid, after a second step: its password and what was kept here go; the server keeps its mail. */
+export async function removeAccount(
+  a: MailAccountView,
+  confirm: ReturnType<typeof useConfirm>["confirm"],
+): Promise<boolean> {
+  const ok = await confirm(
+    t("Remove {email}?", { email: a.email }),
+    a.protocol === "pop"
+      ? t(
+          "Its password and the mail downloaded into Oraknid are deleted here. What is still on the server stays there.",
+        )
+      : t("Its password and the copy kept in Oraknid are deleted. Your mail stays on the server."),
+    t("Remove"),
+  );
+  if (!ok) return false;
+  try {
+    await api.mail.removeAccount({ id: a.id });
+    toast.success(t("Removed; its password is deleted."));
+    return true;
+  } catch (e) {
+    toast.error(message(e));
+    return false;
+  }
+}
+
+/** The servers, when it was checked, and the account's switches. */
+export function AccountSettings({ account: a, away }: { account: MailAccountView; away: boolean }) {
+  const set = (patch: { autoSend?: boolean; appendSent?: boolean; deleteFromServer?: boolean }) =>
+    act(() => api.mail.updateAccount({ id: a.id, ...patch }));
+  const toggle = (id: string, checked: boolean, label: string, on: (v: boolean) => void) => (
+    <div className="flex items-start gap-2 text-xs">
+      <Switch id={`${id}-${a.id}`} checked={checked} disabled={away} onCheckedChange={on} />
+      <Label htmlFor={`${id}-${a.id}`} className="text-xs leading-snug font-normal">
+        {label}
+      </Label>
+    </div>
+  );
   return (
-    <div className="space-y-2 rounded-md border px-3 py-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium">{a.name}</span>
-        {a.name !== a.email ? <span className="text-muted-foreground">{a.email}</span> : null}
-        <Badge variant={a.state === "reconnect" || a.state === "error" ? "destructive" : "outline"}>
-          {t(STATE[a.state])}
-        </Badge>
-        <Badge variant="outline">
-          {a.auth === "password" ? t("password") : a.auth === "google" ? "Google" : "Microsoft"}
-        </Badge>
-        <span className="flex-1" />
-        {away ? null : (
-          <Button
-            size="sm"
-            variant="ghost"
-            aria-label={t("Remove {name}", { name: a.email })}
-            onClick={() => {
-              if (
-                confirm(
-                  t("Remove {email} from Oraknid? Your mail stays on the server.", {
-                    email: a.email,
-                  }),
-                )
-              )
-                void act(
-                  () => api.mail.removeAccount({ id: a.id }),
-                  t("Removed; its password is deleted."),
-                );
-            }}
-          >
-            <Trash2 className="size-3.5" />
-          </Button>
-        )}
-      </div>
-      {a.error ? <div className="text-xs text-destructive">{a.error}</div> : null}
-      <div className="text-xs text-muted-foreground">
-        {t("IMAP {imap} · SMTP {smtp}", { imap: a.imapHost, smtp: a.smtpHost })}
+    <div className="space-y-2">
+      <div className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
+        {a.protocol === "pop"
+          ? t("POP3 {host} · SMTP {smtp}", { host: a.incomingHost, smtp: a.smtpHost })
+          : t("IMAP {host} · SMTP {smtp}", { host: a.incomingHost, smtp: a.smtpHost })}
         {a.lastSyncAt ? ` · ${t("checked {when}", { when: ago(a.lastSyncAt) })}` : ""}
       </div>
-      <div className="flex flex-wrap gap-x-6 gap-y-2">
-        <div className="flex items-center gap-2 text-xs">
-          <Switch
-            id={`auto-${a.id}`}
-            checked={a.autoSend}
-            disabled={away}
-            onCheckedChange={(v) => act(() => api.mail.updateAccount({ id: a.id, autoSend: v }))}
-          />
-          <Label htmlFor={`auto-${a.id}`} className="text-xs font-normal">
-            {t("Auto-send: agents' emails go out without asking me")}
-          </Label>
-        </div>
-        <div className="flex items-center gap-2 text-xs">
-          <Switch
-            id={`sent-${a.id}`}
-            checked={a.appendSent}
-            disabled={away}
-            onCheckedChange={(v) => act(() => api.mail.updateAccount({ id: a.id, appendSent: v }))}
-          />
-          <Label htmlFor={`sent-${a.id}`} className="text-xs font-normal">
-            {t("File what I send in Sent (off when the provider does it itself)")}
-          </Label>
-        </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {toggle("auto", a.autoSend, t("Auto-send: agents' emails go out without asking me"), (v) =>
+          set({ autoSend: v }),
+        )}
+        {toggle(
+          "sent",
+          a.appendSent,
+          a.protocol === "pop"
+            ? t("Keep a copy of what I send in Sent")
+            : t("File what I send in Sent (off when the provider does it itself)"),
+          (v) => set({ appendSent: v }),
+        )}
+        {a.protocol === "pop"
+          ? toggle(
+              "delete",
+              a.deleteFromServer,
+              t(
+                "Delete from the server too when I delete a message for good (off: it stays there)",
+              ),
+              (v) => set({ deleteFromServer: v }),
+            )
+          : null}
       </div>
+      {away ? (
+        <div className="text-xs text-muted-foreground">
+          {t("These are changed on the computer running Oraknid.")}
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+/** "Reconnect": a new password after it changed; or, after a network failure, the one kept. */
+export function ReconnectDialog({
+  account,
+  open,
+  onOpenChange,
+}: {
+  account: MailAccountView;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [password, setPassword] = useState("");
+  const needed = account.state === "reconnect";
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t("Reconnect {email}", { email: account.email })}</DialogTitle>
+          <DialogDescription>
+            {needed
+              ? t(
+                  "Give its new password (an app password for Gmail and Outlook). It goes to the keychain.",
+                )
+              : t(
+                  "Oraknid connects again with the password it keeps. Give a new one only if it changed.",
+                )}
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void act(async () => {
+              await api.mail.reconnect({ id: account.id, ...(password ? { password } : {}) });
+              setPassword("");
+              onOpenChange(false);
+            }, t("Connecting again."));
+          }}
+        >
+          <Input
+            type="password"
+            autoComplete="off"
+            aria-label={t("Password")}
+            placeholder={needed ? t("Password") : t("New password (optional)")}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <Button type="submit" disabled={needed && !password}>
+            {t("Reconnect")}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Adding an account, in a dialog: the Mail page's own way in. */
+export function AddAccountDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>{t("Add an email account")}</DialogTitle>
+          <DialogDescription>
+            {t("With an app password for Gmail and Outlook, or any IMAP or POP3 server.")}
+          </DialogDescription>
+        </DialogHeader>
+        {open ? <AddAccountForm onDone={() => onOpenChange(false)} /> : null}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -191,69 +288,112 @@ const SECURITY: { value: MailSecurity; label: string }[] = [
   { value: "plain", label: "None (this computer only)" },
 ];
 
-function AddAccount({ onDone }: { onDone: () => void }) {
+/** Where each provider makes its app passwords, and what POP needs turned on. */
+const HINTS: Record<"gmail" | "outlook", { app: string; url: string; label: string; pop: string }> =
+  {
+    gmail: {
+      app: "Gmail: turn on 2-Step Verification, then create an app password and paste it here.",
+      url: "https://myaccount.google.com/apppasswords",
+      label: "Create a Google app password",
+      pop: "For POP, first turn it on in Gmail: Settings → Forwarding and POP/IMAP.",
+    },
+    outlook: {
+      app: "Outlook: turn on two-step verification, then create an app password under Advanced security options.",
+      url: "https://account.microsoft.com/security",
+      label: "Open Microsoft account security",
+      pop: "For POP, first turn it on in Outlook.com: Settings → Mail → Forwarding and IMAP.",
+    },
+  };
+
+type ServerFields = { host: string; port: number; security: MailSecurity };
+
+/** The default port of each way in, so switching IMAP and POP moves it along. */
+const PORTS: Record<MailProtocol, number> = { imap: 993, pop: 995 };
+
+export function AddAccountForm({ onDone }: { onDone: () => void }) {
   const [provider, setProvider] = useState<MailProvider>("gmail");
+  const [protocol, setProtocol] = useState<MailProtocol>("imap");
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
-  const [imap, setImap] = useState({ host: "", port: 993, security: "tls" as MailSecurity });
-  const [smtp, setSmtp] = useState({ host: "", port: 465, security: "tls" as MailSecurity });
+  const [incoming, setIncoming] = useState<ServerFields>({
+    host: "",
+    port: 993,
+    security: "tls",
+  });
+  const [smtp, setSmtp] = useState<ServerFields>({ host: "", port: 465, security: "tls" });
+  const [deleteFromServer, setDeleteFromServer] = useState(false);
   const [busy, setBusy] = useState(false);
-  const server = (label: string, v: typeof imap, set: (x: typeof imap) => void, id: string) => (
+  const pickProtocol = (p: MailProtocol) => {
+    setProtocol(p);
+    // The other way's default port follows; one I typed stays.
+    if (incoming.port === PORTS[protocol]) setIncoming({ ...incoming, port: PORTS[p] });
+  };
+  const hint = provider === "imap" ? null : HINTS[provider];
+  const server = (label: string, v: ServerFields, set: (x: ServerFields) => void, id: string) => (
     <div className="grid gap-2 sm:grid-cols-[1fr_6rem_10rem]">
       <div className="space-y-1">
         <Label htmlFor={`${id}-host`}>{t("{p} server", { p: label })}</Label>
         <Input
           id={`${id}-host`}
           value={v.host}
+          required
           onChange={(e) => set({ ...v, host: e.target.value })}
           placeholder={`${id}.example.com`}
         />
       </div>
-      <div className="space-y-1">
-        <Label htmlFor={`${id}-port`}>{t("Port")}</Label>
-        <Input
-          id={`${id}-port`}
-          type="number"
-          value={v.port}
-          onChange={(e) => set({ ...v, port: Number(e.target.value) })}
-        />
-      </div>
-      <div className="space-y-1">
-        <Label>{t("Security")}</Label>
-        <Select
-          value={v.security}
-          onValueChange={(s) => set({ ...v, security: s as MailSecurity })}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SECURITY.map((s) => (
-              <SelectItem key={s.value} value={s.value}>
-                {t(s.label)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="grid grid-cols-[6rem_1fr] gap-2 sm:contents">
+        <div className="space-y-1">
+          <Label htmlFor={`${id}-port`}>{t("Port")}</Label>
+          <Input
+            id={`${id}-port`}
+            type="number"
+            value={v.port}
+            onChange={(e) => set({ ...v, port: Number(e.target.value) })}
+          />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={`${id}-security`}>{t("Security")}</Label>
+          <Select
+            value={v.security}
+            onValueChange={(s) => set({ ...v, security: s as MailSecurity })}
+          >
+            <SelectTrigger id={`${id}-security`} className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SECURITY.map((s) => (
+                <SelectItem key={s.value} value={s.value}>
+                  {t(s.label)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
     </div>
   );
   return (
     <form
-      className="space-y-3 rounded-md border p-3"
+      className="space-y-3"
       onSubmit={async (e) => {
         e.preventDefault();
         setBusy(true);
         try {
           await api.mail.addAccount({
             provider,
+            protocol,
             email,
             name,
             password,
+            deleteFromServer: protocol === "pop" && deleteFromServer,
             ...(login ? { login } : {}),
-            ...(provider === "imap" ? { imap, smtp } : {}),
+            ...(provider === "imap"
+              ? protocol === "pop"
+                ? { pop: incoming, smtp }
+                : { imap: incoming, smtp }
+              : {}),
           });
           toast.success(t("Connected. Your mail is on its way."));
           onDone();
@@ -264,20 +404,33 @@ function AddAccount({ onDone }: { onDone: () => void }) {
         }
       }}
     >
+      <Choice
+        label={t("Provider")}
+        value={provider}
+        onChange={setProvider}
+        options={[
+          { value: "gmail", label: "Gmail" },
+          { value: "outlook", label: t("Outlook / Hotmail") },
+          { value: "imap", label: t("Another server") },
+        ]}
+      />
+      <Choice
+        label={t("Incoming mail")}
+        value={protocol}
+        onChange={pickProtocol}
+        options={[
+          { value: "imap", label: "IMAP" },
+          { value: "pop", label: "POP3" },
+        ]}
+      />
+      <p className="text-xs text-muted-foreground">
+        {protocol === "pop"
+          ? t(
+              "POP3: new mail is downloaded into Oraknid every two minutes; folders, read and starred are kept here.",
+            )
+          : t("IMAP: kept in step with the server, so other mail apps see what you do here.")}
+      </p>
       <div className="grid gap-2 sm:grid-cols-2">
-        <div className="space-y-1">
-          <Label>{t("Provider")}</Label>
-          <Select value={provider} onValueChange={(p) => setProvider(p as MailProvider)}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="gmail">Gmail</SelectItem>
-              <SelectItem value="outlook">{t("Outlook / Hotmail")}</SelectItem>
-              <SelectItem value="imap">{t("Another IMAP server")}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
         <div className="space-y-1">
           <Label htmlFor="mail-email">{t("Address")}</Label>
           <Input
@@ -286,15 +439,6 @@ function AddAccount({ onDone }: { onDone: () => void }) {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-          />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="mail-name">{t("Name (optional)")}</Label>
-          <Input
-            id="mail-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={t("Work")}
           />
         </div>
         <div className="space-y-1">
@@ -310,22 +454,33 @@ function AddAccount({ onDone }: { onDone: () => void }) {
             onChange={(e) => setPassword(e.target.value)}
           />
         </div>
+        <div className="space-y-1">
+          <Label htmlFor="mail-name">{t("Name (optional)")}</Label>
+          <Input
+            id="mail-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={t("Work")}
+          />
+        </div>
       </div>
-      {provider === "gmail" ? (
-        <p className="text-xs text-muted-foreground">
-          {t(
-            "Gmail: turn on 2-Step Verification, then create an app password at myaccount.google.com/apppasswords.",
-          )}
-        </p>
-      ) : provider === "outlook" ? (
-        <p className="text-xs text-muted-foreground">
-          {t(
-            "Outlook: create an app password under Security → Advanced security options at account.microsoft.com.",
-          )}
-        </p>
+      {hint ? (
+        <div className="space-y-1 rounded-md bg-muted px-3 py-2 text-xs">
+          <p>{t(hint.app)}</p>
+          <a
+            href={hint.url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 font-medium underline"
+          >
+            {t(hint.label)}
+            <ExternalLink className="size-3" />
+          </a>
+          {protocol === "pop" ? <p>{t(hint.pop)}</p> : null}
+        </div>
       ) : (
         <>
-          {server("IMAP", imap, setImap, "imap")}
+          {server(protocol === "pop" ? "POP3" : "IMAP", incoming, setIncoming, protocol)}
           {server("SMTP", smtp, setSmtp, "smtp")}
           <div className="space-y-1">
             <Label htmlFor="mail-login">{t("Login, if not the address")}</Label>
@@ -333,6 +488,18 @@ function AddAccount({ onDone }: { onDone: () => void }) {
           </div>
         </>
       )}
+      {protocol === "pop" ? (
+        <div className="flex items-start gap-2 text-xs">
+          <Switch
+            id="mail-delete-from-server"
+            checked={deleteFromServer}
+            onCheckedChange={setDeleteFromServer}
+          />
+          <Label htmlFor="mail-delete-from-server" className="text-xs leading-snug font-normal">
+            {t("Delete from the server too when I delete a message for good (off: it stays there)")}
+          </Label>
+        </div>
+      ) : null}
       <div className="flex gap-2">
         <Button type="submit" disabled={busy || !email || !password}>
           {busy ? t("Checking…") : t("Connect")}
@@ -345,103 +512,36 @@ function AddAccount({ onDone }: { onDone: () => void }) {
   );
 }
 
-/** Google's and Microsoft's app ids, for "Connect with…": until then, app passwords. */
-function OAuthApps({
-  redirectUri,
-  settings,
-}: {
-  redirectUri: string;
-  settings: {
-    google: { clientId: string; hasSecret: boolean };
-    microsoft: { clientId: string; hasSecret: boolean };
-  };
-}) {
-  const [open, setOpen] = useState(false);
-  if (!open)
-    return (
-      <button
-        type="button"
-        className="text-xs text-muted-foreground underline"
-        onClick={() => setOpen(true)}
-      >
-        {t("Sign in with Google or Microsoft instead of app passwords…")}
-      </button>
-    );
-  return (
-    <div className="space-y-3 rounded-md border p-3">
-      <p className="text-xs text-muted-foreground">
-        {t(
-          "Register Oraknid as an app with Google (Cloud Console → Credentials → OAuth client, type Desktop or Web) or Microsoft (Entra → App registrations), with this redirect address, then paste its client id and secret. The secret goes to the keychain.",
-        )}
-      </p>
-      <code className="block rounded bg-muted px-2 py-1 text-xs [overflow-wrap:anywhere]">
-        {redirectUri}
-      </code>
-      <OAuthApp provider="google" label="Google" current={settings.google} />
-      <OAuthApp provider="microsoft" label="Microsoft" current={settings.microsoft} />
-    </div>
-  );
-}
-
-function OAuthApp({
-  provider,
+/** A few choices side by side, as one radio group: easy to tap on a phone. */
+function Choice<T extends string>({
   label,
-  current,
+  value,
+  onChange,
+  options,
 }: {
-  provider: "google" | "microsoft";
   label: string;
-  current: { clientId: string; hasSecret: boolean };
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; label: string }[];
 }) {
-  const [clientId, setClientId] = useState(current.clientId);
-  const [secret, setSecret] = useState("");
   return (
-    <form
-      className="grid items-end gap-2 sm:grid-cols-[1fr_1fr_auto]"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void act(
-          async () => {
-            await api.mail.setOAuth({
-              provider,
-              clientId,
-              ...(secret ? { clientSecret: secret } : {}),
-            });
-            setSecret("");
-          },
-          clientId
-            ? t("Saved: “Connect with {p}” is on.", { p: label })
-            : t("{p} sign-in is off.", { p: label }),
-        );
-      }}
-    >
-      <div className="space-y-1">
-        <Label htmlFor={`${provider}-id`}>{t("{p} client id", { p: label })}</Label>
-        <Input
-          id={`${provider}-id`}
-          value={clientId}
-          onChange={(e) => setClientId(e.target.value)}
-        />
+    <div className="space-y-1">
+      <div className="text-sm font-medium">{label}</div>
+      <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1">
+        {options.map((o) => (
+          <Button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={value === o.value}
+            size="sm"
+            variant={value === o.value ? "default" : "outline"}
+            onClick={() => onChange(o.value)}
+          >
+            {o.label}
+          </Button>
+        ))}
       </div>
-      <div className="space-y-1">
-        <Label htmlFor={`${provider}-secret`}>
-          {current.hasSecret ? t("Client secret (kept; type to replace)") : t("Client secret")}
-        </Label>
-        <Input
-          id={`${provider}-secret`}
-          type="password"
-          autoComplete="off"
-          value={secret}
-          onChange={(e) => setSecret(e.target.value)}
-        />
-      </div>
-      <Button
-        type="submit"
-        size="sm"
-        variant="secondary"
-        disabled={!!clientId && !current.hasSecret && !secret}
-      >
-        {t("Save")}
-      </Button>
-    </form>
+    </div>
   );
 }
