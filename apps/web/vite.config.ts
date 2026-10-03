@@ -26,6 +26,8 @@ export default defineConfig(({ mode }) => ({
               manualChunks(id) {
                 if (id.includes("@xyflow") || id.includes("elkjs")) return "graph";
                 if (id.includes("recharts") || id.includes("d3-")) return "charts";
+                // Syntax colouring is loaded when a file is opened in Repos.
+                if (id.includes("highlight.js")) return "highlight";
                 if (id.includes("node_modules")) return "vendor";
                 return undefined;
               },

@@ -73,21 +73,21 @@ export function WorkPage({ draftId }: { draftId?: string }) {
 
   // ── The options.
   // "New work" from a project's page arrives with that project chosen.
-  const [projectId, setProjectId] = useState<string>(() => {
+  // "New work on it" from Repos arrives with that repo to clone, through its account (ADR-040).
+  const [arrived] = useState(() => {
     const st: unknown = history.state;
-    return st &&
-      typeof st === "object" &&
-      typeof (st as { projectId?: unknown }).projectId === "string"
-      ? (st as { projectId: string }).projectId
-      : "";
+    const s = (st && typeof st === "object" ? st : {}) as Record<string, unknown>;
+    const str = (k: string) => (typeof s[k] === "string" ? (s[k] as string) : "");
+    return { projectId: str("projectId"), repo: str("repo"), account: str("account") };
   });
+  const [projectId, setProjectId] = useState<string>(arrived.repo ? "new" : arrived.projectId);
   const { confirm, dialog } = useConfirm();
-  const [source, setSource] = useState<SourceKind>("folder");
+  const [source, setSource] = useState<SourceKind>(arrived.repo ? "github-clone" : "folder");
   const [path, setPath] = useState("");
   const [parent, setParent] = useState(remembered);
   const [name, setName] = useState("");
   const [isPrivate, setPrivate] = useState(true);
-  const [repo, setRepo] = useState("");
+  const [repo, setRepo] = useState(arrived.repo);
   const [url, setUrl] = useState("");
   const [skill, setSkill] = useState("auto");
   const [legIds, setLegIds] = useState<string[]>([]);
@@ -275,7 +275,12 @@ export function WorkPage({ draftId }: { draftId?: string }) {
                 description: "",
               }
             : source === "github-clone"
-              ? { kind: "github-clone", parent: parent.trim(), fullName: repo }
+              ? {
+                  kind: "github-clone",
+                  parent: parent.trim(),
+                  fullName: repo,
+                  ...(arrived.account && repo === arrived.repo ? { account: arrived.account } : {}),
+                }
               : { kind: "git-url", parent: parent.trim(), url: url.trim() };
     const p = await api.projects.createFrom({ source: src });
     setProjectId(p.id);
@@ -781,6 +786,10 @@ function RepoPicker({ value, onChange }: { value: string; onChange: (v: string) 
           <SelectValue placeholder={t("Choose a repo")} />
         </SelectTrigger>
         <SelectContent>
+          {/* One chosen in Repos may be another account's. */}
+          {value && !repos.data.some((r) => r.fullName === value) ? (
+            <SelectItem value={value}>{value}</SelectItem>
+          ) : null}
           {repos.data.map((r) => (
             <SelectItem key={r.fullName} value={r.fullName}>
               {r.fullName}
