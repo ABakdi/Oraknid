@@ -1,5 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -10,10 +18,12 @@ import {
   createWorktree,
   detectBranches,
   git,
+  restoreWorktree,
   rollback,
   setShadowRoot,
   shadowRepo,
   worktreeGit,
+  worktreeProblem,
 } from "./git.ts";
 
 const sh = (cwd: string, ...a: string[]) =>
@@ -197,5 +207,53 @@ describe("what a crash or a Leg leaves in a worktree (Audit 1 → D1-10, D1-16)"
     // Made again a second time with its branch already there.
     sh(r, "worktree", "remove", "--force", wt.path);
     expect(createWorktree(r, id, "x", detectBranches(r)).branch).toBe(wt.branch);
+  });
+});
+
+// After the piano job (2026-10-03): a Leg turned the job's folder into a repo of its own.
+describe("a job's folder stays a worktree of the project", () => {
+  const made = () => {
+    const r = repo();
+    const wt = createWorktree(r, "01J9Z3K8W2Q4V6X8Y0A1B2C3F1", "x", detectBranches(r));
+    writeFileSync(join(wt.path, "song.txt"), "la la\n");
+    return { r, wt, trash: join(r, ".oraknid", "trash") };
+  };
+
+  it("is fine as made", () => {
+    const { r, wt } = made();
+    expect(worktreeProblem(r, wt.path)).toBeNull();
+  });
+
+  it("finds a separate repo made in it, and puts it back keeping the files", () => {
+    const { r, wt, trash } = made();
+    // What the agent did: the link moved aside, a repository of its own, a commit there.
+    renameSync(join(wt.path, ".git"), join(wt.path, ".git-old"));
+    sh(wt.path, "init", "-q", "-b", "dev");
+    sh(wt.path, "-c", "user.email=a@b", "-c", "user.name=A", "add", "song.txt");
+    sh(wt.path, "-c", "user.email=a@b", "-c", "user.name=A", "commit", "-qm", "squashed");
+    expect(worktreeProblem(r, wt.path)).toContain("separate git repository");
+    const kept = restoreWorktree(r, wt.path, wt.branch, trash);
+    expect(kept && existsSync(join(kept, "HEAD"))).toBe(true);
+    expect(worktreeProblem(r, wt.path)).toBeNull();
+    // The project's repo sees the folder again on the job branch, the files' content as changes.
+    expect(sh(wt.path, "rev-parse", "--abbrev-ref", "HEAD")).toBe(wt.branch);
+    expect(sh(wt.path, "status", "--porcelain")).toContain("song.txt");
+    expect(readFileSync(join(wt.path, "song.txt"), "utf8")).toBe("la la\n");
+    expect(sh(r, "rev-parse", "--git-common-dir")).toBe(".git");
+    expect(sh(wt.path, "rev-parse", "--path-format=absolute", "--git-common-dir")).toBe(
+      sh(r, "rev-parse", "--path-format=absolute", "--git-common-dir"),
+    );
+  });
+
+  it("makes the record again when git lost it (the .git deleted, the worktrees pruned)", () => {
+    const { r, wt, trash } = made();
+    rmSync(join(wt.path, ".git"));
+    sh(r, "worktree", "prune");
+    expect(worktreeProblem(r, wt.path)).toContain("removed");
+    expect(restoreWorktree(r, wt.path, wt.branch, trash)).toBeNull();
+    expect(worktreeProblem(r, wt.path)).toBeNull();
+    expect(sh(wt.path, "rev-parse", "--abbrev-ref", "HEAD")).toBe(wt.branch);
+    expect(readFileSync(join(wt.path, "song.txt"), "utf8")).toBe("la la\n");
+    expect(sh(r, "worktree", "list")).toContain(wt.path);
   });
 });
