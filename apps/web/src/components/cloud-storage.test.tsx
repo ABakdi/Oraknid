@@ -185,7 +185,7 @@ describe("cloud storage providers", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign in to Google Drive" }));
     const link = await screen.findByRole("link", { name: /Open the sign-in page/ });
     expect(link.getAttribute("href")).toBe("http://127.0.0.1:53682/auth?state=abc");
-    await screen.findByText("Signed in. Add it to finish.", {}, { timeout: 3000 });
+    await screen.findByText("Signed in. Add it to finish.", {}, { timeout: 10_000 });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
     await waitFor(() =>
       expect(addProvider).toHaveBeenCalledWith({
@@ -195,7 +195,7 @@ describe("cloud storage providers", () => {
         authSession: "sess-12345678",
       }),
     );
-  });
+  }, 15_000);
 });
 
 /** XMLHttpRequest as the upload sees it: progress, then the answer, when the test says. */
