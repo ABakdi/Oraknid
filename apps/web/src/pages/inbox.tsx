@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import { CodeSpans, Empty, ErrorNote, Loading, Markdown, PageHeader } from "@/components/common";
+import { choiceOf, OptionChoices } from "@/components/option-choices";
 import { QuestionsForm } from "@/components/questions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -270,13 +271,22 @@ export function InboxItemCard({ item, highlight }: { item: InboxItem; highlight?
                 : t("Answered: {a}", { a: item.answer ?? "" })}
             </div>
           )
+        ) : item.kind === "approval" ? (
+          // Each answer with what it leads to (ADR-045).
+          <OptionChoices
+            options={item.options}
+            question={choiceOf(item.questions, item.options)}
+            busy={busy}
+            onAnswer={(o) => answer(o)}
+          />
         ) : item.questions?.length ? (
           // Asked with options (ADR-037): the same component as The Eye's conversation.
           <QuestionsForm
             questions={item.questions}
             busy={busy}
             onSubmit={(a) => answer(a)}
-            extra={item.options.map((o) => (
+            // An item's own options are already the question's (ADR-045); others stay beside Submit.
+            extra={(choiceOf(item.questions, item.options) ? [] : item.options).map((o) => (
               <Button
                 key={o}
                 type="button"
@@ -289,19 +299,6 @@ export function InboxItemCard({ item, highlight }: { item: InboxItem; highlight?
               </Button>
             ))}
           />
-        ) : item.kind === "approval" ? (
-          <div className="flex flex-wrap gap-2">
-            {item.options.map((o) => (
-              <Button
-                key={o}
-                disabled={busy}
-                variant={o === "Approve" ? "default" : o === "Deny" ? "destructive" : "secondary"}
-                onClick={() => answer(o)}
-              >
-                {t(o)}
-              </Button>
-            ))}
-          </div>
         ) : (
           <div className="space-y-2">
             {interview ? null : (

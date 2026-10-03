@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import { Markdown } from "@/components/common";
+import { EyeReportView, reportOf } from "@/components/eye-report";
 import { QuestionsForm } from "@/components/questions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ const INTENT: Record<NonNullable<EyeMessage["action"]>["intent"], string> = {
   later: "For later",
   stop: "Stop",
   question: "Question",
+  report: "Report",
 };
 
 /**
@@ -143,55 +145,68 @@ export function EyeChat({
                       <span className="h-px flex-1 bg-border" />
                     </div>
                   ) : null}
-                  <div
-                    className={cn("flex", m.author === "owner" ? "justify-end" : "justify-start")}
-                  >
+                  {reportOf(m) ? (
+                    // The Eye speaking up on its own (ADR-045).
+                    <EyeReportView
+                      message={m}
+                      report={reportOf(m) as NonNullable<ReturnType<typeof reportOf>>}
+                      resultHref={jobHref({
+                        id: m.jobId,
+                        projectId,
+                        ...(byId.get(m.jobId) ? { state: byId.get(m.jobId)?.state } : {}),
+                      })}
+                    />
+                  ) : (
                     <div
-                      className={cn(
-                        "min-w-0 max-w-[85%] rounded-lg px-3 py-2 text-sm [overflow-wrap:anywhere]",
-                        m.author === "owner" ? "bg-primary text-primary-foreground" : "bg-muted",
-                      )}
+                      className={cn("flex", m.author === "owner" ? "justify-end" : "justify-start")}
                     >
-                      {m.author === "owner" && !m.answers ? (
-                        <div className="whitespace-pre-wrap">{m.text}</div>
-                      ) : (
-                        <Markdown text={m.text} />
-                      )}
-                      {m.action ? (
-                        <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-                          <Badge variant="outline" className="h-5 text-[10px]">
-                            {t(INTENT[m.action.intent])}
-                          </Badge>
-                          {m.action.did.map((x) => (
-                            <span key={x}>· {t(x)}</span>
-                          ))}
-                        </div>
-                      ) : null}
-                      {m.author === "eye" ? (
-                        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-xs">
-                          {jobLink(m.jobId, byId.get(m.jobId)?.title ?? t("The job"))}
-                          {touched
-                            ? jobLink(
-                                touched,
-                                t("Open “{title}”", {
-                                  title: byId.get(touched)?.title ?? t("the new job"),
-                                }),
-                              )
-                            : null}
-                        </div>
-                      ) : null}
                       <div
                         className={cn(
-                          "mt-0.5 text-[10px]",
-                          m.author === "owner"
-                            ? "text-primary-foreground/70"
-                            : "text-muted-foreground",
+                          "min-w-0 max-w-[85%] rounded-lg px-3 py-2 text-sm [overflow-wrap:anywhere]",
+                          m.author === "owner" ? "bg-primary text-primary-foreground" : "bg-muted",
                         )}
                       >
-                        {ago(m.createdAt)}
+                        {m.author === "owner" && !m.answers ? (
+                          <div className="whitespace-pre-wrap">{m.text}</div>
+                        ) : (
+                          <Markdown text={m.text} />
+                        )}
+                        {m.action ? (
+                          <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+                            <Badge variant="outline" className="h-5 text-[10px]">
+                              {t(INTENT[m.action.intent])}
+                            </Badge>
+                            {m.action.did.map((x) => (
+                              <span key={x}>· {t(x)}</span>
+                            ))}
+                          </div>
+                        ) : null}
+                        {m.author === "eye" ? (
+                          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-xs">
+                            {jobLink(m.jobId, byId.get(m.jobId)?.title ?? t("The job"))}
+                            {touched
+                              ? jobLink(
+                                  touched,
+                                  t("Open “{title}”", {
+                                    title: byId.get(touched)?.title ?? t("the new job"),
+                                  }),
+                                )
+                              : null}
+                          </div>
+                        ) : null}
+                        <div
+                          className={cn(
+                            "mt-0.5 text-[10px]",
+                            m.author === "owner"
+                              ? "text-primary-foreground/70"
+                              : "text-muted-foreground",
+                          )}
+                        >
+                          {ago(m.createdAt)}
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                   {m.questions?.length && !replied.has(m.id) ? (
                     <div className="mt-1.5 max-w-full md:max-w-[85%]">
                       <QuestionsForm
