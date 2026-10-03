@@ -2,7 +2,7 @@ import type { InboxItem } from "@oraknid/contracts";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Link } from "wouter";
-import { Empty, ErrorNote, Loading, Markdown, PageHeader } from "@/components/common";
+import { CodeSpans, Empty, ErrorNote, Loading, Markdown, PageHeader } from "@/components/common";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -219,7 +219,7 @@ export function InboxItemCard({ item, highlight }: { item: InboxItem; highlight?
           <span className="shrink-0">{ago(item.createdAt)}</span>
         </div>
         <CardTitle className="text-sm leading-snug [overflow-wrap:anywhere]">
-          {item.title}
+          <CodeSpans text={item.title} />
         </CardTitle>
         {/* Where it comes from, on its own line: each part may wrap, nothing squeezes the title. */}
         <Link

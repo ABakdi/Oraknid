@@ -239,3 +239,17 @@ export function Stat({
     </div>
   );
 }
+
+/** A one-line title where `backticks` mark code, as Oraknid writes them. */
+export function CodeSpans({ text }: { text: string }) {
+  return text.split(/`([^`]+)`/).map((part, i) =>
+    i % 2 ? (
+      // biome-ignore lint/suspicious/noArrayIndexKey: the parts never move
+      <code key={i} className="rounded bg-muted px-1 font-mono text-[0.85em] font-normal">
+        {part}
+      </code>
+    ) : (
+      part
+    ),
+  );
+}
