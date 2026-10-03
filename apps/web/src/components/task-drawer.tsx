@@ -252,7 +252,37 @@ export function TaskDrawer({
                   </SelectContent>
                 </Select>
               </Field>
+              {task.waitingForLegId ? (
+                <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2">
+                  {t("It waits for {leg}, paused: it goes on when the Leg is resumed.", {
+                    leg: legs.find((l) => l.id === task.waitingForLegId)?.name ?? t("its Leg"),
+                  })}
+                </div>
+              ) : null}
               <div className="flex flex-wrap gap-2">
+                {task.waitingForLegId || (busy && task.assignedLegId) ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() =>
+                      act(
+                        () =>
+                          api.jobs.cancelLegWork({
+                            id: job.id,
+                            legId: (task.waitingForLegId ?? task.assignedLegId) as string,
+                            taskId: task.id,
+                          }),
+                        t("It goes on another Leg."),
+                      )
+                    }
+                  >
+                    {task.waitingForLegId
+                      ? t("Reassign")
+                      : t("Stop {leg} on it", {
+                          leg: legs.find((l) => l.id === task.assignedLegId)?.name ?? t("its Leg"),
+                        })}
+                  </Button>
+                ) : null}
                 {!task.ownerHeld && !finished ? (
                   <Button
                     variant="secondary"
