@@ -18,7 +18,7 @@ import {
   suspicious,
 } from "@oraknid/core";
 import type { Sandbox } from "@oraknid/os";
-import { and, asc, count, eq, inArray } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "../db/open.ts";
 import { attempts, jobs, projects, steps, taskEdges, tasks } from "../db/schema.ts";
@@ -32,7 +32,13 @@ import { sandboxPlan } from "../legs/plan.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor } from "../legs/supervisor.ts";
 import type { Servers } from "../servers/service.ts";
-import { followUpKey, MAX_TASKS_PER_JOB, projectPorts, readSetting } from "../settings.ts";
+import {
+  attemptsFromKey,
+  followUpKey,
+  MAX_TASKS_PER_JOB,
+  projectPorts,
+  readSetting,
+} from "../settings.ts";
 import type { SilkStore } from "../silk/store.ts";
 import type { SkillStore } from "../skills/store.ts";
 import type { McpBroker } from "../tools/broker.ts";
@@ -420,7 +426,13 @@ async function runTask(
     d.db
       .select({ n: count() })
       .from(attempts)
-      .where(and(eq(attempts.taskId, task.id), inArray(attempts.outcome, ["failed", "reassigned"])))
+      .where(
+        and(
+          eq(attempts.taskId, task.id),
+          inArray(attempts.outcome, ["failed", "reassigned"]),
+          gte(attempts.startedAt, readSetting(d.db, attemptsFromKey(job.id), z.number(), 0)),
+        ),
+      )
       .get()?.n ?? 0;
   if (failures >= (d.maxAttempts ?? 8)) {
     throw new Error(`"${task.title}" failed ${failures} attempts. Look at it, then resume.`);

@@ -150,7 +150,10 @@ fails once merged is redone on top of the newer work.
 - **Blocked**: it can't continue. The reason is shown in plain words
   ("All Legs are out of quota until 14:05" / "The tests fail the same
   way after 3 Legs tried"). It resumes on its own when the reason clears
-  (a quota reset) or when I act.
+  (a quota reset) or when I act. A task that failed eight attempts
+  blocks its job ("Look at it, then resume"); resuming it gives its tasks
+  eight more, counted from then (they used to count from the start, so
+  the job blocked again at once, 2026-10-03).
 - **Cancelled**: by me.
 
 

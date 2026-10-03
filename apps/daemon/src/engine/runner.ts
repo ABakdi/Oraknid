@@ -1,7 +1,9 @@
 import type { JobState } from "@oraknid/contracts";
 import { isTerminalJob } from "@oraknid/core";
+import { z } from "zod";
 import type { EventBus } from "../events/bus.ts";
 import type { InboxStore } from "../inbox/store.ts";
+import { attemptsFromKey, writeSetting } from "../settings.ts";
 import {
   AwaitingOwner,
   DID_NOT_HAPPEN,
@@ -136,6 +138,10 @@ export class JobRunner {
       return;
     }
     if (job.queuedAt) this.o.jobs.unqueue(jobId);
+    // "Failed N attempts. Look at it, then resume": resuming gives its
+    // tasks a fresh count; counting from the start blocked it again at once.
+    if (job.state === "blocked" && /failed \d+ attempts/.test(job.blockedReason ?? ""))
+      writeSetting(this.o.jobs.db, attemptsFromKey(jobId), z.number(), Date.now());
     const to = (job.resumeState as JobState | null) ?? "running";
     this.o.jobs.transition(jobId, to, null);
     this.start(jobId);

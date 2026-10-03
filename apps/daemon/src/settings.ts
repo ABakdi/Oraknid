@@ -4,6 +4,9 @@ import { z } from "zod";
 import type { Db } from "./db/open.ts";
 import { settings } from "./db/schema.ts";
 
+/** Since when a job's failed attempts count: set when I resume it after it hit the limit. */
+export const attemptsFromKey = (jobId: string) => `job.attemptsFrom.${jobId}`;
+
 /** Typed access to the settings table: each key has a schema and a default. */
 export function readSetting<T extends z.ZodType>(
   db: Db,

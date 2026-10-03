@@ -1,9 +1,11 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { closeDatabase, type Db, openDatabase } from "../db/open.ts";
 import { jobs as jobsTable, tasks } from "../db/schema.ts";
 import { EventBus } from "../events/bus.ts";
 import { InboxStore } from "../inbox/store.ts";
+import { attemptsFromKey, readSetting } from "../settings.ts";
 import { seedJob } from "../testing/fixtures.ts";
 import { SideEffects } from "./effects.ts";
 import { JobStore } from "./jobs.ts";
@@ -194,6 +196,36 @@ describe("steps", () => {
     await until(() => e.jobs.require(id).state === "blocked");
     expect(e.jobs.require(id).blockedReason).toMatch(/3 Legs tried/);
     expect(e.bus.since(0, [`job:${id}`], 100).map((x) => x.type)).toContain("job.error");
+  });
+
+  it("resuming a job that hit the attempts limit gives its tasks a fresh count; another block doesn't", async () => {
+    let fail = true;
+    const e = engine(async (ctx) => {
+      if (ctx.state() === "draft") ctx.setState("planning");
+      throw new Error(
+        fail ? '"Push" failed 8 attempts. Look at it, then resume.' : "It ran again.",
+      );
+    });
+    const id = seedJob(db);
+    e.runner.start(id);
+    await until(() => e.jobs.require(id).state === "blocked");
+    const before = Date.now();
+    fail = false;
+    await e.runner.resume(id);
+    const from = readSetting(db, attemptsFromKey(id), z.number(), 0);
+    expect(from).toBeGreaterThanOrEqual(before);
+    await until(() => e.jobs.require(id).blockedReason === "It ran again.");
+
+    // A block for another reason leaves the count alone.
+    const other = seedJob(db);
+    const e2 = engine(async (ctx) => {
+      if (ctx.state() === "draft") ctx.setState("planning");
+      throw new Error("Something else.");
+    });
+    e2.runner.start(other);
+    await until(() => e2.jobs.require(other).state === "blocked");
+    await e2.runner.resume(other);
+    expect(readSetting(db, attemptsFromKey(other), z.number(), 0)).toBe(0);
   });
 
   it("cancels a running job at a safe point", async () => {
