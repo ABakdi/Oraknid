@@ -24,7 +24,6 @@ import {
   MailDraftView,
   MailFolderView,
   MailMessageView,
-  MailOAuthSettings,
   MailThreadPage,
   MetricsSample,
   NewChat,
@@ -592,6 +591,7 @@ export const router = {
           name: z.string().min(1).max(60).optional(),
           autoSend: z.boolean().optional(),
           appendSent: z.boolean().optional(),
+          deleteFromServer: z.boolean().optional(),
         }),
       )
       .handler(({ context: c, input }) => {
@@ -601,36 +601,13 @@ export const router = {
     removeAccount: base
       .input(z.object({ id: z.string() }))
       .handler(({ context: c, input }) => guard(() => c.mail.removeAccount(input.id))),
-    /** Signing in again with a new password ("Reconnect"). */
+    /** Connecting again ("Reconnect"): with a new password, or the one kept after a network failure. */
     reconnect: base
       .input(z.object({ id: z.string(), password: z.string().min(1).optional() }))
       .handler(({ context: c, input }) => guard(() => c.mail.reconnect(input.id, input.password))),
     sync: base
       .input(z.object({ id: z.string() }))
       .handler(({ context: c, input }) => guard(() => c.mail.syncNow(input.id))),
-    oauthSettings: base
-      .output(MailOAuthSettings)
-      .handler(({ context: c }) => c.mail.oauthSettings()),
-    setOAuth: base
-      .input(
-        z.object({
-          provider: z.enum(["google", "microsoft"]),
-          clientId: z.string(),
-          clientSecret: z.string().min(1).optional(),
-        }),
-      )
-      .handler(({ context: c, input }) =>
-        guard(() => c.mail.setOAuth(input.provider, input.clientId, input.clientSecret)),
-      ),
-    /** The provider's sign-in page; it comes back to this daemon on 127.0.0.1. */
-    oauthStart: base
-      .input(
-        z.object({ provider: z.enum(["google", "microsoft"]), accountId: z.string().optional() }),
-      )
-      .output(z.object({ url: z.string() }))
-      .handler(({ context: c, input }) =>
-        guard(() => c.mail.oauthStart(input.provider, input.accountId ?? null)),
-      ),
     folders: base
       .input(z.object({ accountId: z.string() }))
       .output(z.array(MailFolderView))

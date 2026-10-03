@@ -6,7 +6,6 @@ import type {
   MailDraftView,
   MailFolderView,
   MailMessageView,
-  MailOAuthSettings,
   MailSecurity,
   MailThreadPage,
   MailThreadSummary,
@@ -16,7 +15,6 @@ import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { ImapFlow, type ImapFlowOptions } from "imapflow";
 import nodemailer from "nodemailer";
 import MailComposer from "nodemailer/lib/mail-composer/index.js";
-import { z } from "zod";
 import type { Db } from "../db/open.ts";
 import {
   jobs,
@@ -25,24 +23,13 @@ import {
   mailFolders,
   mailImageSenders,
   mailMessages,
+  mailPopUidls,
 } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 import type { InboxStore } from "../inbox/store.ts";
 import type { Secrets } from "../os/secrets.ts";
-import { readSetting, writeSetting } from "../settings.ts";
 import { fetchImages, remoteImages } from "./images.ts";
-import {
-  authorizationUrl,
-  exchangeCode,
-  OAUTH,
-  type OAuthEndpoints,
-  type OAuthProvider,
-  OAuthRevoked,
-  type PendingLogin,
-  refresh,
-  type Tokens,
-} from "./oauth.ts";
 import {
   escapeHtml,
   HEADER_FIELDS,
@@ -51,11 +38,14 @@ import {
   parseHeaders,
   snippetOf,
 } from "./parse.ts";
+import { Pop3 } from "./pop3.ts";
 
-// My mail (ADR-032): accounts over IMAP and SMTP, synced into SQLite by
-// the daemon itself. INBOX is watched with IDLE; a pass every few minutes
-// catches the other folders. What I do (read, star, move, archive,
-// delete) is done on the server first, so other clients see it.
+// My mail (ADR-032): accounts over IMAP or POP3, and SMTP, synced into
+// SQLite by the daemon itself. IMAP: INBOX is watched with IDLE, a pass
+// every few minutes catches the other folders, and what I do (read, star,
+// move, archive, delete) is done on the server first, so other clients
+// see it. POP3: new mail is downloaded into a local Inbox every two
+// minutes, and its folders and flags are Oraknid's own.
 
 export type AccountRow = typeof mailAccounts.$inferSelect;
 type MessageRow = typeof mailMessages.$inferSelect;
@@ -68,24 +58,32 @@ export type Actor =
   | { kind: "agent"; jobId: string | null };
 
 const PASSWORD = (id: string) => `mail.${id}.password`;
-const REFRESH = (id: string) => `mail.${id}.refresh`;
-const OAUTH_SECRET = (p: OAuthProvider) => `mail.oauth.${p}.secret`;
-const OAUTH_CLIENT = (p: OAuthProvider) => `mail.oauth.${p}.clientId`;
 
-/** Gmail and Outlook as they are; any other server as I describe it. */
+/** Gmail and Outlook as they are (with an app password); any other server as I describe it. */
 const PRESETS: Record<"gmail" | "outlook", Preset> = {
   gmail: {
     imap: { host: "imap.gmail.com", port: 993, security: "tls" },
+    pop: { host: "pop.gmail.com", port: 995, security: "tls" },
     smtp: { host: "smtp.gmail.com", port: 465, security: "tls" },
     // Gmail files what goes through its SMTP in Sent Mail itself.
     appendSent: false,
   },
   outlook: {
     imap: { host: "outlook.office365.com", port: 993, security: "tls" },
+    pop: { host: "outlook.office365.com", port: 995, security: "tls" },
     smtp: { host: "smtp.office365.com", port: 587, security: "starttls" },
     appendSent: false,
   },
 };
+
+/** A POP account's folders, all kept here: the server only has the inbox. */
+const LOCAL_FOLDERS = [
+  { path: "INBOX", name: "INBOX", specialUse: "\\Inbox" },
+  { path: "Drafts", name: "Drafts", specialUse: "\\Drafts" },
+  { path: "Sent", name: "Sent", specialUse: "\\Sent" },
+  { path: "Archive", name: "Archive", specialUse: "\\Archive" },
+  { path: "Trash", name: "Trash", specialUse: "\\Trash" },
+];
 
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1"]);
 const SEEN = "\\Seen";
@@ -98,19 +96,17 @@ export interface MailOptions {
   bus: EventBus;
   secrets: Secrets;
   inbox: InboxStore;
-  /** Where drafts' attachments wait (mail/drafts/<id>/). */
+  /** Where drafts' attachments wait (mail/drafts/<id>/), and POP accounts' messages (mail/local/<account>/). */
   dataDir: string;
-  /** The daemon's own address: Google and Microsoft send me back to it. */
-  baseUrl: () => string;
   now?: () => number;
   /** Between passes over every folder (default five minutes). */
   syncEveryMs?: number;
+  /** Between checks of a POP account (default two minutes). */
+  popEveryMs?: number;
   /** How soon the INBOX connection goes back to IDLE after a command. */
   idleDelayMs?: number;
   /** The most messages fetched per folder the first time. */
   initialLimit?: number;
-  /** Google's and Microsoft's addresses, for tests against a stand-in. */
-  oauthEndpoints?: Partial<Record<OAuthProvider, OAuthEndpoints>>;
   /** Called once there is an account: the email tool is registered then. */
   hasAccounts?: () => void;
   /** Gmail's and Outlook's servers, for tests against a stand-in. */
@@ -118,7 +114,7 @@ export interface MailOptions {
 }
 
 type Server = { host: string; port: number; security: MailSecurity };
-type Preset = { imap: Server; smtp: Server; appendSent: boolean };
+type Preset = { imap: Server; pop: Server; smtp: Server; appendSent: boolean };
 
 interface Link {
   stopped: boolean;
@@ -138,8 +134,6 @@ class NeedsReconnect extends Error {}
 
 export class MailService {
   readonly #links = new Map<string, Link>();
-  readonly #logins = new Map<string, PendingLogin>();
-  readonly #tokens = new Map<string, Tokens>();
   #unsubscribe: (() => void) | undefined;
 
   constructor(private readonly o: MailOptions) {}
@@ -228,11 +222,12 @@ export class MailService {
       name: a.name,
       email: a.email,
       provider: a.provider,
-      auth: a.auth,
-      imapHost: a.imapHost,
+      protocol: a.protocol,
+      incomingHost: a.incomingHost,
       smtpHost: a.smtpHost,
       autoSend: a.autoSend,
       appendSent: a.appendSent,
+      deleteFromServer: a.deleteFromServer,
       state: a.state,
       error: a.error,
       lastSyncAt: a.lastSyncAt,
@@ -252,11 +247,15 @@ export class MailService {
 
   /** Signs in once to check the password, then keeps it in the keychain and starts syncing. */
   async addAccount(input: NewMailAccount): Promise<MailAccountView> {
+    const protocol = input.protocol ?? "imap";
     const preset = input.provider === "imap" ? null : this.#preset(input.provider);
-    const imap = preset?.imap ?? input.imap;
+    const incoming = protocol === "pop" ? (preset?.pop ?? input.pop) : (preset?.imap ?? input.imap);
     const smtp = preset?.smtp ?? input.smtp;
-    if (!imap || !smtp) throw new Error("Give the IMAP and SMTP servers of this account.");
-    for (const s of [imap, smtp])
+    if (!incoming || !smtp)
+      throw new Error(
+        `Give the ${protocol === "pop" ? "POP3" : "IMAP"} and SMTP servers of this account.`,
+      );
+    for (const s of [incoming, smtp])
       if (s.security === "plain" && !LOOPBACK.has(s.host))
         throw new Error(
           `${s.host} without TLS would send the password in clear: use TLS or STARTTLS.`,
@@ -270,41 +269,59 @@ export class MailService {
       name: input.name.trim() || email,
       email,
       provider: input.provider,
-      auth: "password",
+      protocol,
       login: input.login?.trim() || email,
-      imapHost: imap.host,
-      imapPort: imap.port,
-      imapSecurity: imap.security as MailSecurity,
+      incomingHost: incoming.host,
+      incomingPort: incoming.port,
+      incomingSecurity: incoming.security as MailSecurity,
       smtpHost: smtp.host,
       smtpPort: smtp.port,
       smtpSecurity: smtp.security as MailSecurity,
       autoSend: false,
-      appendSent: preset?.appendSent ?? true,
+      // POP has no Sent on the server: what I send is filed in Oraknid's own.
+      appendSent: protocol === "pop" ? true : (preset?.appendSent ?? true),
+      deleteFromServer: protocol === "pop" && (input.deleteFromServer ?? false),
       state: "new",
       error: null,
       lastSyncAt: null,
       createdAt: this.#now(),
     };
-    await this.#check(row, { pass: input.password });
+    await this.#check(row, input.password);
     await this.o.secrets.set(PASSWORD(id), input.password);
-    this.o.db.insert(mailAccounts).values(row).run();
-    this.#publish("mail.account.added", { id, email }, { kind: "owner" });
+    this.o.bus.atomically(() => {
+      this.o.db.insert(mailAccounts).values(row).run();
+      if (protocol === "pop")
+        for (const f of LOCAL_FOLDERS)
+          this.o.db
+            .insert(mailFolders)
+            .values({ id: newId(this.#now()), accountId: id, ...f, uidValidity: "local" })
+            .run();
+      this.#publish("mail.account.added", { id, email }, { kind: "owner" });
+    });
     this.o.hasAccounts?.();
     this.#open(id);
     return this.view(this.account(id));
   }
 
-  /** IMAP and SMTP both accept the login, or the account isn't saved. */
-  async #check(row: AccountRow, auth: { pass: string } | { accessToken: string }) {
-    const client = new ImapFlow(this.#imapOptions(row, auth, false));
-    client.on("error", () => {});
-    try {
-      await client.connect();
-      await client.logout();
-    } catch (error) {
-      throw new Error(`IMAP (${row.imapHost}) refused: ${problem(error)}`);
+  /** The incoming server (IMAP or POP3) and SMTP both accept the login, or the account isn't saved. */
+  async #check(row: AccountRow, pass: string) {
+    if (row.protocol === "pop") {
+      try {
+        await (await Pop3.open(this.#popOptions(row, pass))).quit();
+      } catch (error) {
+        throw new Error(`POP3 (${row.incomingHost}) refused: ${problem(error)}`);
+      }
+    } else {
+      const client = new ImapFlow(this.#imapOptions(row, pass, false));
+      client.on("error", () => {});
+      try {
+        await client.connect();
+        await client.logout();
+      } catch (error) {
+        throw new Error(`IMAP (${row.incomingHost}) refused: ${problem(error)}`);
+      }
     }
-    const transport = this.#transport(row, auth);
+    const transport = this.#transport(row, pass);
     try {
       await transport.verify();
     } catch (error) {
@@ -314,38 +331,48 @@ export class MailService {
     }
   }
 
-  update(id: string, patch: { name?: string; autoSend?: boolean; appendSent?: boolean }) {
-    this.account(id);
+  update(
+    id: string,
+    patch: { name?: string; autoSend?: boolean; appendSent?: boolean; deleteFromServer?: boolean },
+  ) {
+    const a = this.account(id);
+    if (patch.deleteFromServer !== undefined && a.protocol !== "pop")
+      throw new Error(
+        "Only a POP account keeps its own copy: an IMAP account deletes on the server.",
+      );
     if (!Object.keys(patch).length) return;
     this.o.db.update(mailAccounts).set(patch).where(eq(mailAccounts.id, id)).run();
     this.#publish("mail.account.updated", { id, ...patch }, { kind: "owner" });
   }
 
+  /** Out of Oraknid: its password, its cached (or, for POP, downloaded) mail, its drafts. The server keeps its mail. */
   async removeAccount(id: string) {
     const a = this.account(id);
     await this.#close(id);
     await this.o.secrets.delete(PASSWORD(id));
-    await this.o.secrets.delete(REFRESH(id));
-    this.#tokens.delete(id);
     for (const d of this.o.db.select().from(mailDrafts).where(eq(mailDrafts.accountId, id)).all())
       this.#dropDraft(d);
     this.o.bus.atomically(() => {
       this.o.db.delete(mailMessages).where(eq(mailMessages.accountId, id)).run();
       this.o.db.delete(mailFolders).where(eq(mailFolders.accountId, id)).run();
       this.o.db.delete(mailImageSenders).where(eq(mailImageSenders.accountId, id)).run();
+      this.o.db.delete(mailPopUidls).where(eq(mailPopUidls.accountId, id)).run();
       this.o.db.delete(mailAccounts).where(eq(mailAccounts.id, id)).run();
       this.#publish("mail.account.removed", { id, email: a.email }, { kind: "owner" });
     });
+    rmSync(this.#localDir(id), { recursive: true, force: true });
   }
 
-  /** Signing in again after a password change (OAuth accounts sign in through oauthStart). */
+  /**
+   * Connects again: with a new password after it changed, or with the one
+   * kept, after the server was unreachable for a while.
+   */
   async reconnect(id: string, password?: string) {
     const a = this.account(id);
-    if (a.auth === "password") {
-      if (!password) throw new Error("Give the new password.");
-      await this.#check(a, { pass: password });
+    if (password) {
+      await this.#check(a, password);
       await this.o.secrets.set(PASSWORD(id), password);
-    }
+    } else if (a.state === "reconnect") throw new Error("Give the new password.");
     this.#state(id, "new", null);
     await this.#close(id);
     this.#open(id);
@@ -358,201 +385,52 @@ export class MailService {
     this.#publish("mail.account.state", { id, state, error });
   }
 
-  // ── OAuth2 (Gmail, Outlook) ──────────────────────────────────────────
-
-  #endpoints(p: OAuthProvider): OAuthEndpoints {
-    return this.o.oauthEndpoints?.[p] ?? OAUTH[p];
+  /** The password kept in the keychain for this account. */
+  async #password(a: AccountRow): Promise<string> {
+    const pass = await this.o.secrets.get(PASSWORD(a.id));
+    if (!pass) throw new NeedsReconnect("Its password is missing from the keychain.");
+    return pass;
   }
 
-  redirectUri() {
-    return `${this.o.baseUrl()}/oauth/mail/callback`;
-  }
-
-  async oauthSettings(): Promise<MailOAuthSettings> {
-    const one = async (p: OAuthProvider) => ({
-      clientId: readSetting(this.o.db, OAUTH_CLIENT(p), z.string(), ""),
-      hasSecret: (await this.o.secrets.get(OAUTH_SECRET(p))) !== undefined,
-    });
+  #imapOptions(a: AccountRow, pass: string, watch: boolean): ImapFlowOptions {
     return {
-      google: await one("google"),
-      microsoft: await one("microsoft"),
-      redirectUri: this.redirectUri(),
-    };
-  }
-
-  /** An empty client id turns the provider off; the secret goes to the keychain. */
-  async setOAuth(p: OAuthProvider, clientId: string, clientSecret?: string) {
-    if (!clientId.trim()) {
-      writeSetting(this.o.db, OAUTH_CLIENT(p), z.string().nullable(), null);
-      await this.o.secrets.delete(OAUTH_SECRET(p));
-    } else {
-      writeSetting(this.o.db, OAUTH_CLIENT(p), z.string(), clientId.trim());
-      if (clientSecret) await this.o.secrets.set(OAUTH_SECRET(p), clientSecret);
-    }
-    this.#publish("mail.oauth.updated", { provider: p }, { kind: "owner" });
-  }
-
-  async #client(p: OAuthProvider) {
-    const clientId = readSetting(this.o.db, OAUTH_CLIENT(p), z.string(), "");
-    const clientSecret = await this.o.secrets.get(OAUTH_SECRET(p));
-    if (!clientId || !clientSecret)
-      throw new Error(
-        `Sign-in with ${p === "google" ? "Google" : "Microsoft"} isn't set up: add the app's client id and secret in Settings → Connections.`,
-      );
-    return { clientId, clientSecret };
-  }
-
-  /** The address to open: the provider's sign-in page, which comes back to /oauth/mail/callback. */
-  async oauthStart(p: OAuthProvider, accountId: string | null = null): Promise<{ url: string }> {
-    const { clientId } = await this.#client(p);
-    const account = accountId ? this.account(accountId) : null;
-    const redirectUri = this.redirectUri();
-    const { url, state, verifier } = authorizationUrl(
-      { provider: p, clientId, redirectUri, ...(account ? { loginHint: account.email } : {}) },
-      this.#endpoints(p),
-    );
-    // Unused sign-ins expire after ten minutes.
-    for (const [k, l] of this.#logins)
-      if (l.createdAt < this.#now() - 10 * 60_000) this.#logins.delete(k);
-    this.#logins.set(state, {
-      provider: p,
-      verifier,
-      redirectUri,
-      accountId,
-      createdAt: this.#now(),
-    });
-    return { url };
-  }
-
-  /** Back from Google or Microsoft: the account is added, or signed in again. */
-  async oauthCallback(q: { state?: string; code?: string; error?: string }): Promise<{
-    email: string;
-  }> {
-    const login = q.state ? this.#logins.get(q.state) : undefined;
-    if (!login || !q.state) throw new Error("This sign-in expired or wasn't started here.");
-    this.#logins.delete(q.state);
-    if (q.error || !q.code) throw new Error(`The sign-in was cancelled (${q.error ?? "no code"}).`);
-    const { clientId, clientSecret } = await this.#client(login.provider);
-    const tokens = await exchangeCode(
-      { clientId, clientSecret, code: q.code, login },
-      this.#endpoints(login.provider),
-      this.#now(),
-    );
-    if (!tokens.refreshToken) throw new Error("The provider gave no refresh token: try again.");
-    if (login.accountId) {
-      const a = this.account(login.accountId);
-      if (tokens.email && tokens.email.toLowerCase() !== a.email)
-        throw new Error(`That was ${tokens.email}, not ${a.email}.`);
-      await this.o.secrets.set(REFRESH(a.id), tokens.refreshToken);
-      this.#tokens.set(a.id, tokens);
-      await this.reconnect(a.id);
-      return { email: a.email };
-    }
-    const email = tokens.email?.toLowerCase();
-    if (!email) throw new Error("The provider didn't say which address signed in.");
-    const existing = this.o.db
-      .select()
-      .from(mailAccounts)
-      .where(eq(mailAccounts.email, email))
-      .get();
-    if (existing) {
-      if (existing.auth !== login.provider)
-        throw new Error(`${email} is already connected with a password.`);
-      await this.o.secrets.set(REFRESH(existing.id), tokens.refreshToken);
-      this.#tokens.set(existing.id, tokens);
-      await this.reconnect(existing.id);
-      return { email };
-    }
-    const provider = OAUTH[login.provider].provider;
-    const preset = this.#preset(provider);
-    const id = newId(this.#now());
-    await this.o.secrets.set(REFRESH(id), tokens.refreshToken);
-    this.#tokens.set(id, tokens);
-    this.o.db
-      .insert(mailAccounts)
-      .values({
-        id,
-        name: email,
-        email,
-        provider,
-        auth: login.provider,
-        login: email,
-        imapHost: preset.imap.host,
-        imapPort: preset.imap.port,
-        imapSecurity: preset.imap.security,
-        smtpHost: preset.smtp.host,
-        smtpPort: preset.smtp.port,
-        smtpSecurity: preset.smtp.security,
-        appendSent: preset.appendSent,
-        createdAt: this.#now(),
-      })
-      .run();
-    this.#publish("mail.account.added", { id, email }, { kind: "owner" });
-    this.o.hasAccounts?.();
-    this.#open(id);
-    return { email };
-  }
-
-  /** What signs this account in now: its password, or a fresh access token. */
-  async #auth(a: AccountRow): Promise<{ pass: string } | { accessToken: string }> {
-    if (a.auth === "password") {
-      const pass = await this.o.secrets.get(PASSWORD(a.id));
-      if (!pass) throw new NeedsReconnect("Its password is missing from the keychain.");
-      return { pass };
-    }
-    const cached = this.#tokens.get(a.id);
-    if (cached && cached.expiresAt > this.#now() + 60_000)
-      return { accessToken: cached.accessToken };
-    const refreshToken = await this.o.secrets.get(REFRESH(a.id));
-    if (!refreshToken) throw new NeedsReconnect("Sign in again: no token is kept for it.");
-    try {
-      const tokens = await refresh(
-        { ...(await this.#client(a.auth)), refreshToken, provider: a.auth },
-        this.#endpoints(a.auth),
-        this.#now(),
-      );
-      if (tokens.refreshToken && tokens.refreshToken !== refreshToken)
-        await this.o.secrets.set(REFRESH(a.id), tokens.refreshToken);
-      this.#tokens.set(a.id, tokens);
-      return { accessToken: tokens.accessToken };
-    } catch (error) {
-      if (error instanceof OAuthRevoked) throw new NeedsReconnect(error.message);
-      throw error;
-    }
-  }
-
-  #imapOptions(
-    a: AccountRow,
-    auth: { pass: string } | { accessToken: string },
-    watch: boolean,
-  ): ImapFlowOptions {
-    return {
-      host: a.imapHost,
-      port: a.imapPort,
-      secure: a.imapSecurity === "tls",
+      host: a.incomingHost,
+      port: a.incomingPort,
+      secure: a.incomingSecurity === "tls",
       // Not in imapflow's types: STARTTLS required, or never tried on a loopback test server.
       ...({
         doSTARTTLS:
-          a.imapSecurity === "starttls" ? true : a.imapSecurity === "plain" ? false : undefined,
+          a.incomingSecurity === "starttls"
+            ? true
+            : a.incomingSecurity === "plain"
+              ? false
+              : undefined,
       } as object),
-      auth: { user: a.login, ...auth },
+      auth: { user: a.login, pass },
       logger: false,
       disableAutoIdle: !watch,
       ...(watch ? { autoIdleDelay: this.o.idleDelayMs ?? 1000 } : {}),
     };
   }
 
-  #transport(a: AccountRow, auth: { pass: string } | { accessToken: string }) {
+  #popOptions(a: AccountRow, pass: string) {
+    return {
+      host: a.incomingHost,
+      port: a.incomingPort,
+      security: a.incomingSecurity,
+      user: a.login,
+      pass,
+    };
+  }
+
+  #transport(a: AccountRow, pass: string) {
     return nodemailer.createTransport({
       host: a.smtpHost,
       port: a.smtpPort,
       secure: a.smtpSecurity === "tls",
       requireTLS: a.smtpSecurity === "starttls",
       ignoreTLS: a.smtpSecurity === "plain",
-      auth:
-        "pass" in auth
-          ? { user: a.login, pass: auth.pass }
-          : { type: "OAuth2", user: a.login, accessToken: auth.accessToken },
+      auth: { user: a.login, pass },
     });
   }
 
@@ -588,10 +466,30 @@ export class MailService {
     }
   }
 
-  /** Connects, syncs everything once, then watches INBOX and passes over all folders now and then. */
+  /**
+   * IMAP: connects, syncs everything once, then watches INBOX and passes
+   * over all folders now and then. POP: downloads what is new, then
+   * checks again every two minutes (POP has no IDLE).
+   */
   async #run(id: string, link: Link) {
     try {
       this.#state(id, "syncing", null);
+      if (this.#local(id)) {
+        await this.#queued(link, () => this.#syncPop(id, false));
+        if (link.stopped) return;
+        link.failures = 0;
+        this.#state(id, "ready", null);
+        clearInterval(link.timer);
+        link.timer = setInterval(
+          () =>
+            void this.#queued(link, () => this.#syncPop(id, true)).catch((e) =>
+              this.#failed(id, link, e),
+            ),
+          this.o.popEveryMs ?? 2 * 60_000,
+        );
+        link.timer.unref();
+        return;
+      }
       await this.#queued(link, () => this.#syncAll(id, link, false));
       if (link.stopped) return;
       await this.#watch(id, link);
@@ -644,7 +542,7 @@ export class MailService {
   async #worker(id: string, link: Link): Promise<ImapFlow> {
     if (link.worker?.usable) return link.worker;
     const a = this.account(id);
-    const client = new ImapFlow(this.#imapOptions(a, await this.#auth(a), false));
+    const client = new ImapFlow(this.#imapOptions(a, await this.#password(a), false));
     client.on("error", (e) => console.error(`mail ${a.email}:`, problem(e)));
     await client.connect();
     client.on("close", () => {
@@ -657,7 +555,7 @@ export class MailService {
   /** INBOX in IDLE on its own connection: new mail arrives within seconds. */
   async #watch(id: string, link: Link) {
     const a = this.account(id);
-    const client = new ImapFlow(this.#imapOptions(a, await this.#auth(a), true));
+    const client = new ImapFlow(this.#imapOptions(a, await this.#password(a), true));
     client.on("error", (e) => console.error(`mail ${a.email} (watch):`, problem(e)));
     await client.connect();
     await client.mailboxOpen("INBOX");
@@ -947,12 +845,215 @@ export class MailService {
     }
   }
 
+  // ── POP accounts: downloaded, then kept here ─────────────────────────
+
+  /** A POP account: its folders, flags and messages are Oraknid's own. */
+  #local(accountId: string): boolean {
+    return this.account(accountId).protocol === "pop";
+  }
+
+  #localDir(accountId: string) {
+    return join(this.o.dataDir, "mail", "local", accountId);
+  }
+
+  /** A downloaded message's bytes, as the server gave them (attachments, forwards). */
+  #rawPath(r: { accountId: string; id: string }) {
+    return join(this.#localDir(r.accountId), `${r.id}.eml`);
+  }
+
+  /** The folder's next local UID (its counter is lastUid). */
+  #nextUid(folderId: string): number {
+    const f = this.folder(folderId);
+    const uid = f.lastUid + 1;
+    this.o.db.update(mailFolders).set({ lastUid: uid }).where(eq(mailFolders.id, folderId)).run();
+    return uid;
+  }
+
+  /** A message kept here: its bytes in the data folder, its headers and body in SQLite. */
+  async #storeLocal(
+    f: FolderRow,
+    raw: Buffer,
+    flags: string[],
+    uidl: string | null,
+  ): Promise<MessageRow> {
+    const end = raw.indexOf("\r\n\r\n");
+    const h = await parseHeaders(end >= 0 ? raw.subarray(0, end) : raw);
+    const body = await parseBody(raw);
+    const id = newId(this.#now());
+    const row: MessageRow = {
+      id,
+      accountId: f.accountId,
+      folderId: f.id,
+      uid: 0,
+      messageId: h.messageId,
+      inReplyTo: h.inReplyTo,
+      references: h.references,
+      threadId: "",
+      subject: h.subject,
+      fromName: h.from?.name ?? "",
+      fromAddress: h.from?.address ?? "",
+      to: h.to,
+      cc: h.cc,
+      replyTo: h.replyTo,
+      date: h.date ?? this.#now(),
+      flags,
+      size: raw.length,
+      hasAttachments: body.attachments.length > 0,
+      snippet: snippetOf(body.text || htmlToText(body.html ?? "")),
+      text: body.text,
+      html: body.html,
+      attachments: body.attachments.map((a) => ({
+        filename: a.filename,
+        contentType: a.contentType,
+        size: a.size,
+      })),
+      imagesAllowed: false,
+    };
+    mkdirSync(this.#localDir(f.accountId), { recursive: true, mode: 0o700 });
+    writeFileSync(this.#rawPath(row), raw, { mode: 0o600 });
+    this.o.db.transaction(() => {
+      row.uid = this.#nextUid(f.id);
+      row.threadId = this.#threadOf(row, null);
+      this.o.db.insert(mailMessages).values(row).run();
+      if (uidl)
+        this.o.db
+          .insert(mailPopUidls)
+          .values({ accountId: f.accountId, uidl, messageId: id, createdAt: this.#now() })
+          .onConflictDoUpdate({
+            target: [mailPopUidls.accountId, mailPopUidls.uidl],
+            set: { messageId: id },
+          })
+          .run();
+    });
+    return row;
+  }
+
+  /**
+   * Downloads what the server has that was never downloaded (by UIDL) into
+   * the local Inbox, deletes there what I deleted here for good when the
+   * account says so, and forgets the UIDLs the server no longer lists. The
+   * first time, only the latest messages (as many as an IMAP folder's first
+   * sync); the older ones are left on the server.
+   */
+  async #syncPop(id: string, announce: boolean) {
+    const a = this.account(id);
+    const inbox = this.#folders(id).find((f) => f.path === "INBOX");
+    if (!inbox) throw new Error("This account's Inbox is missing.");
+    const pop = await Pop3.open(this.#popOptions(a, await this.#password(a)));
+    const subjects: string[] = [];
+    try {
+      const listed = await pop.uidl();
+      const held = new Map(
+        this.o.db
+          .select()
+          .from(mailPopUidls)
+          .where(eq(mailPopUidls.accountId, id))
+          .all()
+          .map((u) => [u.uidl, u]),
+      );
+      const first = held.size === 0;
+      for (const l of listed) if (held.get(l.uidl)?.deleteOnServer) await pop.dele(l.n);
+      const fresh = listed.filter((l) => !held.has(l.uidl));
+      const limit = this.o.initialLimit ?? 10_000;
+      if (first && fresh.length > limit) {
+        const skipped = fresh.splice(0, fresh.length - limit);
+        this.o.db.transaction(() => {
+          for (const l of skipped)
+            this.o.db
+              .insert(mailPopUidls)
+              .values({ accountId: id, uidl: l.uidl, messageId: null, createdAt: this.#now() })
+              .onConflictDoNothing()
+              .run();
+        });
+      }
+      for (const [i, l] of fresh.entries()) {
+        const raw = await pop.retr(l.n);
+        subjects.push((await this.#storeLocal(inbox, raw, [], l.uidl)).subject);
+        // A long first download fills the list as it goes.
+        if (i % 50 === 49) this.#publish("mail.synced", { accountId: id, folderId: inbox.id });
+      }
+      await pop.quit();
+      // What the server no longer lists was deleted there (by me or another client).
+      const on = new Set(listed.map((l) => l.uidl));
+      const gone = [...held.keys()].filter((u) => !on.has(u));
+      for (let i = 0; i < gone.length; i += 500)
+        this.o.db
+          .delete(mailPopUidls)
+          .where(
+            and(eq(mailPopUidls.accountId, id), inArray(mailPopUidls.uidl, gone.slice(i, i + 500))),
+          )
+          .run();
+    } finally {
+      pop.close();
+    }
+    this.o.db
+      .update(mailAccounts)
+      .set({ lastSyncAt: this.#now() })
+      .where(eq(mailAccounts.id, id))
+      .run();
+    if (subjects.length && announce)
+      this.#publish("mail.new", {
+        accountId: id,
+        count: subjects.length,
+        subjects: subjects.slice(0, 5),
+      });
+    else this.#publish("mail.synced", { accountId: id, folderId: inbox.id });
+  }
+
+  /** Moves kept here: the rows change folder, with the destination's next UIDs. */
+  #moveLocal(rows: MessageRow[], dest: FolderRow) {
+    this.o.db.transaction(() => {
+      for (const r of rows) {
+        if (r.folderId === dest.id) continue;
+        this.o.db
+          .update(mailMessages)
+          .set({ folderId: dest.id, uid: this.#nextUid(dest.id) })
+          .where(eq(mailMessages.id, r.id))
+          .run();
+      }
+    });
+  }
+
+  /**
+   * Gone from Oraknid for good, files and all. With "delete from the
+   * server" on, the next check deletes them there too; else they stay
+   * there, and are never downloaded again.
+   */
+  #deleteLocal(a: AccountRow, rows: MessageRow[]) {
+    const ids = rows.map((r) => r.id);
+    this.o.db.transaction(() => {
+      for (let i = 0; i < ids.length; i += 500) {
+        const chunk = ids.slice(i, i + 500);
+        this.o.db
+          .update(mailPopUidls)
+          .set({ messageId: null, deleteOnServer: a.deleteFromServer })
+          .where(inArray(mailPopUidls.messageId, chunk))
+          .run();
+        this.o.db.delete(mailMessages).where(inArray(mailMessages.id, chunk)).run();
+      }
+    });
+    for (const r of rows) rmSync(this.#rawPath(r), { force: true });
+    if (!a.deleteFromServer) return;
+    const link = this.#links.get(a.id);
+    if (link)
+      void this.#queued(link, () => this.#syncPop(a.id, true)).catch((e) =>
+        this.#failed(a.id, link, e),
+      );
+  }
+
   /** A pass now, rather than at the next timer. */
   async syncNow(id: string) {
     const a = this.account(id);
     if (a.state === "reconnect") throw new Error("Sign in again first.");
     const link = this.#links.get(id);
     if (!link) return this.#open(id);
+    if (a.protocol === "pop") {
+      await this.#queued(link, () => this.#syncPop(id, true)).catch((e) => {
+        this.#failed(id, link, e);
+        throw new Error(problem(e));
+      });
+      return;
+    }
     await this.#queued(link, () => this.#syncAll(id, link, true));
   }
 
@@ -960,7 +1061,8 @@ export class MailService {
   async #act<T>(accountId: string, fn: (client: ImapFlow) => Promise<T>): Promise<T> {
     const a = this.account(accountId);
     if (a.state === "reconnect")
-      throw new Error(`${a.email} needs signing in again: open Settings → Connections.`);
+      throw new Error(`${a.email} needs signing in again: use Reconnect in Mail.`);
+    if (a.protocol === "pop") throw new Error("A POP account's mail is all kept here.");
     let link = this.#links.get(accountId);
     if (!link) {
       this.#open(accountId);
@@ -1044,7 +1146,7 @@ export class MailService {
     if (q) {
       const like = `%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
       let serverUids: number[] = [];
-      if (o.folderId) {
+      if (o.folderId && !this.#local(o.accountId)) {
         const f = this.folder(o.folderId);
         serverUids = await this.#act(o.accountId, async (client) => {
           const lock = await client.getMailboxLock(f.path);
@@ -1176,7 +1278,7 @@ export class MailService {
   async thread(accountId: string, threadId: string) {
     let rows = this.#threadRows(accountId, threadId);
     const missing = rows.filter((r) => r.text === null).map((r) => r.id);
-    if (missing.length)
+    if (missing.length && !this.#local(accountId))
       await this.#act(accountId, (client) => this.#bodies(client, missing)).catch((e) =>
         console.error("mail bodies failed", e),
       );
@@ -1229,19 +1331,21 @@ export class MailService {
     return r;
   }
 
-  /** An attachment's bytes, fetched from the server. */
+  /** An attachment's bytes, fetched from the server (POP: from the copy kept here). */
   async attachment(id: string, index: number) {
     const r = this.message(id);
     const f = this.folder(r.folderId);
-    const source = await this.#act(r.accountId, async (client) => {
-      const lock = await client.getMailboxLock(f.path);
-      try {
-        const m = await client.fetchOne(String(r.uid), { source: true }, { uid: true });
-        return m ? m.source : undefined;
-      } finally {
-        lock.release();
-      }
-    });
+    const source = this.#local(r.accountId)
+      ? readFileSync(this.#rawPath(r))
+      : await this.#act(r.accountId, async (client) => {
+          const lock = await client.getMailboxLock(f.path);
+          try {
+            const m = await client.fetchOne(String(r.uid), { source: true }, { uid: true });
+            return m ? m.source : undefined;
+          } finally {
+            lock.release();
+          }
+        });
     if (!source) throw new Error("That message is gone from the server.");
     const a = (await parseBody(source)).attachments[index];
     if (!a) throw new Error("No such attachment.");
@@ -1332,33 +1436,36 @@ export class MailService {
     const rows = this.#rows(ids);
     if (!rows.length) return;
     const accountId = (rows[0] as MessageRow).accountId;
-    const gmail = this.account(accountId).provider === "gmail";
+    const a = this.account(accountId);
+    const gmail = a.provider === "gmail" && a.protocol === "imap";
     const add: string[] = [];
     const remove: string[] = [];
     if (change.seen === true) add.push(SEEN);
     if (change.seen === false) remove.push(SEEN);
     if (change.flagged === true) add.push(FLAGGED);
     if (change.flagged === false) remove.push(FLAGGED);
-    await this.#act(accountId, async (client) => {
-      for (const [folderId, list] of this.#byFolder(rows)) {
-        const f = this.folder(folderId);
-        const lock = await client.getMailboxLock(f.path);
-        try {
-          const uids = list.map((r) => r.uid).join(",");
-          if (add.length) await client.messageFlagsAdd(uids, add, { uid: true });
-          if (remove.length) await client.messageFlagsRemove(uids, remove, { uid: true });
-          if (change.addLabels?.length)
-            await client.messageFlagsAdd(uids, change.addLabels, { uid: true, useLabels: gmail });
-          if (change.removeLabels?.length)
-            await client.messageFlagsRemove(uids, change.removeLabels, {
-              uid: true,
-              useLabels: gmail,
-            });
-        } finally {
-          lock.release();
+    // POP: the flags are Oraknid's own.
+    if (a.protocol === "imap")
+      await this.#act(accountId, async (client) => {
+        for (const [folderId, list] of this.#byFolder(rows)) {
+          const f = this.folder(folderId);
+          const lock = await client.getMailboxLock(f.path);
+          try {
+            const uids = list.map((r) => r.uid).join(",");
+            if (add.length) await client.messageFlagsAdd(uids, add, { uid: true });
+            if (remove.length) await client.messageFlagsRemove(uids, remove, { uid: true });
+            if (change.addLabels?.length)
+              await client.messageFlagsAdd(uids, change.addLabels, { uid: true, useLabels: gmail });
+            if (change.removeLabels?.length)
+              await client.messageFlagsRemove(uids, change.removeLabels, {
+                uid: true,
+                useLabels: gmail,
+              });
+          } finally {
+            lock.release();
+          }
         }
-      }
-    });
+      });
     this.o.db.transaction((tx) => {
       for (const r of rows) {
         const flags = new Set(r.flags);
@@ -1392,6 +1499,7 @@ export class MailService {
 
   async #moveRows(rows: MessageRow[], dest: FolderRow, keep = true) {
     const accountId = (rows[0] as MessageRow).accountId;
+    if (this.#local(accountId)) return this.#moveLocal(rows, dest);
     await this.#act(accountId, async (client) => {
       for (const [folderId, list] of this.#byFolder(rows)) {
         if (folderId === dest.id) continue;
@@ -1444,7 +1552,7 @@ export class MailService {
     this.#audit(actor, "archived", { accountId, ids });
   }
 
-  /** To Trash; from Trash, gone for good. */
+  /** To Trash; from Trash, gone for good (POP: from the server too, if the account says so). */
   async remove(ids: string[], actor: Actor) {
     const rows = this.#rows(ids);
     if (!rows.length) return;
@@ -1454,7 +1562,9 @@ export class MailService {
     const elsewhere = rows.filter((r) => r.folderId !== trash?.id);
     if (elsewhere.length && trash) await this.#moveRows(elsewhere, trash);
     const forGood = trash ? inTrash : rows;
-    if (forGood.length)
+    const a = this.account(accountId);
+    if (forGood.length && a.protocol === "pop") this.#deleteLocal(a, forGood);
+    else if (forGood.length)
       await this.#act(accountId, async (client) => {
         for (const [folderId, list] of this.#byFolder(forGood)) {
           const lock = await client.getMailboxLock(this.folder(folderId).path);
@@ -1765,7 +1875,7 @@ export class MailService {
       })
         .compile()
         .build();
-      const transport = this.#transport(a, await this.#auth(a));
+      const transport = this.#transport(a, await this.#password(a));
       try {
         await transport.sendMail({
           envelope: { from: a.email, to: [...d.to, ...d.cc, ...d.bcc] },
@@ -1805,6 +1915,18 @@ export class MailService {
   /** Sent filed in Sent (when the provider doesn't), the original marked answered, Sent synced. */
   async #afterSend(a: AccountRow, raw: Buffer, replyTo: MessageRow | undefined) {
     const sent = this.#special(a.id, "\\Sent");
+    if (a.protocol === "pop") {
+      // All kept here: the copy in Oraknid's Sent, \Answered on the original.
+      if (a.appendSent && sent) await this.#storeLocal(sent, raw, [SEEN], null);
+      if (replyTo)
+        this.o.db
+          .update(mailMessages)
+          .set({ flags: [...new Set([...replyTo.flags, "\\Answered"])] })
+          .where(eq(mailMessages.id, replyTo.id))
+          .run();
+      this.#publish("mail.synced", { accountId: a.id });
+      return;
+    }
     await this.#act(a.id, async (client) => {
       if (a.appendSent && sent) await client.append(sent.path, raw, [SEEN]);
       if (replyTo) {

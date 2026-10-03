@@ -4,7 +4,8 @@ import { SMTPServer } from "smtp-server";
 
 // A stand-in mail provider for tests (ADR-032): an IMAP server just big
 // enough for imapflow (select, fetch, search, store, copy/move, append,
-// expunge, IDLE) and an SMTP server, sharing one mailbox. Plain TCP on
+// expunge, IDLE), a POP3 server on the same INBOX (as Gmail and Outlook
+// offer), and an SMTP server, sharing one mailbox. Plain TCP on
 // 127.0.0.1, one account. Gmail mode adds X-GM-EXT-1 (thread ids,
 // labels) and, like Gmail, files what goes out through SMTP in Sent.
 
@@ -31,17 +32,9 @@ type Token = string | Buffer | Token[];
 const CRLF = "\r\n";
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-export async function fakeMail(
-  o: {
-    user?: string;
-    password?: string;
-    /** Accepts XOAUTH2 with this token instead of (or as well as) the password. */
-    accessToken?: string;
-    gmail?: boolean;
-  } = {},
-) {
+export async function fakeMail(o: { user?: string; password?: string; gmail?: boolean } = {}) {
   const user = o.user ?? "me@example.com";
-  const state = { password: o.password ?? "app-password", accessToken: o.accessToken ?? null };
+  const state = { password: o.password ?? "app-password" };
   const gmail = o.gmail ?? false;
   const boxes = new Map<string, Box>();
   const addBox = (path: string, specialUse: string | null) =>
@@ -117,21 +110,29 @@ export async function fakeMail(
   });
   await new Promise<void>((r) => imap.listen(0, "127.0.0.1", r));
 
+  // POP3 on INBOX, as Gmail and Outlook offer it beside IMAP.
+  const popCommands: string[] = [];
+  const pop: Server = createServer((socket) => {
+    popSession(socket, { user, state, inbox: () => box("INBOX"), changed, commands: popCommands });
+    socket.on("error", () => {});
+  });
+  const popSockets = new Set<Socket>();
+  pop.on("connection", (s) => {
+    popSockets.add(s);
+    s.on("close", () => popSockets.delete(s));
+  });
+  await new Promise<void>((r) => pop.listen(0, "127.0.0.1", r));
+
   // SMTP: what is sent is kept; Gmail files it in Sent itself.
   const sent: { from: string; to: string[]; raw: Buffer }[] = [];
   const smtp = new SMTPServer({
     secure: false,
     disabledCommands: ["STARTTLS"],
-    authMethods: ["PLAIN", "LOGIN", "XOAUTH2"],
+    authMethods: ["PLAIN", "LOGIN"],
     allowInsecureAuth: true,
     logger: false,
     onAuth(auth, _session, cb) {
-      const ok =
-        auth.username === user &&
-        (auth.method === "XOAUTH2"
-          ? state.accessToken !== null && auth.accessToken === state.accessToken
-          : auth.password === state.password);
-      if (ok) return cb(null, { user });
+      if (auth.username === user && auth.password === state.password) return cb(null, { user });
       cb(new Error("Invalid username or password"));
     },
     onData(stream, session, cb) {
@@ -154,6 +155,9 @@ export async function fakeMail(
   return {
     user,
     imapPort: (imap.address() as { port: number }).port,
+    popPort: (pop.address() as { port: number }).port,
+    /** The POP3 commands received, passwords left out. */
+    popCommands,
     smtpPort: (smtp.server.address() as { port: number }).port,
     boxes,
     sent,
@@ -161,21 +165,21 @@ export async function fakeMail(
     /** A message arriving in a folder (INBOX by default). Returns its UID. */
     deliver: (raw: string | Buffer, path = "INBOX", flags: string[] = []) => add(path, raw, flags),
     messages: (path = "INBOX") => box(path).messages,
-    /** Like a password changed or a token revoked at the provider. */
+    /** Like a password changed at the provider. */
     setPassword(p: string) {
       state.password = p;
-    },
-    setAccessToken(t: string | null) {
-      state.accessToken = t;
     },
     /** Every connection dropped, as when the provider restarts. */
     dropConnections() {
       for (const s of sessions) s.socket.destroy();
+      for (const s of popSockets) s.destroy();
     },
     close: async () => {
       for (const s of sessions) s.socket.destroy();
+      for (const s of popSockets) s.destroy();
       await Promise.all([
         new Promise<void>((r) => imap.close(() => r())),
+        new Promise<void>((r) => pop.close(() => r())),
         new Promise<void>((r) => smtp.close(() => r())),
       ]);
     },
@@ -184,12 +188,131 @@ export async function fakeMail(
 
 export type FakeMail = Awaited<ReturnType<typeof fakeMail>>;
 
+/**
+ * One POP3 session (RFC 1939): the maildrop as it was at login, numbered
+ * from 1; DELE marks, QUIT deletes. A UIDL is the folder's UIDVALIDITY
+ * and the message's UID, so it never changes.
+ */
+function popSession(
+  socket: Socket,
+  x: {
+    user: string;
+    state: { password: string };
+    inbox: () => Box;
+    changed: (path: string) => void;
+    commands: string[];
+  },
+) {
+  let buf = "";
+  let given: string | null = null;
+  let drop: FakeMessage[] | null = null;
+  const deleted = new Set<number>();
+  const send = (l: string | Buffer) => {
+    if (!socket.destroyed) socket.write(typeof l === "string" ? l + CRLF : l);
+  };
+  const lines = (ls: string[]) => send(`+OK\r\n${ls.map((l) => l + CRLF).join("")}.`);
+  const at = (arg: string | undefined) => {
+    const n = Number(arg);
+    const m = drop?.[n - 1];
+    if (!m || deleted.has(n)) throw new Error("no such message");
+    return { n, m };
+  };
+  const handle = (line: string) => {
+    const [cmd = "", ...args] = line.split(" ");
+    const name = cmd.toUpperCase();
+    x.commands.push(name === "PASS" ? "PASS ***" : [name, ...args].join(" "));
+    if (name === "QUIT") {
+      if (drop) {
+        const b = x.inbox();
+        const gone = new Set([...deleted].map((n) => drop?.[n - 1]));
+        b.messages = b.messages.filter((m) => !gone.has(m));
+        if (gone.size) x.changed(b.path);
+      }
+      send("+OK bye");
+      socket.end();
+      return;
+    }
+    if (name === "CAPA") return lines(["USER", "UIDL", "TOP"]);
+    if (name === "NOOP") return send("+OK");
+    if (!drop) {
+      if (name === "USER") {
+        given = args.join(" ");
+        return send("+OK send PASS");
+      }
+      if (name === "PASS") {
+        if (given !== x.user || args.join(" ") !== x.state.password)
+          return send("-ERR [AUTH] Username and password not accepted.");
+        drop = [...x.inbox().messages];
+        return send(`+OK ${drop.length} messages`);
+      }
+      return send("-ERR log in first");
+    }
+    const live = () =>
+      drop?.map((m, i) => ({ n: i + 1, m })).filter((e) => !deleted.has(e.n)) ?? [];
+    try {
+      if (name === "STAT") {
+        const l = live();
+        return send(`+OK ${l.length} ${l.reduce((s, e) => s + e.m.raw.length, 0)}`);
+      }
+      if (name === "LIST") {
+        if (args[0]) {
+          const { n, m } = at(args[0]);
+          return send(`+OK ${n} ${m.raw.length}`);
+        }
+        return lines(live().map((e) => `${e.n} ${e.m.raw.length}`));
+      }
+      if (name === "UIDL") {
+        const uidl = (m: FakeMessage) => `${x.inbox().uidValidity}-${m.uid}`;
+        if (args[0]) {
+          const { n, m } = at(args[0]);
+          return send(`+OK ${n} ${uidl(m)}`);
+        }
+        return lines(live().map((e) => `${e.n} ${uidl(e.m)}`));
+      }
+      if (name === "RETR") {
+        const { m } = at(args[0]);
+        const text = m.raw.toString("latin1");
+        const stuffed = text
+          .split(CRLF)
+          .map((l) => (l.startsWith(".") ? `.${l}` : l))
+          .join(CRLF);
+        send(`+OK ${m.raw.length} octets`);
+        send(Buffer.from(stuffed.endsWith(CRLF) ? stuffed : stuffed + CRLF, "latin1"));
+        return send(".");
+      }
+      if (name === "DELE") {
+        const { n } = at(args[0]);
+        deleted.add(n);
+        return send(`+OK message ${n} deleted`);
+      }
+      if (name === "RSET") {
+        deleted.clear();
+        return send("+OK");
+      }
+      send("-ERR unknown command");
+    } catch (error) {
+      send(`-ERR ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+  socket.on("data", (d: Buffer) => {
+    buf += d.toString("latin1");
+    let i = buf.indexOf(CRLF);
+    while (i >= 0) {
+      const line = buf.slice(0, i);
+      buf = buf.slice(i + 2);
+      handle(line);
+      i = buf.indexOf(CRLF);
+    }
+  });
+  send("+OK fake POP3 ready");
+}
+
 class ImapNo extends Error {}
 class ImapBad extends Error {}
 
 interface Shared {
   user: string;
-  state: { password: string; accessToken: string | null };
+  state: { password: string };
   gmail: boolean;
   boxes: Map<string, Box>;
   box: (path: string) => Box;
@@ -228,7 +351,6 @@ class ImapSession {
 
   #caps() {
     const caps = ["IMAP4rev1", "IDLE", "MOVE", "UIDPLUS", "SPECIAL-USE", "LITERAL+"];
-    if (this.x.state.accessToken) caps.push("AUTH=XOAUTH2", "SASL-IR");
     if (this.x.gmail) caps.push("X-GM-EXT-1");
     return caps.join(" ");
   }
@@ -337,22 +459,6 @@ class ImapSession {
         throw new ImapNo("[AUTHENTICATIONFAILED] Invalid credentials (Failure)");
       this.#authed = true;
       return `[CAPABILITY ${this.#caps()}] Logged in`;
-    }
-    if (name === "AUTHENTICATE") {
-      const mech = str(args[0]).toUpperCase();
-      const token = Buffer.from(str(args[1]), "base64").toString("utf8");
-      const [u, b] = token.split("\u0001");
-      const m = [token, u?.replace(/^user=/, ""), b?.replace(/^auth=Bearer /, "")];
-      if (
-        mech !== "XOAUTH2" ||
-        !m ||
-        m[1] !== this.x.user ||
-        !this.x.state.accessToken ||
-        m[2] !== this.x.state.accessToken
-      )
-        throw new ImapNo("[AUTHENTICATIONFAILED] Invalid credentials (Failure)");
-      this.#authed = true;
-      return `[CAPABILITY ${this.#caps()}] Authenticated`;
     }
     if (!this.#authed) throw new ImapBad("Log in first");
 

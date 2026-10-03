@@ -103,10 +103,10 @@ export interface DaemonOptions {
   /** Leg adapters by kind (tests replace them). */
   adapters?: Partial<Record<LegKind, LegAdapter>>;
   healthIntervalMs?: number;
-  /** Mail timings and OAuth addresses (tests). */
+  /** Mail timings and the providers' servers (tests). */
   mail?: Pick<
     MailOptions,
-    "syncEveryMs" | "idleDelayMs" | "initialLimit" | "oauthEndpoints" | "presets"
+    "syncEveryMs" | "popEveryMs" | "idleDelayMs" | "initialLimit" | "presets"
   >;
 }
 
@@ -170,15 +170,15 @@ export async function startDaemon(options: DaemonOptions) {
   const projectsService = new Projects(db, bus, skills, now);
   // Tools for skills: MCP servers the daemon runs, never the Legs (ADR-021).
   const toolRegistry = new ToolRegistry(db, bus, secrets, now);
-  // My mail (ADR-032): synced by the daemon, reached by agents through the email tool.
+  // The daemon's own address, known once it listens.
   let url = "";
+  // My mail (ADR-032): synced by the daemon, reached by agents through the email tool.
   const mail = new MailService({
     db,
     bus,
     secrets,
     inbox,
     dataDir: paths.dataDir,
-    baseUrl: () => url,
     now,
     // The email tool appears with the first account.
     hasAccounts: () => {
@@ -581,36 +581,6 @@ export async function startDaemon(options: DaemonOptions) {
     res.json({ ok: true, version: VERSION });
   });
 
-  // Back from Google or Microsoft's sign-in (ADR-032): only a sign-in started here is accepted.
-  app.get("/oauth/mail/callback", async (req, res) => {
-    const q = (k: string) =>
-      typeof req.query[k] === "string" ? (req.query[k] as string) : undefined;
-    const page = (title: string, text: string) =>
-      `<!doctype html><meta charset="utf-8"><title>${title}</title><body style="font-family:sans-serif;max-width:32rem;margin:4rem auto;line-height:1.5"><h1 style="font-size:1.25rem">${title}</h1><p>${text}</p></body>`;
-    try {
-      const { email } = await mail.oauthCallback({
-        ...(q("state") ? { state: q("state") } : {}),
-        ...(q("code") ? { code: q("code") } : {}),
-        ...(q("error") ? { error: q("error") } : {}),
-      });
-      res
-        .type("html")
-        .send(
-          page(
-            "Connected",
-            `${escapeHtml(email)} is connected to Oraknid. You can close this tab.`,
-          ),
-        );
-    } catch (error) {
-      res
-        .status(400)
-        .type("html")
-        .send(
-          page("Not connected", escapeHtml(error instanceof Error ? error.message : String(error))),
-        );
-    }
-  });
-
   // The web UI (apps/web), when it has been built: static files, and the app for every other path.
   const web = webDist();
   if (web) {
@@ -754,9 +724,6 @@ function webRemote(): string | null {
 function rpcError(res: express.Response, status: number, code: string, message: string) {
   res.status(status).json({ json: { defined: false, code, status, message } });
 }
-
-const escapeHtml = (s: string) =>
-  s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
 /**
  * The UI's content policy: its own scripts only, no framing. Images may

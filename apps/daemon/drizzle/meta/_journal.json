@@ -190,6 +190,20 @@
       "when": 1790984787342,
       "tag": "0026_mail",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1790990684916,
+      "tag": "0027_mail_pop",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "6",
+      "when": 1790990691240,
+      "tag": "0028_mail_no_oauth",
+      "breakpoints": true
     }
   ]
 }
