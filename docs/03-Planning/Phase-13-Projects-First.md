@@ -59,18 +59,57 @@ run locally and the public site checked at 1440 and 390 px.
 - [ ] The guide and the site's install block say the one command
 
 ### M13.4 — Questions with options ([[ADR-037-Questions-With-Options]])
-- [ ] Questions shaped single, multi, text, confirm, with a recommended option and "Other"
-- [ ] The interview and The Eye's conversation answer them in tabs, by keyboard and touch
+- [x] Questions shaped single, multi, text, confirm, with a recommended option and "Other"
+- [x] The interview and The Eye's conversation answer them in tabs, by keyboard and touch
+
+Tested (2026-10-03): contracts `questions.test.ts` (Yes and No for a
+confirm, unique ids, recommended filled in where I said nothing, the
+short list). Daemon: `brain.test.ts` (a shaped round through the
+brain's parsing, an old round upgraded, The Eye's reply with questions
+and without), `eye.test.ts` (a draft round asked with options and
+answered structured, its Silk; an inbox round answered structured; an
+old text answer still taken), `projects-first.test.ts` (questions in a
+reply, my answers as my next message, answered once). Web:
+`questions.test.tsx` (recommended selected, ↑/↓, Space, Enter, ←/→,
+Tab, 1–9, Shift+Enter, Other, Submit with the recommended filled in,
+keys kept from the page, 44 px rows). By hand on a sample daemon (fake
+OS, scripted Leg): an interview round in the project's inbox answered
+by keyboard only, a draft round on New work, The Eye's questions in the
+conversation, at 1568 px (the window couldn't be set to 1440) and
+390 px (headless Chromium, no sideways scroll).
 
 ### M13.5 — Workflow ([[ADR-034-Projects-First]] → Changed)
 - [ ] The tab named Workflow, the diagram filling it, compact and expanded, a job's box opening its own workflow
 
 ### M13.6 — A project's GitHub repo and servers ([[ADR-038-Project-Accounts]])
-- [ ] Several GitHub accounts; a project's GitHub link (account, repo) beside its servers
-- [ ] The Eye asks in its conversation once, with options, and saves the answer to the project
-- [ ] The built-in `github` tool (create the repo, push, pull request) run by Oraknid with the token; Legs told not to use `gh`
-- [ ] Linked work runs without asking; the rest still asks
+- [x] Several GitHub accounts; a project's GitHub link (account, repo) beside its servers
+- [x] The Eye asks in its conversation once, with options, and saves the answer to the project
+- [x] The built-in `github` tool (create the repo, push, pull request) run by Oraknid with the token; Legs told not to use `gh`
+- [x] Linked work runs without asking; the rest still asks
 - [ ] The piano project's stalled push finished through it
+
+Tested (2026-10-03): `apps/daemon/src/eye/project-links.test.ts`
+reproduces the piano's task against a stand-in GitHub API and a local
+bare repo: my one token of before named by its account (kept under its
+old keychain entry), "Create a GitHub repo for the piano project and
+push the dev branch" asked in the project's conversation (repo and
+visibility, public recommended because I asked for public, my only
+account said), answered there, the link saved, the repo created public
+and empty by the tool and `dev` pushed (the same commit), a push to
+another repo asking and denied, the token in no Leg's start, no event
+and not in `.git/config`; a second test with two accounts, the account
+asked too, answered from the inbox with a repo typed, and Settings'
+change, unlink and an unknown account refused; the policy per call
+(linked create, push and pull request allowed; force, elsewhere,
+another repo, an unknown call asked; created already asks). Core:
+linked and gated declarations, untrusted content asking. By hand on the
+sample daemon: the question in the conversation, Submit, "Linked" and
+the job done, the project's Settings (GitHub repo beside servers,
+Change), Settings → Connections → GitHub, at 1568 px and 390 px.
+Found by hand and fixed: the UI's page was a 404 when Oraknid's folder
+has a hidden folder in its path; saving the same link again marked a
+created repo as to be created. The piano item stays open until the
+real job is resumed on this build.
 
 ### M13.7 — Mail accounts that explain themselves ([[ADR-032-Email]] → Fixed after a failed Namecheap POP account)
 - [ ] Presets from the domain's MX, port and security together, errors in plain words, Test, failures logged

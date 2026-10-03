@@ -111,7 +111,8 @@ Eye's conversation sit beside them ([[Chats-and-Helper]]).
   cancelling a job, removing a task, rolling a task back, deleting a
   draft, a project, a skill or a chat, removing a Leg, a server or a
   tool, accepting a changed host key, revoking a device, unpairing this
-  one, disconnecting GitHub, pruning logs, clearing the helper.
+  one, removing a GitHub account, unlinking a project's GitHub repo,
+  pruning logs, clearing the helper.
 
 ## Screens
 
@@ -178,7 +179,8 @@ the address (`/projects/<id>/<tab>`):
   ([[The-Eye]] → Talking to The Eye). Each reply links the job it
   touched (and the follow-up it started); a line marks where the
   conversation moves to another job. The header says which job it talks
-  to now.
+  to now. A reply with questions shows them under it (Questions, below)
+  until I answer; my answers show as a short list.
 - **The Web**: the project's tasks across its jobs. The job running now
   (else the newest) is laid out in full; each earlier job is folded to
   one node (title, state, tasks done) in the order they ran, opened in
@@ -197,8 +199,12 @@ the address (`/projects/<id>/<tab>`):
   to change it; [[Budgets-and-Quotas]] → A project's budget), then
   tokens, time, tasks done, success, tokens per day and the breakdown
   by Leg.
-- **Settings**: the folder and branches, archive or delete, and the
-  project's command rules.
+- **Settings**: its **GitHub repo** beside its **servers**
+  ([[ADR-038-Project-Accounts]]): the linked repository (owner/name, who
+  can see it, "to be created" until it is, the account), Change and
+  Unlink (a second step), or "Link a repo" (account, a new or an
+  existing repository, owner, name, who can see it); then the folder and
+  branches, archive or delete, and the project's command rules.
 - **Skills**, **Servers**, **Network** (the ports on this computer its
   jobs may reach, like a local database; [[Sandboxing]]).
 
@@ -292,6 +298,30 @@ account (off by default), file sent mail in Sent, and for POP delete
 from the server (off by default). Sign-in with Google or Microsoft
 (OAuth) waits until a few releases from now. Not from away.
 
+### Questions (2026-10-03, [[ADR-037-Questions-With-Options]])
+
+One component answers the interview (New work, the inbox) and The Eye's
+questions in a project's conversation:
+
+- The questions in **tabs**, one shown at a time, a check on those
+  answered, and a **Summary** tab last listing each answer (a click goes
+  back to its question).
+- Options as rows: their number, a radio (`single`, `confirm`) or a box
+  (`multi`), the label and its detail; the recommended one marked in
+  amber and selected from the start. A row "Other" takes a typed answer
+  (in a single choice it replaces the option). A `text` question is a
+  text box.
+- Keys, while the questions have the focus: ↑/↓ move between options
+  (and Other), Space selects (toggles in a `multi`), Enter confirms and
+  goes to the next question (on a single choice it takes the option it
+  is on; in a text answer Shift+Enter is a new line), ←/→ or Tab
+  (Shift+Tab back) move between questions, 1–9 pick an option; on the
+  Summary, Enter submits. The page's own shortcuts never see these
+  keys. A hint line says them on a wide screen.
+- Rows at least 44 px, tabs too on a touch screen; Next, back and
+  Submit at the bottom. **Submit** sends every answer; a question left
+  unanswered takes its recommended option, else goes as unanswered.
+
 ### The helper
 
 A floating button at the bottom left of every screen opens the Oraknid
@@ -306,7 +336,10 @@ the Eye's conversation, chats, the helper) is rendered as markdown.
 
 Approvals and questions from all jobs. Each item can be answered in
 place, and reads well at any width: long commands and text wrap inside
-the card, never past it; a command in a title shows as code. Interview rounds appear as a short form. Each item names its
+the card, never past it; a command in a title shows as code. An
+interview round, and any question asked with options, opens the
+questions component (Questions, below), with "Enough, start" beside
+Submit for a round; an old round asked in prose shows as before. Each item names its
 project and job. Filters: project, job, kind, state, and a search over
 the text.
 
@@ -352,7 +385,10 @@ that opened Settings:
   rights given or taken on a device's row, at home, with the PIN;
   [[ADR-030-Device-Rights]]), The Nest's connection: "Use a public
   Nest" in one click, or "My own Nest" ([[ADR-031-Public-Nest]]).
-- **Connections**: email accounts ([[ADR-032-Email]]), GitHub, tools for skills.
+- **Connections**: email accounts ([[ADR-032-Email]]), GitHub (my
+  accounts by name, the first the default, each token checked, with
+  why GitHub refuses one; add one, remove one after a second step;
+  [[ADR-038-Project-Accounts]]), tools for skills.
 
 ### The lock
 

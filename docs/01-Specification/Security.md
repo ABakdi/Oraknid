@@ -78,11 +78,20 @@ sandbox limits damage, but it doesn't make that safe.
 - Suspicious content (instructions aimed at the agent) is flagged in
   the UI.
 
-## GitHub token
-- The token I paste for GitHub ([[ADR-023-GitHub-By-Token]]) is in the
-  keychain, given to `git` only through `GIT_ASKPASS` for one command,
+## GitHub tokens
+- The tokens I paste for GitHub ([[ADR-023-GitHub-By-Token]], several
+  accounts since [[ADR-038-Project-Accounts]]) are in the keychain, one
+  per account (`github.token.<login>`; the one token of before stays
+  under `github.token`, named by its account, never read out or
+  copied), given to `git` only through `GIT_ASKPASS` for one command,
   never written in a URL, a remote or a config file, and never given to
-  a Leg. A push with it is a gated action.
+  a Leg: GitHub work is done by the daemon's `github` tool, and a Leg's
+  context tells it never to use the `gh` CLI or a token. git's output is
+  scrubbed of the token before anyone sees it.
+- Work on a project's linked repo (creating it as I chose, pushing a
+  branch, a pull request) runs without asking: the link is my approval.
+  A push anywhere else, a force-push, or linked work in a task that read
+  untrusted content asks ([[Approvals-and-Autonomy]] → Linked work).
 
 ## Servers and the terminal
 - Server credentials are in the keychain; a password is used once to

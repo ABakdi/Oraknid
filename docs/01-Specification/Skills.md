@@ -70,10 +70,13 @@ the goal from me before any autonomous work. When `interview: true`:
 2. The Eye asks the Eye Leg for the first round of questions, using the
    skill's own interview guidance, the goal and the inputs.
 3. The questions go to the inbox as one **interview round**: a few
-   questions, with options and a recommendation where useful (the same
-   style as the skill asks for).
-4. I answer in the UI. My answers are stored in Silk as
-   `interview-answer` entries, verbatim.
+   questions, each shaped `single`, `multi`, `text` or `confirm`, with
+   options and a recommended one where useful
+   ([[ADR-037-Questions-With-Options]]).
+4. I answer them one at a time in the UI ([[Web-UI]] → Questions). My
+   answers are stored in Silk as `interview-answer` entries: the
+   questions, then my answers as a short list, word for word (and
+   typed answers verbatim).
 5. The Eye plays back a summary and asks "is this right?". Then it asks
    the next round, until the Eye Leg judges every point the skill lists
    as answered or recorded as "decide later".

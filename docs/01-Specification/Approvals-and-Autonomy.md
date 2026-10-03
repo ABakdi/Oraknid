@@ -25,13 +25,29 @@ an explicit per-job waiver.
 | Action | Examples |
 | :-- | :-- |
 | `send` | Email, messages, comments on an issue. |
-| `push` | `git push` to any remote. |
+| `push` | `git push` to any remote; the github tool's push anywhere but the project's linked repo, or a force-push. |
 | `merge` | Merging the work branch into the release branch. |
 | `deploy` | Any deploy script or command declared as deploy. |
 | `delete` | Deleting outside the worktree, or deleting a branch. |
 | `spend` | Any action projected to exceed the money threshold. |
 | `external-write` | Any MCP or API call not declared as a read ([[ADR-021-Tools-Broker]]). |
 | `install` | Installing system packages, or global packages outside the workspace. |
+
+## Linked work (2026-10-03, [[ADR-038-Project-Accounts]])
+
+A project's GitHub link is my approval for its own repo. Through
+Oraknid's `github` tool, these run without asking, at every autonomy:
+creating the linked repo while it doesn't exist (as I chose it: its
+name, its visibility), pushing a branch to it, and opening a pull
+request there; each is in the job's events (`tool.linked`,
+`github.pushed`, `github.repo-created`, `github.pull-request`). Still
+asked: a force-push (gate `push`), a push to any other repo (`push`),
+creating another repo or a pull request elsewhere (`external-write`),
+and any call the tool doesn't know (`external-write`, which covers
+deleting and changing visibility: the tool has no such call). A task
+that read untrusted content asks even for linked work (BR-15). The
+judgement is made per call, from its arguments, by the tool itself in
+the daemon; "Approve all like this" on a push waives `push` for the job.
 
 ## Leg permission prompts
 
@@ -65,7 +81,12 @@ most blocking first. Each item shows:
 - Buttons: **Approve**, **Deny**, **Approve all like this for this job**
   (approvals: a gate becomes a waiver, an unknown program an allow
   rule, both audited); an answer field and suggested answers
-  (questions).
+  (questions). A question asked with options (an interview round, The
+  Eye's question about a project's repo or server) is answered in the
+  questions component ([[ADR-037-Questions-With-Options]]); my answers
+  are kept structured and shown as a short list. When The Eye asked it
+  in a project's conversation too, answering it in either place
+  answers it, and my answers join the conversation.
 - Answering an item a job was waiting for resumes the job at once.
 - At Supervised, the plan approval is asked on every run of the job,
   before any work: once approved it passes, once denied the plan never

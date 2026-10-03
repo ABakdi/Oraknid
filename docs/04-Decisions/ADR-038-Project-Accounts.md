@@ -41,4 +41,35 @@ Servers have the same question: which one, and with what rights.
   its account.
 - The piano project's stalled task is answered by linking a repo.
 
+## As built (2026-10-03)
+- **Accounts**: each token in the keychain under its account's name
+  (`github.token.<login>`), the list in the setting `github.accounts`,
+  the first the default. The one token of before is named by its
+  account the first time the accounts are listed and stays where it was
+  (`github.token`): referred to, never read out or copied.
+- **The link** is a column of the project (account, owner, name,
+  visibility, new or existing, created yet). A project made from one of
+  my GitHub repos is linked to it.
+- **When The Eye asks**: before a task's attempt, when its title or
+  instructions name GitHub or a pull request (GitHub), or a deploy or
+  "the server" (a server). The planner is told to name GitHub in such a
+  task's title. The question is an inbox item, also posted in the
+  project's conversation; the job waits on it. The new repo recommended
+  is named after the project, public when my words asked for public.
+  With one account and a folder whose `origin` is one of its repos,
+  there is nothing to choose: it links that. With no server it says so
+  once and goes on; with one it uses it.
+- **The tool**: `repo_info`, `create_repo` (the linked repo, empty, so
+  the first push lands), `push` (`branch`, `to`, `force`, `repo`),
+  `open_pull_request`. git runs in the daemon by URL with
+  `GIT_ASKPASS`; its output is scrubbed of the token. A force-push is
+  `--force-with-lease`, and asks.
+- **Untrusted content still wins**: linked work in a task that read
+  untrusted content asks (BR-15), since a public repo is publishing.
+- **The piano project's task** is answered by this design: once the
+  daemon runs this build and the paused job is resumed, The Eye asks
+  which repo in the piano project's conversation. Reproduced in
+  `apps/daemon/src/eye/project-links.test.ts` against a stand-in GitHub
+  and a local bare repo.
+
 Related: [[ADR-023-GitHub-By-Token]] · [[ADR-026-Servers]] · [[ADR-021-Tools-Broker]] · [[Approvals-and-Autonomy]] · [[ADR-037-Questions-With-Options]]

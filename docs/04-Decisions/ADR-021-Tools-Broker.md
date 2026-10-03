@@ -59,7 +59,13 @@ server (stdio, JSON-RPC). Three things matter:
   socket, gate, audit and wrapping. Only such a tool may declare a call
   **held**: Oraknid itself holds it for my approval (an agent's `send`
   only marks its draft waiting), so the policy lets it through rather
-  than asking twice.
+  than asking twice. *Added 2026-10-03* ([[ADR-038-Project-Accounts]]):
+  the `github` tool is Oraknid's too, given to every job's sessions,
+  and such a tool may also **judge a call by its arguments**: work on
+  the project's linked repo is "linked" (allowed without asking, unless
+  the task read untrusted content), anything else the gated action it
+  is (`push`, `external-write`). What it returns is GitHub's answer
+  about my repo, so it isn't wrapped as untrusted.
 - **Adapters** pass the bridge as an MCP server: Claude Code through
   the SDK's `mcpServers`, OpenCode through its config's `mcp`,
   Antigravity through `mcp_config.json` in the Leg's home (unverified,
