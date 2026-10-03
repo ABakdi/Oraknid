@@ -12,8 +12,14 @@ export interface SandboxSpec {
   home: string;
   /** The complete environment. Nothing else from the parent leaks in. */
   env: Record<string, string>;
-  /** Share the host network (default true; Legs need their APIs). */
+  /** The internet (default true; Legs need their APIs). Never this computer's own services, but… */
   network?: boolean;
+  /** …these ports on this computer's localhost, reachable as localhost inside (a project's database, a Leg's local model). */
+  localPorts?: number[];
+  /** Ports inside that this computer reaches on its localhost (a Leg's own server, like OpenCode's). */
+  inboundPorts?: number[];
+  /** This computer's network, not one of its own: only while I sign a Leg in (its browser callback). */
+  hostNetwork?: boolean;
 }
 
 export interface SandboxStatus {
@@ -25,4 +31,14 @@ export interface Sandbox {
   status(): SandboxStatus;
   /** The command line that runs `spec` inside the sandbox. */
   wrap(spec: SandboxSpec): { command: string; args: string[] };
+}
+
+/** The same sandbox, with these local ports open too (a session's project and Leg). */
+export function withLocalPorts(sandbox: Sandbox, ports: number[]): Sandbox {
+  if (!ports.length) return sandbox;
+  return {
+    status: () => sandbox.status(),
+    wrap: (spec) =>
+      sandbox.wrap({ ...spec, localPorts: [...new Set([...(spec.localPorts ?? []), ...ports])] }),
+  };
 }

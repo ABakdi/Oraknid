@@ -2,6 +2,7 @@ import type { EyeMessage } from "@oraknid/contracts";
 import { Eye, SendHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { Link } from "wouter";
 import { Markdown } from "@/components/common";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -119,6 +120,14 @@ export function EyeChat({ jobId, full = false }: { jobId: string; full?: boolean
                       {m.action.did.map((x) => (
                         <span key={x}>· {t(x)}</span>
                       ))}
+                      {m.action.jobId ? (
+                        <Link
+                          href={`/jobs/${m.action.jobId}`}
+                          className="font-medium text-primary underline underline-offset-2"
+                        >
+                          {t("Open the follow-up job")}
+                        </Link>
+                      ) : null}
                     </div>
                   ) : null}
                   <div

@@ -156,6 +156,35 @@ except OSError as e: print("refused")'`,
     }
   });
 
+  it("reaches this computer's services only on the ports it is given (Audit 2 → S2-21)", async () => {
+    if (spawnSync("pasta", ["--version"]).status !== 0) return;
+    const w = workspace();
+    const server = createServer((c) => c.end("hello\n")).listen(0, "127.0.0.1");
+    await new Promise((r) => server.once("listening", r));
+    const port = (server.address() as { port: number }).port;
+    const probe = `python3 -c 'import socket
+try:
+  s=socket.create_connection(("127.0.0.1",${port}),3); print(s.recv(10).decode().strip())
+except OSError: print("refused")'`;
+    try {
+      // Off the main thread: the probe's connection needs this process's event loop to answer.
+      const run2 = (spec: SandboxSpec) =>
+        new Promise<string>((resolve) => {
+          const { command, args } = sandbox.wrap(spec);
+          const p = spawn(command, args);
+          let out = "";
+          p.stdout.on("data", (d) => {
+            out += d;
+          });
+          p.on("close", () => resolve(out.trim()));
+        });
+      expect(await run2(spec(w, probe))).toBe("refused");
+      expect(await run2({ ...spec(w, probe), localPorts: [port] })).toBe("hello");
+    } finally {
+      server.close();
+    }
+  });
+
   it("takes every process inside down when the sandbox is killed", async () => {
     const w = workspace();
     const marker = `${Math.floor(Math.random() * 1e6)}.5`;

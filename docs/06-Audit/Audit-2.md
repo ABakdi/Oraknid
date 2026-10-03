@@ -43,7 +43,7 @@ Then [[ADR-029-App-Lock]]: a PIN on every device, checked by the daemon.
 | S2-18 (L) | Low | job inputs | A file input could be a link out of the project (to my keys). | Fixed: its real path must stay in the project. |
 | S2-19 (L) | Low | data | The database files were 0644 (in a 0700 folder). | Fixed: 0600. |
 | S2-20 (R) | Low | relay | A daemon secret could be empty; the 502 said too much; push could post to any address. | Fixed: 32 characters at least; a plain message; push only to the browsers' push services. |
-| S2-21 (C) | Medium | sandbox | TCP on the host's loopback is reachable from a job (the API needs a token; other local services may not). | Open: its own network namespace with `pasta` (package `passt`), next. |
+| S2-21 (C) | Medium | sandbox | TCP on the host's loopback is reachable from a job (the API needs a token; other local services may not). | Fixed 2026-10-03: every sandbox has a network namespace of its own through pasta; this computer's services are reachable only on the ports a project lists or a Leg's own local model; a test checks both. |
 | S2-23 | Low | secrets | Two Oraknid daemons of one user (a second data folder, for a test) share the keychain's entries: configuring one's Nest replaced the other's secret (seen while testing this audit; put back). | Open: name keychain entries per data folder. |
 | S2-22 (L) | Low | port | On a machine with other users, another user could take the port while the daemon is down. | Open: Oraknid assumes a computer that is mine alone; documented in [[Security]]. |
 

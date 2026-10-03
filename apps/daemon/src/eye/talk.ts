@@ -21,6 +21,12 @@ export interface TalkDeps {
   brain: EyeBrain;
   tmpDir: string;
   now?: () => number;
+  /**
+   * New work on an ended job (Jobs-and-Projects → Follow-up jobs): a new
+   * job in the same project, starting from this one's branch, started.
+   * Returns its id.
+   */
+  followUp?: (fromJobId: string, goal: string) => Promise<string>;
 }
 
 const ENDED = new Set(["completed", "cancelled"]);
@@ -118,6 +124,7 @@ function respond(d: TalkDeps, jobId: string, text: string) {
         did: ["Recorded as your decision"],
         silkIds: [entry.id],
         taskIds: [],
+        jobId: null,
       },
     );
   });
@@ -140,7 +147,7 @@ async function handle(d: TalkDeps, jobId: string, text: string) {
     .where(eq(tasks.jobId, jobId))
     .all();
   const state = [
-    `The job is ${job.state}${job.pauseReason ? ` (${job.pauseReason})` : ""}${job.blockedReason ? ` (${job.blockedReason})` : ""}.`,
+    `${ENDED.has(job.state) ? "ENDED. " : ""}The job is ${job.state}${job.pauseReason ? ` (${job.pauseReason})` : ""}${job.blockedReason ? ` (${job.blockedReason})` : ""}.`,
     all.length
       ? `Tasks:\n${all
           .map((t) => {
@@ -185,6 +192,7 @@ async function act(d: TalkDeps, jobId: string, jobState: string, text: string, v
     silkIds.push(e.id);
   };
   let reply = v.reply;
+  let jobRef: string | null = null;
   switch (v.intent) {
     case "instruction":
       keep("decision", v.silk?.title ?? `My instruction: ${firstLine(text)}`, v.silk?.body ?? text);
@@ -208,9 +216,33 @@ async function act(d: TalkDeps, jobId: string, jobState: string, text: string, v
       break;
     case "task": {
       if (ENDED.has(jobState)) {
-        keep("later", v.silk?.title ?? firstLine(text), v.silk?.body ?? text);
-        did.push("Kept for later: the job has ended");
-        reply = `${reply} The job has ended, so I kept it for later instead.`;
+        // A follow-up already working on it takes the message instead of a second one.
+        const open = openFollowUp(d, jobId);
+        if (open) {
+          talk(d, open.id, text);
+          did.push("Passed to the follow-up job");
+          reply = `I passed this to the follow-up job, “${open.title}”, which is working now.`;
+          jobRef = open.id;
+          break;
+        }
+        if (!d.followUp) {
+          keep("later", v.silk?.title ?? firstLine(text), v.silk?.body ?? text);
+          did.push("Kept for later: the job has ended");
+          reply = `${reply} The job has ended, so I kept it for later instead.`;
+          break;
+        }
+        const plan = v.tasks.length
+          ? `\n\nWhat I'd do, in tasks:\n${v.tasks.map((t) => `- ${t.title}: ${t.instructions}`).join("\n")}`
+          : "";
+        try {
+          jobRef = await d.followUp(jobId, `${text}${plan}`);
+          did.push("Started a follow-up job");
+          reply = `This job had ended, so I started a follow-up job in the same project, starting from what it built. ${v.reply}`;
+        } catch (e) {
+          keep("later", v.silk?.title ?? firstLine(text), v.silk?.body ?? text);
+          did.push("Kept for later");
+          reply = `I couldn't start a follow-up job: ${e instanceof Error ? e.message : String(e)} I kept your request for later.`;
+        }
         break;
       }
       if (!v.tasks.length) {
@@ -250,7 +282,18 @@ async function act(d: TalkDeps, jobId: string, jobState: string, text: string, v
     case "question":
       break;
   }
-  add(d, jobId, "eye", reply, { intent: v.intent, did, silkIds, taskIds });
+  add(d, jobId, "eye", reply, { intent: v.intent, did, silkIds, taskIds, jobId: jobRef });
+}
+
+/** The follow-up job this conversation started, while it hasn't ended. */
+function openFollowUp(d: TalkDeps, jobId: string) {
+  for (const m of conversation(d.db, jobId).reverse()) {
+    const id = m.action?.jobId;
+    if (!id) continue;
+    const j = d.db.select().from(jobs).where(eq(jobs.id, id)).get();
+    return j && !ENDED.has(j.state) ? j : null;
+  }
+  return null;
 }
 
 function add(

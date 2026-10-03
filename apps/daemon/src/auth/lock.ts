@@ -296,6 +296,7 @@ const HOME_ONLY = [
   "/projects/createFrom",
   "/projects/setPolicy",
   "/projects/setServers",
+  "/projects/setLocalPorts",
   "/projects/delete",
   "/servers/add",
   "/servers/update",

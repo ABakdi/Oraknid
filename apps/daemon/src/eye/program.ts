@@ -30,7 +30,7 @@ import { sandboxPlan } from "../legs/plan.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor } from "../legs/supervisor.ts";
 import type { Servers } from "../servers/service.ts";
-import { MAX_TASKS_PER_JOB, readSetting } from "../settings.ts";
+import { followUpKey, MAX_TASKS_PER_JOB, projectPorts, readSetting } from "../settings.ts";
 import type { SilkStore } from "../silk/store.ts";
 import type { SkillStore } from "../skills/store.ts";
 import type { McpBroker } from "../tools/broker.ts";
@@ -103,10 +103,14 @@ export function eyeProgram(d: EyeDeps): JobProgram {
     // ── The workspace: a worktree on a job branch, or the folder itself with a shadow repo.
     const ws = await ctx.step("workspace", null, async () => {
       if (project.isGitRepo) {
-        const wt = createWorktree(project.workspacePath, job0.id, slug(job0.title), {
-          release: project.releaseBranch,
-          work: project.workBranch,
-        });
+        const wt = createWorktree(
+          project.workspacePath,
+          job0.id,
+          slug(job0.title),
+          { release: project.releaseBranch, work: project.workBranch },
+          // A follow-up job starts from what the job it follows built.
+          readSetting(d.db, followUpKey(job0.id), z.string().nullable(), null),
+        );
         d.db
           .update(jobs)
           .set({ worktree: wt.path, branch: wt.branch })
@@ -426,6 +430,7 @@ async function runTask(
     tools: job.tools,
     serverIds:
       d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.serverIds ?? [],
+    localPorts: projectPorts(d.db, job.projectId),
     skillChecks: skillChecks(d.skills.version(job.skillId, job.skillVersion)?.body ?? ""),
     otherSkills: (
       d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.skillIds ?? []

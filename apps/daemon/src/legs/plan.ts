@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import type { SandboxPlan } from "@oraknid/leg-sdk";
-import type { Sandbox } from "@oraknid/os";
+import { type Sandbox, withLocalPorts } from "@oraknid/os";
 import type { LegRow } from "./registry.ts";
 
 /**
@@ -29,7 +29,26 @@ function binaryDir(binary: string): string | null {
   return null;
 }
 
-export function sandboxPlan(leg: LegRow, sandbox: Sandbox, legsDir: string): SandboxPlan {
+/**
+ * This computer's ports a Leg's own settings name (a local model at
+ * http://localhost:11434): its sandbox may reach them (Sandboxing → network).
+ */
+export function legLocalPorts(config: unknown): number[] {
+  const ports = new Set<number>();
+  for (const m of JSON.stringify(config ?? {}).matchAll(
+    /\b(?:https?|wss?):\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::(\d{1,5}))?/gi,
+  ))
+    ports.add(m[1] ? Number(m[1]) : m[0].toLowerCase().startsWith("https") ? 443 : 80);
+  return [...ports].filter((p) => p > 0 && p < 65536);
+}
+
+export function sandboxPlan(
+  leg: LegRow,
+  sandbox: Sandbox,
+  legsDir: string,
+  /** The project's ports on this computer its jobs may reach. */
+  localPorts: number[] = [],
+): SandboxPlan {
   const home = join(legsDir, leg.id, "home");
   mkdirSync(home, { recursive: true, mode: 0o700 });
   const config = leg.config as Record<string, unknown>;
@@ -45,7 +64,7 @@ export function sandboxPlan(leg: LegRow, sandbox: Sandbox, legsDir: string): San
     if (typeof config.configDir === "string") writable.push(config.configDir);
   }
   return {
-    sandbox,
+    sandbox: withLocalPorts(sandbox, [...legLocalPorts(config), ...localPorts]),
     home,
     writable,
     readonly: [...new Set(readonly)],

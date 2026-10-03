@@ -47,6 +47,8 @@ export interface BwrapOptions {
   bwrapPath?: string;
   /** Scope abstract sockets with Landlock (default: when the probe says it works). */
   landlock?: boolean;
+  /** A network of its own through pasta (default: when the probe says it works). */
+  pasta?: boolean;
   /** For tests: what exists on the host. */
   exists?: (path: string) => boolean;
   symlinkTarget?: (path: string) => string | undefined;
@@ -61,6 +63,11 @@ export function createBwrapSandbox(options: BwrapOptions = {}): Sandbox {
     landlock ??=
       spawnSync("python3", ["-c", LANDLOCK_SCRIPT, "true"], { timeout: 5000 }).status === 0;
     return landlock;
+  };
+  let pasta = options.pasta;
+  const ownNet = () => {
+    pasta ??= spawnSync("pasta", [...pastaArgs([]), "true"], { timeout: 10_000 }).status === 0;
+    return pasta;
   };
 
   return {
@@ -78,19 +85,30 @@ export function createBwrapSandbox(options: BwrapOptions = {}): Sandbox {
           detail: `bwrap cannot create a sandbox: ${(probe.stderr || "no output").trim()}`,
         };
       }
+      const net = ownNet()
+        ? "each sandbox has a network of its own (pasta): the internet, not this computer's services"
+        : "sandboxes share this computer's network: install passt (pasta) so they can't reach its services";
       return {
         available: true,
         detail: scoped()
-          ? "bubblewrap works; the desktop's sockets are out of reach (Landlock)"
-          : "bubblewrap works, but Landlock can't scope abstract sockets here (needs Linux 6.12+ and python3): a Leg could reach the desktop's sockets",
+          ? `bubblewrap works; the desktop's sockets are out of reach (Landlock); ${net}`
+          : `bubblewrap works, but Landlock can't scope abstract sockets here (needs Linux 6.12+ and python3): a Leg could reach the desktop's sockets; ${net}`,
       };
     },
 
     wrap(spec: SandboxSpec) {
+      const isolated = (spec.network ?? true) && !spec.hostNetwork && ownNet();
       const args = bwrapArgs(spec, exists, symlinkTarget);
-      return scoped()
-        ? { command: "python3", args: ["-c", LANDLOCK_SCRIPT, bwrap, ...args] }
-        : { command: bwrap, args };
+      // pasta first: the sandbox gets a network namespace of its own, with the
+      // internet through pasta and only the chosen ports of this computer (Audit 2 → S2-21).
+      // Landlock comes inside pasta: applied before it, pasta's user namespace can't map ids.
+      const confined = scoped()
+        ? ["python3", "-c", LANDLOCK_SCRIPT, bwrap, ...args]
+        : [bwrap, ...args];
+      const line = isolated
+        ? ["pasta", ...pastaArgs(spec.localPorts ?? [], spec.inboundPorts ?? []), ...confined]
+        : confined;
+      return { command: line[0] as string, args: line.slice(1) };
     },
   };
 }
@@ -105,6 +123,14 @@ export function bwrapArgs(
 
   const a: string[] = ["--unshare-all"];
   if (spec.network ?? true) a.push("--share-net");
+  // Inside pasta's user namespace the caller is root: inside, I am myself again.
+  if (typeof process.getuid === "function")
+    a.push(
+      "--uid",
+      String(process.getuid()),
+      "--gid",
+      String(process.getgid?.() ?? process.getuid()),
+    );
   a.push("--die-with-parent", "--new-session");
 
   a.push("--ro-bind", "/usr", "/usr");
@@ -127,6 +153,33 @@ export function bwrapArgs(
 
   a.push("--", spec.command, ...spec.args);
   return a;
+}
+
+/**
+ * pasta's options: configure the namespace like the host, forward nothing
+ * in, from inside forward only `ports` to this computer's localhost, and
+ * don't map the gateway to it (`--no-map-gw`). Then the command.
+ */
+export function pastaArgs(ports: number[], inbound: number[] = []): string[] {
+  const valid = (p: number) => Number.isInteger(p) && p > 0 && p < 65536;
+  const ok = ports.filter(valid);
+  const into = inbound.filter(valid);
+  return [
+    "--config-net",
+    "--quiet",
+    // In: only the given ports, from this computer's localhost, to the sandbox's localhost.
+    ...(into.length
+      ? ["--host-lo-to-ns-lo", ...into.flatMap((p) => ["-t", `127.0.0.1/${p}`])]
+      : ["-t", "none"]),
+    "-u",
+    "none",
+    "-T",
+    ok.length ? ok.join(",") : "none",
+    "-U",
+    "none",
+    "--no-map-gw",
+    "--",
+  ];
 }
 
 function readSymlink(path: string): string | undefined {

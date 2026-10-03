@@ -72,6 +72,8 @@ export class LegLogins {
           readonly: plan.readonly,
           home,
           env,
+          // Signing in may need the browser's callback to reach it: this computer's network, while I sign in.
+          hostNetwork: true,
         })
       : { command, args: argv };
     return { ...wrapped, env, cwd: home };

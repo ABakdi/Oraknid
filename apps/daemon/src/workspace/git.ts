@@ -209,6 +209,8 @@ export function createWorktree(
   jobId: string,
   slug: string,
   branches: { release: string; work: string },
+  /** A branch to start from instead of the work branch (a follow-up job). */
+  from?: string | null,
 ) {
   const g = { cwd: repoPath, base: [] };
   if (!ok(g, ["rev-parse", "--verify", "HEAD"])) {
@@ -238,7 +240,15 @@ export function createWorktree(
       g,
       branchExists
         ? ["worktree", "add", "-q", path, branch]
-        : ["worktree", "add", "-q", "-b", branch, path, branches.work],
+        : [
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            branch,
+            path,
+            from && ok(g, ["rev-parse", "--verify", `refs/heads/${from}`]) ? from : branches.work,
+          ],
     );
   }
   return { path, branch };

@@ -529,7 +529,13 @@ If the check is at fault ("broken": true), give in "command" a corrected check t
 - "later": an idea or request for later, not for now. Put it in "silk" as "later".
 - "stop": the owner wants the work stopped or paused.
 - "question": the owner asks about the job. Answer it in "reply" from what is above; "silk" is null.
-When the message mixes several, pick what matters most and say in "reply" what you did. Never invent facts. "reply" is one or two plain sentences to the owner.`,
+When the message mixes several, pick what matters most and say in "reply" what you did. Never invent facts. "reply" is one or two plain sentences to the owner.${
+        i.state.startsWith("ENDED")
+          ? `
+
+This job has ended. New work ("task", or "go on", "continue", "start working" with work described in the conversation) is done by a follow-up job in the same project that starts from this job's work: give its tasks in "tasks" (dependsOn empty) and say in "reply" that a follow-up job does it. Don't say tasks were added to this job.`
+          : ""
+      }`,
     ]
       .filter(Boolean)
       .join("\n\n");

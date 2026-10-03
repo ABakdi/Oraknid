@@ -6,6 +6,7 @@ import { Link, useLocation } from "wouter";
 import { LegComparison, TokensChart } from "@/components/charts";
 import { Empty, ErrorNote, Loading, PageHeader, Stat, StateBadge } from "@/components/common";
 import { type PageTab, PageTabs } from "@/components/page-tabs";
+import { ProjectNetworkCard } from "@/components/project-network";
 import { ProjectServersCard } from "@/components/project-servers";
 import { ProjectSkillsCard } from "@/components/project-skills";
 import { RulesCard } from "@/components/rules-card";
@@ -147,6 +148,7 @@ function ProjectDetail({ project, tab }: { project: ProjectView; tab?: string })
     { id: "stats", label: t("Stats"), content: () => <ProjectStats id={id} /> },
     { id: "skills", label: t("Skills"), content: () => <ProjectSkillsCard projectId={id} /> },
     { id: "servers", label: t("Servers"), content: () => <ProjectServersCard projectId={id} /> },
+    { id: "network", label: t("Network"), content: () => <ProjectNetworkCard projectId={id} /> },
     {
       id: "commands",
       label: t("Commands"),

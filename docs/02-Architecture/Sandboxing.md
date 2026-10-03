@@ -51,9 +51,20 @@ bwrap --unshare-all --share-net --die-with-parent --new-session \
   sockets (a terminal's single-instance socket, X11) and run code
   outside the sandbox ([[Audit-2]] S2-01). `oraknid doctor` says whether
   it is on.
-- Still reachable: TCP on the host's loopback (the daemon's API, which
-  needs a token; other local services). Its own network namespace, with
-  `pasta` giving it the internet only, is the next step ([[Audit-2]]).
+- **A network of its own** (2026-10-03, [[Audit-2]] S2-21): with `pasta`
+  (package `passt`) the wrapper is `pasta … -- python3 <landlock> bwrap …`:
+  a network namespace with the internet through pasta, nothing forwarded
+  in, and none of this computer's services: not its localhost, not its
+  own address. Only the ports a project lists (Projects → Network), and
+  the local model a Leg's own settings name (`http://localhost:11434`),
+  are forwarded, reached as localhost inside. Landlock goes inside pasta
+  (before it, pasta's user namespace can't map ids); bwrap gives me my
+  own uid back inside. Without pasta, the host's network is shared and
+  `oraknid doctor` says so.
+- A Leg's own server inside (OpenCode's `serve`) gets its port forwarded
+  in, from this computer's localhost to the sandbox's localhost only.
+  Signing a Leg in keeps this computer's network while it lasts: the
+  provider's page may call back to the Leg's login.
 - A Leg's `~/.ssh` is emptied at the start of every attempt and holds
   only that job's servers' keys ([[ADR-026-Servers]]).
 

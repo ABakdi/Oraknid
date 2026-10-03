@@ -111,4 +111,15 @@ fails once merged is redone on top of the newer work.
   (a quota reset) or when I act.
 - **Cancelled**: by me.
 
+
+### Follow-up jobs (2026-10-03)
+
+A job that has ended stays as it is: its result, branch and merge. New
+work I ask The Eye for there ("add volume control", "go on") starts a
+**follow-up job** in the same project: the same skill, autonomy, Legs
+and budget, its goal my message and the tasks The Eye proposes, its
+branch made from the ended job's branch so it continues from what that
+built. It starts at once; the conversation links to it. While it runs,
+more new work I write to the ended job goes to it, not to a third job.
+
 Related: [[Core-Entities]] · [[The-Eye]] · [[Web-UI]] · [[Durability]]

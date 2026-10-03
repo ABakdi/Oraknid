@@ -1,6 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -25,6 +26,18 @@ import {
 // inside the sandbox, over its HTTP API and SSE events (ADR-015).
 
 /** The version this adapter was written and tested against; another one is said in the probe. */
+/** A free port on this computer's localhost. */
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const s = createServer();
+    s.once("error", reject);
+    s.listen(0, "127.0.0.1", () => {
+      const port = (s.address() as { port: number }).port;
+      s.close(() => resolve(port));
+    });
+  });
+}
+
 export const TESTED_VERSION = "2.0.20";
 
 /** The Leg's config (Leg-Adapters → OpenCode). Never a secret: the key is the Leg's credential. */
@@ -192,7 +205,9 @@ async function startServer(
     OPENCODE_CONFIG_CONTENT: configContent(cfg, models, mcp),
     ...(key ? { ORAKNID_PROVIDER_KEY: key } : {}),
   };
-  const args = ["serve", "--stdio", "--port", "0"];
+  // A port chosen here: in a sandbox with a network of its own, this one is forwarded in to OpenCode.
+  const port = await freePort();
+  const args = ["serve", "--stdio", "--port", String(port)];
   const wrapped = plan
     ? plan.sandbox.wrap({
         command: cfg.binary,
@@ -202,6 +217,7 @@ async function startServer(
         readonly: plan.readonly,
         home,
         env,
+        inboundPorts: [port],
       })
     : { command: cfg.binary, args };
   const child = spawn(wrapped.command, wrapped.args, {

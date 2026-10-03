@@ -117,7 +117,15 @@ import type { Notifications } from "../notify/notifications.ts";
 import type { Secrets } from "../os/secrets.ts";
 import type { Paths } from "../paths.ts";
 import type { Servers } from "../servers/service.ts";
-import { MAX_RUNNING_JOBS, MAX_TASKS_PER_JOB, readSetting, writeSetting } from "../settings.ts";
+import {
+  followUpKey,
+  MAX_RUNNING_JOBS,
+  MAX_TASKS_PER_JOB,
+  projectPorts,
+  projectPortsKey,
+  readSetting,
+  writeSetting,
+} from "../settings.ts";
 import type { SilkStore } from "../silk/store.ts";
 import type { SkillStore } from "../skills/store.ts";
 import { pruneLogs, storageUsage } from "../storage/storage.ts";
@@ -231,6 +239,48 @@ const GatedActionSchema = z.enum([
 
 /** Errors carry a sentence for the UI (BR-17). */
 const userError = (message: string) => new ORPCError("BAD_REQUEST", { message });
+
+/** A job started: its tools are set up first (ADR-021). */
+async function startJob(c: ApiContext, id: string) {
+  const job = c.jobs.get(id);
+  const missing = job ? c.tools.missing(job.tools) : [];
+  if (missing.length)
+    throw new Error(
+      `Set up ${missing.map((m) => `"${m}"`).join(", ")} in Settings → Tools first: the skill needs ${missing.length === 1 ? "it" : "them"}.`,
+    );
+  for (const row of job ? c.tools.byNames(job.tools) : []) {
+    const view = await c.tools.view(row, []);
+    if (view.missingSecrets.length)
+      throw new Error(
+        `The tool "${row.name}" is missing its secret ${view.missingSecrets.join(", ")}: set it in Settings → Tools.`,
+      );
+  }
+  return c.runner.start(id);
+}
+
+/**
+ * New work on an ended job (Jobs-and-Projects → Follow-up jobs): a job in
+ * the same project, with the same skill and choices, starting from the
+ * ended job's branch, started at once.
+ */
+async function followUp(c: ApiContext, fromId: string, goal: string): Promise<string> {
+  const from = c.jobs.db.select().from(jobsTable).where(eq(jobsTable.id, fromId)).get();
+  if (!from) throw new Error(`No job ${fromId}.`);
+  const id = c.projects.createJob({
+    projectId: from.projectId,
+    goal: `${goal}\n\nThis continues the job “${from.title}”: start from what it built${from.branch ? ` (its branch ${from.branch}, where this job starts)` : ""}.`,
+    skillId: from.skillId,
+    autonomy: from.autonomy,
+    allowedLegIds: from.allowedLegIds as string[],
+    verify: [],
+    inputs: [],
+    unsandboxed: false,
+    budget: from.budget,
+  } as never);
+  if (from.branch) writeSetting(c.jobs.db, followUpKey(id), z.string(), from.branch);
+  await startJob(c, id);
+  return id;
+}
 
 const SkillSummary = z.object({
   id: z.string(),
@@ -398,6 +448,30 @@ export const router = {
         guard(async () => ({ ...(await projectFrom(c, input)), jobCount: 0 })),
       ),
     list: base.output(z.array(ProjectView)).handler(({ context: c }) => c.projects.list()),
+    /** Ports on this computer its jobs may reach, like a local database (Sandboxing → network). */
+    localPorts: base
+      .input(z.object({ id: z.string() }))
+      .output(z.array(z.number().int()))
+      .handler(({ context: c, input }) => projectPorts(c.jobs.db, input.id)),
+    setLocalPorts: base
+      .input(
+        z.object({ id: z.string(), ports: z.array(z.number().int().min(1).max(65535)).max(32) }),
+      )
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          c.projects.require(input.id);
+          writeSetting(c.jobs.db, projectPortsKey(input.id), z.array(z.number().int()), [
+            ...new Set(input.ports),
+          ]);
+          c.bus.publish({
+            type: "project.localPorts",
+            topic: "overview",
+            jobId: null,
+            payload: { projectId: input.id, ports: input.ports },
+            actor: "owner",
+          });
+        }),
+      ),
     /** The servers its jobs may use (Servers → Servers in projects). */
     setServers: base
       .input(z.object({ id: z.string(), serverIds: z.array(z.string()) }))
@@ -1174,25 +1248,9 @@ export const router = {
           return { id: c.projects.createJob(input) };
         }),
       ),
-    start: base.input(z.object({ id: z.string() })).handler(({ context: c, input }) =>
-      guard(async () => {
-        // A job's tools are set up before it starts (ADR-021).
-        const job = c.jobs.get(input.id);
-        const missing = job ? c.tools.missing(job.tools) : [];
-        if (missing.length)
-          throw new Error(
-            `Set up ${missing.map((m) => `"${m}"`).join(", ")} in Settings → Tools first: the skill needs ${missing.length === 1 ? "it" : "them"}.`,
-          );
-        for (const row of job ? c.tools.byNames(job.tools) : []) {
-          const view = await c.tools.view(row, []);
-          if (view.missingSecrets.length)
-            throw new Error(
-              `The tool "${row.name}" is missing its secret ${view.missingSecrets.join(", ")}: set it in Settings → Tools.`,
-            );
-        }
-        return c.runner.start(input.id);
-      }),
-    ),
+    start: base
+      .input(z.object({ id: z.string() }))
+      .handler(({ context: c, input }) => guard(() => startJob(c, input.id))),
     get: base
       .input(z.object({ id: z.string() }))
       .output(JobView)
@@ -1251,6 +1309,7 @@ export const router = {
               brain: c.brain,
               tmpDir: c.tmpDir,
               now: c.now,
+              followUp: (from, goal) => followUp(c, from, goal),
             },
             input.id,
             input.text.trim(),

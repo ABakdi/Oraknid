@@ -45,6 +45,8 @@ export interface StartRequest {
   resumeFrom?: string | null;
   /** Only when I explicitly chose an unsandboxed job (ADR-006). */
   unsandboxed?: boolean;
+  /** Ports on this computer the session may reach: its project's (Sandboxing → network). */
+  localPorts?: number[];
   onPermission: (request: PermissionRequest) => Promise<PermissionDecision>;
   /** The job's tools through the broker (ADR-021): servers, and what the sandbox must reach. */
   tools?: { servers: Record<string, McpServer>; writable: string[]; readonly: string[] };
@@ -167,7 +169,11 @@ export class LegSupervisor {
         resumeFrom: req.resumeFrom ?? null,
         sandbox: req.unsandboxed
           ? null
-          : withTools(sandboxPlan(leg, this.o.sandbox, this.o.legsDir), req.tools, req.readonly),
+          : withTools(
+              sandboxPlan(leg, this.o.sandbox, this.o.legsDir, req.localPorts ?? []),
+              req.tools,
+              req.readonly,
+            ),
         credential: await registry.credential(leg),
         onPermission: req.onPermission,
         ...(req.tools ? { mcpServers: req.tools.servers } : {}),

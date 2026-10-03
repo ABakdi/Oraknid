@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import type { z } from "zod";
+import { z } from "zod";
 import type { Db } from "./db/open.ts";
 import { settings } from "./db/schema.ts";
 
@@ -41,3 +41,12 @@ export const MAX_RUNNING_JOBS = "jobs.maxRunning";
 
 /** How many tasks of one job run at once (ADR-016). */
 export const MAX_TASKS_PER_JOB = "jobs.maxTasks";
+
+/** The branch a follow-up job starts from: the one the job it follows built (Jobs-and-Projects). */
+export const followUpKey = (jobId: string) => `job.startFrom.${jobId}`;
+
+/** A project's ports on this computer its jobs' sandboxes may reach (Sandboxing → network). */
+export const projectPortsKey = (projectId: string) => `project.localPorts.${projectId}`;
+
+export const projectPorts = (db: Db, projectId: string): number[] =>
+  readSetting(db, projectPortsKey(projectId), z.array(z.number().int()), []);

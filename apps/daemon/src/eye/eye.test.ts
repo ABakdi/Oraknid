@@ -1709,12 +1709,23 @@ describe("talking to The Eye (Checkpoint 1 → F1-4)", () => {
     expect(kinds).toContainEqual(["fact", "The server runs Debian 12"]);
     expect(kinds).toContainEqual(["later", "Add a dark theme"]);
     expect(kinds).toContainEqual(["decision", "My note: boom"]);
-    // New work for a finished job is kept for later, not lost.
+    // New work for a finished job starts a follow-up job, from what it built.
     await api.jobs.talk({ id, text: "more" });
-    expect((await reply(api, id, 6)).at(-1)?.action?.did).toEqual([
-      "Kept for later: the job has ended",
-    ]);
-  });
+    const last = (await reply(api, id, 6)).at(-1);
+    expect(last?.action?.did).toEqual(["Started a follow-up job"]);
+    const next = last?.action?.jobId as string;
+    const first = await api.jobs.get({ id });
+    const follow = await until(api, next, ["completed", "blocked"]);
+    expect(follow).toMatchObject({ projectId: first.projectId, state: "completed" });
+    expect(follow.goal).toContain(`This continues the job “${first.title}”`);
+    // Its branch starts where the first job's ended.
+    const ancestor = spawnSync(
+      "git",
+      ["merge-base", "--is-ancestor", first.branch as string, follow.branch as string],
+      { cwd: first.worktree as string },
+    );
+    expect(ancestor.status).toBe(0);
+  }, 60_000);
 });
 
 describe("a finished job's result (Checkpoint 1 → F1-5)", () => {

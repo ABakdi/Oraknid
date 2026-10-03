@@ -120,6 +120,8 @@ export interface AttemptJob {
   skillChecks?: string;
   /** The servers its project gave it (Servers → Servers in projects). */
   serverIds?: string[];
+  /** Its project's ports on this computer its sandboxes may reach (Sandboxing → network). */
+  localPorts?: number[];
   /** The project's other skills, whose guidance a task may get (Skills → Skills per project). */
   otherSkills?: { name: string; body: string }[];
   /** The job's inputs, rendered for context packs. */
@@ -657,6 +659,7 @@ export async function runAttempt(
       systemPrompt: pack(),
       prompt,
       unsandboxed: job.unsandboxed,
+      localPorts: job.localPorts ?? [],
       onPermission,
       ...(tools ? { tools } : {}),
     });
@@ -910,7 +913,7 @@ export async function runAttempt(
         event("task.verifying", {});
         const plan = job.unsandboxed
           ? null
-          : sandboxPlan(d.registry.require(leg.legId), d.sandbox, d.legsDir);
+          : sandboxPlan(d.registry.require(leg.legId), d.sandbox, d.legsDir, job.localPorts ?? []);
         const check = () =>
           runVerify(task.verify, ws.cwd, plan, {
             signal,

@@ -391,6 +391,8 @@ export const EyeMessage = z.object({
       did: z.array(z.string()),
       silkIds: z.array(Id).default([]),
       taskIds: z.array(Id).default([]),
+      /** A follow-up job it started for new work on an ended job. */
+      jobId: Id.nullable().default(null),
     })
     .nullable(),
   createdAt: Timestamp,

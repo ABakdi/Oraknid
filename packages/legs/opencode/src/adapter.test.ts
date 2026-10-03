@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { legContract, readUntil } from "@oraknid/leg-sdk/contract";
-import { createBwrapSandbox } from "@oraknid/os";
+import { createBwrapSandbox, withLocalPorts } from "@oraknid/os";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createOpenCodeAdapter, permissionRequests } from "./adapter.ts";
 import { type FakeMode, startFakeModel } from "./fake-model.ts";
@@ -54,7 +54,8 @@ describe.skipIf(!HAVE)("the OpenCode adapter against the real binary", () => {
       prompt: "Write a file.",
       resumeFrom: null,
       sandbox: {
-        sandbox,
+        // The stand-in model is on this computer's localhost: open its port, as the daemon does for a Leg's local model.
+        sandbox: withLocalPorts(sandbox, [Number(new URL(fake.url).port)]),
         home: legHome,
         writable: [],
         readonly: [],
