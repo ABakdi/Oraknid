@@ -11,7 +11,7 @@ const JOB: Record<JobState, readonly JobState[]> = {
   waiting: ["running", "interviewing", "planning", "verifying", "paused", "cancelled"],
   paused: ["running", "interviewing", "planning", "verifying", "cancelled"],
   blocked: ["running", "planning", "paused", "cancelled"],
-  verifying: ["running", "completed", "paused", "waiting", "cancelled"],
+  verifying: ["running", "completed", "paused", "waiting", "blocked", "cancelled"],
   completed: [],
   cancelled: [],
 };

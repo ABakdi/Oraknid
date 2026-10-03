@@ -41,6 +41,13 @@ describe("job life cycle", () => {
   });
 });
 
+describe("a job whose verification can't go on", () => {
+  it("blocks from verifying, so a failed replan doesn't leave it verifying forever", () => {
+    expect(canJob("verifying", "blocked")).toBe(true);
+    expect(canJob("blocked", "running")).toBe(true);
+  });
+});
+
 describe("task life cycle", () => {
   it("is done only through verifying (BR-1)", () => {
     for (const s of TaskState.options) {

@@ -99,6 +99,7 @@ stateDiagram-v2
     verifying --> completed
     verifying --> waiting: the end steps need my answer (which GitHub repo)
     waiting --> verifying: answered
+    verifying --> blocked: verification failed and no new plan could be made
     running --> cancelled
     paused --> cancelled
     blocked --> cancelled
