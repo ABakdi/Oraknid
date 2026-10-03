@@ -330,7 +330,9 @@ describe("the helper (ADR-041)", () => {
     });
     await api.helper.send({ text: "I don't see it" });
     await settled(api, 4);
-    expect(prompts[1]).toMatch(/highlight → failed: It couldn't be shown in the browser: .*isn't on/);
+    expect(prompts[1]).toMatch(
+      /highlight → failed: It couldn't be shown in the browser: .*isn't on/,
+    );
     // Shown after all (Show me again): done again. Not for an unknown action or one the daemon ran.
     expect((await api.helper.shown({ messageId: id, index: 0, ok: true })).state).toBe("done");
     await expect(api.helper.shown({ messageId: id, index: 3, ok: false })).rejects.toThrow(
