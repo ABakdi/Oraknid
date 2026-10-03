@@ -167,7 +167,7 @@ function AuditLog() {
             <details key={e.seq}>
               <summary className="flex cursor-pointer flex-wrap gap-x-2 marker:content-['']">
                 <span className="text-muted-foreground">{new Date(e.at).toLocaleString()}</span>
-                <span className="text-chart-2">{e.actor}</span>
+                <span className="text-eye">{e.actor}</span>
                 <span className="text-primary">{e.type}</span>
                 <span className="min-w-0 flex-1 truncate text-muted-foreground" title={describe(e)}>
                   {describe(e)}

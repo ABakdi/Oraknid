@@ -1,81 +1,128 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "./fonts.css";
 
 @custom-variant dark (&:is(.dark *));
 
-/* Dark-first mission control (Web-UI → Look); light is the same system, inverted. */
+/*
+ * The look follows the mark (public/logo.svg): ink surfaces, violet for
+ * what I act on, amber, sparingly, for The Eye and the moments that want
+ * my eye. Dark first; light is the same system on paper (Web-UI → Look).
+ *
+ * Surfaces, lowest to highest: sidebar (recessed) < background (the
+ * canvas) < card < popover. Fields are wells, a step below what holds them.
+ */
 :root {
-  --radius: 0.6rem;
-  --background: oklch(0.985 0.002 260);
-  --foreground: oklch(0.2 0.01 260);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.2 0.01 260);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.2 0.01 260);
-  --primary: oklch(0.52 0.16 275);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.95 0.005 260);
-  --secondary-foreground: oklch(0.25 0.01 260);
-  --muted: oklch(0.955 0.004 260);
-  --muted-foreground: oklch(0.5 0.015 260);
-  --accent: oklch(0.94 0.01 275);
-  --accent-foreground: oklch(0.25 0.02 275);
-  --destructive: oklch(0.58 0.22 27);
-  --border: oklch(0.91 0.006 260);
-  --input: oklch(0.91 0.006 260);
-  --ring: oklch(0.6 0.15 275);
-  --success: oklch(0.6 0.15 155);
-  --warning: oklch(0.72 0.15 75);
-  --chart-1: oklch(0.6 0.17 275);
-  --chart-2: oklch(0.66 0.15 190);
-  --chart-3: oklch(0.72 0.15 75);
-  --chart-4: oklch(0.62 0.18 330);
-  --chart-5: oklch(0.65 0.15 145);
-  --sidebar: oklch(0.97 0.004 260);
-  --sidebar-foreground: oklch(0.25 0.01 260);
+  --radius: 0.5rem;
+
+  --background: #f6f5fa;
+  --foreground: #17141f;
+  --sidebar: #efedf6;
+  --sidebar-foreground: #2a2636;
+  --card: #ffffff;
+  --card-foreground: #17141f;
+  --popover: #ffffff;
+  --popover-foreground: #17141f;
+  --field: #ffffff;
+
+  --primary: #5b45d6;
+  --primary-foreground: #ffffff;
+  --secondary: #eceaf4;
+  --secondary-foreground: #2a2636;
+  --muted: #eeecf4;
+  --muted-foreground: #5c5770;
+  --accent: #ece8fc;
+  --accent-foreground: #241a6b;
+  --eye: #a14d0e;
+  --eye-foreground: #ffffff;
+
+  --destructive: #b01e35;
+  --destructive-foreground: #ffffff;
+  --success: #0f6b42;
+  --warning: #8a5d00;
+
+  --border: #e0dceb;
+  --input: #9c96b4;
+  --ring: #6550e0;
+
+  --chart-1: #6550e0;
+  --chart-2: #d9811f;
+  --chart-3: #0b757b;
+  --chart-4: #c93d8a;
+  --chart-5: #1f9a5b;
+
+  --shadow-color: 250 30% 20%;
+  --elev-1: 0 1px 2px hsl(var(--shadow-color) / 0.06), 0 1px 1px hsl(var(--shadow-color) / 0.04);
+  --elev-2:
+    0 1px 2px hsl(var(--shadow-color) / 0.06), 0 4px 12px -2px hsl(var(--shadow-color) / 0.08);
+  --elev-3:
+    0 2px 4px hsl(var(--shadow-color) / 0.06), 0 16px 40px -8px hsl(var(--shadow-color) / 0.22);
+  --highlight: inset 0 1px 0 rgb(255 255 255 / 0.6);
+  --scrim: rgb(23 20 31 / 0.45);
 }
 
 .dark {
-  --background: oklch(0.15 0.008 260);
-  --foreground: oklch(0.93 0.006 260);
-  --card: oklch(0.19 0.01 260);
-  --card-foreground: oklch(0.93 0.006 260);
-  --popover: oklch(0.2 0.01 260);
-  --popover-foreground: oklch(0.93 0.006 260);
-  --primary: oklch(0.7 0.14 275);
-  --primary-foreground: oklch(0.16 0.02 275);
-  --secondary: oklch(0.24 0.012 260);
-  --secondary-foreground: oklch(0.9 0.006 260);
-  --muted: oklch(0.23 0.01 260);
-  --muted-foreground: oklch(0.66 0.012 260);
-  --accent: oklch(0.27 0.03 275);
-  --accent-foreground: oklch(0.93 0.01 275);
-  --destructive: oklch(0.65 0.2 25);
-  --border: oklch(0.28 0.012 260);
-  --input: oklch(0.3 0.012 260);
-  --ring: oklch(0.6 0.13 275);
-  --success: oklch(0.7 0.15 155);
-  --warning: oklch(0.8 0.14 80);
-  --chart-1: oklch(0.7 0.15 275);
-  --chart-2: oklch(0.72 0.13 190);
-  --chart-3: oklch(0.8 0.14 80);
-  --chart-4: oklch(0.7 0.16 330);
-  --chart-5: oklch(0.72 0.14 150);
-  --sidebar: oklch(0.13 0.008 260);
-  --sidebar-foreground: oklch(0.88 0.006 260);
+  --background: #0e0c16;
+  --foreground: #eceaf5;
+  --sidebar: #0b0a12;
+  --sidebar-foreground: #d6d3e4;
+  --card: #15131f;
+  --card-foreground: #eceaf5;
+  --popover: #1b1828;
+  --popover-foreground: #eceaf5;
+  --field: #0b0a12;
+
+  --primary: #8f7cff;
+  --primary-foreground: #0e0c16;
+  --secondary: #221f31;
+  --secondary-foreground: #dedbec;
+  --muted: #1d1a2a;
+  --muted-foreground: #9c98b0;
+  --accent: #221e36;
+  --accent-foreground: #ece8ff;
+  --eye: #f4a73a;
+  --eye-foreground: #1a1206;
+
+  --destructive: #ff6b7d;
+  --destructive-foreground: #0e0c16;
+  --success: #4cd69b;
+  --warning: #e9c24f;
+
+  --border: #2a2639;
+  --input: #4a4562;
+  --ring: #8f7cff;
+
+  --chart-1: #8f7cff;
+  --chart-2: #f4a73a;
+  --chart-3: #3fc1c9;
+  --chart-4: #f072b6;
+  --chart-5: #5cd08e;
+
+  --shadow-color: 255 40% 2%;
+  --elev-1: 0 1px 2px hsl(var(--shadow-color) / 0.5);
+  --elev-2:
+    0 1px 2px hsl(var(--shadow-color) / 0.5), 0 6px 16px -4px hsl(var(--shadow-color) / 0.6);
+  --elev-3:
+    0 2px 6px hsl(var(--shadow-color) / 0.5), 0 24px 56px -12px hsl(var(--shadow-color) / 0.85);
+  /* On ink, an edge of light reads as height where a shadow can't. */
+  --highlight: inset 0 1px 0 rgb(255 255 255 / 0.045);
+  --scrim: rgb(6 5 11 / 0.7);
 }
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
+  --radius-xs: calc(var(--radius) - 4px);
+  --radius-sm: calc(var(--radius) - 3px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
+  --color-field: var(--field);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
@@ -84,7 +131,10 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-eye: var(--eye);
+  --color-eye-foreground: var(--eye-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -97,8 +147,17 @@
   --color-chart-5: var(--chart-5);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
-  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --shadow-xs: var(--elev-1);
+  --shadow-sm: var(--elev-1);
+  --shadow-md: var(--elev-2);
+  --shadow-lg: var(--elev-3);
+  --shadow-xl: var(--elev-3);
+  /* A raised surface: an edge of light and a little shadow. */
+  --shadow-raised: var(--highlight), var(--elev-1);
+  --font-sans: "IBM Plex Sans Variable", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono:
+    "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @layer base {
@@ -110,24 +169,54 @@
   #root {
     @apply h-full;
   }
-  body {
-    @apply bg-background text-foreground antialiased;
-    font-feature-settings: "tnum" 1;
+  html {
+    color-scheme: light;
   }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+    font-feature-settings: "tnum" 1;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 32%, transparent);
+  }
+  /* Thin scrollbars that sit back. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--muted-foreground) 35%, transparent) transparent;
+  }
+  kbd {
+    @apply font-mono;
+  }
+}
+
+/* A small uppercase label: the voice of an instrument panel (headings of tables, groups, stats). */
+@utility eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
 }
 
 /* React Flow follows the theme. */
 .react-flow {
   --xy-background-color: transparent;
-  --xy-edge-stroke: var(--border);
+  --xy-edge-stroke: var(--input);
   --xy-minimap-background-color: var(--card);
 }
 
 .react-flow__controls {
-  box-shadow: none;
+  box-shadow: var(--elev-2);
+  border-radius: var(--radius-md);
+  overflow: hidden;
 }
 .react-flow__controls-button {
-  background: var(--card);
+  background: var(--popover);
   color: var(--foreground);
   border-color: var(--border);
   fill: currentColor;

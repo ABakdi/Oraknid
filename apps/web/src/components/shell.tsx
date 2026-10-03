@@ -65,6 +65,9 @@ const NAV = [
 ];
 /** On a phone: four tabs and "More" (Web-UI → Layout). */
 const TABS = ["/", "/jobs", "/inbox", "/legs"];
+/** A phone tab; the one I'm on gets a violet bar on top. */
+const TAB =
+  "relative flex min-h-14 flex-col items-center justify-center gap-0.5 text-[11px] text-muted-foreground before:absolute before:top-0 before:left-1/2 before:h-0.5 before:w-8 before:-translate-x-1/2 before:rounded-b-full before:bg-primary before:opacity-0 before:transition-opacity";
 
 /** Pages with a side panel of their own fold the sidebar while open (Web-UI → Layout). */
 const FOLDS = [/^\/chats/, /^\/terminal/, /^\/mail/, /^\/jobs\/(?!new)[^/]+/];
@@ -188,22 +191,25 @@ export function Shell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b bg-background/85 px-3 backdrop-blur md:px-4">
-        <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
-          <img src="/icon.svg" alt="" className="size-6" />
+      <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b bg-sidebar/85 px-3 backdrop-blur-md md:px-4">
+        <Link
+          href="/"
+          className="-ml-1 flex items-center gap-2 rounded-md px-1 py-1 text-[15px] font-semibold tracking-tight outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <img src="/logo.svg" alt="" className="size-7" />
           <span>Oraknid</span>
         </Link>
         <Tooltip>
           <TooltipTrigger asChild>
             <span
-              className="ml-1 flex items-center gap-1.5 text-xs text-muted-foreground"
+              className="ml-1 flex items-center gap-1.5 rounded-full font-mono text-[10.5px] font-medium tracking-[0.08em] text-muted-foreground uppercase sm:border sm:bg-background/60 sm:py-0.5 sm:pr-2 sm:pl-1.5"
               aria-live="polite"
             >
               <span
                 className={cn(
                   "size-2 rounded-full",
                   status === "live"
-                    ? "bg-success"
+                    ? "bg-success shadow-[0_0_0_3px_color-mix(in_srgb,var(--success)_22%,transparent)]"
                     : status === "reconnecting"
                       ? "animate-pulse bg-warning"
                       : "bg-destructive",
@@ -233,14 +239,14 @@ export function Shell({ children }: { children: ReactNode }) {
         ) : null}
         <div className="flex-1" />
         <Button
-          variant="ghost"
+          variant="outline"
           size="sm"
-          className="hidden gap-2 text-muted-foreground sm:flex"
+          className="hidden w-60 justify-start gap-2 bg-field font-normal text-muted-foreground shadow-none hover:text-foreground sm:flex lg:w-72"
           onClick={() => setPalette(true)}
         >
           <Search className="size-4" />
           <span>{t("Search or run…")}</span>
-          <kbd className="rounded border px-1 text-[10px]">⌘K</kbd>
+          <kbd className="ml-auto rounded-sm border bg-muted px-1.5 text-[10px] leading-4">⌘K</kbd>
         </Button>
         <Button
           variant="ghost"
@@ -254,7 +260,11 @@ export function Shell({ children }: { children: ReactNode }) {
         <Button asChild variant="ghost" size="sm" className="gap-1.5" aria-label={t("Inbox")}>
           <Link href="/inbox">
             <Inbox className="size-4" />
-            {open ? <Badge className="h-5 min-w-5 justify-center px-1">{open}</Badge> : null}
+            {open ? (
+              <Badge className="h-5 min-w-5 justify-center bg-eye px-1 text-eye-foreground">
+                {open}
+              </Badge>
+            ) : null}
           </Link>
         </Button>
         <Button
@@ -276,7 +286,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <div className="flex min-h-0 flex-1">
         <nav
           className={cn(
-            "hidden shrink-0 flex-col gap-0.5 border-r bg-sidebar p-2 pb-16 transition-[width] md:flex",
+            "hidden shrink-0 flex-col gap-0.5 border-r bg-sidebar p-2 pt-3 pb-16 transition-[width] duration-200 ease-out md:flex",
             folded ? "w-14" : "w-48",
           )}
           aria-label={t("Main")}
@@ -288,9 +298,11 @@ export function Shell({ children }: { children: ReactNode }) {
                 href={href}
                 aria-label={folded ? t(label) : undefined}
                 className={cn(
-                  "relative flex items-center gap-2 rounded-md px-2.5 py-2 text-sm text-sidebar-foreground/80 hover:bg-accent hover:text-accent-foreground",
+                  // The page I'm on: lit, with a violet edge, like the palette's chosen row.
+                  "relative flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-sm text-sidebar-foreground/75 outline-none transition-colors duration-150 before:absolute before:inset-y-1.5 before:-left-2 before:w-[3px] before:rounded-r-full before:bg-primary before:opacity-0 before:transition-opacity hover:bg-accent/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
                   folded && "justify-center px-0",
-                  active(href) && "bg-accent font-medium text-accent-foreground",
+                  active(href) &&
+                    "bg-accent font-medium text-accent-foreground before:opacity-100 [&>svg]:text-primary",
                 )}
               >
                 <Icon className="size-4 shrink-0" />
@@ -298,7 +310,7 @@ export function Shell({ children }: { children: ReactNode }) {
                 {href === "/inbox" && open ? (
                   <Badge
                     className={cn(
-                      "h-5 min-w-5 justify-center px-1",
+                      "h-5 min-w-5 justify-center bg-eye px-1 text-eye-foreground",
                       folded && "absolute -right-1 -top-1 h-4 min-w-4 text-[10px]",
                     )}
                   >
@@ -336,7 +348,7 @@ export function Shell({ children }: { children: ReactNode }) {
       </div>
 
       <nav
-        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t bg-sidebar/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
         aria-label={t("Main")}
       >
         {NAV.filter((n) => TABS.includes(n.href)).map(({ href, label, icon: Icon }) => (
@@ -344,14 +356,14 @@ export function Shell({ children }: { children: ReactNode }) {
             key={href}
             href={href}
             className={cn(
-              "flex min-h-14 flex-col items-center justify-center gap-0.5 text-[11px] text-muted-foreground",
-              active(href) && "text-primary",
+              TAB,
+              active(href) && "font-medium text-foreground before:opacity-100 [&_svg]:text-primary",
             )}
           >
             <span className="relative">
               <Icon className="size-5" />
               {href === "/inbox" && open ? (
-                <span className="absolute -right-2 -top-1 rounded-full bg-primary px-1 text-[10px] text-primary-foreground">
+                <span className="absolute -right-2.5 -top-1.5 min-w-4 rounded-sm bg-eye px-1 text-center text-[10px] leading-4 font-medium text-eye-foreground tabular-nums">
                   {open}
                 </span>
               ) : null}
@@ -364,8 +376,9 @@ export function Shell({ children }: { children: ReactNode }) {
           aria-expanded={more}
           onClick={() => setMore((m) => !m)}
           className={cn(
-            "flex min-h-14 flex-col items-center justify-center gap-0.5 text-[11px] text-muted-foreground",
-            (more || NAV.some((n) => !TABS.includes(n.href) && active(n.href))) && "text-primary",
+            TAB,
+            (more || NAV.some((n) => !TABS.includes(n.href) && active(n.href))) &&
+              "font-medium text-foreground before:opacity-100 [&_svg]:text-primary",
           )}
         >
           <Wand2 className="size-5" />
@@ -382,7 +395,7 @@ export function Shell({ children }: { children: ReactNode }) {
         />
       ) : null}
       {more ? (
-        <div className="fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-[45] grid grid-cols-2 gap-1 border-t bg-background p-2 md:hidden">
+        <div className="fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-[45] grid grid-cols-2 gap-1 rounded-t-xl border-t bg-popover p-2 shadow-[var(--highlight),var(--elev-3)] md:hidden">
           {[
             { href: "/new", label: "New work", icon: Plus },
             ...NAV.filter((n) => !TABS.includes(n.href)),
@@ -392,11 +405,11 @@ export function Shell({ children }: { children: ReactNode }) {
               href={href}
               onClick={() => setMore(false)}
               className={cn(
-                "flex min-h-11 items-center gap-2 rounded-md px-3 text-sm hover:bg-accent",
-                active(href) && "bg-accent font-medium",
+                "flex min-h-11 items-center gap-2.5 rounded-md px-3 text-sm hover:bg-accent",
+                active(href) && "bg-accent font-medium text-accent-foreground [&_svg]:text-primary",
               )}
             >
-              <Icon className="size-4" />
+              <Icon className="size-4 text-muted-foreground" />
               {t(label)}
             </Link>
           ))}
@@ -434,7 +447,7 @@ function ShortcutsDialog({
                   {s.keys.split(" ").map((k) => (
                     <kbd
                       key={k}
-                      className="mr-1 rounded border bg-muted px-1.5 py-0.5 font-mono text-[11px]"
+                      className="mr-1 rounded-sm border border-b-2 bg-muted px-1.5 py-px font-mono text-[11px]"
                     >
                       {k}
                     </kbd>

@@ -22,12 +22,20 @@ export function LockScreen({
   onUnlocked: () => void;
 }) {
   return (
-    <div className="flex min-h-full items-center justify-center p-4">
+    // The mark under a violet glow, the pad in a raised panel.
+    <div className="flex min-h-full items-center justify-center bg-[radial-gradient(ellipse_70%_55%_at_50%_0%,color-mix(in_srgb,var(--primary)_14%,transparent),transparent)] p-4">
       <div className="w-full max-w-xs space-y-6">
-        <div className="flex flex-col items-center gap-2">
-          <img src="/icon.svg" alt="" className="size-10" />
-          <div className="flex items-center gap-1.5 text-lg font-semibold">
-            <Lock className="size-4" /> Oraknid
+        <div className="flex flex-col items-center gap-3">
+          <img
+            src="/logo.svg"
+            alt=""
+            className="size-20 drop-shadow-[0_6px_24px_color-mix(in_srgb,var(--eye)_35%,transparent)]"
+          />
+          <div className="flex items-center gap-1.5 text-xl font-semibold tracking-tight">
+            Oraknid
+          </div>
+          <div className="eyebrow flex items-center gap-1.5">
+            <Lock className="size-3" /> {t("Locked")}
           </div>
         </div>
         {pinSet ? (
@@ -123,7 +131,7 @@ function PinPad({ onUnlocked }: { onUnlocked: () => void }) {
           <span
             // biome-ignore lint/suspicious/noArrayIndexKey: dots have no identity
             key={i}
-            className={`size-3 rounded-full border ${i < pin.length ? "bg-foreground" : ""}`}
+            className={`size-3 rounded-full border-2 transition-colors duration-150 ${i < pin.length ? "border-eye bg-eye" : "border-input"}`}
           />
         ))}
       </div>
@@ -134,7 +142,7 @@ function PinPad({ onUnlocked }: { onUnlocked: () => void }) {
         ))}
         <Button
           variant="ghost"
-          className="h-16 text-sm"
+          className="h-16 rounded-xl text-sm"
           aria-label={t("Delete")}
           onClick={() => setPin((p) => p.slice(0, -1))}
         >
@@ -142,7 +150,7 @@ function PinPad({ onUnlocked }: { onUnlocked: () => void }) {
         </Button>
         <Digit d="0" onPress={() => setPin((p) => (p.length < 12 ? `${p}0` : p))} />
         <Button
-          className="h-16 text-base"
+          className="h-16 rounded-xl text-base"
           disabled={pin.length < 6 || busy}
           onClick={() => void submit(pin)}
         >
@@ -165,7 +173,11 @@ function PinPad({ onUnlocked }: { onUnlocked: () => void }) {
 
 function Digit({ d, onPress }: { d: string; onPress: () => void }) {
   return (
-    <Button variant="outline" className="h-16 text-2xl font-medium" onClick={onPress}>
+    <Button
+      variant="outline"
+      className="h-16 rounded-xl font-mono text-2xl font-medium"
+      onClick={onPress}
+    >
       {d}
     </Button>
   );

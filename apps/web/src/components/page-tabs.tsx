@@ -71,7 +71,7 @@ export function PageTabs({
       <div
         ref={list}
         role="tablist"
-        className="flex shrink-0 gap-1 overflow-x-auto border-b [scrollbar-width:none]"
+        className="isolate flex shrink-0 gap-0.5 overflow-x-auto border-b [scrollbar-width:none]"
       >
         {tabs.map((x, i) => (
           <button
@@ -83,13 +83,20 @@ export function PageTabs({
             // The entry keeps what it was opened with (where I came from), only the tab changes.
             onClick={() => go(`${base}/${x.id}`, { replace: true, state: history.state })}
             className={cn(
-              "-mb-px flex shrink-0 items-center gap-1.5 rounded-t-md border-b-2 border-transparent px-3 py-2 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 pointer-coarse:min-h-11",
+              // A violet rule under the tab I'm on; a soft wash under the one I'm over.
+              "relative -mb-px flex shrink-0 cursor-pointer items-center gap-1.5 border-b-2 border-transparent px-3 py-2 text-sm text-muted-foreground outline-none transition-colors duration-150 after:absolute after:inset-x-1 after:top-1 after:bottom-1 after:-z-10 after:rounded-md after:bg-accent after:opacity-0 after:transition-opacity hover:text-foreground hover:after:opacity-60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset pointer-coarse:min-h-11",
               x.id === current?.id && "border-primary font-medium text-foreground",
             )}
           >
             {x.label}
             {x.badge !== undefined && x.badge !== null && x.badge !== 0 ? (
-              <Badge variant="secondary" className="h-5 min-w-5 justify-center px-1 text-[10px]">
+              <Badge
+                variant="secondary"
+                className={cn(
+                  "h-5 min-w-5 justify-center px-1 font-mono text-[10px]",
+                  x.id === current?.id && "border-primary/30 bg-primary/15 text-primary",
+                )}
+              >
                 {x.badge}
               </Badge>
             ) : null}

@@ -32,7 +32,7 @@ export function PairPage({ onPaired }: { onPaired: () => void }) {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <div className="mb-2 flex items-center gap-2">
-            <img src="/icon.svg" alt="" className="size-8" />
+            <img src="/logo.svg" alt="" className="size-8" />
             <span className="text-lg font-semibold">Oraknid</span>
           </div>
           <CardTitle>{t("Pair this device")}</CardTitle>

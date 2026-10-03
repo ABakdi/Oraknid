@@ -91,8 +91,8 @@ export function cleanMailHtml(
   });
   purify.removeAllHooks();
   const colors = o.dark
-    ? "html{color-scheme:dark}body{background:#16171c;color:#e6e6ea}a{color:#9aa7ff}"
-    : "html{color-scheme:light}body{background:#fff;color:#1c1c22}";
+    ? "html{color-scheme:dark}body{background:#15131f;color:#eceaf5}a{color:#a99bff}"
+    : "html{color-scheme:light}body{background:#fff;color:#17141f}a{color:#5b45d6}";
   const doc = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${frameCsp(o.allowImages)}"><base target="_blank"><style>body{margin:0;padding:4px;font:14px/1.5 system-ui,sans-serif;overflow-wrap:anywhere}img{max-width:100%;height:auto}table{max-width:100%}pre{white-space:pre-wrap}${colors}</style></head><body>${body}</body></html>`;
   return { doc, blocked };
 }

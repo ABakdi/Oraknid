@@ -14,27 +14,27 @@ import { cn } from "@/lib/utils";
 const TONE: Record<string, string> = {
   // jobs
   draft: "bg-muted text-muted-foreground",
-  interviewing: "bg-chart-2/20 text-chart-2",
-  planning: "bg-chart-1/20 text-chart-1",
-  running: "bg-primary/20 text-primary",
-  verifying: "bg-chart-2/20 text-chart-2",
-  waiting: "bg-warning/20 text-warning",
+  interviewing: "bg-eye/15 text-eye",
+  planning: "bg-chart-1/15 text-chart-1",
+  running: "bg-primary/15 text-primary",
+  verifying: "bg-chart-3/15 text-chart-3",
+  waiting: "bg-warning/15 text-warning",
   paused: "bg-muted text-muted-foreground",
-  blocked: "bg-destructive/20 text-destructive",
-  completed: "bg-success/20 text-success",
+  blocked: "bg-destructive/15 text-destructive",
+  completed: "bg-success/15 text-success",
   cancelled: "bg-muted text-muted-foreground line-through",
   // tasks
   pending: "bg-muted text-muted-foreground",
   ready: "bg-secondary text-secondary-foreground",
   assigned: "bg-primary/15 text-primary",
-  done: "bg-success/20 text-success",
-  failed: "bg-destructive/20 text-destructive",
+  done: "bg-success/15 text-success",
+  failed: "bg-destructive/15 text-destructive",
   skipped: "bg-muted text-muted-foreground",
   // legs
-  healthy: "bg-success/20 text-success",
-  degraded: "bg-warning/20 text-warning",
-  "rate-limited": "bg-warning/20 text-warning",
-  unavailable: "bg-destructive/20 text-destructive",
+  healthy: "bg-success/15 text-success",
+  degraded: "bg-warning/15 text-warning",
+  "rate-limited": "bg-warning/15 text-warning",
+  unavailable: "bg-destructive/15 text-destructive",
   disabled: "bg-muted text-muted-foreground",
 };
 
@@ -42,10 +42,14 @@ export function StateBadge({ state, className }: { state: string; className?: st
   return (
     <Badge
       variant="outline"
-      className={cn("border-transparent font-medium capitalize", TONE[state], className)}
+      className={cn(
+        "border-transparent font-medium capitalize ring-1 ring-current/20 ring-inset",
+        TONE[state],
+        className,
+      )}
     >
       {state === "running" || state === "verifying" ? (
-        <span className="mr-1 inline-block size-1.5 animate-pulse rounded-full bg-current" />
+        <span className="mr-0.5 inline-block size-1.5 animate-pulse rounded-full bg-current" />
       ) : null}
       {t(state)}
     </Badge>
@@ -93,14 +97,17 @@ export function PageHeader({
   back?: { fallback: string; label?: string };
 }) {
   return (
-    <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+    <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
       <div className="flex min-w-0 flex-1 items-start gap-1">
         {back ? <BackButton fallback={back.fallback} label={back.label} /> : null}
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-xl font-semibold tracking-tight" title={title}>
+          <h1
+            className="truncate text-[22px] leading-8 font-semibold tracking-[-0.015em]"
+            title={title}
+          >
             {title}
           </h1>
-          {sub ? <div className="text-sm text-muted-foreground">{sub}</div> : null}
+          {sub ? <div className="mt-0.5 text-sm text-muted-foreground">{sub}</div> : null}
         </div>
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
@@ -119,11 +126,25 @@ export function Empty({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-6 text-center sm:p-8">
-      <div className="font-medium">{title}</div>
+    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border bg-card/60 bg-[radial-gradient(ellipse_60%_80%_at_50%_0%,color-mix(in_srgb,var(--primary)_9%,transparent),transparent)] p-6 text-center sm:p-10">
+      <RestingEye />
+      <div className="font-semibold tracking-tight">{title}</div>
       {children ? <div className="max-w-md text-sm text-muted-foreground">{children}</div> : null}
       {action ? <div className="flex flex-wrap justify-center gap-2 pt-1">{action}</div> : null}
     </div>
+  );
+}
+
+/** The mark's eye, small: what an empty screen shows above its words. Decoration only. */
+function RestingEye() {
+  return (
+    <span
+      aria-hidden
+      className="relative mb-1 grid size-10 place-items-center rounded-full border-2 border-primary/70 bg-background"
+    >
+      <span className="size-[26px] rounded-full bg-[radial-gradient(circle_at_40%_36%,#ffd98a,#f4a73a_50%,#c2621b)]" />
+      <span className="absolute h-1.5 w-[22px] rounded-full bg-[#120f1f]" />
+    </span>
   );
 }
 
@@ -134,7 +155,7 @@ export function ErrorNote({ error, className }: { error: unknown; className?: st
     <div
       role="alert"
       className={cn(
-        "rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive",
+        "rounded-md border border-destructive/35 border-l-[3px] border-l-destructive bg-destructive/8 px-3 py-2 text-sm text-destructive",
         className,
       )}
     >
@@ -209,9 +230,11 @@ export function Stat({
   hint?: ReactNode;
 }) {
   return (
-    <div className="min-w-0 rounded-lg border bg-card px-3 py-2">
-      <div className="truncate text-xs text-muted-foreground">{label}</div>
-      <div className="truncate text-lg font-semibold tabular-nums">{value}</div>
+    <div className="min-w-0 rounded-lg border bg-card px-3 py-2.5 shadow-raised">
+      <div className="eyebrow truncate">{label}</div>
+      <div className="mt-1 truncate font-mono text-xl leading-7 font-semibold tracking-tight tabular-nums">
+        {value}
+      </div>
       {hint ? <div className="truncate text-xs text-muted-foreground">{hint}</div> : null}
     </div>
   );
