@@ -101,6 +101,42 @@ asking; pushing anywhere else or rewriting history still asks
 ([[Approvals-and-Autonomy]] → Linked work). The token never reaches a
 Leg.
 
+**Several repos** (2026-10-03, [[ADR-042-Several-Repos-And-Servers]]).
+A project is one repo (its folder is the repository) or several: its
+folder holds git repositories in its folders (`web/`, `api/`, two folders
+down at most, never one inside another, a submodule being its parent's).
+A folder that isn't a repo but holds some becomes a project of several
+when I add it; a folder that is a repo stays a project of one, and the
+repos inside it are added when I ask (the Repo tab's **Find repos in its
+folder**, or **Add a repo**: a folder of it that is a repo, a new empty
+one made a repo, a clone of one of my GitHub repos or of a git URL); the
+project's own repo is then one of them, named after its folder. Each repo
+has its name in the project (its folder's last part by default, unique),
+its branches (BR-14) and its own GitHub link. A repo can be taken out
+of the project; its folder stays. The repos don't change while one of
+the project's jobs runs.
+
+**A job across several repos.** The job's folder
+(`.oraknid/worktrees/<job>` in the project) mirrors the project's: each
+repo the job works in is a worktree on the job branch (one name, the
+same in every repo) at that repo's folder, so a task's paths, scope and
+checks read as in the project (`web/src/**`, `cd web && npm test`). When
+the project's folder is itself one of the repos, the job's folder is its
+worktree and the others sit inside it, never part of its commits. A
+repo is opened when the plan's tasks or a task about to run name it in
+their scope, or when a Leg writes in its folder (what it wrote is kept
+and becomes that worktree's). Checkpoints, D1, rollback and a task's
+diff are per repo, its paths shown under its folder; a repo opened after
+a checkpoint counts from where its worktree started. A task's verified
+work is one commit in each repo it changed, each with its own message
+(`feat(web): …` and `feat(api): …` when it changed both), never one
+commit across them. Planning reads the project's own folders; tasks of
+such a job run one at a time (side by side needs a worktree per task per
+repo: not built). The job's result lists each repo's branch and commits;
+**Merge** computes every repo's merge first and merges each job branch
+into its repo's work branch, or none when one conflicts. A project of
+one repo works as before.
+
 ## Following a job
 
 A job is followed in its project ([[Web-UI]] → Projects): The Web live (the Workflow tab: a box per job, or every job framed)

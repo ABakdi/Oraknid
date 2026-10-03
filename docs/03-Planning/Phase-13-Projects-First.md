@@ -254,10 +254,50 @@ right edge. The site still builds, its page list now read from
 `apps/site/docs/guide.json`.
 
 ### M13.11 — Several repos and servers, each with its role ([[ADR-042-Several-Repos-And-Servers]])
-- [ ] A project of several repos: found in its folder, each with its name, branches and GitHub link
-- [ ] Jobs across them: a worktree and branch per repo touched, checkpoints, commits, checks, merges and pushes per repo
-- [ ] Servers with a role in each project
-- [ ] The Eye picks the server I name and asks to confirm; otherwise asks with my servers and Add a new server; production always confirmed
+- [x] A project of several repos: found in its folder, each with its name, branches and GitHub link (migration 0031 moved the single link into a one-repo project's repo)
+- [~] Jobs across them: a worktree and branch per repo touched, checkpoints, commits, checks, merges and pushes per repo; tasks of such a job run one at a time, side by side not built (ADR-042 → As built)
+- [x] Servers with a role in each project
+- [x] The Eye picks the server I name and asks to confirm; otherwise asks with my servers and Add a new server; production always confirmed
+
+Tested (M13.11, 2026-10-03): `pnpm check` green. Daemon
+(`apps/daemon/src/eye/several-repos.test.ts`, real git repos in temp
+folders, a stand-in GitHub with bare repos; nothing called the real
+GitHub): a folder holding `web/` and `api/` added as a project of two
+repos with their branches; a job whose first task touches both commits
+`feat(web): …` in one and `feat(api): …` in the other, its second task
+`feat: …` in api only; its edit in `web/` outside its scope put back,
+never committed, kept in the trash under `web/`; the task's diff with
+`web/` and `api/` paths; the result listing each repo; rollback of the
+second task taking back api's file only; Merge merging each into its
+`dev`, my checkouts untouched. Repos found again (`apps/admin`), a new
+empty one added, a folder that isn't a repo refused, one taken out; a
+one-repo folder staying one repo, then made several by adding the repo
+inside it. The Eye asking once for both repos' links (`repo:api`,
+`repo:web`), the gh check becoming `oraknid github-repo --repo api` and
+`--repo web`, `push` with `repo: "web"` and `repo: "api"` landing each
+job branch on its own bare repo at the same commit, an unnamed push
+refused by the tool; the built-in checks with `--repo` and `--repo=`.
+An older database's single link moved into its repo (migration 0031),
+a shadow project left with none. Servers: "Deploy the site to
+production" asking only "Deploy to production, vps-2?" (Yes
+recommended) and the Leg told which server is the job's; no server
+named: the project's by role (production last), my other one, Add a
+new server, Go on without; Add a new server waiting until a server is
+added through the API, then asking again with it recommended, saved
+with the role I chose; production confirmed as the only server; a
+plain only server used without a question. All earlier daemon tests
+pass unchanged but two that wrote the project's link straight into the
+database (now into its repo). Web (`project-repo.test.tsx`): the Repo
+tab with two repos (the list, a section and link card per repo, the
+linked one's GitHub read for it alone), Add a repo and Find repos;
+a one-repo project as before; the servers card's roles, production
+marked, a role and a mark saved. By hand on a sample daemon (fake OS,
+a scripted Leg, a stand-in brain and GitHub, its own data folder,
+port 7561, stopped after) in headless Chromium at 1440 and 390 px: the
+Repo tab of `site` (api, web; web's GitHub repo), Settings with roles,
+the job's Result per repo, The Eye's server question with options, Add
+a new server's link and waiting question, `/servers?add=1` opening the
+dialog; nothing wider than the screen.
 
 ## Exit criterion
 

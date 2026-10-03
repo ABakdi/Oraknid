@@ -51,6 +51,16 @@ own SSH folder. Commands on a server go through Oraknid's approvals
 like any other that reaches outside ([[Approvals-and-Autonomy]]); the
 state document says what is there, so the work avoids breaking it.
 
+**A role in each project** (2026-10-03, [[ADR-042-Several-Repos-And-Servers]]):
+next to each ticked server, a word of mine for what it is there
+(testing, staging, production…) and a **Production** mark; a role named
+`production` or `prod` is production without the mark. A server can
+have a different role in each project. A job's sessions get each
+server's role with its state document, production said loud, and the
+one The Eye chose for the job marked as the server for its work. Which
+server a deploy goes to, and when production is confirmed:
+[[The-Eye]] → A project's repos and servers.
+
 ## oraknid-monitor
 
 A small POSIX shell program Oraknid installs on the server, in the
