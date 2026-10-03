@@ -88,6 +88,13 @@ sandbox limits damage, but it doesn't make that safe.
   a Leg: GitHub work is done by the daemon's `github` tool, and a Leg's
   context tells it never to use the `gh` CLI or a token. git's output is
   scrubbed of the token before anyone sees it.
+- Repos ([[ADR-040-Repos-Page]]) reads my repositories in the daemon
+  with the account's token; a browser gets what GitHub said, never a
+  token. A file's text is shown escaped (syntax colouring adds only its
+  own spans), a README or a pull request's description as Markdown
+  without raw HTML or images. Reading works away from home; creating a
+  repository, adding or removing an account and changing a project's
+  GitHub link are done at home or on a device with full rights.
 - Work on a project's linked repo (creating it as I chose, pushing a
   branch, a pull request) runs without asking: the link is my approval.
   A push anywhere else, a force-push, or linked work in a task that read

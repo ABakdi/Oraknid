@@ -161,7 +161,44 @@ Leg's details with fills and resets and Oraknid's share, Ollama's note.
 Not run against a real account (only `claude --help`).
 
 ### M13.9 — Repos ([[ADR-040-Repos-Page]])
-- [ ] A Repos page: accounts, repositories, and in one: code, commits with diffs, branches, pull requests, its project
+- [x] A Repos page: accounts, repositories, and in one: code, commits with diffs, branches, pull requests, its project
+
+Tested (2026-10-03): `pnpm check` green. Daemon
+(`apps/daemon/src/workspace/github-repos.test.ts`, against a stand-in
+GitHub API, `testing/fake-github.ts`; nothing called the real GitHub):
+every account's repositories listed once in two pages of 100, with
+visibility, default branch, last push and the linking project, one
+account's alone, an unknown account refused; a repository's info (an
+empty one said empty, one only another account sees read through it),
+branches, the root folder (folders first) and a subfolder at a branch
+with a slash, the recursive tree, a text file, a binary one, one over
+512 KB, the README (none on an empty repository), a branch's commits in
+pages of 30, none on an empty repository, a commit with each file's
+patch (none for a binary), open and closed (merged) pull requests and
+one with its description, commits and files, a 404 in words; a read
+kept a minute, then asked again with the ETag and the 304 costing
+nothing, a new repository listed at once; the hourly allowance in
+words, used up (the list naming the account and still showing the
+others), and slow down; no response carrying a token; reads allowed
+away from home, creating and linking home only (full rights may). Web
+(`apps/web/src/pages/repos.test.tsx`): the addresses (a branch with a
+slash, a path with a space, a commit, a pull request), `g r`, the list's
+rows and search, opening a repository, Code by default with its tree
+and README, the tab and branch read from the address and a tab click
+changing it, a patch's line numbers, a file's diff marked and coloured
+in its own scrolling block and folded, no diff said, the language by
+name and highlighted lines with a comment across lines and the text
+escaped. By hand on a sample daemon (fake OS, a scripted Leg, the
+stand-in GitHub with two accounts, its own data folder, port 7539) at
+1568 px: the list and the accounts with their allowance, `g r`, the
+code at a branch, a file coloured, a commit's diff, a pull request, a
+repository linked to a project from its Project tab (the list showing
+it live), New work on another account's repository arriving with it
+chosen; at 390 px (headless Chromium, the window couldn't be narrowed):
+the list, a file, a commit's diff and the More menu with Repos, the
+page never wider than the screen. Found by hand and fixed: New work's
+repo picker failed on an empty repository; the allowance didn't show
+until a reload.
 
 ### M13.10 — The guide inside, and a helper that shows me ([[ADR-041-Docs-And-A-Guiding-Helper]])
 - [ ] Docs in the sidebar: the guide's pages, a search, Ask the helper about this
