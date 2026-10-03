@@ -1,6 +1,6 @@
 # Backups
 
-Oraknid backs up the databases on your servers: on a schedule, to this computer or to another of your servers, encrypted if you want, and checked when you ask.
+Oraknid backs up the databases on your servers: on a schedule, to this computer, to another of your servers or to your [cloud storage](storage.html), encrypted if you want, and checked when you ask.
 
 ## A backup plan
 
@@ -8,7 +8,7 @@ A **plan** is one database (or all of a server's) and what to do with it. Make o
 
 - **The database**: PostgreSQL, MySQL or MariaDB, MongoDB, Redis or SQLite; in a Docker container (by its name) or on the server itself (host and port); one database or all of them; the user and its password.
 - **When**: every hour, every day at a time, every week, or a cron line, in this computer's time.
-- **Where to**: a folder on this computer (`~` is your home), or a folder on another of your servers.
+- **Where to**: a folder on this computer (`~` is your home), a folder on another of your servers, or a folder in **cloud storage**: the pool (each backup goes where your upload rule puts it) or one provider you pick.
 - **How many to keep**: the last so many, and none older than so many days. The newest good backup always stays.
 - **Encryption**: an age key, or none.
 
@@ -24,6 +24,12 @@ If Oraknid was off at a plan's time, the backup runs when it's back, once, marke
 
 **Run now** runs a plan at once. The switch on a plan pauses it.
 
+To cloud storage, the backup is made on this computer first (in a folder only you can read), then handed to the provider and removed here. One too big for any provider is a failed run that says so. Retention removes old backups from the provider too, and a provider a plan or a kept backup needs can't be removed.
+
+## Download a backup
+
+**Download** on a backup brings it to this browser, wherever it is kept: as stored, or, for an encrypted one, **decrypted with its key** (still compressed: `zstd -d` gives the dump). Downloads work in a browser on the computer running Oraknid, not away from home.
+
 ## Encryption keys
 
 Backups are encrypted with [age](https://age-encryption.org). In **Settings → Backups → Encryption keys**:
@@ -37,7 +43,7 @@ To read a backup by hand: `age -d -i my-key.txt shop.sql.zst.age | zstd -d > sho
 
 ## Verify
 
-**Verify** on a backup reads it back: checks its checksum, decrypts it, decompresses it and looks at the dump itself (a whole PostgreSQL or MySQL dump, a complete MongoDB archive, a Redis file, a SQLite database). It says what it found.
+**Verify** on a backup reads it back (one in cloud storage is downloaded into a temporary file first): checks its checksum, decrypts it, decompresses it and looks at the dump itself (a whole PostgreSQL or MySQL dump, a complete MongoDB archive, a Redis file, a SQLite database). It says what it found.
 
 ## Restore
 

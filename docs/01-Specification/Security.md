@@ -146,8 +146,36 @@ sandbox limits damage, but it doesn't make that safe.
   077` on a server), as `.part` until the dump ends well.
 - Restoring always takes two steps (what it replaces, then the
   database's name typed back) and is only mine: no agent tool reaches
-  backups, and the helper has no restore action. Away from home,
+  backups, and the helper has no restore action. A backup is
+  downloaded (as stored, or decrypted with its key) only to a browser
+  on this computer, through a one-time link. Away from home,
   changing plans or keys and restoring need a device with full rights.
+
+## Cloud storage (2026-10-03, [[ADR-046-Cloud-Storage]])
+- Providers' credentials (S3 keys, Google Drive and Dropbox tokens,
+  MEGA's password) are written only into Oraknid's own rclone config,
+  encrypted with rclone's config encryption; its password is in the
+  keychain and reaches rclone in its environment. No credential is on a
+  command line (tested by watching every process's command line while
+  rclone runs against a real MinIO), in SQLite, a view, an event or a
+  log; an error from adding one is scrubbed of the secret. Without the
+  keychain's password the config can't be read (tested with rclone).
+- Google Drive and Dropbox sign in through rclone's own authorization,
+  on 127.0.0.1, so only a browser on this computer can finish it; the
+  token is held in memory until the provider is added, then only in the
+  config. Adding, changing or removing a provider, and starting a
+  sign-in, are home only for a standard device.
+- Uploads are refused before a byte is read when nothing can take them;
+  they wait in a mine-only temporary folder and are removed after.
+  Downloads are links made by a paired, unlocked device's call, good once
+  and for two minutes, streamed; uploads and downloads are this computer
+  only. Object storage is written private (`acl = private`); nothing
+  makes a file public.
+- Paths are kept inside each provider's root (no `.` or `..`). Deleting
+  asks first, on the page and in the helper; the helper's uploads ask
+  first too, and it never sends a hidden file, one in a hidden folder,
+  or anything of Oraknid's data folder. File names are untrusted data
+  to it. No agent tool reaches cloud storage.
 
 ## Mail
 - Mail passwords (app passwords) are in the keychain, never in SQLite.

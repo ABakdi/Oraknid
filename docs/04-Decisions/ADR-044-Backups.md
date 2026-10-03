@@ -93,7 +93,17 @@ set up from the web interface or by asking the helper.
   a server's Backups tab (`ServerBackupsTab`), which offers the
   databases ADR-043 finds (`servers.databases`) to pick from in a new
   plan: a container's by its name, a host service by its port.
-- **Not yet**: a backup can't be downloaded from the web page (it's a
-  file in its folder); plans can't back up to object storage.
+- **Cloud storage** (2026-10-04, M13.15, [[ADR-046-Cloud-Storage]]): a
+  destination `{kind: "cloud", providerId (null: the pool), folder}`. The
+  backup is made in `<data>/tmp/cloud` (its size decides where it fits),
+  then put in the provider (the run's destination names it, its path is
+  the pool's); too big for any one place is a failed run in words.
+  Retention deletes it there; Verify downloads it into a temporary file
+  first. A provider a plan or a kept backup needs can't be removed.
+- **Download** (2026-10-04): `backups.downloadLink({runId, decrypt?})`,
+  a one-time link for two minutes, streamed from wherever it is (this
+  computer, another server, cloud storage); `decrypt` runs it through
+  age with its key (still zstd-compressed). Only to a browser on this
+  computer; `backup.downloaded` is in the audit trail.
 
 Related: [[ADR-043-Server-Insight]] · [[ADR-026-Servers]] · [[Security]] · [[Business-Rules]] · [[ADR-041-Docs-And-A-Guiding-Helper]]
