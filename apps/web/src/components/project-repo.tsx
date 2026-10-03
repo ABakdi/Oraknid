@@ -181,7 +181,8 @@ export function ProjectReposCard({ project }: { project: ProjectView }) {
                 <span className="text-xs text-muted-foreground">
                   {r.releaseBranch} / {r.workBranch}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-xs">
+                {/* Room to be read: it goes to the next line rather than being cut to nothing. */}
+                <span className="min-w-[min(100%,8.5rem)] flex-1 truncate text-xs">
                   {r.github ? (
                     <span className="font-mono">
                       {r.github.owner}/{r.github.name}
@@ -190,28 +191,30 @@ export function ProjectReposCard({ project }: { project: ProjectView }) {
                     <span className="text-muted-foreground">{t("not on GitHub yet")}</span>
                   )}
                 </span>
-                <Button
-                  data-help="project.repo-edit"
-                  size="icon"
-                  variant="ghost"
-                  className="size-8"
-                  aria-label={t("Change {name}", { name: r.name })}
-                  title={t("Rename it, or change its branches")}
-                  onClick={() => setEditing(r)}
-                >
-                  <Pencil className="size-4" />
-                </Button>
-                {several ? (
+                <span className="ml-auto flex shrink-0 items-center">
                   <Button
+                    data-help="project.repo-edit"
                     size="icon"
                     variant="ghost"
                     className="size-8"
-                    aria-label={t("Take {name} out", { name: r.name })}
-                    onClick={() => remove(r)}
+                    aria-label={t("Change {name}", { name: r.name })}
+                    title={t("Rename it, or change its branches")}
+                    onClick={() => setEditing(r)}
                   >
-                    <X className="size-4" />
+                    <Pencil className="size-4" />
                   </Button>
-                ) : null}
+                  {several ? (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-8"
+                      aria-label={t("Take {name} out", { name: r.name })}
+                      onClick={() => remove(r)}
+                    >
+                      <X className="size-4" />
+                    </Button>
+                  ) : null}
+                </span>
               </li>
             ))}
           </ul>
