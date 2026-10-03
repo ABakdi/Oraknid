@@ -18,6 +18,7 @@ import {
   InboxItem,
   JobResult,
   JobView,
+  LegPlanUsage,
   LegView,
   MailAccountView,
   MailCompose,
@@ -39,6 +40,7 @@ import {
   NotificationChannel,
   NotificationSettings,
   PlanComparison,
+  PlanHistory,
   PlanOutcome,
   ProfileOverrides,
   ProjectBudget,
@@ -113,6 +115,7 @@ import type { Helper } from "../helper/service.ts";
 import type { InboxStore } from "../inbox/store.ts";
 import { discoverAgents } from "../legs/discover.ts";
 import type { LegLogins } from "../legs/login.ts";
+import type { PlanUsage } from "../legs/plan-usage.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import { readSessionLog } from "../legs/session-log.ts";
 import type { MailService } from "../mail/service.ts";
@@ -172,6 +175,8 @@ export interface ApiContext {
   runner: JobRunner;
   registry: LegRegistry;
   health: { check(id: string): Promise<void> };
+  /** A Leg's plan usage in view (ADR-039). */
+  planUsage: PlanUsage;
   /** Logging Claude Code Legs in from the UI. */
   logins: LegLogins;
   /** The link to The Nest (Phase 4). */
@@ -1581,6 +1586,29 @@ export const router = {
     remove: base
       .input(z.object({ id: z.string() }))
       .handler(({ context: c, input }) => guard(() => c.registry.remove(input.id))),
+    /** Every Leg's plan windows, fullest first, with Oraknid's tokens in each (ADR-039). */
+    planUsage: base.output(z.array(LegPlanUsage)).handler(({ context: c }) => c.planUsage.view()),
+    /**
+     * Asks for fresh readings where due (at most every 5 minutes for the
+     * backend's own reading, every 15 for the health prompt), then answers
+     * like planUsage. The Overview and a Leg's details call it while open.
+     */
+    refreshPlanUsage: base.output(z.array(LegPlanUsage)).handler(({ context: c }) =>
+      guard(async () => {
+        await c.planUsage.refresh();
+        return c.planUsage.view();
+      }),
+    ),
+    /** How a Leg's windows moved: readings, fills and resets, over `days` (ADR-039). */
+    planHistory: base
+      .input(z.object({ id: z.string(), days: z.number().int().min(1).max(31).default(8) }))
+      .output(PlanHistory)
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          c.registry.require(input.id);
+          return c.planUsage.history(input.id, c.now() - input.days * 86400_000);
+        }),
+      ),
     setModelHidden: base
       .input(z.object({ modelId: z.string(), hidden: z.boolean() }))
       .handler(({ context: c, input }) =>

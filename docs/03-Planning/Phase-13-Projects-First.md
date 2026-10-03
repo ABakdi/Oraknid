@@ -63,7 +63,21 @@ run locally and the public site checked at 1440 and 390 px.
 - [ ] The interview and The Eye's conversation answer them in tabs, by keyboard and touch
 
 ### M13.5 — Workflow ([[ADR-034-Projects-First]] → Changed)
-- [ ] The tab named Workflow, the diagram filling it, compact and expanded, a job's box opening its own workflow
+- [x] The tab named Workflow, the diagram filling it, compact and expanded, a job's box opening its own workflow
+
+Tested (2026-10-03): `pnpm check` green. Web tests in
+`apps/web/src/components/project-work.test.tsx`: a box per job in the
+order they ran, each after the one before, the current one marked (the
+newest once all ended, never a draft); the drilled-in job's address and
+`/projects/<id>/web` going to `/workflow`; expanded frames stacked
+across and down; the mode kept per project and compact when storage
+refuses. By hand on a sample daemon (fake OS, scripted Legs, its own
+data folder and port, three jobs on the piano project, one running) at
+1440 px and 390 px: the old address redirected, compact with the
+running job highlighted, a box opened (address, All jobs back, a task's
+drawer and Esc), expanded with each job framed, on a phone top to
+bottom with the zoom controls reachable. (The window couldn't be
+resized below the screen, so 390 px was a 390 px frame of the app.)
 
 ### M13.6 — A project's GitHub repo and servers ([[ADR-038-Project-Accounts]])
 - [ ] Several GitHub accounts; a project's GitHub link (account, repo) beside its servers
@@ -85,7 +99,27 @@ the password, Namecheap found from its MX); the form's test (servers
 filled in from the address, port and security together, Test's results).
 
 ### M13.8 — Plan usage in front of me ([[ADR-039-Plan-Usage-In-View]])
-- [ ] Each Claude Code Leg's windows (how full, reset, Oraknid's share) on the Overview and in the Leg's details, with how old it is
+- [x] Each Claude Code Leg's windows (how full, reset, Oraknid's share) on the Overview and in the Leg's details, with how old it is (read through the SDK's usage request, no prompt; the rate-limit events and a 15-minute prompt when it can't: ADR-039 → As built)
+
+Tested (2026-10-03): `pnpm check` green. Adapter
+(`packages/legs/claude-code/src/adapter.test.ts`): the plan's windows
+read without a message, as shares and milliseconds, in the Leg's own
+config folder; none on an API key; no reading when the CLI refuses the
+request. Daemon (`apps/daemon/src/legs/plan-usage.test.ts`): account
+windows stored on the Leg and a model's on its model, fullest first
+with their time and source; Oraknid's tokens per window by model, only
+since it began; reads at most every 5 minutes and only when asked, two
+callers sharing one; an unchanged reading only moving its time, a fill
+and a reset in the history; the fallback prompt at most every 15
+minutes on the cheapest model, its tokens counted, none while a
+session has reported; other kinds' notes. Web
+(`apps/web/src/components/plan-usage.test.tsx`): Legs and windows
+fullest first, near and at the limit, the "as of" age and reset words.
+By hand on the same sample daemon (two scripted Claude Code Legs with
+readings, eight days of history, an Ollama Leg) at 1440 and 390 px:
+the Overview's card (Max at limit first, its Opus window first), a
+Leg's details with fills and resets and Oraknid's share, Ollama's note.
+Not run against a real account (only `claude --help`).
 
 ### M13.9 — Repos ([[ADR-040-Repos-Page]])
 - [ ] A Repos page: accounts, repositories, and in one: code, commits with diffs, branches, pull requests, its project

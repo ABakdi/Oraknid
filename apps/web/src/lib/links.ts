@@ -23,6 +23,15 @@ export const jobIdHref = (jobId: string, projects?: Map<string, string>) => {
   return projectId ? jobHref({ id: jobId, projectId }) : `/jobs/${jobId}`;
 };
 
+/**
+ * A project's address as it is now: its tab "The Web" became Workflow
+ * (ADR-034 → Changed), so `/projects/<id>/web/…` keeps working.
+ */
+export function currentProjectPath(id: string, tab?: string, ...rest: (string | undefined)[]) {
+  if (tab !== "web") return null;
+  return projectHref(id, ["workflow", ...rest].filter(Boolean).join("/"));
+}
+
 /** The old job page's tabs, as the Work tab's parts: `null` is the project's own tab. */
 export function oldJobTab(tab: string | undefined): { project: string } | { sub: string } {
   if (tab === "eye") return { project: "eye" };

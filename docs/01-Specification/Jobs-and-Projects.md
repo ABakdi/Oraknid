@@ -12,7 +12,7 @@ failures, breakdown by Leg) roll up from its jobs.
 
 **The project is the place; jobs are its history**
 ([[ADR-034-Projects-First]], 2026-10-03). I work in a project: I ask its
-Eye for work, follow The Web across its jobs, and open a job in its
+Eye for work, follow The Web across its jobs (its Workflow tab), and open a job in its
 Work tab. A job stays the unit underneath (one request: its own branch,
 budget, approvals, autonomy and checkpoints, cancelled alone), but it
 has no page of its own and there is no list of jobs apart from their
@@ -89,7 +89,7 @@ meanwhile.
 
 ## Following a job
 
-A job is followed in its project ([[Web-UI]] → Projects): The Web live
+A job is followed in its project ([[Web-UI]] → Projects): The Web live (the Workflow tab: a box per job, or every job framed)
 across the project's jobs, and the job opened in the Work tab with its
 tasks, result, agents' output, activity, Silk, inbox items, budget and
 its burn, settings and every problem. What runs now, across projects,

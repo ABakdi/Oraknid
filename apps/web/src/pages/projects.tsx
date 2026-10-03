@@ -2,7 +2,7 @@ import type { ProjectView } from "@oraknid/contracts";
 import { FolderGit2, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { useLocation } from "wouter";
+import { Redirect, useLocation } from "wouter";
 import { ActivityFeed } from "@/components/activity-feed";
 import { LegComparison, TokensChart } from "@/components/charts";
 import { BackButton, Empty, ErrorNote, Loading, PageHeader, Stat } from "@/components/common";
@@ -13,7 +13,7 @@ import { type PageTab, PageTabs } from "@/components/page-tabs";
 import { ProjectNetworkCard } from "@/components/project-network";
 import { ProjectServersCard } from "@/components/project-servers";
 import { ProjectSkillsCard } from "@/components/project-skills";
-import { currentJob, ProjectWeb, ProjectWork } from "@/components/project-work";
+import { currentJob, ProjectWork, ProjectWorkflow } from "@/components/project-work";
 import { RulesCard } from "@/components/rules-card";
 import { ProjectSilk } from "@/components/silk-list";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,7 @@ import { Label } from "@/components/ui/label";
 import { api, message } from "@/lib/api";
 import { tokens } from "@/lib/format";
 import { t } from "@/lib/i18n";
+import { currentProjectPath } from "@/lib/links";
 import { useLive } from "@/lib/live";
 import { cn } from "@/lib/utils";
 import { InboxItemCard } from "@/pages/inbox";
@@ -53,6 +54,8 @@ export function ProjectsPage({
   });
   const [creating, setCreating] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const moved = id ? currentProjectPath(id, tab, job, sub) : null;
+  if (moved) return <Redirect to={moved} replace />;
   if (projects.error) return <ErrorNote error={projects.error} />;
   if (projects.loading) return <Loading />;
   const add = (
@@ -142,7 +145,7 @@ export function ProjectsPage({
 }
 
 /**
- * One project, the place I work (ADR-034): The Eye, The Web across its
+ * One project, the place I work (ADR-034): The Eye, the Workflow of its
  * jobs, Work (its jobs as a timeline, one opened in place), Inbox, Silk by
  * job, Activity, Budget & stats, Settings, Skills, Servers and Network, in
  * tabs in the address.
@@ -161,7 +164,7 @@ function ProjectDetail({
   const [, go] = useLocation();
   const id = project.id;
   const [ids, setIds] = useState<string[]>([]);
-  // Each job's own changes (its tasks, its tokens) reach The Web and Work live.
+  // Each job's own changes (its tasks, its tokens) reach Workflow and Work live.
   const jobs = useLive(() => api.jobs.list({ projectId: id }), {
     topics: ["overview", ...ids.map((x) => `job:${x}`)],
     refreshOn: (e) =>
@@ -214,16 +217,26 @@ function ProjectDetail({
       content: () => <EyeChat projectId={id} jobs={list} archived={!!project.archivedAt} />,
     },
     {
-      id: "web",
-      label: t("The Web"),
-      content: () => <ProjectWeb projectId={id} jobs={list} />,
+      id: "workflow",
+      label: t("Workflow"),
+      fill: true,
+      content: () => (
+        <ProjectWorkflow projectId={id} jobs={list} jobId={tab === "workflow" ? job : undefined} />
+      ),
     },
     {
       id: "work",
       label: t("Work"),
       badge: list.length || undefined,
       fill: true,
-      content: () => <ProjectWork projectId={id} jobs={list} jobId={job} sub={sub} />,
+      content: () => (
+        <ProjectWork
+          projectId={id}
+          jobs={list}
+          jobId={tab === "work" ? job : undefined}
+          sub={sub}
+        />
+      ),
     },
     {
       id: "inbox",

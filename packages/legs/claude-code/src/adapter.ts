@@ -17,6 +17,8 @@ import {
   type LegEvent,
   type LegSession,
   type PermissionRequest,
+  type PlanUsageReport,
+  type PlanWindowReport,
   type ProbeResult,
   type QuotaReport,
   type SandboxPlan,
@@ -59,6 +61,55 @@ const MODEL_WINDOWS = new Set(["seven_day_opus", "seven_day_sonnet"]);
 
 /** resetsAt arrives in epoch seconds; Oraknid keeps milliseconds. */
 const toMs = (t: number | undefined) => (t === undefined ? null : t < 1e12 ? t * 1000 : t);
+
+/** The plan's usage as the CLI's `get_usage` control request answers it (the SDK's type). */
+type UsageAnswer = Awaited<
+  ReturnType<Query["usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET"]>
+>;
+const NAMED_WINDOWS = [
+  "five_hour",
+  "seven_day",
+  "seven_day_opus",
+  "seven_day_sonnet",
+  "seven_day_oauth_apps",
+] as const;
+
+/** A usage answer as windows: percentages to shares, ISO times to milliseconds (ADR-039). */
+export function toPlanUsage(answer: UsageAnswer): PlanUsageReport {
+  const limits = answer.rate_limits;
+  if (!answer.rate_limits_available || !limits) return { available: false, windows: [] };
+  const share = (n: number | null | undefined) =>
+    typeof n === "number" ? Math.min(1, Math.max(0, n / 100)) : null;
+  const at = (iso: string | null | undefined) => {
+    const ms = iso ? Date.parse(iso) : Number.NaN;
+    return Number.isFinite(ms) ? ms : null;
+  };
+  const windows: PlanWindowReport[] = [];
+  for (const name of NAMED_WINDOWS) {
+    const w = limits[name];
+    if (!w) continue;
+    windows.push({
+      window: name,
+      scope: MODEL_WINDOWS.has(name) ? "model" : "account",
+      label: null,
+      utilization: share(w.utilization),
+      resetsAt: at(w.resets_at),
+    });
+  }
+  for (const w of limits.model_scoped ?? []) {
+    const slug = w.display_name.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+    const name = `seven_day_${slug}`;
+    if (windows.some((x) => x.window === name)) continue;
+    windows.push({
+      window: name,
+      scope: "model",
+      label: w.display_name,
+      utilization: share(w.utilization),
+      resetsAt: at(w.resets_at),
+    });
+  }
+  return { available: true, windows };
+}
 
 export function toRequest(tool: string, input: Record<string, unknown>): PermissionRequest {
   const command = typeof input.command === "string" ? input.command : null;
@@ -185,6 +236,42 @@ export function createClaudeCodeAdapter(deps: { query?: QueryFn } = {}): LegAdap
           features,
         };
       } finally {
+        input.end();
+        q.close();
+      }
+    },
+
+    /**
+     * The plan's windows from the CLI itself, as its /usage shows them
+     * (ADR-039): a control request on a session that is never sent a
+     * message, inside the Leg's sandbox, so no tokens are spent and
+     * Oraknid never touches the login. The SDK marks the call
+     * experimental: when it is missing or fails, null, and Oraknid falls
+     * back to the sessions' rate-limit events.
+     */
+    async planUsage(leg, plan): Promise<PlanUsageReport | null> {
+      const cfg = readConfig(leg);
+      if (!cfg.configDir) return null;
+      const input = new Channel<SDKUserMessage>();
+      const q = query({
+        prompt: input,
+        options: baseOptions(cfg, plan, plan?.home ?? process.cwd(), () => {}),
+      });
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const read = q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
+        if (typeof read !== "function") return null;
+        const answer = await Promise.race([
+          read.call(q, { skipBehaviors: true }),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error("no answer in 30 s")), 30_000);
+          }),
+        ]);
+        return toPlanUsage(answer);
+      } catch {
+        return null;
+      } finally {
+        clearTimeout(timer);
         input.end();
         q.close();
       }

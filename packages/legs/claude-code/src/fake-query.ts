@@ -143,6 +143,27 @@ export function fakeQuery(script: Script, seen: { options: Options[] } = { optio
         { value: "haiku", displayName: "Haiku", description: "" },
       ],
       accountInfo: async () => ({ email: "me@example.com", subscriptionType: "max" }),
+      // The CLI's /usage data: a plan's windows, read without a message.
+      usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: async () => ({
+        session: {
+          total_cost_usd: 0,
+          total_api_duration_ms: 0,
+          total_duration_ms: 0,
+          total_lines_added: 0,
+          total_lines_removed: 0,
+          model_usage: {},
+        },
+        subscription_type: "max",
+        rate_limits_available: true,
+        rate_limits: {
+          five_hour: { utilization: 42, resets_at: "2026-10-03T12:00:00.000Z" },
+          seven_day: { utilization: 81.5, resets_at: "2026-10-07T09:00:00.000Z" },
+          seven_day_opus: null,
+          seven_day_sonnet: { utilization: 12, resets_at: null },
+          model_scoped: [{ display_name: "Fable", utilization: 3, resets_at: null }],
+        },
+        behaviors: null,
+      }),
     };
     return q as unknown as Query;
   };

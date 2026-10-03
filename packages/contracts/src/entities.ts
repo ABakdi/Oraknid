@@ -180,6 +180,13 @@ export const QuotaWindow = z.object({
   /** True when Oraknid computed the number rather than the provider reporting it. */
   estimated: z.boolean(),
   observedAt: Timestamp,
+  /**
+   * Where the figure came from (ADR-039): the backend's own usage reading,
+   * or a session's rate-limit event. Absent on windows stored before.
+   */
+  source: z.enum(["usage", "session"]).optional(),
+  /** The provider's own name for a model's window ("Fable"), when it gives one. */
+  label: z.string().nullable().optional(),
 });
 export type QuotaWindow = z.infer<typeof QuotaWindow>;
 

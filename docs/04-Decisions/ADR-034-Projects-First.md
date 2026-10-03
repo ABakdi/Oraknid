@@ -67,6 +67,12 @@ the project's history, never as a place of their own.
 - **Expanded**: every job's own workflow drawn in full, each in a
   frame named by its job, one after another.
 - The choice is kept per project.
+- As built (M13.5): the highlighted box is the job the project is about
+  now (the newest going, else the newest), the one The Eye talks to; a
+  job opened from it is in the address (`/projects/<id>/workflow/<job>`)
+  with **All jobs** back; the choice is kept per project on each device
+  (the browser's storage); `/projects/<id>/web` opens the new tab. The
+  row of earlier jobs and the folding of ADR-034's first Web are gone.
 
 ## Consequences
 - Migration: `eye_messages` gains `project_id`, filled from each

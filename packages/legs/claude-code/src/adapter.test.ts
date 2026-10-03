@@ -2,7 +2,7 @@ import type { Options } from "@anthropic-ai/claude-agent-sdk";
 import { emptyUsage, type SessionStart } from "@oraknid/leg-sdk";
 import { legContract, readUntil } from "@oraknid/leg-sdk/contract";
 import { describe, expect, it } from "vitest";
-import { createClaudeCodeAdapter, type QueryFn, toRequest } from "./adapter.ts";
+import { createClaudeCodeAdapter, type QueryFn, toPlanUsage, toRequest } from "./adapter.ts";
 import { fakeQuery } from "./fake-query.ts";
 
 const leg = {
@@ -123,6 +123,70 @@ describe("Claude Code adapter", () => {
     };
     const p = await createClaudeCodeAdapter({ query: out }).probe(leg, null);
     expect(p).toMatchObject({ ok: false, detail: "Not logged in: press Log in on its card." });
+  });
+
+  it("reads the plan's windows without sending a message, as shares and milliseconds (ADR-039)", async () => {
+    const seen: { options: Options[] } = { options: [] };
+    const u = await createClaudeCodeAdapter({ query: fakeQuery("reply", seen) }).planUsage?.(
+      leg,
+      null,
+    );
+    expect(u).toEqual({
+      available: true,
+      windows: [
+        {
+          window: "five_hour",
+          scope: "account",
+          label: null,
+          utilization: 0.42,
+          resetsAt: Date.parse("2026-10-03T12:00:00.000Z"),
+        },
+        {
+          window: "seven_day",
+          scope: "account",
+          label: null,
+          utilization: 0.815,
+          resetsAt: Date.parse("2026-10-07T09:00:00.000Z"),
+        },
+        {
+          window: "seven_day_sonnet",
+          scope: "model",
+          label: null,
+          utilization: 0.12,
+          resetsAt: null,
+        },
+        {
+          window: "seven_day_fable",
+          scope: "model",
+          label: "Fable",
+          utilization: 0.03,
+          resetsAt: null,
+        },
+      ],
+    });
+    // The Leg's own config folder, never mine.
+    expect(seen.options[0]?.env?.CLAUDE_CONFIG_DIR).toBe(leg.config.configDir);
+  });
+
+  it("has no plan windows on an API key, and no reading when the CLI can't give one", async () => {
+    expect(
+      toPlanUsage({ rate_limits_available: false, rate_limits: null } as Parameters<
+        typeof toPlanUsage
+      >[0]),
+    ).toEqual({ available: false, windows: [] });
+    const old: QueryFn = (params) =>
+      Object.assign(fakeQuery("reply")(params), {
+        usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: async () => {
+          throw new Error("Unknown control request: get_usage");
+        },
+      });
+    expect(await createClaudeCodeAdapter({ query: old }).planUsage?.(leg, null)).toBeNull();
+    expect(
+      await createClaudeCodeAdapter({ query: fakeQuery("reply") }).planUsage?.(
+        { ...leg, config: { binary: "claude" } },
+        null,
+      ),
+    ).toBeNull();
   });
 
   it("refuses to probe a Leg with no config directory, and says what to do", async () => {
