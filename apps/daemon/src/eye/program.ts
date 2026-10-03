@@ -1,10 +1,12 @@
 import { join } from "node:path";
-import type {
-  Autonomy,
+import {
+  type Autonomy,
   InterviewRound,
-  JobInput,
-  MetricsSample,
-  WebPlan,
+  type JobInput,
+  type MetricsSample,
+  normalizeQuestions,
+  renderQuestions,
+  type WebPlan,
 } from "@oraknid/contracts";
 import {
   decide,
@@ -45,9 +47,12 @@ import {
   undoMerge,
   worktreeGit,
 } from "../workspace/git.ts";
+import type { GitHub } from "../workspace/github.ts";
+import type { Projects } from "../workspace/projects.ts";
 import { type AttemptJob, runAttempt } from "./attempt.ts";
 import type { EyeBrain } from "./brain.ts";
 import { readInside, renderInputs } from "./inputs.ts";
+import { ensureLinks } from "./links.ts";
 import { policyFor } from "./policy.ts";
 import { runVerify, verifyRefusal } from "./verify.ts";
 
@@ -67,6 +72,10 @@ export interface EyeDeps {
   effects?: SideEffects;
   /** My servers (ADR-026). */
   servers?: Servers;
+  /** My GitHub accounts, for the project's GitHub link (ADR-038). */
+  github?: GitHub;
+  /** The projects, to save a link The Eye asked me for (ADR-038). */
+  projects?: Projects;
   /** Recent metrics, for resource-aware scheduling (ADR-016). */
   machine?: () => MetricsSample[];
   legsDir: string;
@@ -391,6 +400,21 @@ async function runTask(
   where: { cwd: string; g: Git; tmpDir: string; trash: string; projectPath: string },
   parallel: boolean,
 ): Promise<"cancelled" | undefined> {
+  // The GitHub repo or the server the task needs, asked once and saved to the project (ADR-038).
+  await ensureLinks(
+    {
+      db: d.db,
+      bus: d.bus,
+      inbox: d.inbox,
+      now: d.now,
+      ...(d.github ? { github: d.github } : {}),
+      ...(d.projects ? { projects: d.projects } : {}),
+      ...(d.servers ? { servers: d.servers } : {}),
+    },
+    ctx,
+    job,
+    task,
+  );
   // Only real failures count: a pause, a restart or a crash cut an attempt short, it didn't fail (Audit 1 → D1-01).
   const failures =
     d.db
@@ -427,7 +451,11 @@ async function runTask(
     waived: job.waived as GatedAction[],
     unsandboxed: job.unsandboxed,
     skillBody: d.skills.version(job.skillId, job.skillVersion)?.body ?? "",
-    tools: job.tools,
+    // Every job may do GitHub work through Oraknid's own tool, judged by its project's link (ADR-038).
+    tools:
+      d.tools?.registry.hasBuiltIn("github") && !job.tools.includes("github")
+        ? [...job.tools, "github"]
+        : job.tools,
     serverIds:
       d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.serverIds ?? [],
     localPorts: projectPorts(d.db, job.projectId),
@@ -630,14 +658,17 @@ async function interview(
       .current(job.id)
       .filter((e) => e.kind === "interview-answer")
       .map((e) => e.body);
-    const round = await ctx.step(`interview:${n}`, { n }, () =>
-      d.brain.interviewRound({
-        jobId: job.id,
-        cwd,
-        goal: job.goal,
-        skill: skillExcerpt(skillBody, "interview ask questions owner", 5000),
-        answers,
-      }),
+    // A round kept from before questions had shapes is read in the new shape (ADR-037).
+    const round = InterviewRound.parse(
+      await ctx.step(`interview:${n}`, { n }, () =>
+        d.brain.interviewRound({
+          jobId: job.id,
+          cwd,
+          goal: job.goal,
+          skill: skillExcerpt(skillBody, "interview ask questions owner", 5000),
+          answers,
+        }),
+      ),
     );
     if (round.done || n > 12) {
       await ctx.step(`interview:${n}:close`, { n }, async () => {
@@ -672,9 +703,10 @@ async function interview(
           jobId: job.id,
           raisedBy: "eye",
           title: `Interview, round ${n}`,
-          detail: renderRound(round),
+          detail: round.playback ? `**What I understood**\n\n${round.playback}` : "",
           options: [ENOUGH],
           defaultOption: null,
+          questions: round.questions,
         }),
     );
     const item = d.inbox.get(itemId);
@@ -682,7 +714,7 @@ async function interview(
       throw new AwaitingOwner(itemId, `Waiting for my answers to interview round ${n}.`);
     const answer = item?.answer ?? "";
     await ctx.step(`interview:${n}:answer`, { n }, async () => {
-      const qs = round.questions.map((q, i) => `${i + 1}. ${q.question}`).join("\n");
+      const qs = round.questions.map((q, i) => `${i + 1}. ${q.prompt}`).join("\n");
       // My words, verbatim (Skills → The interview, step 4).
       d.silk.add({
         jobId: job.id,
@@ -696,8 +728,8 @@ async function interview(
           d.silk.add({
             jobId: job.id,
             kind: "issue",
-            title: `Open question: ${q.question.slice(0, 80)}`,
-            body: `${q.question} (left open when I ended the interview)`,
+            title: `Open question: ${q.prompt.slice(0, 80)}`,
+            body: `${q.prompt} (left open when I ended the interview)`,
             authoredBy: "eye",
           });
         }
@@ -714,18 +746,14 @@ async function interview(
   }
 }
 
+/** A round as text, for a reader with no component (Silk, an old client). */
 export function renderRound(
   round: InterviewRound,
   end = `Answer in your own words, numbered; or choose "${ENOUGH}" to stop here.`,
 ): string {
   return [
     round.playback ? `**What I understood**\n\n${round.playback}` : "",
-    `**Questions**\n\n${round.questions
-      .map(
-        (q, i) =>
-          `${i + 1}. ${q.question}${q.options.length ? `\n   Options: ${q.options.join(" · ")}${q.recommended ? ` (recommended: ${q.recommended})` : ""}` : ""}`,
-      )
-      .join("\n")}`,
+    `**Questions**\n\n${renderQuestions(normalizeQuestions(round.questions))}`,
     end,
   ]
     .filter(Boolean)

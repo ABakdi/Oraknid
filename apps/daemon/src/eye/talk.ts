@@ -1,10 +1,18 @@
-import type { EyeMessage } from "@oraknid/contracts";
-import { asc, desc, eq } from "drizzle-orm";
+import {
+  completeAnswers,
+  type EyeMessage,
+  normalizeQuestions,
+  type Question,
+  type QuestionAnswer,
+  renderAnswers,
+} from "@oraknid/contracts";
+import { and, asc, desc, eq } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
-import { eyeMessages, jobs, projects, taskEdges, tasks } from "../db/schema.ts";
+import { eyeMessages, inboxItems, jobs, projects, taskEdges, tasks } from "../db/schema.ts";
 import type { JobRunner } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
+import type { InboxStore } from "../inbox/store.ts";
 import type { SilkStore } from "../silk/store.ts";
 import type { EyeBrain, EyeTriage } from "./brain.ts";
 import { editWeb } from "./controls.ts";
@@ -142,11 +150,12 @@ export async function talkInProject(
   d: TalkDeps,
   projectId: string,
   text: string,
+  extras: MessageExtras = {},
 ): Promise<{ id: string; jobId: string }> {
   const project = d.db.select().from(projects).where(eq(projects.id, projectId)).get();
   if (!project) throw new Error(`No project ${projectId}.`);
   const target = projectTarget(d.db, projectId);
-  if (target) return { id: talk(d, target.id, text), jobId: target.id };
+  if (target) return { id: talk(d, target.id, text, extras), jobId: target.id };
   if (project.archivedAt) throw new Error("The project is archived: restore it to ask for work.");
   if (!d.newJob || !d.startJob) throw new Error("New work can't start from here.");
   const jobId = d.newJob(projectId, text);
@@ -177,12 +186,76 @@ export async function talkInProject(
  * Records my message and lets The Eye handle it in the background; its
  * reply arrives as an `eye.replied` event. Returns my message's id.
  */
-export function talk(d: TalkDeps, jobId: string, text: string): string {
+export function talk(d: TalkDeps, jobId: string, text: string, extras: MessageExtras = {}): string {
   const job = d.db.select().from(jobs).where(eq(jobs.id, jobId)).get();
   if (!job) throw new Error(`No job ${jobId}.`);
-  const id = add(d, jobId, "owner", text, null);
+  const id = add(d, jobId, "owner", text, null, extras);
   respond(d, jobId, text);
   return id;
+}
+
+/** The message whose questions I answer, and whether I answered them already. */
+function asked(db: Db, messageId: string) {
+  const m = db.select().from(eyeMessages).where(eq(eyeMessages.id, messageId)).get();
+  if (m?.author !== "eye" || !m.questions?.length) return null;
+  const reply = db
+    .select({ id: eyeMessages.id })
+    .from(eyeMessages)
+    .where(and(eq(eyeMessages.replyTo, messageId), eq(eyeMessages.author, "owner")))
+    .get();
+  return { message: m, answered: !!reply };
+}
+
+/**
+ * My answers to The Eye's questions in the project's conversation (ADR-037):
+ * kept structured, shown as a short list. Questions that belong to an inbox
+ * item answer it (the job waiting on it goes on); others are a message of
+ * mine like any, which The Eye reads.
+ */
+export function answerInProject(
+  d: TalkDeps & { inbox: InboxStore },
+  projectId: string,
+  messageId: string,
+  given: QuestionAnswer[],
+  deviceId: string | null = null,
+): { id: string; jobId: string } {
+  const a = asked(d.db, messageId);
+  if (!a || a.message.projectId !== projectId) throw new Error("No such question to answer.");
+  if (a.answered) throw new Error("Those questions are answered already.");
+  const questions = a.message.questions as Question[];
+  const answers = completeAnswers(questions, given);
+  const text = renderAnswers(questions, answers);
+  if (a.message.itemId) {
+    d.inbox.answer(a.message.itemId, text, deviceId, answers);
+    const id = recordAnswer(d, a.message.itemId) ?? "";
+    return { id, jobId: a.message.jobId };
+  }
+  return {
+    id: talk(d, a.message.jobId, text, { answers, replyTo: messageId }),
+    jobId: a.message.jobId,
+  };
+}
+
+/**
+ * An inbox item The Eye also asked in the conversation, answered (here or in
+ * the inbox): my answers join the conversation as a short list, once.
+ * Returns my message's id, or null when there is nothing to add.
+ */
+export function recordAnswer(
+  d: Pick<TalkDeps, "db" | "bus" | "now">,
+  itemId: string,
+): string | null {
+  const m = d.db.select().from(eyeMessages).where(eq(eyeMessages.itemId, itemId)).get();
+  if (!m) return null;
+  const a = asked(d.db, m.id);
+  if (!a || a.answered) return null;
+  const item = d.db.select().from(inboxItems).where(eq(inboxItems.id, itemId)).get();
+  if (item?.state !== "answered") return null;
+  const answers = item.answers ?? null;
+  const text = answers?.length
+    ? renderAnswers(m.questions as Question[], answers)
+    : (item.answer ?? "");
+  return add(d, m.jobId, "owner", text, null, { answers, replyTo: m.id });
 }
 
 /**
@@ -197,6 +270,11 @@ export function resumeConversations(d: TalkDeps): number {
     .all()) {
     const last = conversation(d.db, jobId).at(-1);
     if (last?.author !== "owner") continue;
+    // My answer to a question a job waits on goes to that job, not to The Eye's triage.
+    const to = last.replyTo
+      ? d.db.select().from(eyeMessages).where(eq(eyeMessages.id, last.replyTo)).get()
+      : null;
+    if (to?.itemId) continue;
     respond(d, jobId, last.text);
     n++;
   }
@@ -382,7 +460,14 @@ async function act(d: TalkDeps, jobId: string, jobState: string, text: string, v
     case "question":
       break;
   }
-  add(d, jobId, "eye", reply, { intent: v.intent, did, silkIds, taskIds, jobId: jobRef });
+  add(
+    d,
+    jobId,
+    "eye",
+    reply,
+    { intent: v.intent, did, silkIds, taskIds, jobId: jobRef },
+    { questions: normalizeQuestions(v.questions ?? []) },
+  );
 }
 
 /** The follow-up job this conversation started, while it hasn't ended. */
@@ -396,12 +481,33 @@ function openFollowUp(d: TalkDeps, jobId: string) {
   return null;
 }
 
-function add(
-  d: TalkDeps,
+/** Questions with options in The Eye's message, or my answers to them (ADR-037). */
+export interface MessageExtras {
+  questions?: Question[] | null;
+  itemId?: string | null;
+  answers?: QuestionAnswer[] | null;
+  replyTo?: string | null;
+}
+
+/** A message in a job's conversation (and so its project's). Returns its id. */
+export function addMessage(
+  d: Pick<TalkDeps, "db" | "bus" | "now">,
   jobId: string,
   author: "owner" | "eye",
   text: string,
   action: EyeMessage["action"],
+  extras: MessageExtras = {},
+): string {
+  return add(d, jobId, author, text, action, extras);
+}
+
+function add(
+  d: Pick<TalkDeps, "db" | "bus" | "now">,
+  jobId: string,
+  author: "owner" | "eye",
+  text: string,
+  action: EyeMessage["action"],
+  extras: MessageExtras = {},
 ): string {
   const id = newId((d.now ?? Date.now)());
   const projectId =
@@ -409,7 +515,19 @@ function add(
   d.bus.atomically(() => {
     d.db
       .insert(eyeMessages)
-      .values({ id, jobId, projectId, author, text, action, createdAt: (d.now ?? Date.now)() })
+      .values({
+        id,
+        jobId,
+        projectId,
+        author,
+        text,
+        action,
+        questions: extras.questions?.length ? extras.questions : null,
+        itemId: extras.itemId ?? null,
+        answers: extras.answers ?? null,
+        replyTo: extras.replyTo ?? null,
+        createdAt: (d.now ?? Date.now)(),
+      })
       .run();
     d.bus.publish({
       type: author === "owner" ? "eye.message" : "eye.replied",

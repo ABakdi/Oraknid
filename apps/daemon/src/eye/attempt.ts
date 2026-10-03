@@ -49,7 +49,12 @@ import { readSetting } from "../settings.ts";
 import { handoffFromLog } from "../silk/handoff.ts";
 import type { SilkStore } from "../silk/store.ts";
 import type { BrokerSession, McpBroker } from "../tools/broker.ts";
-import type { ToolRegistry, ToolRow } from "../tools/registry.ts";
+import {
+  BUILT_IN,
+  type McpDeclaration,
+  type ToolRegistry,
+  type ToolRow,
+} from "../tools/registry.ts";
 import {
   changedSince,
   checkpoint,
@@ -60,6 +65,7 @@ import {
   restorePaths,
   rollback,
 } from "../workspace/git.ts";
+import { githubLinkOf } from "../workspace/github-tool.ts";
 import { waitForAnswer } from "./approvals.ts";
 import type { CheckRepair, EyeBrain } from "./brain.ts";
 
@@ -420,12 +426,20 @@ export async function runAttempt(
   let readTheWeb = false;
   const toolRows = d.tools && job.tools.length ? d.tools.registry.byNames(job.tools) : [];
   const brokered = toolRows.map((t) => `oraknid-${t.name}`);
-  const onPermission = async (r: PermissionRequest): Promise<PermissionDecision> => {
+  const onPermission = async (
+    r: PermissionRequest,
+    /** What Oraknid's own tool made of this very call (ADR-038). */
+    judged?: McpDeclaration,
+  ): Promise<PermissionDecision> => {
     // The broker judges every call to a job's tool: the Leg's own ask for it passes (ADR-021).
     if (isBrokered(r.tool, brokered)) return { allow: true };
     const policy = policyFor(d.db, job.id, ws.cwd);
     if (readTheWeb) policy.untrusted = true;
-    if (toolRows.length) policy.mcp = d.tools?.registry.declarations(toolRows);
+    if (toolRows.length) {
+      const declared = d.tools?.registry.declarations(toolRows) ?? new Map();
+      if (judged) declared.set(r.tool, judged);
+      policy.mcp = declared;
+    }
     const first = decide(r, policy);
     const fetches =
       r.tool === "WebFetch" ||
@@ -522,7 +536,17 @@ export async function runAttempt(
       void summarizeShortened(d, job.id, ws.cwd, built.shortened).catch((e) =>
         console.error("silk summary failed", e),
       );
-    return serversText ? `${built.text}\n\n${serversText}` : built.text;
+    return [built.text, serversText, githubText()].filter(Boolean).join("\n\n");
+  };
+
+  /** How this job does GitHub work: through Oraknid's github tool, never a CLI or a token (ADR-038). */
+  const githubText = () => {
+    if (!toolRows.some((t) => t.name === "github" && t.command === BUILT_IN)) return "";
+    const link = githubLinkOf(d.db, job.id);
+    const where = link
+      ? `This project's GitHub repository is **${link.owner}/${link.name}** (${link.visibility}), through the account ${link.account}${link.ready ? "" : "; it doesn't exist yet: `create_repo` creates it"}.`
+      : "This project has no GitHub repository linked yet: if the task needs one, say so in your report and stop; The Eye asks the owner.";
+    return `# GitHub\n\n${where}\n\nDo every GitHub action with the \`github\` tool (the oraknid-github MCP server): \`repo_info\`, \`create_repo\`, \`push\` (a local branch to the linked repo), \`open_pull_request\`. Oraknid holds the token and runs git with it. Never install or run the \`gh\` CLI, never look for or ask for a token, never add a remote with credentials or run \`git push\` yourself.`;
   };
 
   /** The job's tools for this attempt's sessions, opened with the first one. */
@@ -554,12 +578,19 @@ export async function runAttempt(
                 message: `An identical ${name} was interrupted mid-way; the owner is asked whether it happened before it is tried again.`,
               };
           }
-          const v = await onPermission({
-            tool: `mcp__${tool.name}__${name}`,
-            input: args,
-            command: null,
-            path: null,
-          });
+          const judged = d.tools?.registry.judge(tool, { jobId: job.id }, name, args);
+          const v = await onPermission(
+            {
+              tool: `mcp__${tool.name}__${name}`,
+              input: args,
+              command: null,
+              path: null,
+            },
+            judged,
+          );
+          // Work on the project's linked repo passes without asking: said in the job's events (ADR-038).
+          if (v.allow && typeof judged === "object")
+            event("tool.linked", { tool: tool.name, name, reason: "the project's linked repo" });
           if (v.allow && sends && d.effects) {
             const row = d.effects.intend(job.id, {
               ...spec,

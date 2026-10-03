@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { Id, Markdown, Timestamp } from "./common.ts";
+import { GitHubLink } from "./github.ts";
+import { Question, QuestionAnswer } from "./questions.ts";
 
 // Every entity here follows docs/01-Specification/Core-Entities.md.
 
@@ -18,6 +20,8 @@ export const Project = z.object({
   skillIds: z.array(Id).default([]),
   /** The servers its jobs may use (Servers → Servers in projects). */
   serverIds: z.array(Id).default([]),
+  /** Its GitHub account and repository, used by Oraknid's github tool (ADR-038). */
+  github: GitHubLink.nullable().default(null),
 });
 export type Project = z.infer<typeof Project>;
 
@@ -259,6 +263,10 @@ export const InboxItem = z.object({
   answeredAt: Timestamp.nullable(),
   answeredByDeviceId: Id.nullable(),
   createdAt: Timestamp,
+  /** Asked with options (ADR-037): an interview round, or The Eye's question about a link. */
+  questions: z.array(Question).nullable().default(null),
+  /** My answers to them, structured; `answer` holds them as a short list. */
+  answers: z.array(QuestionAnswer).nullable().default(null),
   /** Where it comes from, so items of several projects can be told apart (Checkpoint 1 → F1-2). */
   jobTitle: z.string().optional(),
   projectId: Id.optional(),
@@ -397,6 +405,14 @@ export const EyeMessage = z.object({
       jobId: Id.nullable().default(null),
     })
     .nullable(),
+  /** The Eye's questions in this reply, answered with options (ADR-037). */
+  questions: z.array(Question).nullable().default(null),
+  /** The inbox item the questions belong to: answering here answers it, and the job waiting on it goes on. */
+  itemId: Id.nullable().default(null),
+  /** My answers (on my message), structured; `text` holds them as a short list. */
+  answers: z.array(QuestionAnswer).nullable().default(null),
+  /** The message whose questions mine answers. */
+  replyTo: Id.nullable().default(null),
   createdAt: Timestamp,
 });
 export type EyeMessage = z.infer<typeof EyeMessage>;

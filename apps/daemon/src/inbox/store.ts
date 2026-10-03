@@ -1,4 +1,14 @@
-import type { Actor, InboxFilter, InboxItem } from "@oraknid/contracts";
+import {
+  type Actor,
+  completeAnswers,
+  type InboxFilter,
+  type InboxItem,
+  normalizeQuestions,
+  type Question,
+  type QuestionAnswer,
+  type QuestionInput,
+  renderAnswers,
+} from "@oraknid/contracts";
 import { and, desc, eq, type SQL } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
 import { inboxItems, jobs, projects, tasks } from "../db/schema.ts";
@@ -14,6 +24,8 @@ export interface NewInboxItem {
   detail: string;
   options: string[];
   defaultOption?: string | null;
+  /** Asked with options (ADR-037): answered in the same component as The Eye's conversation. */
+  questions?: QuestionInput[] | null;
 }
 
 /**
@@ -42,6 +54,7 @@ export class InboxStore {
           detail: this.bus.scrub(item.detail),
           options: item.options,
           defaultOption: item.defaultOption ?? null,
+          questions: item.questions?.length ? normalizeQuestions(item.questions) : null,
           state: "open",
           createdAt: this.now(),
         })
@@ -123,10 +136,25 @@ export class InboxStore {
     });
   }
 
-  answer(id: string, answer: string, deviceId: string | null = null) {
+  /**
+   * My answer: one of its options, my words, or my answers to its questions
+   * (structured, and in words as a short list).
+   */
+  answer(
+    id: string,
+    given: string,
+    deviceId: string | null = null,
+    structured: QuestionAnswer[] | null = null,
+  ) {
     this.bus.atomically(() => {
       const item = this.get(id);
       if (!item) throw new Error(`No inbox item ${id}.`);
+      const questions = item.questions as Question[] | null;
+      const answers =
+        structured && questions?.length ? completeAnswers(questions, structured) : null;
+      // An option of the item (e.g. "Enough, start") stays itself; answers are said as a list.
+      const answer =
+        answers && !item.options.includes(given) ? renderAnswers(questions ?? [], answers) : given;
       if (item.state === "withdrawn")
         throw new Error("That question was withdrawn: nothing waits for it any more.");
       if (item.state !== "open") throw new Error("That item was already answered.");
@@ -135,7 +163,13 @@ export class InboxStore {
         throw new Error(`Answer with one of: ${item.options.join(", ")}.`);
       this.db
         .update(inboxItems)
-        .set({ state: "answered", answer, answeredAt: this.now(), answeredByDeviceId: deviceId })
+        .set({
+          state: "answered",
+          answer,
+          answers: item.options.includes(given) ? null : answers,
+          answeredAt: this.now(),
+          answeredByDeviceId: deviceId,
+        })
         .where(eq(inboxItems.id, id))
         .run();
       this.bus.publish({

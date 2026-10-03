@@ -39,6 +39,8 @@ export const ProjectSource = z.discriminatedUnion("kind", [
   /** A new repo on my GitHub account, then cloned. */
   z.object({
     kind: z.literal("github-new"),
+    /** Which of my GitHub accounts (the first when left out). */
+    account: z.string().optional(),
     parent: z.string().min(1),
     name: FolderName,
     private: z.boolean().default(true),
@@ -47,6 +49,8 @@ export const ProjectSource = z.discriminatedUnion("kind", [
   /** One of my GitHub repos, cloned. */
   z.object({
     kind: z.literal("github-clone"),
+    /** Which of my GitHub accounts (the first when left out). */
+    account: z.string().optional(),
     parent: z.string().min(1),
     fullName: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
   }),

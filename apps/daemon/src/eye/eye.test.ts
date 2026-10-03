@@ -1019,9 +1019,15 @@ describe("the interview (M1.7)", () => {
     playback: n === 1 ? "" : "A greeting script, for the terminal. Is this right?",
     questions: [
       {
-        question: n === 1 ? "Who runs this script?" : "Should it print a newline?",
-        options: ["Me", "CI"],
-        recommended: "Me",
+        id: "q1",
+        shape: "single" as const,
+        prompt: n === 1 ? "Who runs this script?" : "Should it print a newline?",
+        options: [
+          { id: "me", label: "Me" },
+          { id: "ci", label: "CI", detail: "On every push" },
+        ],
+        recommended: "me",
+        allowOther: true,
       },
     ],
     open: [],
@@ -1063,6 +1069,61 @@ describe("the interview (M1.7)", () => {
     const silk = await api.silk.list({ jobId: id });
     expect(silk.find((e) => e.kind === "interview-answer")?.body).toContain("**My answer:** 1. hi");
     await expect(api.jobs.draftTalk({ id, text: "more" })).rejects.toThrow(/has started/);
+  });
+
+  it("asks the draft's round with options, and takes my answers as a short list (ADR-037)", async () => {
+    const seen: string[][] = [];
+    const { api, id } = await eye(good, {
+      draft: true,
+      interview: (answers) => {
+        seen.push(answers);
+        return answers.length < 1
+          ? round(1)
+          : { done: true, playback: "A script for CI.", questions: [], open: [] };
+      },
+    });
+    const said = async (n: number) => {
+      const end = Date.now() + 5000;
+      for (;;) {
+        const msgs = await api.jobs.conversation({ id });
+        if (msgs.length >= n && !(await api.jobs.draftThinking({ id }))) return msgs;
+        if (Date.now() > end) throw new Error(JSON.stringify(msgs));
+        await new Promise((r) => setTimeout(r, 20));
+      }
+    };
+    await api.jobs.draftStart({ id });
+    const [asked] = await said(1);
+    expect(asked?.questions).toEqual([
+      {
+        id: "q1",
+        shape: "single",
+        prompt: "Who runs this script?",
+        options: [
+          { id: "me", label: "Me" },
+          { id: "ci", label: "CI", detail: "On every push" },
+        ],
+        recommended: "me",
+        allowOther: true,
+      },
+    ]);
+    await api.jobs.draftAnswer({
+      id,
+      messageId: asked?.id as string,
+      answers: [{ questionId: "q1", options: ["ci"], text: "" }],
+    });
+    const after = await said(3);
+    expect(after[1]).toMatchObject({
+      author: "owner",
+      text: "- Who runs this script? — CI",
+      answers: [{ questionId: "q1", options: ["ci"], text: "" }],
+      replyTo: asked?.id,
+    });
+    // The interview's answers keep the questions and my answer, for the next round and the plan.
+    expect(seen[1]?.[0]).toContain("1. Who runs this script?\n   Me (recommended) · CI");
+    expect(seen[1]?.[0]).toContain("**My answer:** - Who runs this script? — CI");
+    await expect(
+      api.jobs.draftAnswer({ id, messageId: asked?.id as string, answers: [] }),
+    ).rejects.toThrow(/answered already/);
   });
 
   it("the helper does what I ask through the API, and asks me before starting a job (ADR-024)", async () => {
@@ -1225,9 +1286,15 @@ describe("the interview (M1.7)", () => {
       }
     };
     const r1 = await ask("Interview, round 1");
-    expect(r1.detail).toContain("1. Who runs this script?\n   Options: Me · CI (recommended: Me)");
+    // Asked with options (ADR-037): the round's questions, the recommended one marked.
+    expect(r1.questions).toEqual([
+      expect.objectContaining({ id: "q1", shape: "single", recommended: "me" }),
+    ]);
     expect((await api.jobs.get({ id })).state).toBe("waiting");
-    await api.inbox.answer({ id: r1.id, answer: "1. Me, by hand." });
+    await api.inbox.answer({
+      id: r1.id,
+      answers: [{ questionId: "q1", options: [], text: "Me, by hand." }],
+    });
     const r2 = await ask("Interview, round 2");
     expect(r2.detail).toContain(
       "**What I understood**\n\nA greeting script, for the terminal. Is this right?",
@@ -1237,7 +1304,7 @@ describe("the interview (M1.7)", () => {
     expect(plans).toEqual(["interview:1", "interview:2", "interview:3", "plan"]);
     const silk = await api.silk.list({ jobId: id });
     expect(silk.filter((e) => e.kind === "interview-answer").map((e) => e.body)).toEqual([
-      "1. Who runs this script?\n\n**My answer:** 1. Me, by hand.",
+      "1. Who runs this script?\n\n**My answer:** - Who runs this script? — Me, by hand.",
       "1. Should it print a newline?\n\n**My answer:** Yes. 1. Yes, a newline.",
     ]);
     expect(silk.find((e) => e.title === "What I want (interview)")?.body).toBe(

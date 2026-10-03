@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Capability, Difficulty, TaskKind } from "./entities.ts";
+import { LooseQuestions } from "./questions.ts";
 
 // What The Eye's brain returns when it plans a job (The-Eye → Planning).
 
@@ -34,16 +35,11 @@ export const InterviewRound = z.object({
   done: z.boolean(),
   /** What is understood so far, played back for me to confirm. */
   playback: z.string(),
-  questions: z
-    .array(
-      z.object({
-        question: z.string().min(1),
-        /** Suggested answers; the first may be marked recommended. */
-        options: z.array(z.string()).max(5),
-        recommended: z.string().nullable(),
-      }),
-    )
-    .max(6),
+  /**
+   * Asked with options, one at a time (ADR-037). A round written in the
+   * older shape (a question, options as words) is upgraded on reading.
+   */
+  questions: LooseQuestions,
   /** Points still open when done: recorded as open questions. */
   open: z.array(z.string()),
 });

@@ -1,4 +1,5 @@
 import type { NewTool, ToolView, UpdateTool } from "@oraknid/contracts";
+import type { McpDeclaration } from "@oraknid/core";
 import { eq, inArray } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
 import { tools } from "../db/schema.ts";
@@ -23,7 +24,21 @@ export interface BuiltInTool {
   reads: string[];
   /** Calls Oraknid itself holds for my approval: the broker lets them through to it. */
   held: string[];
+  /** Whether what it returns comes from outside, to be wrapped as data (BR-15). Default yes. */
+  untrusted?: boolean;
+  /**
+   * Judges one call by its arguments (ADR-038: the github tool's work on the
+   * project's linked repo): what the policy should know of it, or undefined
+   * for the declarations above.
+   */
+  judge?: (
+    session: { jobId: string | null },
+    name: string,
+    args: Record<string, unknown>,
+  ) => McpDeclaration | undefined;
 }
+
+export type { McpDeclaration };
 
 export const isBuiltIn = (row: { command: string }) => row.command === BUILT_IN;
 
@@ -67,7 +82,12 @@ export class ToolRegistry {
         throw new Error(`A tool of mine is named "${tool.name}": rename it to use Oraknid's own.`);
       this.db
         .update(tools)
-        .set({ description: tool.description, reads: tool.reads, sends: [] })
+        .set({
+          description: tool.description,
+          reads: tool.reads,
+          sends: [],
+          untrusted: tool.untrusted ?? true,
+        })
         .where(eq(tools.id, row.id))
         .run();
       return this.get(row.id);
@@ -85,7 +105,7 @@ export class ToolRegistry {
         secretNames: [],
         reads: tool.reads,
         sends: [],
-        untrusted: true,
+        untrusted: tool.untrusted ?? true,
         createdAt: this.now(),
       })
       .run();
@@ -191,9 +211,26 @@ export class ToolRegistry {
     return env;
   }
 
+  /** How Oraknid's own tool judges this call by its arguments, if it does (ADR-038). */
+  judge(
+    row: ToolRow,
+    session: { jobId: string | null },
+    name: string,
+    args: Record<string, unknown>,
+  ): McpDeclaration | undefined {
+    if (!isBuiltIn(row)) return undefined;
+    return this.#builtIns.get(row.name)?.judge?.(session, name, args);
+  }
+
+  /** Whether one of Oraknid's own tools is registered under this name. */
+  hasBuiltIn(name: string): boolean {
+    const row = this.db.select().from(tools).where(eq(tools.name, name)).get();
+    return !!row && isBuiltIn(row) && this.#builtIns.has(name);
+  }
+
   /** What the policy needs to know of these tools' calls (ADR-021). */
-  declarations(rows: ToolRow[]): Map<string, "read" | "send" | "held"> {
-    const out = new Map<string, "read" | "send" | "held">();
+  declarations(rows: ToolRow[]): Map<string, McpDeclaration> {
+    const out = new Map<string, McpDeclaration>();
     for (const t of rows) {
       for (const r of t.reads) out.set(`mcp__${t.name}__${r}`, "read");
       for (const s of t.sends) out.set(`mcp__${t.name}__${s}`, "send");
