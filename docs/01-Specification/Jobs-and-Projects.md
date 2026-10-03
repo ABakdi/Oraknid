@@ -187,6 +187,17 @@ fails once merged is redone on top of the newer work.
   folder and one to merge the branch into the work branch. Merging is
   my action, so pressing it is the approval; a conflict is reported and
   nothing is merged.
+- **The repo's part is Oraknid's** (2026-10-03, after the piano job):
+  merging the job into the work branch and pushing the work branch to
+  the project's linked repo are Oraknid's own steps when the job ends
+  (the merge as above; the push with the github tool, ADR-038), never
+  tasks for a Leg. A job's folder stays a worktree of the project: a
+  command that would re-create, move or delete a `.git`, or write under
+  `.git/worktrees`, is refused, never asked; after every session Oraknid
+  checks the folder still belongs to the project and puts it right if
+  not. Checks that Oraknid runs itself (`oraknid github-…`) are named to
+  the Leg as Oraknid's, and a Leg trying to run one is told so, never
+  asks me.
 - **Blocked**: it can't continue. The reason is shown in plain words
   ("All Legs are out of quota until 14:05" / "The tests fail the same
   way after 3 Legs tried"). It resumes on its own when the reason clears

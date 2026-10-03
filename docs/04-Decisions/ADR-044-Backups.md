@@ -40,6 +40,8 @@ set up from the web interface or by asking the helper.
   and make keys, asking first for anything that writes on a server, and
   never shows a private key.
 
+*Extended 2026-10-03:* destinations in cloud storage and a download from the web page ([[ADR-046-Cloud-Storage]]).
+
 ## Consequences
 - `age` and `zstd` are used on this computer (Oraknid ships or finds
   them); a dump tool must exist where the database runs (in its

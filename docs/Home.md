@@ -87,6 +87,7 @@ note and in the [[Roadmap]]. Next: those runs, then Later.
 - [[ADR-032-Email]] — Phase 12: an email client, mail for agents through the broker
 - [[ADR-034-Projects-First]] · [[ADR-035-Nest-Pages-By-Mode]] — Phase 13: the project is the place, jobs its history; what a public and a private Nest show
 - [[ADR-036-One-Script-Install]] · [[ADR-037-Questions-With-Options]] · [[ADR-038-Project-Accounts]] — Phase 13: one install script with services for systemd, OpenRC and runit; questions with options; a project's GitHub repo and servers, chosen once
+- [[ADR-045-The-Eye-Speaks-Up]] · [[ADR-046-Cloud-Storage]] — Phase 13: The Eye reports in the conversation and every answer says what it does; my storage providers as one pool
 - [[ADR-043-Server-Insight]] · [[ADR-044-Backups]] — Phase 13: Docker, databases, the proxy, traffic and logs of a server; scheduled, encrypted database backups
 - [[ADR-042-Several-Repos-And-Servers]] — Phase 13: a project of several repos, each committed and pushed on its own; servers with roles, picked by name and confirmed
 - [[ADR-041-Docs-And-A-Guiding-Helper]] — Phase 13: the guide inside Oraknid, and a helper that knows it, my data and the screens, and shows me where things are

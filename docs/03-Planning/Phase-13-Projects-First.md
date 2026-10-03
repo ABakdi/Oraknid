@@ -435,6 +435,16 @@ server offering the databases `servers.databases` found (a Postgres
 container picked fills its kind and name) at desktop and 390 px; a web
 test covers that mapping.
 
+### M13.14 — The Eye speaks up ([[ADR-045-The-Eye-Speaks-Up]])
+- [ ] Task done, task left out, job done (a summary), blocked, a needed request denied: one moderate message each in the project's conversation
+- [ ] Every question's options say what they do; "keeps going wrong" in plain words; a denial says its consequence before and after
+- [ ] GitHub without fuss (after the piano job): merge and push are Oraknid's steps at the end; the job folder stays a worktree (`.git` changes refused, checked after each session); Oraknid's own checks never asked about
+
+### M13.15 — Cloud storage ([[ADR-046-Cloud-Storage]])
+- [ ] Providers through rclone: Google Drive, Dropbox, MEGA, S3-compatible; the pool with upload, download, move, delete; automatic or chosen placement
+- [ ] Backups to cloud storage, and downloaded from the web page
+- [ ] The helper and the guide
+
 ## Exit criterion
 
 I ask for new work on the piano project from its Eye tab and follow it
