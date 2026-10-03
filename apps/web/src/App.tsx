@@ -24,6 +24,7 @@ import { ReposPage } from "@/pages/repos";
 import { ServersPage } from "@/pages/servers";
 import { SettingsPage } from "@/pages/settings";
 import { SkillsPage } from "@/pages/skills";
+import { StoragePage } from "@/pages/storage";
 import { TerminalPage } from "@/pages/terminal";
 import { WorkPage } from "@/pages/work";
 
@@ -144,6 +145,8 @@ export function App() {
                 <Route path="/mail/:account?/:folder?/:thread?">
                   {(p) => <MailPage account={p.account} folder={p.folder} thread={p.thread} />}
                 </Route>
+                {/* Cloud storage (ADR-046): the folder of the pool I'm in follows /storage/. */}
+                <Route path="/storage/*?">{(p) => <StoragePage path={p["*"]} />}</Route>
                 <Route path="/terminal">{() => <TerminalPage />}</Route>
                 <Route path="/terminal/:target">{(p) => <TerminalPage target={p.target} />}</Route>
                 <Route path="/chats/:id">{(p) => <ChatsPage id={p.id} />}</Route>

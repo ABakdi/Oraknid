@@ -86,6 +86,7 @@ vi.mock("@/lib/api", () => ({
         },
       }),
     },
+    cloud: { providers: async () => [] },
     backups: {
       plans: async () => [PLAN],
       keys: async () => keys,
