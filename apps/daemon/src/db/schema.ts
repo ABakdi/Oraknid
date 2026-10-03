@@ -535,3 +535,130 @@ export const silkMirror = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.jobId, t.file] })],
 );
+
+type Address = { name: string; address: string };
+type Attachment = { filename: string; contentType: string; size: number };
+
+/** My mail accounts (ADR-032). Passwords and tokens are in the keychain, never here (BR-13). */
+export const mailAccounts = sqliteTable("mail_accounts", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  provider: text("provider", { enum: ["gmail", "outlook", "imap"] }).notNull(),
+  /** A password (or app password), or OAuth2 with Google or Microsoft. */
+  auth: text("auth", { enum: ["password", "google", "microsoft"] }).notNull(),
+  login: text("login").notNull(),
+  imapHost: text("imap_host").notNull(),
+  imapPort: integer("imap_port").notNull(),
+  imapSecurity: text("imap_security", { enum: ["tls", "starttls", "plain"] }).notNull(),
+  smtpHost: text("smtp_host").notNull(),
+  smtpPort: integer("smtp_port").notNull(),
+  smtpSecurity: text("smtp_security", { enum: ["tls", "starttls", "plain"] }).notNull(),
+  /** An agent's draft is sent without asking me. Off unless I turn it on. */
+  autoSend: integer("auto_send", { mode: "boolean" }).notNull().default(false),
+  /** The provider doesn't file sent mail itself: Oraknid appends it to Sent. */
+  appendSent: integer("append_sent", { mode: "boolean" }).notNull(),
+  state: text("state", { enum: ["new", "syncing", "ready", "reconnect", "error"] })
+    .notNull()
+    .default("new"),
+  error: text("error"),
+  lastSyncAt: integer("last_sync_at"),
+  createdAt: integer("created_at").notNull(),
+});
+
+export const mailFolders = sqliteTable(
+  "mail_folders",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull(),
+    path: text("path").notNull(),
+    name: text("name").notNull(),
+    specialUse: text("special_use"),
+    /** A change means every UID held for it is void. */
+    uidValidity: text("uid_validity"),
+    /** The highest UID fetched so far. */
+    lastUid: integer("last_uid").notNull().default(0),
+    syncedAt: integer("synced_at"),
+  },
+  (t) => [uniqueIndex("mail_folders_path").on(t.accountId, t.path)],
+);
+
+/** Headers of every synced message; bodies cached once opened. */
+export const mailMessages = sqliteTable(
+  "mail_messages",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull(),
+    folderId: text("folder_id").notNull(),
+    uid: integer("uid").notNull(),
+    messageId: text("message_id"),
+    inReplyTo: text("in_reply_to"),
+    references: json<string[]>("references").notNull(),
+    /** Gmail's X-GM-THRID, or the first Message-ID the conversation refers to. */
+    threadId: text("thread_id").notNull(),
+    subject: text("subject").notNull(),
+    fromName: text("from_name").notNull(),
+    fromAddress: text("from_address").notNull(),
+    to: json<Address[]>("to").notNull(),
+    cc: json<Address[]>("cc").notNull(),
+    replyTo: json<Address[]>("reply_to").notNull(),
+    date: integer("date").notNull(),
+    flags: json<string[]>("flags").notNull(),
+    size: integer("size").notNull(),
+    hasAttachments: integer("has_attachments", { mode: "boolean" }).notNull(),
+    snippet: text("snippet").notNull().default(""),
+    text: text("text"),
+    html: text("html"),
+    attachments: json<Attachment[]>("attachments"),
+    imagesAllowed: integer("images_allowed", { mode: "boolean" }).notNull().default(false),
+  },
+  (t) => [
+    uniqueIndex("mail_messages_uid").on(t.folderId, t.uid),
+    index("mail_messages_folder_date").on(t.folderId, t.date),
+    index("mail_messages_thread").on(t.accountId, t.threadId),
+    index("mail_messages_message_id").on(t.accountId, t.messageId),
+  ],
+);
+
+/** What I or an agent wrote and hasn't sent yet: an agent's waits for my approval. */
+export const mailDrafts = sqliteTable(
+  "mail_drafts",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull(),
+    to: json<string[]>("to").notNull(),
+    cc: json<string[]>("cc").notNull(),
+    bcc: json<string[]>("bcc").notNull(),
+    subject: text("subject").notNull(),
+    html: text("html").notNull(),
+    text: text("text").notNull(),
+    replyToId: text("reply_to_id"),
+    forwardOfId: text("forward_of_id"),
+    threadId: text("thread_id"),
+    /** Their bytes are files in the data folder (mail/drafts/<id>/). */
+    attachments: json<Attachment[]>("attachments").notNull(),
+    author: text("author", { enum: ["owner", "agent"] }).notNull(),
+    jobId: text("job_id"),
+    state: text("state", { enum: ["draft", "waiting", "sending", "sent", "failed"] })
+      .notNull()
+      .default("draft"),
+    /** The inbox item asking me to approve it, when a job wrote it. */
+    approvalItemId: text("approval_item_id"),
+    error: text("error"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    sentAt: integer("sent_at"),
+  },
+  (t) => [index("mail_drafts_account").on(t.accountId, t.state)],
+);
+
+/** Senders whose remote images I allowed. */
+export const mailImageSenders = sqliteTable(
+  "mail_image_senders",
+  {
+    accountId: text("account_id").notNull(),
+    address: text("address").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.accountId, t.address] })],
+);

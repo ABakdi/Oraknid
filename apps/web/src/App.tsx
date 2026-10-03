@@ -16,6 +16,7 @@ import { JobPage } from "@/pages/job";
 import { JobsPage } from "@/pages/jobs";
 import { LegsPage } from "@/pages/legs";
 import { LogsPage } from "@/pages/logs";
+import { MailPage } from "@/pages/mail";
 import { OverviewPage } from "@/pages/overview";
 import { PairPage } from "@/pages/pair";
 import { ProjectsPage } from "@/pages/projects";
@@ -131,6 +132,10 @@ export function App() {
                 <Route path="/chats">{() => <ChatsPage />}</Route>
                 <Route path="/servers/:id?/:tab?">
                   {(p) => <ServersPage id={p.id} tab={p.tab} />}
+                </Route>
+                {/* One route: moving between folders and threads keeps the page (and its list) mounted. */}
+                <Route path="/mail/:account?/:folder?/:thread?">
+                  {(p) => <MailPage account={p.account} folder={p.folder} thread={p.thread} />}
                 </Route>
                 <Route path="/terminal">{() => <TerminalPage />}</Route>
                 <Route path="/terminal/:target">{(p) => <TerminalPage target={p.target} />}</Route>

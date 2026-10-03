@@ -1,14 +1,16 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline";
+import { PassThrough } from "node:stream";
 import { suspicious, wrapUntrusted } from "@oraknid/core";
 import type { McpServer } from "@oraknid/leg-sdk";
 import type { Sandbox } from "@oraknid/os";
 import { toolchainDirs } from "../legs/plan.ts";
-import type { ToolRegistry, ToolRow } from "./registry.ts";
+import { isBuiltIn, type ToolRegistry, type ToolRow } from "./registry.ts";
 
 // The MCP broker (ADR-021): the daemon runs each tool's server in its own
 // sandbox with its secrets, and a Leg reaches it only through a bridge on
@@ -22,6 +24,12 @@ s.on("close", () => process.exit(0));
 process.stdin.pipe(s);
 s.pipe(process.stdout);
 `;
+
+/** One JSON-RPC message in, its answer out (null: a notification, nothing to answer). */
+export type McpHandler = (message: Rpc) => Promise<Rpc | null>;
+
+/** A tool Oraknid answers itself, for one session of a job (ADR-032: the email tool). */
+export type BuiltInServer = (session: { jobId: string | null }) => McpHandler;
 
 export type CallDecision = { allow: true } | { allow: false; message: string };
 
@@ -51,14 +59,21 @@ export interface BrokerSession {
   close(): void;
 }
 
-interface Rpc {
+export interface Rpc {
   jsonrpc?: string;
   id?: number | string;
   method?: string;
   params?: { name?: string; arguments?: Record<string, unknown> };
-  result?: { content?: { type: string; text?: string }[]; isError?: boolean };
-  error?: { message?: string };
+  result?: {
+    content?: { type: string; text?: string }[];
+    isError?: boolean;
+    [key: string]: unknown;
+  };
+  error?: { code?: number; message?: string };
 }
+
+/** What the relay needs of a server: lines in, lines out, a way to stop it. */
+type Endpoint = Pick<ChildProcess, "stdin" | "stdout" | "kill" | "on" | "once">;
 
 export class McpBroker {
   constructor(
@@ -66,23 +81,29 @@ export class McpBroker {
       registry: ToolRegistry;
       /** null: the job runs unsandboxed, and so do its tools (ADR-006). */
       sandbox: Sandbox | null;
+      /** Oraknid's own tools, by name: answered in the daemon, with no process. */
+      builtIns?: Map<string, BuiltInServer>;
     },
   ) {}
 
   /** Opens the job's tools for one Leg session. Closing it stops every server. */
-  async open(rows: ToolRow[], hooks: BrokerHooks): Promise<BrokerSession> {
+  async open(
+    rows: ToolRow[],
+    hooks: BrokerHooks,
+    session: { jobId: string | null } = { jobId: null },
+  ): Promise<BrokerSession> {
     const dir = mkdtempSync(join(tmpdir(), "oraknid-mcp-"));
     const bridge = join(dir, "bridge.mjs");
     writeFileSync(bridge, BRIDGE);
     const servers: Record<string, McpServer> = {};
     const listeners: Server[] = [];
-    const children = new Set<ChildProcess>();
+    const children = new Set<Endpoint>();
     for (const row of rows) {
       // Read now: a missing secret fails the session's start, not a call later.
       const env = await this.o.registry.environment(row);
       const socket = join(dir, `${row.name}.sock`);
       const listener = createServer((client) => {
-        const child = this.#start(row, env, dir);
+        const child = isBuiltIn(row) ? this.#builtIn(row, session) : this.#start(row, env, dir);
         children.add(child);
         child.once("exit", () => children.delete(child));
         relay(row, client, child, hooks);
@@ -104,6 +125,63 @@ export class McpBroker {
         rmSync(dir, { recursive: true, force: true });
       },
     };
+  }
+
+  /** One of Oraknid's own tools: the same lines, answered in the daemon (its secrets never leave it). */
+  #builtIn(row: ToolRow, session: { jobId: string | null }): Endpoint {
+    const server = this.o.builtIns?.get(row.name);
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    const events = new EventEmitter();
+    let ended = false;
+    const end = () => {
+      if (ended) return;
+      ended = true;
+      stdout.end();
+      events.emit("exit", 0, null);
+    };
+    const handle = server?.(session);
+    createInterface({ input: stdin }).on("line", async (line) => {
+      let m: Rpc;
+      try {
+        m = JSON.parse(line) as Rpc;
+      } catch {
+        return;
+      }
+      const answer = handle
+        ? await handle(m).catch(
+            (e): Rpc => ({
+              jsonrpc: "2.0",
+              id: m.id,
+              error: { code: -32603, message: e instanceof Error ? e.message : String(e) },
+            }),
+          )
+        : m.id !== undefined
+          ? {
+              jsonrpc: "2.0",
+              id: m.id,
+              error: { code: -32601, message: `${row.name} is not available` },
+            }
+          : null;
+      if (answer && !ended) stdout.write(`${JSON.stringify(answer)}\n`);
+    });
+    const endpoint = {
+      stdin,
+      stdout,
+      kill: () => {
+        end();
+        return true;
+      },
+      on: (event: string, fn: (...a: unknown[]) => void) => {
+        events.on(event, fn);
+        return endpoint;
+      },
+      once: (event: string, fn: (...a: unknown[]) => void) => {
+        events.once(event, fn);
+        return endpoint;
+      },
+    };
+    return endpoint as unknown as Endpoint;
   }
 
   /** The tool's server, in its own sandbox: network on, a throwaway home, nothing of the job's. */
@@ -142,7 +220,7 @@ export class McpBroker {
 }
 
 /** Moves JSON-RPC lines between the Leg and the server, judging each tools/call on the way. */
-function relay(row: ToolRow, client: Socket, child: ChildProcess, hooks: BrokerHooks) {
+function relay(row: ToolRow, client: Socket, child: Endpoint, hooks: BrokerHooks) {
   const calls = new Map<number | string, { name: string; args: Record<string, unknown> }>();
   const toClient = (m: unknown) => {
     if (!client.destroyed) client.write(`${JSON.stringify(m)}\n`);

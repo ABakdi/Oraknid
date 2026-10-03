@@ -13,7 +13,23 @@ export type ToolRow = typeof tools.$inferSelect;
 
 const secretKey = (toolId: string, name: string) => `tool.${toolId}.${name}`;
 
+/** The command of a tool that is part of Oraknid: the broker answers it in the daemon. */
+export const BUILT_IN = "oraknid:built-in";
+
+/** A tool Oraknid ships (the email tool, ADR-032): declared here, not in Settings → Tools. */
+export interface BuiltInTool {
+  name: string;
+  description: string;
+  reads: string[];
+  /** Calls Oraknid itself holds for my approval: the broker lets them through to it. */
+  held: string[];
+}
+
+export const isBuiltIn = (row: { command: string }) => row.command === BUILT_IN;
+
 export class ToolRegistry {
+  readonly #builtIns = new Map<string, BuiltInTool>();
+
   constructor(
     private readonly db: Db,
     private readonly bus: EventBus,
@@ -42,6 +58,46 @@ export class ToolRegistry {
     return names.filter((n) => !have.has(n));
   }
 
+  /** Registers a tool Oraknid ships, adding its row the first time (no secrets: it runs in the daemon). */
+  ensureBuiltIn(tool: BuiltInTool): ToolRow {
+    this.#builtIns.set(tool.name, tool);
+    const row = this.db.select().from(tools).where(eq(tools.name, tool.name)).get();
+    if (row) {
+      if (!isBuiltIn(row))
+        throw new Error(`A tool of mine is named "${tool.name}": rename it to use Oraknid's own.`);
+      this.db
+        .update(tools)
+        .set({ description: tool.description, reads: tool.reads, sends: [] })
+        .where(eq(tools.id, row.id))
+        .run();
+      return this.get(row.id);
+    }
+    const id = newId(this.now());
+    this.db
+      .insert(tools)
+      .values({
+        id,
+        name: tool.name,
+        description: tool.description,
+        command: BUILT_IN,
+        args: [],
+        env: {},
+        secretNames: [],
+        reads: tool.reads,
+        sends: [],
+        untrusted: true,
+        createdAt: this.now(),
+      })
+      .run();
+    this.bus.publish({
+      type: "tool.created",
+      topic: "overview",
+      jobId: null,
+      payload: { toolId: id, name: tool.name, builtIn: true },
+    });
+    return this.get(id);
+  }
+
   async view(row: ToolRow, usedBy: string[]): Promise<ToolView> {
     const missingSecrets: string[] = [];
     for (const n of row.secretNames)
@@ -59,6 +115,8 @@ export class ToolRegistry {
       sends: row.sends,
       untrusted: row.untrusted,
       usedBy,
+      builtIn: isBuiltIn(row),
+      held: isBuiltIn(row) ? (this.#builtIns.get(row.name)?.held ?? []) : [],
       createdAt: row.createdAt,
     };
   }
@@ -92,6 +150,8 @@ export class ToolRegistry {
   /** Secrets given here replace or add; an empty value removes that secret. */
   async update(input: UpdateTool): Promise<ToolRow> {
     const row = this.get(input.id);
+    if (isBuiltIn(row))
+      throw new Error(`The ${row.name} tool is part of Oraknid: nothing to set up.`);
     const secretNames = new Set(row.secretNames);
     for (const [name, value] of Object.entries(input.secrets ?? {})) {
       await this.secrets.set(secretKey(row.id, name), value);
@@ -109,6 +169,8 @@ export class ToolRegistry {
 
   async remove(id: string) {
     const row = this.get(id);
+    if (isBuiltIn(row))
+      throw new Error(`The ${row.name} tool is part of Oraknid: it can't be removed.`);
     for (const n of row.secretNames) await this.secrets.delete(secretKey(id, n));
     this.db.delete(tools).where(eq(tools.id, id)).run();
     this.#publish("tool.removed", { toolId: id, name: row.name });
@@ -116,6 +178,7 @@ export class ToolRegistry {
 
   /** The server's whole environment: plain values and its secrets, read now (BR-13). */
   async environment(row: ToolRow): Promise<Record<string, string>> {
+    if (isBuiltIn(row)) return {};
     const env: Record<string, string> = { ...row.env };
     for (const n of row.secretNames) {
       const v = await this.secrets.get(secretKey(row.id, n));
@@ -129,11 +192,15 @@ export class ToolRegistry {
   }
 
   /** What the policy needs to know of these tools' calls (ADR-021). */
-  declarations(rows: ToolRow[]): Map<string, "read" | "send"> {
-    const out = new Map<string, "read" | "send">();
+  declarations(rows: ToolRow[]): Map<string, "read" | "send" | "held"> {
+    const out = new Map<string, "read" | "send" | "held">();
     for (const t of rows) {
       for (const r of t.reads) out.set(`mcp__${t.name}__${r}`, "read");
       for (const s of t.sends) out.set(`mcp__${t.name}__${s}`, "send");
+      // Only Oraknid's own tools may say "I hold this for the owner": a server of mine can't.
+      if (isBuiltIn(t))
+        for (const h of this.#builtIns.get(t.name)?.held ?? [])
+          out.set(`mcp__${t.name}__${h}`, "held");
     }
     return out;
   }

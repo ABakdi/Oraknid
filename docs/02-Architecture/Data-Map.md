@@ -16,6 +16,8 @@ Where each piece of data lives, and who can read it.
 | Device keys | SQLite (public), device (private) | — | No. |
 | Push subscriptions | SQLite | Daemon | The push service (browser vendor) receives encrypted notifications. |
 | Email notifications | — | — | Via my SMTP server, to my address. |
+| My mail (Phase 12) | SQLite: headers of synced messages, bodies once opened, drafts; drafts' attachments in `mail/drafts/<id>/` | Daemon, paired devices; agents with the email tool, through the broker | Only to my mail providers (IMAP, SMTP). What an agent reads goes to its Leg's provider, as any prompt does. |
+| Mail passwords and OAuth tokens | OS keychain (`mail.<account>.*`); an access token in memory only | Daemon | Only to that provider. |
 
 **What a remote Leg's provider sees:** the context pack, the files the
 Leg reads, and command output inside the session. The UI shows on each

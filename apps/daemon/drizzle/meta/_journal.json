@@ -183,6 +183,13 @@
       "when": 1790924613377,
       "tag": "0025_server_host_key",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1790984787342,
+      "tag": "0026_mail",
+      "breakpoints": true
     }
   ]
 }

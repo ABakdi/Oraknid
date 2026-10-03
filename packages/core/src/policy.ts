@@ -55,9 +55,10 @@ export interface PolicyContext {
   /**
    * What the job's tools declared about their calls, by `mcp__<tool>__<name>`
    * (ADR-021): a read passes, a send is the gated action `send`. Anything
-   * else is an external write.
+   * else is an external write. "held": Oraknid's own tool holds the call
+   * for my approval itself (an agent's email waits as a draft, ADR-032).
    */
-  mcp?: ReadonlyMap<string, "read" | "send">;
+  mcp?: ReadonlyMap<string, "read" | "send" | "held">;
 }
 
 export type PolicyVerdict =
@@ -320,6 +321,8 @@ export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
   if (r.tool.startsWith("mcp__")) {
     const declared = ctx.mcp?.get(r.tool);
     if (declared === "read") return { verdict: "allow", reason: `${r.tool} only reads` };
+    if (declared === "held")
+      return { verdict: "allow", reason: `${r.tool} waits for my approval in Oraknid itself` };
     if (declared === "send") {
       if (ctx.waived.has("send") && !ctx.untrusted)
         return { verdict: "allow", reason: "send waived for this job" };

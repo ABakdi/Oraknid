@@ -50,6 +50,8 @@ import { LegLogins } from "./legs/login.ts";
 import { LegRegistry } from "./legs/registry.ts";
 import { LegSupervisor } from "./legs/supervisor.ts";
 import { attachLive } from "./live/server.ts";
+import { type MailOptions, MailService } from "./mail/service.ts";
+import { EMAIL_TOOL, emailServer } from "./mail/tool.ts";
 import { NestLink } from "./nest/link.ts";
 import { Notifications } from "./notify/notifications.ts";
 import { startNotificationRouter } from "./notify/router.ts";
@@ -101,6 +103,11 @@ export interface DaemonOptions {
   /** Leg adapters by kind (tests replace them). */
   adapters?: Partial<Record<LegKind, LegAdapter>>;
   healthIntervalMs?: number;
+  /** Mail timings and OAuth addresses (tests). */
+  mail?: Pick<
+    MailOptions,
+    "syncEveryMs" | "idleDelayMs" | "initialLimit" | "oauthEndpoints" | "presets"
+  >;
 }
 
 export const EYE_LEG_SETTING = "eye.legModelId";
@@ -163,7 +170,32 @@ export async function startDaemon(options: DaemonOptions) {
   const projectsService = new Projects(db, bus, skills, now);
   // Tools for skills: MCP servers the daemon runs, never the Legs (ADR-021).
   const toolRegistry = new ToolRegistry(db, bus, secrets, now);
-  const broker = new McpBroker({ registry: toolRegistry, sandbox: os.sandbox });
+  // My mail (ADR-032): synced by the daemon, reached by agents through the email tool.
+  let url = "";
+  const mail = new MailService({
+    db,
+    bus,
+    secrets,
+    inbox,
+    dataDir: paths.dataDir,
+    baseUrl: () => url,
+    now,
+    // The email tool appears with the first account.
+    hasAccounts: () => {
+      try {
+        toolRegistry.ensureBuiltIn(EMAIL_TOOL);
+      } catch (error) {
+        // A tool of mine named "email" stays as it is.
+        console.warn(error instanceof Error ? error.message : error);
+      }
+    },
+    ...options.mail,
+  });
+  const broker = new McpBroker({
+    registry: toolRegistry,
+    sandbox: os.sandbox,
+    builtIns: new Map([[EMAIL_TOOL.name, emailServer(mail)]]),
+  });
   // GitHub through a token I paste (ADR-023).
   const github = new GitHub(secrets, options.github ?? {});
   // Chats with my models: talk and research (ADR-025).
@@ -263,7 +295,6 @@ export async function startDaemon(options: DaemonOptions) {
     now,
   });
   // Notifications start before recovery, so "Oraknid recovered" and its questions reach me (Audit 1 → D1-03).
-  let url = "";
   const notifications = new Notifications({
     db,
     secrets,
@@ -534,6 +565,7 @@ export async function startDaemon(options: DaemonOptions) {
         github,
         helper,
         servers: serverService,
+        mail,
         devices,
         brain,
         openPath:
@@ -547,6 +579,36 @@ export async function startDaemon(options: DaemonOptions) {
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true, version: VERSION });
+  });
+
+  // Back from Google or Microsoft's sign-in (ADR-032): only a sign-in started here is accepted.
+  app.get("/oauth/mail/callback", async (req, res) => {
+    const q = (k: string) =>
+      typeof req.query[k] === "string" ? (req.query[k] as string) : undefined;
+    const page = (title: string, text: string) =>
+      `<!doctype html><meta charset="utf-8"><title>${title}</title><body style="font-family:sans-serif;max-width:32rem;margin:4rem auto;line-height:1.5"><h1 style="font-size:1.25rem">${title}</h1><p>${text}</p></body>`;
+    try {
+      const { email } = await mail.oauthCallback({
+        ...(q("state") ? { state: q("state") } : {}),
+        ...(q("code") ? { code: q("code") } : {}),
+        ...(q("error") ? { error: q("error") } : {}),
+      });
+      res
+        .type("html")
+        .send(
+          page(
+            "Connected",
+            `${escapeHtml(email)} is connected to Oraknid. You can close this tab.`,
+          ),
+        );
+    } catch (error) {
+      res
+        .status(400)
+        .type("html")
+        .send(
+          page("Not connected", escapeHtml(error instanceof Error ? error.message : String(error))),
+        );
+    }
   });
 
   // The web UI (apps/web), when it has been built: static files, and the app for every other path.
@@ -566,6 +628,7 @@ export async function startDaemon(options: DaemonOptions) {
   port = (server.address() as AddressInfo).port;
   url = `http://${host}:${port}`;
   void nest.connect().catch((err) => console.error("nest link failed", err));
+  mail.start();
 
   const info: RuntimeInfo = { pid: process.pid, url, version: VERSION, startedAt };
   // Readable by my user only: it holds the CLI's token.
@@ -612,6 +675,7 @@ export async function startDaemon(options: DaemonOptions) {
       logins.stopAll();
       chats.stopAll();
       serverService.stop();
+      await mail.stop();
       nest.stop();
       await supervisor.killAll();
       await inhibit.stop();
@@ -649,6 +713,7 @@ export async function startDaemon(options: DaemonOptions) {
     budgets,
     projects: projectsService,
     servers: serverService,
+    mail,
     devices,
     cliToken: devices.cliToken,
     inbox,
@@ -685,13 +750,19 @@ function webRemote(): string | null {
   return null;
 }
 
-/** apps/web/dist, found from this module (src/ or dist/), if it was built. */
 /** An error the API's clients read like any other (oRPC's shape). */
 function rpcError(res: express.Response, status: number, code: string, message: string) {
   res.status(status).json({ json: { defined: false, code, status, message } });
 }
 
-/** The UI's content policy: its own scripts only, no framing, images from nowhere else. */
+const escapeHtml = (s: string) =>
+  s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+
+/**
+ * The UI's content policy: its own scripts only, no framing. Images may
+ * come from the web for mail I allowed them in (ADR-032); a message's own
+ * frame blocks them until I do.
+ */
 const UI_CSP = [
   "default-src 'self'",
   "script-src 'self'",
@@ -706,6 +777,7 @@ const UI_CSP = [
   "object-src 'none'",
 ].join("; ");
 
+/** apps/web/dist, found from this module (src/ or dist/), if it was built. */
 function webDist(): string | null {
   let dir = dirname(fileURLToPath(import.meta.url));
   for (let i = 0; i < 5; i++) {

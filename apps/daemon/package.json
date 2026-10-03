@@ -31,7 +31,9 @@
     "commander": "15.0.0",
     "drizzle-orm": "0.45.3",
     "express": "5.2.1",
+    "imapflow": "2.2.1",
     "libsodium-wrappers": "0.8.4",
+    "mailparser": "3.9.33",
     "node-pty": "^1.1.0",
     "nodemailer": "10.0.13",
     "ssh2": "^1.17.0",
@@ -44,9 +46,13 @@
     "@oraknid/nest": "workspace:^",
     "@types/better-sqlite3": "9.6.0",
     "@types/express": "5.0.6",
+    "@types/mailparser": "3.9.0",
+    "@types/nodemailer": "8.0.2",
+    "@types/smtp-server": "3.5.13",
     "@types/ssh2": "^1.15.6",
     "@types/ws": "8.18.2",
     "drizzle-kit": "0.31.11",
+    "smtp-server": "3.19.16",
     "tsdown": "0.23.0",
     "tsx": "4.23.15"
   }
