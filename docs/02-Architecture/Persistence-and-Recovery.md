@@ -3,25 +3,32 @@
 SQLite with better-sqlite3 and Drizzle ([[ADR-002-Persistence]]). The
 durable step engine runs on the same database ([[ADR-003-Job-Execution-Engine]]).
 
-## Tables (MVP)
+## Tables (as built, 2026-10-03)
 
 | Table | Holds |
 | :-- | :-- |
-| `projects`, `jobs`, `tasks`, `task_edges`, `web_versions` | The work. |
+| `projects` | Workspaces, with their skills and servers (`skill_ids`, `server_ids`). |
+| `jobs`, `tasks`, `task_edges` | The work. The Web's version is a number on the job (`web_version`), raised at every plan change. |
 | `attempts`, `sessions` | Who tried what, native session IDs, end reasons, usage totals. |
-| `legs`, `capability_profiles`, `leg_observations` | The pool and what was learned. |
-| (quota windows) | Stored as JSON on `legs` (account-wide windows) and `leg_models` (per-model windows), with `limited_until` on the Leg. |
+| `legs`, `leg_models` | The pool. Capability profiles and quota windows are JSON on `leg_models` (per model) and `legs` (account-wide), with `limited_until` on the Leg. |
 | `silk_entries` | Silk. |
 | `silk_mirror` | What Oraknid last wrote to each mirror file (hash), and the open import question. |
-| `skills`, `skill_versions` | The library. |
+| `skills` | The library: one row per skill and version. |
 | `inbox_items` | Approvals and questions. |
 | `eye_messages` | My conversation with The Eye per job, with what it did about each message (migration 0012). |
+| `eye_plans` | Every plan and its shadow's, to compare ([[ADR-022-Eye-Decision-Models]]). |
 | `steps` | The step journal: `(job_id, step_key)` PK, status, input hash, output. |
 | `side_effects` | The outbox with idempotency keys. |
-| `checkpoints` | Git refs per task. |
 | `events` | Append-only, `seq` PK. Feeds the UI, the stats and the audit. |
 | `devices`, `push_subscriptions` | Pairing and notifications. |
-| `settings`, `policies` | Allow/deny lists, thresholds, notification routing. |
+| `settings` | One JSON value per key: limits, policies, The Eye's models, the PIN's hash, device rights, a project's local ports… ([[Data-Map]] → Settings keys). |
+| `tools` | MCP servers for skills ([[ADR-021-Tools-Broker]]). |
+| `chats`, `chat_messages`, `helper_messages` | Chats and the helper ([[Chats-and-Helper]]). |
+| `servers`, `server_states`, `server_samples` | My servers, their state documents, oraknid-monitor's readings ([[Servers]]). |
+| `mail_accounts`, `mail_folders`, `mail_messages`, `mail_drafts`, `mail_image_senders`, `mail_pop_uidls` | Mail ([[ADR-032-Email]]). |
+
+Git checkpoints are refs in the repository, not rows ([[Sandboxing]]).
+Unlocked sessions are in memory only ([[ADR-029-App-Lock]]).
 
 ## Write discipline
 

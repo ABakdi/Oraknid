@@ -55,8 +55,15 @@ sequenceDiagram
     own token and its unlocked session ([[ADR-029-App-Lock]]), marked as
     coming from away: every rule of the local API applies, and what
     opens a new way in (pairing, the terminal, policies, projects, Legs,
-    tools, servers, the PIN) is refused.
+    tools, servers, the PIN) is refused, unless the device has full
+    rights ([[ADR-030-Device-Rights]]); what stays home only for every
+    device is refused whatever its rights.
   - `live-open`, `live {frame}`, `live-close`: the `/live` socket.
+  - `term-open {id, token, unlock, target, cols, rows}`, `term-in {id, f}`,
+    `term {id, d}`, `term-close {id}`: a terminal (2026-10-03), several
+    at once by `id`. The daemon checks the token is this device's and
+    opens its own `/term` marked as from away, which opens only for a
+    device with full rights; it closes with the tunnel.
   - `ui` → `ui {html}`: the remote web UI, one self-contained page
     built for this ([[ADR-019-Nest-UI-Serving]]).
 
@@ -77,9 +84,12 @@ is shown both in Settings at home and on the loader page, so I can
 compare them; that narrows the risk, it doesn't remove it (a changed
 loader can print the right hash). What such a loader could do is
 bounded: it needs my PIN, which it could catch as I type it, and then
-it has only what a device away from home may do (no terminal, no new
-devices, no policies, projects, Legs, tools or servers). A native app
-would remove the risk.
+it has only what a device away from home may do: for a standard
+device no terminal, no new devices, no policies, projects, Legs, tools
+or servers; for a device with full rights, all but what stays home only
+([[ADR-030-Device-Rights]]). A native app would remove the risk. The
+remote UI passes what breaks in its frame (errors, failed promises) to
+the loader, which logs it in its own console, where I can read it.
 
 ## Limits
 The Nest caps connections per address (an IPv6 address by its /64) and

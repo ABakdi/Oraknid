@@ -6,7 +6,9 @@
 
 - Job start: `git worktree add .oraknid/worktrees/<job> -b oraknid/<job-slug>-<last 6 of the job id> <work branch>`.
   The work branch is made from the release branch if it doesn't exist;
-  a repo with no commit gets an empty first one.
+  a repo with no commit gets an empty first one. A follow-up job's
+  branch starts from the ended job's branch instead (the setting
+  `job.startFrom.<job>`; [[Jobs-and-Projects]] → Follow-up jobs).
 - Checkpoints: commits on `refs/oraknid/<job>/<task>/<attempt>`, made by
   The Eye (never by a Leg) through a temporary index, and never pushed.
 - Job end: the branch stays for review. Merging into the work branch is

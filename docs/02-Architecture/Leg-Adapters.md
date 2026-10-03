@@ -95,7 +95,9 @@ The adapter is therefore a **minimal agent loop owned by Oraknid**:
 ## OpenCode — Phase 2
 
 OpenCode **v2** (2.0.20, checked 2026-10-01) through a private
-`opencode serve --stdio` per session, inside the sandbox, over its HTTP
+`opencode serve --stdio` per session, inside the sandbox, on a port
+Oraknid picks and forwards in from this computer's localhost when the
+sandbox has a network of its own ([[Sandboxing]]), over its HTTP
 API and SSE event stream ([[ADR-015-OpenCode-Adapter]]): `POST
 /api/session`, `POST …/prompt`, `POST …/interrupt`, `GET /api/event`,
 `POST …/permission/{id}/reply`. Turns end with
