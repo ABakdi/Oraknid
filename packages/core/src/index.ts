@@ -1,5 +1,6 @@
 export * from "./backups.ts";
 export * from "./budgets.ts";
+export * from "./cloud.ts";
 export * from "./drift.ts";
 export * from "./notify.ts";
 export * from "./policy.ts";

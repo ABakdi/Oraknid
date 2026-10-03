@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CloudTransfer } from "./cloud.ts";
 import { Event } from "./events.ts";
 import { MetricsSample } from "./metrics.ts";
 import { LogSource } from "./server-insight.ts";
@@ -7,7 +8,7 @@ import { LogSource } from "./server-insight.ts";
 
 export const Topic = z
   .string()
-  .regex(/^(overview|inbox|metrics|mail|(job|leg|chat):[0-9A-HJKMNP-TV-Z]{26})$/);
+  .regex(/^(overview|inbox|metrics|mail|storage|(job|leg|chat):[0-9A-HJKMNP-TV-Z]{26})$/);
 export type Topic = z.infer<typeof Topic>;
 
 export const ClientFrame = z.discriminatedUnion("type", [
@@ -38,6 +39,8 @@ export const ServerFrame = z.discriminatedUnion("type", [
   /** A followed log's new lines, and its end (ADR-043); never stored. */
   z.object({ type: z.literal("log"), id: z.string(), lines: z.array(z.string()) }),
   z.object({ type: z.literal("log-end"), id: z.string(), error: z.string().nullable() }),
+  /** An upload's or a download's progress, to clients subscribed to "storage" (ADR-046); never stored. */
+  z.object({ type: z.literal("transfer"), transfer: CloudTransfer }),
 ]);
 export type ServerFrame = z.infer<typeof ServerFrame>;
 
