@@ -1,24 +1,21 @@
 import type { ProjectView } from "@oraknid/contracts";
 import { FolderGit2, Plus } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
+import { ActivityFeed } from "@/components/activity-feed";
 import { LegComparison, TokensChart } from "@/components/charts";
-import {
-  BackButton,
-  Empty,
-  ErrorNote,
-  Loading,
-  PageHeader,
-  Stat,
-  StateBadge,
-} from "@/components/common";
+import { BackButton, Empty, ErrorNote, Loading, PageHeader, Stat } from "@/components/common";
 import { useConfirm } from "@/components/confirm";
+import { EyeChat } from "@/components/eye-chat";
+import { ProjectBudgetCard } from "@/components/job-budget";
 import { type PageTab, PageTabs } from "@/components/page-tabs";
 import { ProjectNetworkCard } from "@/components/project-network";
 import { ProjectServersCard } from "@/components/project-servers";
 import { ProjectSkillsCard } from "@/components/project-skills";
+import { currentJob, ProjectWeb, ProjectWork } from "@/components/project-work";
 import { RulesCard } from "@/components/rules-card";
+import { ProjectSilk } from "@/components/silk-list";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -36,8 +33,19 @@ import { tokens } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { useLive } from "@/lib/live";
 import { cn } from "@/lib/utils";
+import { InboxItemCard } from "@/pages/inbox";
 
-export function ProjectsPage({ id, tab }: { id?: string; tab?: string }) {
+export function ProjectsPage({
+  id,
+  tab,
+  job,
+  sub,
+}: {
+  id?: string;
+  tab?: string;
+  job?: string;
+  sub?: string;
+}) {
   const [, go] = useLocation();
   const projects = useLive(() => api.projects.list(), {
     topics: ["overview"],
@@ -78,6 +86,7 @@ export function ProjectsPage({ id, tab }: { id?: string; tab?: string }) {
         className={cn(
           "flex min-h-0 w-full shrink-0 flex-col gap-2 md:w-72",
           selected && "hidden md:flex",
+          selected && job && "md:hidden xl:flex",
         )}
       >
         <div className="flex items-center gap-2">
@@ -123,17 +132,54 @@ export function ProjectsPage({ id, tab }: { id?: string; tab?: string }) {
         </div>
       </aside>
       <section className={cn("min-h-0 min-w-0 flex-1", !selected && "hidden md:block")}>
-        {shown ? <ProjectDetail key={shown.id} project={shown} tab={tab} /> : null}
+        {shown ? (
+          <ProjectDetail key={shown.id} project={shown} tab={tab} job={job} sub={sub} />
+        ) : null}
       </section>
       <NewProject open={creating} onOpenChange={setCreating} />
     </div>
   );
 }
 
-/** One project: Jobs · Stats · Skills · Servers · Commands · About, in tabs. */
-function ProjectDetail({ project, tab }: { project: ProjectView; tab?: string }) {
+/**
+ * One project, the place I work (ADR-034): The Eye, The Web across its
+ * jobs, Work (its jobs as a timeline, one opened in place), Inbox, Silk by
+ * job, Activity, Budget & stats, Settings, Skills, Servers and Network, in
+ * tabs in the address.
+ */
+function ProjectDetail({
+  project,
+  tab,
+  job,
+  sub,
+}: {
+  project: ProjectView;
+  tab?: string;
+  job?: string;
+  sub?: string;
+}) {
   const [, go] = useLocation();
   const id = project.id;
+  const [ids, setIds] = useState<string[]>([]);
+  // Each job's own changes (its tasks, its tokens) reach The Web and Work live.
+  const jobs = useLive(() => api.jobs.list({ projectId: id }), {
+    topics: ["overview", ...ids.map((x) => `job:${x}`)],
+    refreshOn: (e) =>
+      e.type.startsWith("job.") ||
+      (/^(task|web|session\.ended)/.test(e.type) && e.type !== "task.waiting"),
+    deps: [id],
+  });
+  const list = jobs.data ?? [];
+  const started = list
+    .filter((j) => j.state !== "draft")
+    .map((j) => j.id)
+    .join();
+  useEffect(() => setIds(started ? started.split(",") : []), [started]);
+  const target = currentJob(list);
+  const inbox = useLive(() => api.inbox.list({ projectId: id, state: "open" }), {
+    topics: ["inbox"],
+    deps: [id],
+  });
   const header = (
     <div className="flex shrink-0 items-center gap-2">
       <BackButton fallback="/projects" label={t("All projects")} className="md:hidden" />
@@ -151,40 +197,87 @@ function ProjectDetail({ project, tab }: { project: ProjectView; tab?: string })
         size="sm"
         className="shrink-0 gap-1"
         disabled={!!project.archivedAt}
-        onClick={() => go("/new", { state: { projectId: id } })}
+        title={t("Ask The Eye for work in this project")}
+        onClick={() => go(`/projects/${id}/eye`, { state: history.state })}
       >
         <Plus className="size-4" />
         {t("New work")}
       </Button>
     </div>
   );
+  if (jobs.error) return <ErrorNote error={jobs.error} />;
   const tabs: PageTab[] = [
     {
-      id: "jobs",
-      label: t("Jobs"),
-      badge: project.jobCount || undefined,
-      content: () => <ProjectJobs id={id} />,
+      id: "eye",
+      label: t("The Eye"),
+      fill: true,
+      content: () => <EyeChat projectId={id} jobs={list} archived={!!project.archivedAt} />,
     },
-    { id: "stats", label: t("Stats"), content: () => <ProjectStats id={id} /> },
-    { id: "skills", label: t("Skills"), content: () => <ProjectSkillsCard projectId={id} /> },
-    { id: "servers", label: t("Servers"), content: () => <ProjectServersCard projectId={id} /> },
-    { id: "network", label: t("Network"), content: () => <ProjectNetworkCard projectId={id} /> },
     {
-      id: "commands",
-      label: t("Commands"),
+      id: "web",
+      label: t("The Web"),
+      content: () => <ProjectWeb projectId={id} jobs={list} />,
+    },
+    {
+      id: "work",
+      label: t("Work"),
+      badge: list.length || undefined,
+      fill: true,
+      content: () => <ProjectWork projectId={id} jobs={list} jobId={job} sub={sub} />,
+    },
+    {
+      id: "inbox",
+      label: t("Inbox"),
+      badge: inbox.data?.length || undefined,
+      content: () => <ProjectInbox id={id} />,
+    },
+    {
+      id: "silk",
+      label: t("Silk"),
+      content: () => <ProjectSilk projectId={id} jobIds={ids} target={target?.id ?? null} />,
+    },
+    {
+      id: "activity",
+      label: t("Activity"),
       content: () => (
-        <RulesCard
-          scope={id}
-          title={t("Commands in this project")}
-          description={t(
-            "Patterns for this project's jobs: a job's own rules win, these come next, then the global ones.",
-          )}
-          load={() => api.projects.policy({ id })}
-          save={(r) => api.projects.setPolicy({ id, ...r })}
+        <ActivityFeed
+          projectId={id}
+          jobIds={ids}
+          label={(e) => list.find((j) => j.id === e.jobId)?.title ?? null}
         />
       ),
     },
-    { id: "about", label: t("About"), content: () => <ProjectActions project={project} /> },
+    {
+      id: "budget",
+      label: t("Budget & stats"),
+      content: () => (
+        <div className="space-y-4">
+          <ProjectBudgetCard projectId={id} jobIds={ids} />
+          <ProjectStats id={id} />
+        </div>
+      ),
+    },
+    {
+      id: "settings",
+      label: t("Settings"),
+      content: () => (
+        <div className="space-y-4">
+          <ProjectActions project={project} />
+          <RulesCard
+            scope={id}
+            title={t("Commands in this project")}
+            description={t(
+              "Patterns for this project's jobs: a job's own rules win, these come next, then the global ones.",
+            )}
+            load={() => api.projects.policy({ id })}
+            save={(r) => api.projects.setPolicy({ id, ...r })}
+          />
+        </div>
+      ),
+    },
+    { id: "skills", label: t("Skills"), content: () => <ProjectSkillsCard projectId={id} /> },
+    { id: "servers", label: t("Servers"), content: () => <ProjectServersCard projectId={id} /> },
+    { id: "network", label: t("Network"), content: () => <ProjectNetworkCard projectId={id} /> },
   ];
   return (
     <PageTabs
@@ -197,46 +290,24 @@ function ProjectDetail({ project, tab }: { project: ProjectView; tab?: string })
   );
 }
 
-/** The project's jobs, newest first. */
-function ProjectJobs({ id }: { id: string }) {
-  const jobs = useLive(() => api.jobs.list(), {
-    topics: ["overview"],
-    refreshOn: (e) => e.type.startsWith("job."),
+/** The project's approvals and questions, from all its jobs. */
+function ProjectInbox({ id }: { id: string }) {
+  const items = useLive(() => api.inbox.list({ projectId: id }), {
+    topics: ["inbox"],
+    deps: [id],
   });
-  const [, go] = useLocation();
-  if (jobs.loading) return <Loading />;
-  const mine = (jobs.data ?? []).filter((j) => j.projectId === id).reverse();
-  if (mine.length === 0)
-    return (
-      <Empty
-        title={t("No jobs yet")}
-        action={
-          <Button className="gap-1" onClick={() => go("/new", { state: { projectId: id } })}>
-            <Plus className="size-4" />
-            {t("New work in this project")}
-          </Button>
-        }
-      >
-        {t("A job works in its own worktree here and never on your branch.")}
-      </Empty>
-    );
-  return (
-    <Card className="py-0">
-      <CardContent className="divide-y p-0">
-        {mine.map((j) => (
-          <Link
-            key={j.id}
-            href={j.state === "draft" ? `/new/${j.id}` : `/jobs/${j.id}`}
-            className="flex min-h-11 items-center gap-2 px-4 py-2 text-sm hover:bg-accent/50"
-          >
-            <span className="min-w-0 flex-1 truncate" title={j.title}>
-              {j.title}
-            </span>
-            <StateBadge state={j.state} />
-          </Link>
-        ))}
-      </CardContent>
-    </Card>
+  if (items.loading) return <Loading />;
+  const all = items.data ?? [];
+  return all.length === 0 ? (
+    <Empty title={t("Nothing for this project")}>
+      {t("Its jobs' approvals and questions appear here, and in the inbox.")}
+    </Empty>
+  ) : (
+    <div className="space-y-2">
+      {all.map((i) => (
+        <InboxItemCard key={i.id} item={i} />
+      ))}
+    </div>
   );
 }
 
@@ -275,7 +346,7 @@ function ProjectActions({ project }: { project: ProjectView }) {
     }
   };
   return (
-    <div className="space-y-3 text-sm">
+    <div className="space-y-3 rounded-xl border bg-card p-4 text-sm">
       <div className="space-y-1">
         <div className="text-xs text-muted-foreground">{t("Folder")}</div>
         <code className="block font-mono text-xs [overflow-wrap:anywhere]">

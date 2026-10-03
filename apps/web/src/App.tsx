@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Route, Router, Switch } from "wouter";
+import { Redirect, Route, Router, Switch } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { LockScreen } from "@/components/lock-screen";
 import { Shell } from "@/components/shell";
@@ -12,8 +12,7 @@ import { remote } from "@/lib/remote";
 import { ThemeProvider } from "@/lib/theme";
 import { ChatsPage } from "@/pages/chats";
 import { InboxPage } from "@/pages/inbox";
-import { JobPage } from "@/pages/job";
-import { JobsPage } from "@/pages/jobs";
+import { JobRedirect } from "@/pages/job-redirect";
 import { LegsPage } from "@/pages/legs";
 import { LogsPage } from "@/pages/logs";
 import { MailPage } from "@/pages/mail";
@@ -114,15 +113,18 @@ export function App() {
             <Shell>
               <Switch>
                 <Route path="/" component={OverviewPage} />
-                <Route path="/jobs" component={JobsPage} />
+                {/* No Jobs page and no job page (ADR-034): running work is on the Overview, a job in its project. */}
+                <Route path="/jobs">
+                  <Redirect to="/" replace />
+                </Route>
                 <Route path="/jobs/new">{() => <WorkPage />}</Route>
                 <Route path="/new">{() => <WorkPage />}</Route>
                 <Route path="/new/:id">{(p) => <WorkPage key={p.id} draftId={p.id} />}</Route>
                 <Route path="/jobs/:id/:tab?">
-                  {(p) => <JobPage key={p.id} id={p.id} tab={p.tab} />}
+                  {(p) => <JobRedirect key={p.id} id={p.id} tab={p.tab} />}
                 </Route>
-                <Route path="/projects/:id?/:tab?">
-                  {(p) => <ProjectsPage id={p.id} tab={p.tab} />}
+                <Route path="/projects/:id?/:tab?/:job?/:sub?">
+                  {(p) => <ProjectsPage id={p.id} tab={p.tab} job={p.job} sub={p.sub} />}
                 </Route>
                 <Route path="/inbox">{() => <InboxPage />}</Route>
                 <Route path="/inbox/:id">{(p) => <InboxPage focus={p.id} />}</Route>

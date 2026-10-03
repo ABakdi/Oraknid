@@ -92,6 +92,7 @@ export function WorkPage({ draftId }: { draftId?: string }) {
   const [legIds, setLegIds] = useState<string[]>([]);
   const [autonomy, setAutonomy] = useState<Autonomy>("standard");
   const [tokensLimit, setTokensLimit] = useState("");
+  const [money, setMoney] = useState<Budget["money"]>({ limit: 0, hard: true });
   const [share, setShare] = useState("");
   const [hours, setHours] = useState("8");
   const [verify, setVerify] = useState("");
@@ -114,6 +115,7 @@ export function WorkPage({ draftId }: { draftId?: string }) {
     setAutonomy(j.autonomy);
     setLegIds(j.allowedLegIds);
     setTokensLimit(j.budget.tokens ? String(j.budget.tokens.limit) : "");
+    setMoney(j.budget.money);
     setShare(j.budget.quotaShare ? String(Math.round(j.budget.quotaShare.limit * 100)) : "");
     setHours(j.budget.wallClockMs ? String(Math.round(j.budget.wallClockMs.limit / 3600_000)) : "");
     setInputs(j.inputs.map((i) => i.ref).join("\n"));
@@ -125,9 +127,9 @@ export function WorkPage({ draftId }: { draftId?: string }) {
       tokens: tokensLimit ? { limit: Number(tokensLimit), hard: true } : null,
       quotaShare: share ? { limit: Math.min(100, Number(share)) / 100, hard: true } : null,
       wallClockMs: hours ? { limit: Number(hours) * 3600_000, hard: false } : null,
-      money: { limit: 0, hard: true },
+      money,
     }),
-    [tokensLimit, share, hours],
+    [tokensLimit, share, hours, money],
   );
   const jobInputs = useMemo(
     () =>
@@ -186,6 +188,23 @@ export function WorkPage({ draftId }: { draftId?: string }) {
   const isNew = !draftId && projectId === "new";
   const effectiveProject = draftId ? draftJob.data?.projectId : projectId || projectList[0]?.id;
   const shownProject = projectList.find((p) => p.id === effectiveProject);
+
+  // The project's budget is where a new job's starts (ADR-034).
+  useEffect(() => {
+    if (draftId || !effectiveProject || effectiveProject === "new") return;
+    let cancelled = false;
+    api.projects
+      .budget({ id: effectiveProject })
+      .then((v) => {
+        if (cancelled) return;
+        setTokensLimit(v.budget.tokens ? String(v.budget.tokens.limit) : "");
+        setMoney(v.budget.money ?? { limit: 0, hard: true });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveProject, draftId]);
 
   // Tools the skill needs (ADR-021): missing ones hold the start.
   const skillIds =
@@ -304,7 +323,8 @@ export function WorkPage({ draftId }: { draftId?: string }) {
         ...(skill !== "auto" ? { skillId: skill } : {}),
       });
       await api.jobs.start({ id: draftId });
-      go(`/jobs/${draftId}`);
+      // Started, it is followed in its project's Eye tab (ADR-034).
+      go(`/projects/${draftJob.data?.projectId ?? effectiveProject}/eye`);
     } catch (e) {
       setError(e);
     } finally {
@@ -327,7 +347,7 @@ export function WorkPage({ draftId }: { draftId?: string }) {
       .remove({ id: draftId })
       .then(() => {
         toast.success(t("Draft deleted."));
-        go("/jobs");
+        go("/new", { replace: true });
       })
       .catch((e) => toast.error(message(e)));
   };
@@ -336,11 +356,14 @@ export function WorkPage({ draftId }: { draftId?: string }) {
   if (draftId && draftJob.data && draftJob.data.state !== "draft")
     return (
       <div className="mx-auto max-w-xl space-y-3 text-sm">
-        <PageHeader title={t("New work")} back={{ fallback: "/jobs" }} />
+        <PageHeader title={t("New work")} back={{ fallback: "/new" }} />
         <div>
           {t("This job has started.")}{" "}
-          <Link href={`/jobs/${draftId}`} className="underline underline-offset-2">
-            {t("Open it")}
+          <Link
+            href={`/projects/${draftJob.data.projectId}/eye`}
+            className="underline underline-offset-2"
+          >
+            {t("Follow it in its project")}
           </Link>
         </div>
       </div>
@@ -350,13 +373,16 @@ export function WorkPage({ draftId }: { draftId?: string }) {
     <div className="space-y-4">
       <PageHeader
         title={draftId ? t("Draft") : t("New work")}
-        back={draftId ? { fallback: "/jobs" } : undefined}
+        back={draftId ? { fallback: "/new" } : undefined}
         sub={
           draftId
-            ? t("Saved as you go: leave and come back from Jobs, start it, or delete it.")
-            : t("Say what you want. The Eye asks what it needs here, then you start it.")
+            ? t("Saved as you go: leave and come back from New work, start it, or delete it.")
+            : t(
+                "A first request, a new project or a draft. For more work in a project, ask in its Eye tab.",
+              )
         }
       />
+      {draftId ? null : <Drafts />}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
         {/* ── Left: the options. */}
         <Card className="h-fit min-w-0">
@@ -670,6 +696,41 @@ export function WorkPage({ draftId }: { draftId?: string }) {
       </div>
       {dialog}
     </div>
+  );
+}
+
+/** Drafts waiting to start (Jobs-and-Projects → The draft): they live here now. */
+function Drafts() {
+  const jobs = useLive(() => api.jobs.list(), {
+    topics: ["overview"],
+    refreshOn: (e) => e.type.startsWith("job."),
+  });
+  const projects = useLive(() => api.projects.list(), { topics: ["overview"] });
+  const drafts = (jobs.data ?? []).filter((j) => j.state === "draft").reverse();
+  if (!drafts.length) return null;
+  const names = new Map((projects.data ?? []).map((p) => [p.id, p.name]));
+  return (
+    <section aria-label={t("Drafts")} className="space-y-1.5">
+      <h2 className="font-mono text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {t("Drafts")}
+      </h2>
+      <div className="flex flex-wrap gap-2">
+        {drafts.map((d) => (
+          <Link
+            key={d.id}
+            href={`/new/${d.id}`}
+            className="flex min-h-9 max-w-full items-center gap-2 rounded-md border bg-card px-3 text-sm hover:bg-accent pointer-coarse:min-h-11"
+          >
+            <span className="min-w-0 truncate" title={d.title}>
+              {d.title}
+            </span>
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {names.get(d.projectId) ?? ""}
+            </span>
+          </Link>
+        ))}
+      </div>
+    </section>
   );
 }
 
