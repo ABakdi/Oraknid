@@ -16,6 +16,7 @@ import { JobPage } from "@/pages/job";
 import { JobsPage } from "@/pages/jobs";
 import { LegsPage } from "@/pages/legs";
 import { LogsPage } from "@/pages/logs";
+import { MailPage } from "@/pages/mail";
 import { OverviewPage } from "@/pages/overview";
 import { PairPage } from "@/pages/pair";
 import { ProjectsPage } from "@/pages/projects";
@@ -125,6 +126,14 @@ export function App() {
                 <Route path="/legs/:id">{(p) => <LegsPage focus={p.id} />}</Route>
                 <Route path="/skills" component={SkillsPage} />
                 <Route path="/chats">{() => <ChatsPage />}</Route>
+                <Route path="/mail">{() => <MailPage />}</Route>
+                <Route path="/mail/:account">{(p) => <MailPage account={p.account} />}</Route>
+                <Route path="/mail/:account/:folder">
+                  {(p) => <MailPage account={p.account} folder={p.folder} />}
+                </Route>
+                <Route path="/mail/:account/:folder/:thread">
+                  {(p) => <MailPage account={p.account} folder={p.folder} thread={p.thread} />}
+                </Route>
                 <Route path="/servers" component={ServersPage} />
                 <Route path="/terminal">{() => <TerminalPage />}</Route>
                 <Route path="/terminal/:target">{(p) => <TerminalPage target={p.target} />}</Route>

@@ -7,6 +7,7 @@ import { AwayCard, PhoneCard } from "@/components/away-card";
 import { ErrorNote, Loading, PageHeader } from "@/components/common";
 import { GitHubCard } from "@/components/github-card";
 import { LockCard } from "@/components/lock-card";
+import { MailAccountsCard } from "@/components/mail-accounts-card";
 import { RulesCard } from "@/components/rules-card";
 import { StorageCard } from "@/components/storage-card";
 import { TerminalCard } from "@/components/terminal-card";
@@ -121,6 +122,9 @@ export function SettingsPage({ tab }: { tab?: string }) {
           </Section>
         </TabsContent>
         <TabsContent value="connections" className="space-y-6 pt-2">
+          <Section title={t("Email accounts")}>
+            <MailAccountsCard />
+          </Section>
           <Section title={t("GitHub")}>
             <GitHubCard />
           </Section>

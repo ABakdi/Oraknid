@@ -61,6 +61,30 @@ export function ToolsCard() {
 }
 
 function ToolRow({ tool }: { tool: ToolView }) {
+  if (tool.builtIn) return <BuiltInRow tool={tool} />;
+  return <ServerRow tool={tool} />;
+}
+
+/** One of Oraknid's own tools (the email tool): nothing to set up, nothing to remove. */
+function BuiltInRow({ tool }: { tool: ToolView }) {
+  return (
+    <div className="space-y-2 rounded-md border px-3 py-2 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-medium">{tool.name}</span>
+        <Badge variant="outline">{t("part of Oraknid")}</Badge>
+        {tool.untrusted ? <Badge variant="outline">{t("untrusted output")}</Badge> : null}
+      </div>
+      {tool.description ? <div className="text-muted-foreground">{tool.description}</div> : null}
+      <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
+        <div>{t("Reads (allowed): {r}", { r: tool.reads.join(", ") || t("none") })}</div>
+        <div>{t("Waits for my approval: {h}", { h: tool.held.join(", ") || t("none") })}</div>
+        <div>{t("Used by: {u}", { u: tool.usedBy.join(", ") || t("no skill yet") })}</div>
+      </div>
+    </div>
+  );
+}
+
+function ServerRow({ tool }: { tool: ToolView }) {
   const [secret, setSecret] = useState<{ name: string; value: string } | null>(null);
   return (
     <div className="space-y-2 rounded-md border px-3 py-2 text-sm">
