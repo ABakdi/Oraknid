@@ -202,6 +202,7 @@ export async function show(
   }
   const modal = !!modalOf(el);
   const note = str("note") ?? (action.name === "fill" ? "Filled in: check it, then save." : c.name);
-  rings.set({ el, note: modal ? `${note} ${DIALOG_NOTE}` : note, at: d.location() });
+  const said = modal ? `${note}${/[.!?…]$/.test(note) ? "" : "."} ${DIALOG_NOTE}` : note;
+  rings.set({ el, note: said, at: d.location() });
   return modal ? { ok: true, modal } : { ok: true };
 }

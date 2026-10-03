@@ -190,7 +190,7 @@ describe("the helper panel (ADR-041)", () => {
     reply = highlight("settings.terminal-switch", "Turn it on");
     await ask("Where is the terminal switch?");
     await waitFor(() =>
-      expect(rings.get()?.note).toBe("Turn it on Close this dialog to get back to the helper."),
+      expect(rings.get()?.note).toBe("Turn it on. Close this dialog to get back to the helper."),
     );
     // The panel can't be used while the dialog holds the page: it waits.
     await waitFor(() =>
