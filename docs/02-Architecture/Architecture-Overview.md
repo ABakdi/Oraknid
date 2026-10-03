@@ -61,7 +61,8 @@ flowchart TB
 | Daemon | `apps/daemon` | Wiring: the step engine, The Eye, the supervisor, the API, the event bus, recovery, the CLI; and its services: the lock and devices (`auth`), the tools broker (`tools`), mail (`mail`), servers and oraknid-monitor (`servers`), the terminal (`term`), chats, the helper, The Nest link (`nest`). |
 | Web | `apps/web` | The UI. |
 | Tunnel | `packages/tunnel` | The end-to-end tunnel between a device and the daemon (libsodium), used by the daemon and The Nest's loader ([[Nest-Protocol]]). |
-| Nest | `apps/nest` | The relay and its loader page (Phase 4; public mode Phase 11). |
+| Nest | `apps/nest` | The relay and its loader page at `/app/` (Phase 4; public mode Phase 11). |
+| Site | `apps/site` | The product site and guide, static, built into The Nest's root ([[ADR-033-Product-Site]]). |
 
 ## Data flow of one task
 

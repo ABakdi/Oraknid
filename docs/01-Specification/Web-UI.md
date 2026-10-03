@@ -262,7 +262,7 @@ the Eye's conversation, chats, the helper) is rendered as markdown.
 
 Approvals and questions from all jobs. Each item can be answered in
 place, and reads well at any width: long commands and text wrap inside
-the card, never past it. Interview rounds appear as a short form. Each item names its
+the card, never past it; a command in a title shows as code. Interview rounds appear as a short form. Each item names its
 project and job. Filters: project, job, kind, state, and a search over
 the text.
 

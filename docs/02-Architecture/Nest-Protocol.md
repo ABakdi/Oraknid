@@ -68,8 +68,9 @@ sequenceDiagram
     built for this ([[ADR-019-Nest-UI-Serving]]).
 
 ## The UI away from home
-The Nest serves a small **loader** (a page and its script), nothing
-else. The loader opens the tunnel with the keys stored at pairing, asks
+The Nest serves a small **loader** (a page and its script) at `/app/`,
+and the static product site at its root, nothing else
+([[ADR-033-Product-Site]]); a pairing link is `…/app/#oraknid=…`. The loader opens the tunnel with the keys stored at pairing, asks
 the daemon for the UI through it, and starts it in place; the UI then
 calls the API and the live socket through the same tunnel. The UI's
 code comes only from the daemon, authenticated by the tunnel. It runs

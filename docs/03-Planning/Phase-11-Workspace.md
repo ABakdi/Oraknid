@@ -38,6 +38,12 @@ can't use what I use at home; and The Nest should serve other people.
 - [x] Missing options: rename and remove a Leg, edit a server, a skill's earlier versions, a copy of a built-in, New work from a project, older log pages
 - [x] The mark: an octopus eye on eight spider legs, violet and amber, with icons for a phone's home screen ([[Web-UI]] → Look)
 
+### M11.6 — A look of its own, and a site (2026-10-03)
+- [x] The app's own look, following the mark, in place of the stock component look: ink surfaces, violet, IBM Plex Sans and JetBrains Mono ([[Web-UI]] → Look)
+- [x] A product site at The Nest's root: what Oraknid is and how it works, install, a guide, the sources, my contact; real screenshots of the app; the loader moved to `/app/` ([[ADR-033-Product-Site]]); deployed on both Nests 2026-10-03
+- [x] A command in an inbox title shows as code, not between backticks
+- [ ] A new mark: a big octopus eye, spider legs from its edges all pointing down, two at the top meeting in a V; three concepts drawn, mine to choose; then its kit (sizes, lockups with the name) in the app, the loader and the site
+
 Tested: the back navigation's history counting (`apps/web/src/lib/nav.test.tsx`). The rest has no automated test.
 
 ## Exit criterion
@@ -45,6 +51,7 @@ Tested: the back navigation's history counting (`apps/web/src/lib/nav.test.tsx`)
 On my phone, The Eye's conversation fills the screen and nothing runs
 off its edge; at home I open four terminals in a grid; from my phone
 with full rights I open a terminal on my server; someone else's daemon
-registers on `oraknid.abakdi.com` and I use mine through my private Nest.
+registers on `oraknid.abakdi.com` and I use mine through my private Nest;
+`oraknid.abakdi.com` tells a newcomer what Oraknid is and how to install it.
 
 Related: [[Roadmap]] · [[Phase-10-Lockdown]]

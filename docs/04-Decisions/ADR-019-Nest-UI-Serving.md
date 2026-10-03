@@ -30,4 +30,8 @@ loader itself: a service worker can't stop its own replacement by the
 server. The loader's hash is shown at home and on the loader page for
 me to compare ([[Nest-Protocol]]).
 
+Since 2026-10-03 the loader lives at `/app/` and The Nest's root is the
+static product site, which has no part in the tunnel
+([[ADR-033-Product-Site]]).
+
 Related: [[The-Nest]] · [[ADR-017-Nest-E2E-Protocol]] · [[ADR-018-Nest-Hosting]] · [[Security]]
