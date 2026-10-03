@@ -1,13 +1,14 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { InterviewRound } from "@oraknid/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { type Daemon, startDaemon } from "../daemon.ts";
 import { resolvePaths } from "../paths.ts";
 import { fakeOs } from "../testing/fake-os.ts";
 import { type Action, scriptedLeg } from "../testing/scripted-leg.ts";
-import { type EyePins, type PlanRecord, PoolLegBrain, parseJson } from "./brain.ts";
+import { type EyePins, EyeTriage, type PlanRecord, PoolLegBrain, parseJson } from "./brain.ts";
 
 let daemon: Daemon | undefined;
 afterEach(async () => {
@@ -126,6 +127,91 @@ describe("The Eye's brain", () => {
       ["shadow", "Claude · sonnet", true],
     ]);
     expect(records[0]?.pairId).toBe(records[1]?.pairId);
+  });
+
+  it("asks the interview with shaped questions, and upgrades a round written the old way (ADR-037)", async () => {
+    const shaped = {
+      done: false,
+      playback: "A piano app.",
+      questions: [
+        {
+          id: "who",
+          shape: "single",
+          prompt: "Who plays it?",
+          options: [
+            { id: "me", label: "Me" },
+            { id: "kids", label: "Children", detail: "Bigger keys" },
+          ],
+          recommended: "kids",
+          allowOther: true,
+        },
+        { id: "notes", shape: "text", prompt: "Anything else?" },
+      ],
+      open: [],
+    };
+    const old = {
+      done: false,
+      playback: "",
+      questions: [
+        { question: "Which sound?", options: ["Grand", "Upright"], recommended: "Upright" },
+      ],
+      open: [],
+    };
+    const { brain, input, sent } = await brainWith([
+      `\`\`\`json\n${JSON.stringify(shaped)}\n\`\`\``,
+    ]);
+    const round = await brain.interviewRound({ ...input, answers: [] });
+    expect(sent[0]).toContain('"shape": "single" (choose one option)');
+    expect(round.questions[0]).toMatchObject({ id: "who", shape: "single", recommended: "kids" });
+    // Left out by the model: the defaults (no options, no recommendation, "Other" allowed).
+    expect(round.questions[1]).toEqual({
+      id: "notes",
+      shape: "text",
+      prompt: "Anything else?",
+      options: [],
+      recommended: null,
+      allowOther: true,
+    });
+    const legacy = parseJson(JSON.stringify(old), InterviewRound);
+    expect(legacy.ok && legacy.value.questions).toEqual([
+      {
+        id: "q1",
+        shape: "single",
+        prompt: "Which sound?",
+        options: [
+          { id: "o1", label: "Grand" },
+          { id: "o2", label: "Upright" },
+        ],
+        recommended: "o2",
+        allowOther: true,
+      },
+    ]);
+  });
+
+  it("lets The Eye's reply in its conversation carry questions, and none by default (ADR-037)", () => {
+    const withQs = parseJson(
+      JSON.stringify({
+        intent: "question",
+        reply: "Which one?",
+        silk: null,
+        tasks: [],
+        questions: [
+          {
+            id: "size",
+            shape: "multi",
+            prompt: "Which sizes?",
+            options: [
+              { id: "s", label: "Small" },
+              { id: "l", label: "Large" },
+            ],
+          },
+        ],
+      }),
+      EyeTriage,
+    );
+    expect(withQs.ok && withQs.value.questions?.[0]).toMatchObject({ shape: "multi" });
+    const plain = parseJson('{"intent":"question","reply":"Fine."}', EyeTriage);
+    expect(plain.ok && plain.value.questions).toBeUndefined();
   });
 
   it("takes an answer given inside a copy of the schema, and says so when it's only a schema", () => {

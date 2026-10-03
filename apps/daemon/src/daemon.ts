@@ -41,7 +41,7 @@ import { type EyeBrain, PoolLegBrain } from "./eye/brain.ts";
 import { startBudgetWatch } from "./eye/budgets.ts";
 import { EyeDecisions } from "./eye/decisions.ts";
 import { eyeProgram } from "./eye/program.ts";
-import { forgetGuidance, resumeConversations } from "./eye/talk.ts";
+import { forgetGuidance, recordAnswer, resumeConversations } from "./eye/talk.ts";
 import { Helper } from "./helper/service.ts";
 import { isLocalRequest } from "./http/guard.ts";
 import { InboxStore } from "./inbox/store.ts";
@@ -72,6 +72,7 @@ import { ToolRegistry } from "./tools/registry.ts";
 import { VERSION } from "./version.ts";
 import { setShadowRoot } from "./workspace/git.ts";
 import { GitHub } from "./workspace/github.ts";
+import { githubServer, githubTool } from "./workspace/github-tool.ts";
 import { Projects } from "./workspace/projects.ts";
 
 export interface DaemonOptions {
@@ -192,13 +193,24 @@ export async function startDaemon(options: DaemonOptions) {
     },
     ...options.mail,
   });
+  // GitHub through tokens I paste, several accounts (ADR-023, ADR-038).
+  const github = new GitHub(secrets, db, options.github ?? {});
+  // Oraknid's own github tool: a project's GitHub work with its linked account (ADR-038).
+  const githubToolDecl = githubTool(db);
+  try {
+    toolRegistry.ensureBuiltIn(githubToolDecl);
+  } catch (error) {
+    // A tool of mine named "github" stays as it is.
+    console.warn(error instanceof Error ? error.message : error);
+  }
   const broker = new McpBroker({
     registry: toolRegistry,
     sandbox: os.sandbox,
-    builtIns: new Map([[EMAIL_TOOL.name, emailServer(mail)]]),
+    builtIns: new Map([
+      [EMAIL_TOOL.name, emailServer(mail)],
+      [githubToolDecl.name, githubServer({ db, bus, github, projects: projectsService })],
+    ]),
   });
-  // GitHub through a token I paste (ADR-023).
-  const github = new GitHub(secrets, options.github ?? {});
   // Chats with my models: talk and research (ADR-025).
   const chats = new Chats({ db, bus, registry, supervisor, dataDir: paths.dataDir, now });
   // A model per kind of decision, and the shadow planner (ADR-022).
@@ -229,6 +241,12 @@ export async function startDaemon(options: DaemonOptions) {
         .catch((error) => console.error("resume after answer failed", error));
     }
     const { id, answer } = e.payload as { id: string; answer: string };
+    // An answer to questions The Eye asked in the project's conversation joins it as a short list (ADR-037).
+    try {
+      recordAnswer({ db, bus, now }, id);
+    } catch (error) {
+      console.error("recording the answer in the conversation failed", error);
+    }
     try {
       silk.answerImport(id, answer);
     } catch (error) {
@@ -270,6 +288,8 @@ export async function startDaemon(options: DaemonOptions) {
         brain,
         tools: { registry: toolRegistry, broker },
         servers: serverService,
+        github,
+        projects: projectsService,
         effects,
         // Set once the metrics loop runs; until then nothing holds work back.
         machine: () => recentMachine(),
@@ -598,7 +618,8 @@ export async function startDaemon(options: DaemonOptions) {
   const web = webDist();
   if (web) {
     app.use(express.static(web, { index: false, maxAge: "1h" }));
-    app.get(/^\/(?!api\/|live$).*/, (_req, res) => res.sendFile(join(web, "index.html")));
+    // Relative to its folder: a path with a hidden folder in it (~/.local/…) is served all the same.
+    app.get(/^\/(?!api\/|live$).*/, (_req, res) => res.sendFile("index.html", { root: web }));
   }
 
   await new Promise<void>((resolve, reject) => {

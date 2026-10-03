@@ -3,6 +3,7 @@ import {
   Difficulty,
   EyeIntent,
   InterviewRound,
+  LooseQuestions,
   type SilkEntry,
   TaskKind,
   WebPlan,
@@ -183,6 +184,12 @@ export const EyeTriage = z.object({
       }),
     )
     .default([]),
+  /**
+   * Questions back to the owner, with options (ADR-037), when the message
+   * needs a choice before anything is done; "reply" says why. Empty most
+   * of the time.
+   */
+  questions: LooseQuestions.optional(),
 });
 export type EyeTriage = z.infer<typeof EyeTriage>;
 
@@ -194,7 +201,9 @@ const PLAN_RULES = `Rules for the plan:
 - Every task that changes things has "verify": shell commands that exit 0 only when the task is really done. Oraknid runs them itself; prefer existing test, build, lint or type-check commands, and add tests as tasks when there are none.
 - "difficulty" is honest: low for mechanical work, medium for normal features, high for design, hard debugging or architecture.
 - "jobVerify": commands that prove the whole goal is met.
-- Follow the job's method (the skill), e.g. write the canon before code when it says so.`;
+- Follow the job's method (the skill), e.g. write the canon before code when it says so.
+- GitHub work (creating the repository, pushing a branch, a pull request) is done through Oraknid's \`github\` tool, which holds the token: plan it as a task that uses that tool and name GitHub in its title. Never plan installing or using the gh CLI, nor asking for a token; Oraknid asks the owner which repository once, itself.
+- Work on a server (a deploy) names the server in its title; Oraknid asks the owner which server once.`;
 
 /** The kinds of The Eye's calls, each with its own optional model (ADR-022). */
 export type DecisionKind = "planning" | "judging" | "quick";
@@ -366,7 +375,12 @@ Plan ONLY the new tasks needed to fix this. Do not repeat done work. Use new tas
       i.answers.length
         ? `# The interview so far (the owner's words)\n${i.answers.map((a, n) => `## Round ${n + 1}\n${a}`).join("\n\n")}`
         : "This is the first round.",
-      `Write the next round: a short "playback" of what you understood${i.answers.length ? ', ending with "Is this right?"' : ""}, then at most 4 questions, open ones first, with suggested options and a recommendation where useful. Never guess to fill a gap. Set "done" to true only when every point the method lists is answered or recorded as decide-later, and list what stays open in "open".`,
+      `Write the next round: a short "playback" of what you understood${i.answers.length ? ', ending with "Is this right?"' : ""}, then at most 4 questions, open ones first. The owner answers them one at a time, by keyboard or touch, so shape each one (ADR-037):
+- "id": short and unique in the round ("q1", "audience"…); "prompt": the question, one or two sentences.
+- "shape": "single" (choose one option), "multi" (any number), "confirm" (yes or no), or "text" (a free answer, when options would only guess).
+- "options" for single and multi: 2 to 6, each with a short "id", a "label" and, when useful, a one-line "detail". The owner can always type another answer ("allowOther": true).
+- "recommended": the id of the option you recommend, or null. It is marked and selected first.
+Never guess to fill a gap. Set "done" to true only when every point the method lists is answered or recorded as decide-later, and list what stays open in "open".`,
     ].join("\n\n");
     return this.#ask(i.jobId, i.cwd, "medium", ["planning"], InterviewRound, prompt, "interview");
   }
@@ -524,12 +538,13 @@ If the check is at fault ("broken": true), give in "command" a corrected check t
       `# The owner's message\n${i.message}`,
       `Choose one intent:
 - "instruction": guidance for the work now (a constraint, a correction, a preference). Put it in "silk" as a "decision" in the owner's words; it is also passed to the agents working now.
-- "task": new work. Put the new tasks in "tasks" (dependsOn uses the ids of existing tasks above). Small and verifiable, like a plan's tasks.
+- "task": new work. Put the new tasks in "tasks" (dependsOn uses the ids of existing tasks above). Small and verifiable, like a plan's tasks. GitHub work (a repo, a push, a pull request) is a task that uses Oraknid's \`github\` tool and names GitHub in its title, never one that installs or uses the gh CLI.
 - "context": information to know, not a request. Put it in "silk" as a "fact", or as "architecture" when it is about the design.
 - "later": an idea or request for later, not for now. Put it in "silk" as "later".
 - "stop": the owner wants the work stopped or paused.
 - "question": the owner asks about the job. Answer it in "reply" from what is above; "silk" is null.
-When the message mixes several, pick what matters most and say in "reply" what you did. Never invent facts. "reply" is one or two plain sentences to the owner.${
+When the message mixes several, pick what matters most and say in "reply" what you did. Never invent facts. "reply" is one or two plain sentences to the owner.
+When you can't act without a choice from the owner, ask it in "questions" (at most 3) rather than in prose: each with an "id", a "prompt", a "shape" ("single", "multi", "confirm" or "text"), "options" with "id" and "label" (and a one-line "detail" when useful) and the "recommended" option's id. The owner's answers come back as their next message. Leave "questions" empty otherwise. Never ask which GitHub repository or server to use: Oraknid asks that itself.${
         i.state.startsWith("ENDED")
           ? `
 

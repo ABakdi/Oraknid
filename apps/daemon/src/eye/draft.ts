@@ -1,3 +1,11 @@
+import {
+  completeAnswers,
+  normalizeQuestions,
+  type Question,
+  type QuestionAnswer,
+  renderAnswers,
+  renderQuestions,
+} from "@oraknid/contracts";
 import { skillExcerpt } from "@oraknid/core";
 import { asc, eq } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
@@ -7,7 +15,7 @@ import { newId } from "../ids.ts";
 import type { SilkStore } from "../silk/store.ts";
 import type { SkillStore } from "../skills/store.ts";
 import type { EyeBrain } from "./brain.ts";
-import { INTERVIEW_DONE, pickJobSkill, renderRound } from "./program.ts";
+import { INTERVIEW_DONE, pickJobSkill } from "./program.ts";
 
 // The conversation before Start (Jobs-and-Projects → Starting work):
 // with an interviewing skill, The Eye asks its rounds here and my answers
@@ -23,7 +31,7 @@ export interface DraftDeps {
   now?: () => number;
 }
 
-const START_HINT = "Answer in your own words, or press **Start** whenever you're ready.";
+const START_HINT = "Answer the questions below, or press **Start** whenever you're ready.";
 
 /** Drafts The Eye is answering now: a message waits for its reply. */
 const thinking = new Set<string>();
@@ -32,7 +40,17 @@ export function isThinking(jobId: string) {
   return thinking.has(jobId);
 }
 
-function say(d: DraftDeps, jobId: string, author: "owner" | "eye", text: string) {
+function say(
+  d: DraftDeps,
+  jobId: string,
+  author: "owner" | "eye",
+  text: string,
+  extras: {
+    questions?: Question[] | null;
+    answers?: QuestionAnswer[] | null;
+    replyTo?: string | null;
+  } = {},
+) {
   const at = (d.now ?? Date.now)();
   const id = newId(at);
   d.bus.atomically(() => {
@@ -40,7 +58,18 @@ function say(d: DraftDeps, jobId: string, author: "owner" | "eye", text: string)
       d.db.select({ p: jobs.projectId }).from(jobs).where(eq(jobs.id, jobId)).get()?.p ?? "";
     d.db
       .insert(eyeMessages)
-      .values({ id, jobId, projectId, author, text, action: null, createdAt: at })
+      .values({
+        id,
+        jobId,
+        projectId,
+        author,
+        text,
+        action: null,
+        questions: extras.questions?.length ? extras.questions : null,
+        answers: extras.answers ?? null,
+        replyTo: extras.replyTo ?? null,
+        createdAt: at,
+      })
       .run();
     d.bus.publish({
       type: author === "owner" ? "eye.message" : "eye.replied",
@@ -65,6 +94,34 @@ export function draftStart(d: DraftDeps, jobId: string) {
   if (thinking.has(jobId)) return;
   thinking.add(jobId);
   void next(d, jobId, null).finally(() => thinking.delete(jobId));
+}
+
+/**
+ * My answers to The Eye's questions in the draft's conversation (ADR-037):
+ * kept structured, said as a short list, and taken as my answer to the round.
+ */
+export function draftAnswer(
+  d: DraftDeps,
+  jobId: string,
+  messageId: string,
+  given: QuestionAnswer[],
+) {
+  draft(d, jobId);
+  if (thinking.has(jobId)) throw new Error("The Eye is still answering; a moment.");
+  const m = d.db.select().from(eyeMessages).where(eq(eyeMessages.id, messageId)).get();
+  if (!m || m.jobId !== jobId || !m.questions?.length) throw new Error("No such question.");
+  const later = d.db
+    .select()
+    .from(eyeMessages)
+    .where(eq(eyeMessages.jobId, jobId))
+    .all()
+    .some((x) => x.replyTo === messageId);
+  if (later) throw new Error("Those questions are answered already.");
+  const answers = completeAnswers(m.questions, given);
+  const text = renderAnswers(m.questions, answers);
+  say(d, jobId, "owner", text, { answers, replyTo: messageId });
+  thinking.add(jobId);
+  void next(d, jobId, text).finally(() => thinking.delete(jobId));
 }
 
 /** My message in the draft's conversation, answered in the background. */
@@ -120,11 +177,12 @@ async function next(d: DraftDeps, jobId: string, text: string | null) {
         .all()
         .filter((m) => m.author === "eye")
         .at(-1);
+      const questions = asked?.questions?.length ? renderQuestions(asked.questions) : "";
       d.silk.add({
         jobId,
         kind: "interview-answer",
         title: `Interview, round ${answers.length + 1}`,
-        body: `${asked?.text ?? ""}\n\n**My answer:** ${text}`,
+        body: `${[asked?.text ?? "", questions].filter(Boolean).join("\n\n")}\n\n**My answer:** ${text}`,
         authoredBy: "owner",
       });
     }
@@ -162,7 +220,15 @@ async function next(d: DraftDeps, jobId: string, text: string | null) {
       );
       return;
     }
-    say(d, jobId, "eye", renderRound(round, START_HINT));
+    say(
+      d,
+      jobId,
+      "eye",
+      [round.playback ? `**What I understood**\n\n${round.playback}` : "", START_HINT]
+        .filter(Boolean)
+        .join("\n\n"),
+      { questions: normalizeQuestions(round.questions) },
+    );
   } catch (error) {
     say(
       d,

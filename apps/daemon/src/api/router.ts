@@ -12,6 +12,8 @@ import {
   EyeMessage,
   EyeModels,
   FoundAgent,
+  GitHubAccount,
+  GitHubLinkInput,
   HelperAction,
   HelperMessage,
   InboxFilter,
@@ -48,6 +50,7 @@ import {
   ProjectView,
   PruneRequest,
   PushSubscriptionInput,
+  QuestionAnswers,
   QuietHours,
   ServerSample,
   ServerState,
@@ -102,7 +105,7 @@ import {
   WebEdit,
 } from "../eye/controls.ts";
 import type { EyeDecisions } from "../eye/decisions.ts";
-import { draftStart, draftTalk, isThinking } from "../eye/draft.ts";
+import { draftAnswer, draftStart, draftTalk, isThinking } from "../eye/draft.ts";
 import {
   GlobalPolicy,
   readGlobalPolicy,
@@ -110,7 +113,13 @@ import {
   writeGlobalPolicy,
   writeProjectPolicy,
 } from "../eye/policy.ts";
-import { conversation, projectConversation, talk, talkInProject } from "../eye/talk.ts";
+import {
+  answerInProject,
+  conversation,
+  projectConversation,
+  talk,
+  talkInProject,
+} from "../eye/talk.ts";
 import type { Helper } from "../helper/service.ts";
 import type { InboxStore } from "../inbox/store.ts";
 import { discoverAgents } from "../legs/discover.ts";
@@ -543,6 +552,37 @@ export const router = {
       .handler(({ context: c, input }) =>
         guard(() => talkInProject(talkDeps(c), input.id, input.text.trim())),
       ),
+    /**
+     * My answers to The Eye's questions in the project's conversation
+     * (ADR-037): to the inbox item they belong to, or as my next message.
+     */
+    answer: base
+      .input(z.object({ id: z.string(), messageId: z.string(), answers: QuestionAnswers }))
+      .output(z.object({ id: z.string(), jobId: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(() =>
+          answerInProject(
+            { ...talkDeps(c), inbox: c.inbox },
+            input.id,
+            input.messageId,
+            input.answers,
+            c.device,
+          ),
+        ),
+      ),
+    /** Its GitHub link (ADR-038): the account and repository Oraknid uses for it, or none. */
+    setGitHub: base
+      .input(z.object({ id: z.string(), link: GitHubLinkInput.nullable() }))
+      .handler(({ context: c, input }) =>
+        guard(async () => {
+          if (input.link) {
+            const logins = (await c.github.accounts()).map((a) => a.login);
+            if (!logins.includes(input.link.account))
+              throw new Error(`No GitHub account ${input.link.account} in Oraknid.`);
+          }
+          c.projects.setGitHub(input.id, input.link);
+        }),
+      ),
     /** Its budget across its jobs, and what they used (ADR-034). */
     budget: base
       .input(z.object({ id: z.string() }))
@@ -656,12 +696,18 @@ export const router = {
         }),
       )
       .handler(({ context: c }) => c.github.status()),
-    setToken: base
+    /** My accounts (ADR-038); `check` asks GitHub whether each token still works. */
+    accounts: base
+      .input(z.object({ check: z.boolean().default(false) }).default({ check: false }))
+      .output(z.array(GitHubAccount))
+      .handler(({ context: c, input }) => guard(() => c.github.accounts(input.check))),
+    /** A token checked against GitHub and kept under its account's name. */
+    addAccount: base
       .input(z.object({ token: z.string().min(10) }))
       .output(z.object({ login: z.string() }))
       .handler(({ context: c, input }) =>
         guard(async () => {
-          const login = await c.github.setToken(input.token);
+          const login = await c.github.addAccount(input.token);
           c.bus.publish({
             type: "github.connected",
             topic: "overview",
@@ -672,19 +718,20 @@ export const router = {
           return { login };
         }),
       ),
-    removeToken: base.handler(({ context: c }) =>
+    removeAccount: base.input(z.object({ login: z.string() })).handler(({ context: c, input }) =>
       guard(async () => {
-        await c.github.removeToken();
+        await c.github.removeAccount(input.login);
         c.bus.publish({
           type: "github.disconnected",
           topic: "overview",
           jobId: null,
-          payload: {},
+          payload: { login: input.login },
           actor: "owner",
         });
       }),
     ),
     repos: base
+      .input(z.object({ login: z.string().optional() }).optional())
       .output(
         z.array(
           z.object({
@@ -696,7 +743,7 @@ export const router = {
           }),
         ),
       )
-      .handler(({ context: c }) => guard(() => c.github.repos())),
+      .handler(({ context: c, input }) => guard(() => c.github.repos(input?.login ?? null))),
   },
   /** Chats with my models: talk and research (ADR-025). */
   chats: {
@@ -1388,6 +1435,12 @@ export const router = {
     draftTalk: base
       .input(z.object({ id: z.string(), text: z.string().min(1) }))
       .handler(({ context: c, input }) => guard(() => draftTalk(drafts(c), input.id, input.text))),
+    /** My answers to The Eye's questions before the start (ADR-037). */
+    draftAnswer: base
+      .input(z.object({ id: z.string(), messageId: z.string(), answers: QuestionAnswers }))
+      .handler(({ context: c, input }) =>
+        guard(() => draftAnswer(drafts(c), input.id, input.messageId, input.answers)),
+      ),
     /** Whether The Eye is answering a draft now. */
     draftThinking: base
       .input(z.object({ id: z.string() }))
@@ -1680,10 +1733,19 @@ export const router = {
       .input(InboxFilter)
       .output(z.array(InboxItem))
       .handler(({ context: c, input }) => c.inbox.list(input)),
+    /** One of its options, my words, or my answers to its questions (ADR-037). */
     answer: base
-      .input(z.object({ id: z.string(), answer: z.string().min(1) }))
+      .input(
+        z
+          .object({
+            id: z.string(),
+            answer: z.string().min(1).optional(),
+            answers: QuestionAnswers.optional(),
+          })
+          .refine((x) => x.answer || x.answers, "an answer"),
+      )
       .handler(({ context: c, input }) =>
-        guard(() => c.inbox.answer(input.id, input.answer, c.device)),
+        guard(() => c.inbox.answer(input.id, input.answer ?? "", c.device, input.answers ?? null)),
       ),
   },
   /** The daemon's own log, its last lines (Phase 2 → M2.0). */

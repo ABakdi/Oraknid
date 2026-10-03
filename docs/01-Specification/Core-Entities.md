@@ -34,6 +34,7 @@ erDiagram
 | `createdAt`, `archivedAt` | |
 | `skillIds` | The skills its jobs may use; The Eye picks one per job (Phase 8). Empty: the default. |
 | `serverIds` | The servers its jobs may use, none by default ([[Servers]]). |
+| `github` | Its GitHub link, or none (2026-10-03, [[ADR-038-Project-Accounts]]): `account` (the login whose token is used), `owner`, `name`, `visibility` (`public` · `private`), `origin` (`new`: Oraknid creates it · `existing`), `ready` (false until a new one is created), `linkedAt`. |
 
 Its local ports (what its jobs' sandboxes may reach on this computer)
 are a setting, `project.localPorts.<project>` ([[Sandboxing]]). Its
@@ -172,7 +173,26 @@ Its capability profile is described in [[Legs-and-Capability-Profiles]].
 `approval` or `question`. Records who raised it (The Eye or a Leg), the
 job and task, the exact action or question, the options, the default,
 the state (`open` · `answered` · `expired` · `withdrawn`), and the answer
-with its time and device.
+with its time and device. A question may carry **questions** with
+options (below); its answer is then my **answers**, structured, and the
+same as a short list in `answer`.
+
+## Question (2026-10-03, [[ADR-037-Questions-With-Options]])
+
+Part of an inbox item or of The Eye's message, not stored alone.
+
+| Field | Meaning |
+| :-- | :-- |
+| `id` | Unique in its round. |
+| `shape` | `single` (one option) · `multi` (any number) · `text` (a free answer) · `confirm` (yes or no; Yes and No when it names none). |
+| `prompt` | The question. |
+| `options` | Up to nine, each `id`, `label` and an optional `detail`. |
+| `recommended` | The option The Eye recommends, or none: marked, and selected first. |
+| `allowOther` | A typed answer besides the options (default yes). |
+
+An **answer** is `questionId`, the `options` chosen and the `text`
+typed; neither is an unanswered question. Sent, a question I left
+unanswered takes its recommended option if it has one.
 
 ## Eye message
 
@@ -181,8 +201,10 @@ its project (2026-10-03, [[ADR-034-Projects-First]]; the project's
 conversation is its messages from every job), the author (`owner` or
 `eye`), the text, and for The Eye's replies what it made of my message
 (`instruction` · `task` · `context` · `later` · `stop` · `question`) and
-what it did (Silk entries, tasks added, the job it started). Kept
-forever, with the job.
+what it did (Silk entries, tasks added, the job it started). The Eye's
+message may carry **questions** (and the inbox item they belong to,
+when a job waits on them); my message answering them carries my
+**answers** and the message it answers. Kept forever, with the job.
 
 ## Side effect
 

@@ -132,6 +132,57 @@ async function replies(api: Api, projectId: string, n: number) {
   }
 }
 
+describe("The Eye's questions in its conversation (ADR-037)", () => {
+  it("asks with options in a reply, and reads my answers as my next message", async () => {
+    const got: string[] = [];
+    const { api, projectId } = await harness(quick, (m) => {
+      got.push(m);
+      return got.length === 1
+        ? {
+            intent: "question",
+            reply: "Which tuning first?",
+            silk: null,
+            tasks: [],
+            questions: [
+              {
+                id: "tuning",
+                shape: "multi",
+                prompt: "Which tunings?",
+                options: [
+                  { id: "equal", label: "Equal temperament" },
+                  { id: "just", label: "Just intonation" },
+                ],
+                recommended: "equal",
+                allowOther: true,
+              },
+            ],
+          }
+        : { intent: "instruction", reply: "Noted.", silk: null, tasks: [] };
+    });
+    const first = await api.projects.talk({ id: projectId, text: "Add tunings" });
+    await until(api, first.jobId, ["completed", "blocked"]);
+    await api.projects.talk({ id: projectId, text: "About the tunings" });
+    const c = await replies(api, projectId, 2);
+    const asked = c.find((m) => m.questions?.length);
+    expect(asked?.questions?.[0]).toMatchObject({ id: "tuning", shape: "multi" });
+    expect(asked?.itemId).toBeNull();
+    await api.projects.answer({
+      id: projectId,
+      messageId: asked?.id as string,
+      answers: [{ questionId: "tuning", options: ["equal", "just"], text: "and meantone" }],
+    });
+    const after = await replies(api, projectId, 3);
+    const mine = after.find((m) => m.replyTo === asked?.id);
+    expect(mine?.text).toBe(
+      "- Which tunings? — Equal temperament, Just intonation, Other: and meantone",
+    );
+    expect(got.at(-1)).toBe(mine?.text);
+    await expect(
+      api.projects.answer({ id: projectId, messageId: asked?.id as string, answers: [] }),
+    ).rejects.toThrow(/answered already/);
+  }, 30_000);
+});
+
 describe("the project's conversation (ADR-034)", () => {
   it("starts the first job from my message, then feeds the one running, then follows up", async () => {
     let hold = true;

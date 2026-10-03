@@ -1,8 +1,9 @@
-import type { InboxItem } from "@oraknid/contracts";
+import type { InboxItem, QuestionAnswer } from "@oraknid/contracts";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import { CodeSpans, Empty, ErrorNote, Loading, Markdown, PageHeader } from "@/components/common";
+import { QuestionsForm } from "@/components/questions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -194,10 +195,12 @@ export function InboxItemCard({ item, highlight }: { item: InboxItem; highlight?
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const interview = item.title.startsWith("Interview, round");
-  const answer = async (a: string) => {
+  const answer = async (a: string | QuestionAnswer[]) => {
     setBusy(true);
     try {
-      await api.inbox.answer({ id: item.id, answer: a });
+      await api.inbox.answer(
+        typeof a === "string" ? { id: item.id, answer: a } : { id: item.id, answers: a },
+      );
       toast.success(t("Answered."));
     } catch (e) {
       toast.error(message(e));
@@ -245,11 +248,37 @@ export function InboxItemCard({ item, highlight }: { item: InboxItem; highlight?
           />
         ) : null}
         {!open ? (
-          <div className="text-sm text-muted-foreground">
-            {item.state === "withdrawn"
-              ? t("Withdrawn: nothing waits for it any more.")
-              : t("Answered: {a}", { a: item.answer ?? "" })}
-          </div>
+          item.answers?.length ? (
+            <div className="space-y-1 text-sm text-muted-foreground">
+              <div>{t("Answered:")}</div>
+              <Markdown text={item.answer ?? ""} />
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">
+              {item.state === "withdrawn"
+                ? t("Withdrawn: nothing waits for it any more.")
+                : t("Answered: {a}", { a: item.answer ?? "" })}
+            </div>
+          )
+        ) : item.questions?.length ? (
+          // Asked with options (ADR-037): the same component as The Eye's conversation.
+          <QuestionsForm
+            questions={item.questions}
+            busy={busy}
+            onSubmit={(a) => answer(a)}
+            extra={item.options.map((o) => (
+              <Button
+                key={o}
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={busy}
+                onClick={() => answer(o)}
+              >
+                {t(o)}
+              </Button>
+            ))}
+          />
         ) : item.kind === "approval" ? (
           <div className="flex flex-wrap gap-2">
             {item.options.map((o) => (

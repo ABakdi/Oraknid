@@ -35,4 +35,28 @@ account, which server), it can only ask in prose.
   asked shows as before.
 - Inbox items for an interview round open the same component.
 
+## As built (2026-10-03)
+- **The shape** is in `packages/contracts` (`questions.ts`): up to nine
+  options a question; a `confirm` with no options gets Yes and No; a
+  choice with no options is a `text`; a recommendation that names no
+  option is dropped. The interview's and The Eye's prompts ask for it,
+  and the brain's schemas parse it; a question written the old way (a
+  question, options as words, the recommended one's words) is upgraded
+  on reading, so rounds kept in a job's journal still run.
+- **Where they live**: an inbox item and The Eye's message carry their
+  questions; my answers are kept structured on the item and on my
+  message (which names the message it answers), and said as a short
+  list (`- question — answer`) in the item's answer, my message's text
+  and the interview's Silk. Migration 0030.
+- **Answering in the conversation**: The Eye's questions in a reply come
+  back as my next message, which The Eye reads like any; questions a job
+  waits on (an interview round, a project's repo or server) belong to an
+  inbox item, and answering them in the conversation or the inbox
+  answers the item, the job goes on, and my answers join the
+  conversation once.
+- **Enter on a single choice takes the option it is on**, so ↓ then
+  Enter chooses; Space still selects without moving on. Tab past the
+  last tab, or Shift+Tab before the first, leaves the questions, so the
+  page stays reachable by keyboard.
+
 Related: [[The-Eye]] · [[Web-UI]] · [[Jobs-and-Projects]]

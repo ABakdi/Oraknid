@@ -58,8 +58,17 @@ export interface PolicyContext {
    * else is an external write. "held": Oraknid's own tool holds the call
    * for my approval itself (an agent's email waits as a draft, ADR-032).
    */
-  mcp?: ReadonlyMap<string, "read" | "send" | "held">;
+  mcp?: ReadonlyMap<string, McpDeclaration>;
 }
+
+/**
+ * What the policy knows of one MCP call (ADR-021, ADR-038): "read" passes;
+ * "held" is held by Oraknid's own tool for my approval; a gated action asks
+ * unless I waived it for the job; `{ linked }` is the project's linked
+ * place (its GitHub repo), where the link is my approval, unless the task
+ * read untrusted content (BR-15).
+ */
+export type McpDeclaration = "read" | "held" | GatedAction | { linked: GatedAction };
 
 export type PolicyVerdict =
   | { verdict: "allow"; reason: string }
@@ -323,15 +332,32 @@ export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
     if (declared === "read") return { verdict: "allow", reason: `${r.tool} only reads` };
     if (declared === "held")
       return { verdict: "allow", reason: `${r.tool} waits for my approval in Oraknid itself` };
-    if (declared === "send") {
-      if (ctx.waived.has("send") && !ctx.untrusted)
-        return { verdict: "allow", reason: "send waived for this job" };
+    if (typeof declared === "object") {
+      if (!ctx.untrusted)
+        return { verdict: "allow", reason: `${r.tool} works on the project's linked repo` };
+      return {
+        verdict: "ask",
+        reason: `${r.tool} works on the project's linked repo, but this task read untrusted content`,
+        gated: declared.linked,
+      };
+    }
+    if (declared) {
+      if (ctx.waived.has(declared) && !ctx.untrusted)
+        return { verdict: "allow", reason: `${declared} waived for this job` };
+      const what =
+        declared === "send"
+          ? "sends"
+          : declared === "push"
+            ? "pushes outside the project's linked repo, or rewrites its history"
+            : declared === "delete"
+              ? "deletes"
+              : "may write outside the machine";
       return {
         verdict: "ask",
         reason: ctx.untrusted
-          ? `${r.tool} sends, and this task read untrusted content`
-          : `${r.tool} sends`,
-        gated: "send",
+          ? `${r.tool} ${what}, and this task read untrusted content`
+          : `${r.tool} ${what}`,
+        gated: declared,
       };
     }
     if (ctx.waived.has("external-write") && !ctx.untrusted)

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { claimsDone, DEFAULT_THRESHOLDS, detect, nextEscalation, type Observed } from "./drift.ts";
-import { allowRuleFor, decide, type PolicyContext, programsOf } from "./policy.ts";
+import {
+  allowRuleFor,
+  decide,
+  type McpDeclaration,
+  type PolicyContext,
+  programsOf,
+} from "./policy.ts";
 
 const ctx = (over: Partial<PolicyContext> = {}): PolicyContext => ({
   worktree: "/w",
@@ -196,6 +202,33 @@ describe("permission policy", () => {
     expect(
       decide(call("mcp__email__send_email"), ctx({ mcp, waived, untrusted: true })),
     ).toMatchObject({ verdict: "ask", gated: "send" });
+  });
+
+  it("lets work on the project's linked repo through, and asks for anything else (ADR-038)", () => {
+    const call = (tool: string) => ({ tool, command: null, path: null });
+    const linked = new Map<string, McpDeclaration>([["mcp__github__push", { linked: "push" }]]);
+    const elsewhere = new Map<string, McpDeclaration>([["mcp__github__push", "push"]]);
+    // The link is my approval, at every autonomy.
+    expect(
+      decide(call("mcp__github__push"), ctx({ mcp: linked, autonomy: "supervised" })),
+    ).toMatchObject({
+      verdict: "allow",
+    });
+    // Elsewhere, or rewriting history: the push gate, even at Full.
+    expect(
+      decide(call("mcp__github__push"), ctx({ mcp: elsewhere, autonomy: "full" })),
+    ).toMatchObject({
+      verdict: "ask",
+      gated: "push",
+    });
+    // Unless I waived pushes for the job, and never once the task read untrusted content (BR-15).
+    expect(
+      decide(call("mcp__github__push"), ctx({ mcp: elsewhere, waived: new Set(["push"]) })).verdict,
+    ).toBe("allow");
+    expect(decide(call("mcp__github__push"), ctx({ mcp: linked, untrusted: true }))).toMatchObject({
+      verdict: "ask",
+      gated: "push",
+    });
   });
 
   it("finds every program in a command line", () => {

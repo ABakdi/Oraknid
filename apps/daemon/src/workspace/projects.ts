@@ -3,6 +3,8 @@ import { basename, join, resolve } from "node:path";
 import {
   ACTIVE_JOB_STATES,
   type DraftPatch,
+  type GitHubLink,
+  GitHubLinkInput,
   type NewJob,
   type NewProject,
 } from "@oraknid/contracts";
@@ -208,6 +210,56 @@ export class Projects {
         jobId: null,
         payload: { id, serverIds },
         actor: "owner",
+      });
+    });
+  }
+
+  /**
+   * Its GitHub link (ADR-038): the account and repository Oraknid's github
+   * tool uses for it, or none. A repo that exists is ready at once; a new
+   * one once the tool has created it.
+   */
+  setGitHub(id: string, input: GitHubLinkInput | null, by: "owner" | "eye" = "owner") {
+    const before = this.require(id).github;
+    // The same repo again keeps what is known of it: a new repo already created stays created.
+    const same =
+      !!input &&
+      !!before?.ready &&
+      before.owner.toLowerCase() === input.owner.toLowerCase() &&
+      before.name.toLowerCase() === input.name.toLowerCase();
+    const link: GitHubLink | null = input
+      ? {
+          ...GitHubLinkInput.parse(input),
+          ready: input.origin === "existing" || same,
+          linkedAt: this.now(),
+        }
+      : null;
+    this.bus.atomically(() => {
+      this.db.update(projects).set({ github: link }).where(eq(projects.id, id)).run();
+      this.bus.publish({
+        type: "project.github",
+        topic: "overview",
+        jobId: null,
+        payload: { id, github: link },
+        actor: by === "owner" ? "owner" : "eye",
+      });
+    });
+    return link;
+  }
+
+  /** The new repo of its link exists now (the github tool created it). */
+  githubCreated(id: string) {
+    const p = this.require(id);
+    if (!p.github || p.github.ready) return;
+    const link = { ...p.github, ready: true };
+    this.bus.atomically(() => {
+      this.db.update(projects).set({ github: link }).where(eq(projects.id, id)).run();
+      this.bus.publish({
+        type: "project.github",
+        topic: "overview",
+        jobId: null,
+        payload: { id, github: link },
+        actor: "eye",
       });
     });
   }

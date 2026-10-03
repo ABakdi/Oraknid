@@ -116,10 +116,10 @@ describe("GitHub and new projects (ADR-023)", () => {
       }),
     );
     expect(await api.github.status()).toEqual({ connected: false, login: null, error: null });
-    await expect(api.github.setToken({ token: "wrong-token-x" })).rejects.toThrow(
+    await expect(api.github.addAccount({ token: "wrong-token-x" })).rejects.toThrow(
       /refused the token/,
     );
-    expect(await api.github.setToken({ token: "good-token" })).toEqual({ login: "me" });
+    expect(await api.github.addAccount({ token: "good-token" })).toEqual({ login: "me" });
     expect((await api.github.repos()).map((r) => r.fullName)).toEqual(["me/old-site"]);
 
     const parent = mkdtempSync(join(tmpdir(), "oraknid-gh-parent-"));
@@ -148,7 +148,7 @@ describe("GitHub and new projects (ADR-023)", () => {
     });
     expect(fresh.name).toBe("blank");
     expect(existsSync(join(parent, "blank", ".git"))).toBe(true);
-    await api.github.removeToken();
+    await api.github.removeAccount({ login: "me" });
     expect((await api.github.status()).connected).toBe(false);
   });
 });

@@ -56,7 +56,8 @@ One page, two sides ([[Phase-8-Daily-Use]]):
 
 **Right, the prompt and the conversation:** I write what I want; The
 Eye answers in the same place. When the skill interviews, the interview
-happens here, round by round, with my answers kept in Silk verbatim
+happens here, round by round, its questions answered with options one
+at a time ([[ADR-037-Questions-With-Options]]), with my answers kept in Silk verbatim
 (so the started job doesn't ask again); otherwise what I add is kept as
 context. I can go on talking until I'm happy.
 
@@ -69,6 +70,9 @@ it. A draft costs nothing until it starts, except The Eye's replies.
 
 A project's settings list my servers; I tick the ones its jobs may use.
 Their jobs get each server's state document and a way in ([[Servers]]).
+When a task needs a server and the project has none, The Eye gives it
+my only one, or asks which, once ([[ADR-038-Project-Accounts]],
+[[The-Eye]] → A project's GitHub repo and servers).
 
 ## This computer's services
 
@@ -81,11 +85,21 @@ local model, named in its settings, is always reachable by it
 ## Repositories
 
 A project can come from GitHub ([[ADR-023-GitHub-By-Token]]): a new
-repo created on my account, or one of mine, cloned into the folder I
-choose. The token is mine, in the keychain, used by Oraknid for
-creating and cloning, and for a push only when I approve it. Other
-remotes (GitLab, any git URL) come last; a public clone URL works
-meanwhile.
+repo created on one of my accounts, or one of mine, cloned into the
+folder I choose. Other remotes (GitLab, any git URL) come last; a public
+clone URL works meanwhile.
+
+**A project's GitHub link** (2026-10-03, [[ADR-038-Project-Accounts]]):
+an account (one of my GitHub tokens, each named by its account) and a
+repository: owner/name, its visibility, new (Oraknid creates it) or
+existing. It's shown and changed in the project's Settings, beside its
+servers. A project made from a GitHub repo is linked to it; otherwise
+The Eye asks once, when a task first needs GitHub. Oraknid does the
+GitHub work itself with the link's account, through its `github` tool:
+creating the repo, pushing a branch, opening a pull request, without
+asking; pushing anywhere else or rewriting history still asks
+([[Approvals-and-Autonomy]] → Linked work). The token never reaches a
+Leg.
 
 ## Following a job
 

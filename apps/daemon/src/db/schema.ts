@@ -1,3 +1,4 @@
+import type { GitHubLink, Question, QuestionAnswer } from "@oraknid/contracts";
 import { sql } from "drizzle-orm";
 import {
   index,
@@ -28,6 +29,8 @@ export const projects = sqliteTable("projects", {
   skillIds: json<string[]>("skill_ids").notNull().default([]),
   /** The servers its jobs may use (Servers → Servers in projects). None by default. */
   serverIds: json<string[]>("server_ids").notNull().default([]),
+  /** Its GitHub account and repository, for Oraknid's github tool (ADR-038). Null: none yet. */
+  github: json<GitHubLink | null>("github"),
 });
 
 export const skills = sqliteTable(
@@ -367,6 +370,11 @@ export const eyeMessages = sqliteTable(
     text: text("text").notNull(),
     /** What The Eye made of my message and did about it (its replies only). */
     action: json<unknown>("action"),
+    /** The Eye's questions with options (ADR-037); my answers on my message. */
+    questions: json<Question[] | null>("questions"),
+    itemId: text("item_id"),
+    answers: json<QuestionAnswer[] | null>("answers"),
+    replyTo: text("reply_to"),
     createdAt: integer("created_at").notNull(),
   },
   (t) => [
@@ -394,6 +402,9 @@ export const inboxItems = sqliteTable(
     answeredAt: integer("answered_at"),
     answeredByDeviceId: text("answered_by_device_id"),
     createdAt: integer("created_at").notNull(),
+    /** Asked with options (ADR-037), and my structured answers. */
+    questions: json<Question[] | null>("questions"),
+    answers: json<QuestionAnswer[] | null>("answers"),
   },
   (t) => [index("inbox_state").on(t.state), index("inbox_job").on(t.jobId)],
 );
