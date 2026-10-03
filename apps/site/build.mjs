@@ -1,11 +1,12 @@
 // The product site (ADR-033): static pages a Nest serves at its root, with
 // the phone loader under /app/. The home page and the guide are written
 // here and in docs/*.md; this script renders them into dist/ with one
-// layout, self-hosted fonts and Phosphor icons. Nothing loads from
+// layout, self-hosted fonts (the app's: IBM Plex Sans, JetBrains Mono) and Phosphor icons. Nothing loads from
 // elsewhere: the Nest's pages allow only themselves.
 
 import {
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -88,11 +89,13 @@ const page = ({ title, description, body, active, path }) => `<!doctype html>
 <meta name="theme-color" content="#0E0C16" />
 <meta property="og:title" content="${title}" />
 <meta property="og:description" content="${description}" />
-<meta property="og:image" content="/og.png" />
+<meta property="og:image" content="https://oraknid.abakdi.com/og.png" />
+<meta property="og:url" content="https://oraknid.abakdi.com${path}" />
+<meta name="twitter:card" content="summary_large_image" />
 <link rel="canonical" href="https://oraknid.abakdi.com${path}" />
 <link rel="icon" href="/icon.svg" type="image/svg+xml" />
 <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-<link rel="preload" href="/fonts/geist.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/fonts/plex-sans.woff2" as="font" type="font/woff2" crossorigin />
 <link rel="stylesheet" href="/site.css" />
 <script src="/site.js" defer></script>
 </head>
@@ -112,15 +115,14 @@ function build() {
   mkdirSync(join(out, "fonts"), { recursive: true });
   mkdirSync(join(out, "docs"), { recursive: true });
   copyFileSync(
-    mod("@fontsource-variable/geist/files/geist-latin-wght-normal.woff2"),
-    join(out, "fonts/geist.woff2"),
+    mod("@fontsource-variable/ibm-plex-sans/files/ibm-plex-sans-latin-wght-normal.woff2"),
+    join(out, "fonts/plex-sans.woff2"),
   );
   copyFileSync(
-    mod("@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2"),
-    join(out, "fonts/geist-mono.woff2"),
+    mod("@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2"),
+    join(out, "fonts/jetbrains-mono.woff2"),
   );
-  for (const f of readdirSync(join(here, "public")))
-    copyFileSync(join(here, "public", f), join(out, f));
+  cpSync(join(here, "public"), out, { recursive: true });
   copyFileSync(join(here, "src/site.css"), join(out, "site.css"));
   copyFileSync(join(here, "src/site.js"), join(out, "site.js"));
 

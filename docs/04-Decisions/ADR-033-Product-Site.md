@@ -9,10 +9,12 @@ already serves The Nest's loader at `/`, which paired phones open.
 
 ## Decision
 - **`apps/site`**: a static site (a home page and a guide written in
-  Markdown), built by one script with self-hosted fonts (Geist, Geist
-  Mono) and Phosphor icons, nothing loaded from elsewhere. It follows
-  the mark (an octopus eye on eight spider legs): deep ink, violet,
-  amber only in the eye.
+  Markdown), built by one script with the app's self-hosted fonts (IBM
+  Plex Sans, JetBrains Mono) and Phosphor icons, nothing loaded from
+  elsewhere. It follows the mark (an octopus eye on eight spider legs):
+  deep ink, violet, amber only in the eye. Its pictures are real
+  screenshots of the app, on a sample project (`public/shots/`, and
+  `og.png` for links shared elsewhere).
 - **The Nest serves it at its root**; the phone loader moves to
   `/app/` (its manifest, service worker and icons with it). Pairing
   links are `…/app/#oraknid=…`. A device that was paired before, or an

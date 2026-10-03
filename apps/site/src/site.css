@@ -2,14 +2,14 @@
    Radii: controls 10px, surfaces 16px, chips round. */
 
 @font-face {
-  font-family: "Geist";
-  src: url("/fonts/geist.woff2") format("woff2");
+  font-family: "IBM Plex Sans";
+  src: url("/fonts/plex-sans.woff2") format("woff2");
   font-weight: 100 900;
   font-display: swap;
 }
 @font-face {
-  font-family: "Geist Mono";
-  src: url("/fonts/geist-mono.woff2") format("woff2");
+  font-family: "JetBrains Mono";
+  src: url("/fonts/jetbrains-mono.woff2") format("woff2");
   font-weight: 100 900;
   font-display: swap;
 }
@@ -29,8 +29,8 @@
   --shadow: 0 24px 60px -24px rgb(6 4 18 / 0.8);
   --r-control: 10px;
   --r-surface: 16px;
-  --font: "Geist", ui-sans-serif, system-ui, sans-serif;
-  --mono: "Geist Mono", ui-monospace, "SFMono-Regular", monospace;
+  --font: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
 }
 
 @media (prefers-color-scheme: light) {
