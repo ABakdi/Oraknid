@@ -20,6 +20,17 @@ class Live {
   #topics = new Map<string, number>();
   #listeners = new Set<Listener>();
   #metrics = new Set<(m: MetricsSample) => void>();
+  /** Server logs followed while their screen is open (ADR-043), opened again after a reconnect. */
+  #logs = new Map<
+    string,
+    {
+      serverId: string;
+      source: string;
+      onLines: (l: string[]) => void;
+      onEnd: (e: string | null) => void;
+    }
+  >();
+  #nextLog = 1;
   #statusListeners = new Set<() => void>();
   #retry = 0;
   #timer: ReturnType<typeof setTimeout> | undefined;
@@ -40,6 +51,8 @@ class Live {
       this.#setStatus("live");
       const topics = [...this.#topics.keys()];
       if (topics.length) ws.send(JSON.stringify({ type: "subscribe", topics }));
+      for (const [id, l] of this.#logs)
+        ws.send(JSON.stringify({ type: "logs-open", id, serverId: l.serverId, source: l.source }));
       if (this.lastSeq) ws.send(JSON.stringify({ type: "resume", lastSeq: this.lastSeq }));
     };
     ws.onmessage = (m) => {
@@ -54,6 +67,12 @@ class Live {
         this.epoch++;
         this.#notify();
       } else if (frame.type === "ping") ws.send(JSON.stringify({ type: "pong" }));
+      else if (frame.type === "log") this.#logs.get(frame.id)?.onLines(frame.lines);
+      else if (frame.type === "log-end") {
+        const l = this.#logs.get(frame.id);
+        this.#logs.delete(frame.id);
+        l?.onEnd(frame.error);
+      }
     };
     ws.onclose = () => {
       this.#ws = null;
@@ -93,6 +112,24 @@ class Live {
   on(l: Listener) {
     this.#listeners.add(l);
     return () => this.#listeners.delete(l);
+  }
+
+  /** Follows a server's log; the returned function stops it, there and on the server. */
+  followLog(
+    serverId: string,
+    source: string,
+    onLines: (l: string[]) => void,
+    onEnd: (e: string | null) => void,
+  ): () => void {
+    const id = `log${this.#nextLog++}`;
+    this.#logs.set(id, { serverId, source, onLines, onEnd });
+    if (this.#ws?.readyState === WebSocket.OPEN)
+      this.#ws.send(JSON.stringify({ type: "logs-open", id, serverId, source }));
+    return () => {
+      if (!this.#logs.delete(id)) return;
+      if (this.#ws?.readyState === WebSocket.OPEN)
+        this.#ws.send(JSON.stringify({ type: "logs-close", id }));
+    };
   }
 
   onMetrics(l: (m: MetricsSample) => void) {

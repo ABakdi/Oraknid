@@ -1,12 +1,19 @@
 import type { ServerSample, ServerView } from "@oraknid/contracts";
 import { Pencil, Plus, RefreshCw, Server, SquareTerminal, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { AddServer } from "@/components/add-server";
 import { BackButton, Empty, ErrorNote, Loading, Markdown, PageHeader } from "@/components/common";
 import { useConfirm } from "@/components/confirm";
 import { type PageTab, PageTabs } from "@/components/page-tabs";
+import { ServerBackupsTab } from "@/components/server-backups";
+import {
+  ServerDatabasesTab,
+  ServerDockerTab,
+  ServerLogsTab,
+  ServerProxyTab,
+} from "@/components/server-insight";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +24,11 @@ import { ago, bytes } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { useLive } from "@/lib/live";
 import { cn } from "@/lib/utils";
+
+// xterm.js only when a server's Terminal tab opens.
+const ServerTerminal = lazy(() =>
+  import("@/pages/terminal").then((m) => ({ default: m.ServerTerminal })),
+);
 
 const act = (p: Promise<unknown>, ok?: string) =>
   p.then(() => ok && toast.success(ok)).catch((e) => toast.error(message(e)));
@@ -230,106 +242,127 @@ function ServerDetail({ s, tab }: { s: ServerView; tab?: string }) {
       ) : null}
     </div>
   );
-  const tabs: PageTab[] = [
-    ...(s.setup === "ready"
-      ? [
-          {
-            id: "readings",
-            label: t("Readings"),
-            content: () => <Readings id={s.id} latest={s.latest} />,
-          },
-        ]
-      : []),
-    ...(s.stateVersion > 0
-      ? [{ id: "state", label: t("State document"), content: () => <StateDocument id={s.id} /> }]
-      : []),
-    {
-      id: "about",
-      label: t("About"),
-      content: () => (
-        <div className="space-y-3 text-sm">
-          {s.description ? (
-            <div className="text-muted-foreground [overflow-wrap:anywhere]">{s.description}</div>
-          ) : null}
-          <div className="text-xs text-muted-foreground">
-            {s.setup === "new"
-              ? s.auth === "password"
-                ? t(
-                    "Set up installs a key of Oraknid's own on it, deletes the password, reads what's there and installs oraknid-monitor.",
-                  )
-                : t("Set up reads what's there (only reads) and installs oraknid-monitor.")
-              : s.lastSeenAt
-                ? t("Seen {when}.", { when: ago(s.lastSeenAt) })
-                : ""}
+  const about = (
+    <div className="space-y-3 text-sm">
+      {s.description ? (
+        <div className="text-muted-foreground [overflow-wrap:anywhere]">{s.description}</div>
+      ) : null}
+      <div className="text-xs text-muted-foreground">
+        {s.setup === "new"
+          ? s.auth === "password"
+            ? t(
+                "Set up installs a key of Oraknid's own on it, deletes the password, reads what's there and installs oraknid-monitor.",
+              )
+            : t("Set up reads what's there (only reads) and installs oraknid-monitor.")
+          : s.lastSeenAt
+            ? t("Seen {when}.", { when: ago(s.lastSeenAt) })
+            : ""}
+      </div>
+      {editing ? (
+        <form
+          className="space-y-3 rounded-md border p-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void act(
+              api.servers
+                .update({
+                  id: s.id,
+                  name: editing.name.trim(),
+                  description: editing.description,
+                })
+                .then(() => setEditing(null)),
+              t("Saved."),
+            );
+          }}
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="se-name">{t("Name")}</Label>
+            <Input
+              id="se-name"
+              value={editing.name}
+              onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+            />
           </div>
-          {editing ? (
-            <form
-              className="space-y-3 rounded-md border p-3"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void act(
-                  api.servers
-                    .update({
-                      id: s.id,
-                      name: editing.name.trim(),
-                      description: editing.description,
-                    })
-                    .then(() => setEditing(null)),
-                  t("Saved."),
-                );
-              }}
-            >
-              <div className="space-y-1.5">
-                <Label htmlFor="se-name">{t("Name")}</Label>
-                <Input
-                  id="se-name"
-                  value={editing.name}
-                  onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="se-desc">{t("What it is and what it has")}</Label>
-                <Textarea
-                  id="se-desc"
-                  rows={3}
-                  value={editing.description}
-                  onChange={(e) => setEditing({ ...editing, description: e.target.value })}
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => setEditing(null)}
-                >
-                  {t("Cancel")}
-                </Button>
-                <Button type="submit" size="sm" disabled={!editing.name.trim()}>
-                  {t("Save")}
-                </Button>
-              </div>
-            </form>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                className="gap-1"
-                onClick={() => setEditing({ name: s.name, description: s.description })}
-              >
-                <Pencil className="size-3.5" />
-                {t("Edit")}
-              </Button>
-              <Button size="sm" variant="ghost" className="gap-1 text-destructive" onClick={remove}>
-                <Trash2 className="size-3.5" />
-                {t("Remove this server")}
-              </Button>
-            </div>
-          )}
+          <div className="space-y-1.5">
+            <Label htmlFor="se-desc">{t("What it is and what it has")}</Label>
+            <Textarea
+              id="se-desc"
+              rows={3}
+              value={editing.description}
+              onChange={(e) => setEditing({ ...editing, description: e.target.value })}
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" size="sm" variant="secondary" onClick={() => setEditing(null)}>
+              {t("Cancel")}
+            </Button>
+            <Button type="submit" size="sm" disabled={!editing.name.trim()}>
+              {t("Save")}
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            className="gap-1"
+            onClick={() => setEditing({ name: s.name, description: s.description })}
+          >
+            <Pencil className="size-3.5" />
+            {t("Edit")}
+          </Button>
+          <Button size="sm" variant="ghost" className="gap-1 text-destructive" onClick={remove}>
+            <Trash2 className="size-3.5" />
+            {t("Remove this server")}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+  // A server's tabs (ADR-043): what runs there is read only once it is set up.
+  const ready = s.setup === "ready";
+  const tabs: PageTab[] = [
+    {
+      id: "overview",
+      label: t("Overview"),
+      content: () => (
+        <div className="space-y-6">
+          {ready ? <Readings id={s.id} latest={s.latest} /> : null}
+          {about}
         </div>
       ),
     },
+    ...(ready
+      ? [
+          { id: "docker", label: t("Docker"), content: () => <ServerDockerTab server={s} /> },
+          {
+            id: "databases",
+            label: t("Databases"),
+            content: () => <ServerDatabasesTab server={s} />,
+          },
+          {
+            id: "proxy",
+            label: t("Proxy & traffic"),
+            content: () => <ServerProxyTab server={s} />,
+          },
+          { id: "logs", label: t("Logs"), fill: true, content: () => <ServerLogsTab server={s} /> },
+        ]
+      : []),
+    { id: "backups", label: t("Backups"), content: () => <ServerBackupsTab server={s} /> },
+    {
+      id: "terminal",
+      label: t("Terminal"),
+      fill: true,
+      content: () => (
+        <Suspense fallback={<Loading />}>
+          <ServerTerminal id={s.id} name={s.name} />
+        </Suspense>
+      ),
+    },
+    ...(s.stateVersion > 0
+      ? [{ id: "state", label: t("State document"), content: () => <StateDocument id={s.id} /> }]
+      : []),
   ];
   return (
     <PageTabs
