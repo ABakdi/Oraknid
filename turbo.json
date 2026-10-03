@@ -11,7 +11,8 @@
     },
     "test": {
       "dependsOn": ["^typecheck"],
-      "outputs": []
+      "outputs": [],
+      "passThroughEnv": ["TMPDIR"]
     }
   }
 }

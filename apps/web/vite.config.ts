@@ -32,5 +32,5 @@ export default defineConfig(({ mode }) => ({
             },
           },
         },
-  test: { environment: "jsdom" },
+  test: { environment: "jsdom", globalSetup: ["../../vitest.tmp.ts"] },
 }));

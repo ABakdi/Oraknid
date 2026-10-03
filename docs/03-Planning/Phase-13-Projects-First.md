@@ -20,10 +20,10 @@ project; jobs should be its history. And my Nests showed too little
 - [x] A project budget across its jobs, and the default for a new job in it (a follow-up job keeps the budget of the job it follows)
 - [x] Context packs take earlier jobs' standing Silk
 
-Tested (2026-10-03): `pnpm check`'s lint and typecheck green, every
-package's tests green (the daemon's and OpenCode's run with `TMPDIR`
-outside `/tmp`, whose inodes the test folders left behind over time had
-used up: the tests don't remove their temporary folders). Daemon tests in
+Tested (2026-10-03): `pnpm check` green. (The tests' temporary folders
+had used up `/tmp`'s inodes; each package's test run now keeps them in
+one folder of its own, removed when the run ends, `vitest.tmp.ts`.)
+Daemon tests in
 `apps/daemon/src/eye/projects-first.test.ts`: the project's
 conversation starts a first job from my message, passes the next to
 the job running, starts a follow-up once it ended and then talks to the
