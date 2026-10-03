@@ -59,7 +59,7 @@ against the real binary yet.
   environment, so its token is the Leg's (one Leg per account), *if*
   `agy` keeps it in a file when it has no keyring; the first real run
   confirms this, and the Leg's card says so until then.
-- **Sign-in from the web UI**, like Claude Code (BR-22): the daemon
+- **Sign-in from the web UI**, like Claude Code: the daemon
   starts `agy` under a pseudo-terminal with the SSH variables set, shows
   the link it prints, and passes back the code I paste.
 - **Usage** from each run's `result.usage` (thinking tokens count as

@@ -40,6 +40,16 @@ own rules.
   is writable in its sandbox. Every Eye reasoning call now has a time
   limit (the helper's: three minutes), past which its session is killed.
 
+## Changed after Audit 2 (2026-10-02)
+- **Creating a project and adding a Leg are confirmed too**, always: a
+  project's folder is where agents may write, and a Leg sees what The
+  Eye sends it ([[Audit-2]] S2-04). The other small actions (a draft,
+  jobs or tasks at once, opening a page) still run at once.
+- Those two are confirmed only at home, or from a device with full
+  rights ([[ADR-030-Device-Rights]]).
+- The Confirm card shows the action and its exact input, not only the
+  model's summary (S2-11).
+
 ## Consequences
 - Everything the helper can do, I can do in the UI, and the other way
   round as actions are added.

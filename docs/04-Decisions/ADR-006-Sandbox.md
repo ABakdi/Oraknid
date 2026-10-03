@@ -38,6 +38,15 @@ local models. Agent permission settings alone are too weak.
   restricted token, or WSL2 + bwrap). The sandbox sits behind an
   interface in `packages/os`.
 
+## As built (2026-10-02 and 2026-10-03, [[Audit-2]])
+- Every sandbox also runs under a **Landlock** domain that scopes
+  abstract unix sockets and signals: the network namespace was shared,
+  and with it the desktop's abstract sockets (S2-01).
+- The network is restricted after all: with `pasta` (package `passt`),
+  each sandbox has a **network namespace of its own**, with the internet
+  and only the local ports a project lists or a Leg's own settings name
+  (S2-21). Details in [[Sandboxing]].
+
 ## Why not containers
 Heavier, slower to start per session, and GPU passthrough adds work.
 Kept as a later option.

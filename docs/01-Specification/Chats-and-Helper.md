@@ -31,8 +31,11 @@ panel. I write what I want in my words; the helper:
    opens the page I need.
 3. Asks for what's missing ("which folder?", "a private repo?") rather
    than guessing.
-4. Before **starting a job, creating a GitHub repo, deleting anything,
-   or waiving a gate**, shows what it will do with a **Confirm** button.
+4. Before **creating a project, adding a Leg, starting a job, creating
+   a GitHub repo, deleting anything, or waiving a gate**, shows what it
+   will do, the action and its exact input, with a **Confirm** button.
+   Creating a project and adding a Leg are confirmed only at home, or
+   from a device with full rights ([[ADR-030-Device-Rights]]).
 
 Each reply lists what it did, with links. The conversation is kept
 until I clear it.

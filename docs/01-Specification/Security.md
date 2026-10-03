@@ -21,8 +21,14 @@ sandbox limits damage, but it doesn't make that safe.
   project folder for non-git projects.
 - Leg processes run inside a sandbox limited to the worktree, their own
   config directory, and read-only system paths ([[Sandboxing]]).
-- Network is allowed (Legs need their APIs). Per-job network limits are
-  a later hardening item (Phase 2).
+- The internet is allowed (Legs need their APIs), but not this
+  computer's own services: with `pasta` installed, every sandbox has a
+  network namespace of its own, and only the ports a project lists
+  (Projects → Network) and a Leg's own local model are reachable, as
+  localhost inside ([[Sandboxing]], [[Audit-2]] S2-21). Without `pasta`
+  the host's network is shared, and `oraknid doctor` says so. Every
+  sandbox also runs under Landlock, so the desktop's abstract sockets
+  are out of reach (S2-01).
 - **Nothing a Leg can write is trusted by Oraknid's own tools** (BR-22,
   [[Audit-1]]): git calls on a worktree use the main repo's records,
   never the worktree's `.git`, with fsmonitor and hooks off; shadow repos
@@ -86,8 +92,10 @@ sandbox limits damage, but it doesn't make that safe.
 - A job gets a server only when its project has it; its Leg then has
   that server's key in its own home, and its commands there go through
   the approvals.
-- The terminal is off until I turn it on, needs a paired device, and is
-  audited; it is a full shell as me ([[ADR-028-Terminal]]).
+- The terminal is off until I turn it on, needs a paired and unlocked
+  device, and is audited; it is a full shell as me ([[ADR-028-Terminal]]).
+  Away from home it opens only on a device with full rights, through
+  the tunnel ([[ADR-030-Device-Rights]]).
 
 ## Mail
 - Mail passwords (app passwords) are in the keychain, never in SQLite.
@@ -115,14 +123,16 @@ sandbox limits damage, but it doesn't make that safe.
   untrusted data, and every agent action on mail is in the audit log
   (`mail.agent.*`, actor `agent`).
 - Away from home, accounts can't be added, changed, reconnected or
-  removed.
+  removed, unless the device has full rights.
 
 ## Chats and the helper
 - A chat may read its folder and the projects I attach, and research
   the web; nothing else ([[ADR-025-Chats]]). The helper acts only
   through Oraknid's API with my device's rights, and asks before
-  starting a job, creating a repo, deleting or waiving a gate
-  ([[ADR-024-Oraknid-Helper]]).
+  creating a project, adding a Leg, starting a job, creating a repo,
+  deleting or waiving a gate ([[ADR-024-Oraknid-Helper]]). Creating a
+  project and adding a Leg are confirmed only at home, or from a device
+  with full rights ([[Audit-2]] S2-04).
 
 ## The daemon's own surface
 
@@ -149,8 +159,16 @@ sandbox limits damage, but it doesn't make that safe.
   a local certificate.
 - Remote access goes only through The Nest ([[The-Nest]]). Away from
   home a device can follow, answer, approve and start jobs; what opens
-  a new way in (pairing, the terminal, policies, projects, Legs, tools,
-  servers, mail accounts, the PIN, a job outside the sandbox) is done at home only.
+  a new way in (the terminal, policies, projects, Legs, tools, skills,
+  servers, GitHub, mail accounts, The Eye's models, a job outside the
+  sandbox) is done at home only.
+- **Device rights** ([[ADR-030-Device-Rights]]): a device is `standard`
+  or `full`. Away from home, a device with full rights may do what it
+  may at home, the terminal included, except what stays home only for
+  every device: the PIN and the idle lock, pairing and revoking devices,
+  giving rights, The Nest's configuration and registering on a public
+  Nest, the encrypted store's passphrase. Rights are given at home, with
+  the PIN again; a device can't widen itself.
 - Every response carries a content policy: no framing by another site,
   scripts and images only from Oraknid itself; a request another site
   made my browser send, other than opening a page, is refused.

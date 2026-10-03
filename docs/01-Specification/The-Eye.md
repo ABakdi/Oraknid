@@ -163,7 +163,11 @@ me in a line:
 | Stop / pause | Pauses the job at a safe point. |
 | A question about the job | Answers from Silk and the job's state. |
 
-New work for a job that has ended is kept for later instead. If no Leg
+New work for a job that has ended starts a **follow-up job** in the
+same project, from the ended job's branch, and the reply links to it;
+while that follow-up runs, more new work goes to it
+([[Jobs-and-Projects]] → Follow-up jobs). If the follow-up can't start,
+the message is kept for later and the reply says why. If no Leg
 can think (none healthy, or the call fails), my message is kept as my
 decision and passed on anyway: my words are never lost. The
 conversation is kept with the job and shown on its page.

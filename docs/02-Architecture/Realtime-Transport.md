@@ -4,7 +4,7 @@
 
 | Topic | Content | Rate |
 | :-- | :-- | :-- |
-| `overview` | Leg cards, totals, problems, inhibitor state. | On change, coalesced 4/s. |
+| `overview` | Leg cards, totals, problems, inhibitor state; and what has no topic of its own: `server.*`, `chat.*`, `helper.*`, `device.*`, `lock.*`, `terminal.*`, `settings.updated`, `project.localPorts`. | On change, coalesced 4/s. |
 | `job:<id>` | Web changes, task states, activity, Silk changes, budgets. | On change. |
 | `leg:<id>` | Condensed output stream of the Leg's current session. | Coalesced 4/s. |
 | `inbox` | Items opened, answered, withdrawn. | On change. |
@@ -19,8 +19,13 @@ Client → server: `subscribe`, `unsubscribe`, `resume { lastSeq }`.
 `seq > lastSeq` for the subscribed topics. If more than 5,000 are
 missing, it sends a `snapshot` instead.
 
-**Auth:** the WebSocket upgrade requires a paired device's session token
-(see [[Security]]).
+**Auth:** the WebSocket upgrade requires a paired device's token and an
+unlocked session (`unlock` in the address; [[ADR-029-App-Lock]]). The
+socket is checked again at every heartbeat and closed at once when the
+device locks or is revoked (see [[Security]]).
+
+The topic pattern also accepts `chat:<id>`; nothing publishes there yet
+(chats use `chat.*` on `overview`).
 
 A job's state, its tasks' states and its sessions' starts and ends also
 reach `overview` subscribers as a hint to reload, at most 4/s per

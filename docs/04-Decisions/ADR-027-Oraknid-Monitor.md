@@ -23,6 +23,12 @@ mean another port and another secret.
 - **Later**: a collector that keeps samples on the server while
   Oraknid is off, to fill the gaps.
 
+## As built (2026-10-02)
+- Tried on a real Debian server: its `awk` is mawk, which printed large
+  numbers (memory, network bytes) in e-notation and broke the reading.
+  oraknid-monitor now prints every number as a plain integer
+  (`printf "%.0f"`), which neither mawk nor gawk can overflow.
+
 ## Consequences
 - No readings while my daemon is off.
 - One SSH command every 15 s per server.

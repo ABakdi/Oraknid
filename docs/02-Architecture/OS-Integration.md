@@ -10,7 +10,7 @@ Phase 1, Windows in the final phase, after everything else works on Linux.
 | `SecretStore` | `@napi-rs/keyring` **pinned** to Secret Service (no silent kernel-keyring fallback). Without it: the encrypted-file store (AES-256-GCM, scrypt), locked until the passphrase is given through `secrets.unlock`. | Credential Manager via the same library. |
 | `Metrics` | Read from `/proc`: per process tree (`/proc/<pid>/task/*/children`) CPU ticks, RSS and IO; system CPU, memory, physical-disk and network counters. GPU: `nvidia-smi --query-gpu=…` and `--query-compute-apps=pid,used_memory` per sample. Ollama `/api/ps` for model VRAM comes with the adapter. AMD: `rocm-smi` later. | `systeminformation`, `nvidia-smi`. |
 | `Notifier` | `notify-send` (with action to open the UI) for desktop, `web-push` (VAPID keys in the keychain), `nodemailer` for SMTP. | Toast notifications. |
-| `Sandbox` | `bwrap` ([[Sandboxing]]). | Job Object + restricted token, or WSL2 + bwrap (decided in the final phase). |
+| `Sandbox` | `bwrap`, under a Landlock domain (Linux 6.12+), inside a network namespace of its own through `pasta` when `passt` is installed ([[Sandboxing]], [[Audit-2]]). | Job Object + restricted token, or WSL2 + bwrap (decided in the final phase). |
 
 `oraknid doctor` checks each one and prints what's wrong in plain words.
 

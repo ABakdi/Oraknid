@@ -18,6 +18,36 @@ Where each piece of data lives, and who can read it.
 | Email notifications | — | — | Via my SMTP server, to my address. |
 | My mail (Phase 12) | SQLite: headers of synced messages, bodies once opened, drafts, POP accounts' UIDLs; drafts' attachments in `mail/drafts/<id>/`; POP accounts' messages as downloaded in `mail/local/<account>/` | Daemon, paired devices; agents with the email tool, through the broker | Only to my mail providers (IMAP or POP3, SMTP). What an agent reads goes to its Leg's provider, as any prompt does. |
 | Mail passwords | OS keychain (`mail.<account>.password`) | Daemon | Only to that provider. |
+| The PIN (Phase 10) | SQLite, setting `lock.pin`: a scrypt hash with its own salt, never the PIN | Daemon | No. |
+| Unlocked sessions | The daemon's memory only, as hashes (a restart locks every device); on a device, session storage | Daemon, that device | Only through The Nest's tunnel (E2E). |
+| Device rights (Phase 11) | SQLite, setting `devices.fullRights` (the ids of devices with full rights) | Daemon | No. |
+| Servers (Phase 9) | SQLite: `servers` (host, user, pinned host key, my description), `server_states` (every version of the state document), `server_samples` (oraknid-monitor's readings, 24 hours); keys and passwords in the keychain (`server.<id>.key`, `.password` until setup deletes it, `.passphrase`) | Daemon, paired devices; a job's Legs get the state documents of its project's servers, and their key in the Leg's home for the job | To that server over SSH. The state document goes to a remote Leg's provider as part of its prompt. |
+| GitHub token (Phase 8) | OS keychain (`github.token`) | Daemon, given to `git` for one command | Only to GitHub. |
+| Tools' secrets (Phase 6) | OS keychain (`tool.<tool>.<name>`) | Daemon, the tool's own process for a job that has it | Only to the service the tool talks to. |
+| Leg credentials | OS keychain (`leg.<id>`), for Legs that take a key | That Leg's process | Only to that provider. |
+| The Nest | SQLite, setting `nest.config` (address, daemon id); its secret in the keychain (`nest-secret`); the daemon's static key pair in its data folder (0600) | Daemon | The secret to The Nest, which keeps only its hash on a public Nest. |
+| Chats and the helper (Phase 8) | SQLite: `chats`, `chat_messages`, `helper_messages` | Daemon, paired devices | What I write goes to the chosen Leg's provider (the helper: The Eye's). |
+| Plans and their shadows (Phase 7) | SQLite: `eye_plans` | Daemon, paired devices | The plan input goes to both models' providers. |
+
+## Settings keys
+
+The `settings` table holds one JSON value per key; a cleared setting is
+no row.
+
+| Key | Holds |
+| :-- | :-- |
+| `jobs.maxRunning`, `jobs.maxTasks` | Jobs at once, tasks at once in a job ([[ADR-016-Parallel-Work]]). |
+| `fallback.sameProvider` | Same-provider fallback ([[ADR-009-Multiple-Accounts-Per-Provider]]). |
+| `eye.legModelId`, `eye.models` | The Eye's Leg model; the pins per kind of decision and the shadow ([[ADR-022-Eye-Decision-Models]]). |
+| `policy.global`, `policy.project.<project>` | Command rules, globally and per project ([[Security]]). |
+| `project.localPorts.<project>` | The ports on this computer a project's jobs may reach ([[Sandboxing]]). |
+| `job.startFrom.<job>` | The branch a follow-up job starts from ([[Jobs-and-Projects]] → Follow-up jobs). |
+| `lock.pin`, `lock.idleMinutes` | The PIN's hash; the idle lock ([[ADR-029-App-Lock]]). |
+| `devices.fullRights` | Devices with full rights ([[ADR-030-Device-Rights]]). |
+| `terminal.enabled` | The terminal's switch ([[ADR-028-Terminal]]). |
+| `nest.config` | The Nest's address and this daemon's id. |
+| `notifications`, `notifications.vapidPublicKey` | Channels, routing and quiet hours; the web push public key (the private one is in the keychain). |
+| `audit.exportedSeq` | How far the daily audit export has got. |
 
 **What a remote Leg's provider sees:** the context pack, the files the
 Leg reads, and command output inside the session. The UI shows on each

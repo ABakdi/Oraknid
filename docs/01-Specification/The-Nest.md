@@ -1,4 +1,4 @@
-# The Nest *(Phase 4, built 2026-10-02)*
+# The Nest *(Phase 4, built 2026-10-02; public mode Phase 11, 2026-10-03)*
 
 **Is:** a relay server I host myself, so I can reach my Oraknid from
 anywhere (phone or desktop) without opening ports at home.
@@ -19,7 +19,12 @@ data is stored.
   link (and its QR code) holding that device's keys and token in the
   fragment, which a browser never sends to The Nest
   ([[Nest-Protocol]]).
-- Web push to my phone works through The Nest.
+- Web push away from home: the loader holds the phone's subscription;
+  the daemon sends pushes straight to the browser's push service,
+  encrypted to the browser, so The Nest isn't involved.
+- Every device away from home needs the PIN ([[ADR-029-App-Lock]]).
+  A device with full rights also opens the terminal through the tunnel,
+  on a channel of its own ([[ADR-030-Device-Rights]]).
 
 ```mermaid
 flowchart LR
@@ -47,7 +52,11 @@ flowchart LR
   registrations, daemons, devices and bytes per day, and forgets a
   daemon unseen for 30 days. Its page says it is public and can't read
   what it carries. `install.sh` runs one Nest per domain, two on one
-  server if I want ([[ADR-031-Public-Nest]]).
+  server if I want ([[ADR-031-Public-Nest]]). Mine are to be
+  `oraknid.abakdi.com`, public, and `private.oraknid.abakdi.com`, my
+  own, on the same server; `oraknid.abakdi.com` is the address
+  Settings offers by default. Not deployed that way yet
+  ([[Phase-11-Workspace]]).
 
 ## Still open
 - Web push away from home is built (the loader holds the subscription;

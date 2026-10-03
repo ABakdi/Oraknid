@@ -23,6 +23,25 @@ per device.
 - Full rights is shown on the device everywhere it matters (a badge),
   and every use away from home is in the audit log.
 
+## As built (2026-10-03)
+- The rights are kept in the setting `devices.fullRights` (the ids of
+  the devices that have them); `devices.list` names each device's
+  rights, `lock.status` says whether this device has them.
+- `devices.setRights` takes the PIN and is refused away from home;
+  `nest.pairAway` takes `full` and the PIN to give them at pairing.
+- Home only whatever the rights: `secrets.*`, `nest.configure`,
+  `nest.register`, `nest.pairAway`, `devices.pairStart`,
+  `devices.revoke`, `devices.setRights`, `lock.setPin`, `lock.setIdle`.
+  Everything else the daemon keeps home only for a standard device
+  (policies, projects, servers, GitHub, mail accounts, tools, skills,
+  Legs, The Eye's models, notifications, pruning, a job's waivers and
+  rules, the terminal) is open to a device with full rights.
+- The helper's Confirm on creating a project or adding a Leg works away
+  from home only on a device with full rights.
+- The terminal goes through the tunnel as `term-open` / `term-in` /
+  `term` / `term-close` ([[Nest-Protocol]]); the daemon opens its own
+  `/term` for it, marked as from away.
+
 ## Consequences
 - A phone with full rights is as powerful as my keyboard: the PIN and
   ten tries are what stand between a thief and my computer. The pairing

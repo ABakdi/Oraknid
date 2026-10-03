@@ -7,9 +7,10 @@ table is the summary and is kept in step with the contracts.
 | Area | Procedure | Purpose |
 | :-- | :-- | :-- |
 | System | `system.status` · `system.doctor` | Version, uptime, pid, data directory, last event `seq`, inhibitor, secret store, sandbox and service status; the checks. |
-| Devices | `devices.pairStart` / `pairComplete` / `list` / `revoke` | Pairing. Five wrong codes cancel every open one (Audit 1). |
-| Projects | `projects.createFrom` (Phase 8: a folder, a new empty folder, a new GitHub repo, a cloned one, a git URL) · `projects.setSkills` (Phase 8) · `projects.create` / `list` (M1.6) · `policy` / `setPolicy` (M1.9) · `archive` / `delete` (M2.0) | Creating a project in a folder that isn't a git repo asks: `initGit: true` or a shadow repo. |
-| Jobs | `jobs.updateDraft` / `remove` / `draftStart` / `draftTalk` / `draftThinking` (Phase 8: the New work page's draft and its conversation; `remove` takes a draft or an ended job) · `jobs.planComparisons` (ADR-022: each plan beside its shadow's, with measures and the job's outcome) · `jobs.create` / `start` / `get` / `list` / `pause` / `resume` / `cancel` (M1.6) · `setAutonomy` / `setWaivers` / `setRules` / `redirect` (M1.7) · `setBudget` (M1.9) · `setPriority` (M3.3) · `talk` / `conversation` · `result` / `merge` / `openFolder` (Checkpoint 1) | A job's view carries its tasks, worktree and branch. `talk` returns at once; The Eye's reply arrives as `eye.replied`. `merge` returns `{ok, commit}` or `{ok: false, reason, conflicts}`. |
+| Devices | `devices.pairStart` / `pairComplete` / `list` / `revoke` · `setRights` (Phase 11, [[ADR-030-Device-Rights]]) | Pairing. Five wrong codes cancel every open one (Audit 1). `list` names each device's rights (`standard` or `full`); `setRights` takes the PIN and is refused away from home. |
+| Lock | `lock.status` / `unlock` / `setPin` / `lock` / `reset` / `setIdle` (Phase 10, [[ADR-029-App-Lock]]) | `status` and `unlock` are the only calls a locked device may make; the first PIN is set without a session on this computer only. `unlock` returns the session sent as `x-oraknid-unlock`. `lock` locks this device or, `everywhere`, every device. `reset` is for `oraknid pin reset` only. A locked call gets 423. |
+| Projects | `projects.createFrom` (Phase 8: a folder, a new empty folder, a new GitHub repo, a cloned one, a git URL) · `projects.setSkills` (Phase 8) · `projects.create` / `list` (M1.6) · `policy` / `setPolicy` (M1.9) · `archive` / `delete` (M2.0) · `localPorts` / `setLocalPorts` (2026-10-03: the ports on this computer its jobs' sandboxes may reach, [[Sandboxing]]) | Creating a project in a folder that isn't a git repo asks: `initGit: true` or a shadow repo. |
+| Jobs | `jobs.updateDraft` / `remove` / `draftStart` / `draftTalk` / `draftThinking` (Phase 8: the New work page's draft and its conversation; `remove` takes a draft or an ended job) · `jobs.planComparisons` (ADR-022: each plan beside its shadow's, with measures and the job's outcome) · `jobs.create` / `start` / `get` / `list` / `pause` / `resume` / `cancel` (M1.6) · `setAutonomy` / `setWaivers` / `setRules` / `redirect` (M1.7) · `setBudget` (M1.9) · `setPriority` (M3.3) · `talk` / `conversation` · `result` / `merge` / `openFolder` (Checkpoint 1) | A job's view carries its tasks, worktree and branch. `talk` returns at once; The Eye's reply arrives as `eye.replied`; new work on an ended job starts a follow-up job and the reply names it ([[Jobs-and-Projects]] → Follow-up jobs). `merge` returns `{ok, commit}` or `{ok: false, reason, conflicts}`. |
 | Web | `web.edit` (add, update, remove tasks) | Plan editing; an edit that breaks The Web's rules is refused and undone. |
 | Tasks | `tasks.pin` / `takeOver` / `handBack` / `rollback` / `attempts` · `diff` (M2.0) | `diff`: the task's commit once done, else its work since before its first attempt. |
 | Sessions | `sessions.list({jobId})` / `sessions.log({id, after})` (Checkpoint 1) | Each Leg session of a job and its log as readable lines, from a byte offset. |
@@ -21,7 +22,7 @@ table is the summary and is kept in step with the contracts.
 | Helper | `helper.conversation` / `thinking` / `send` / `decide` / `clear` (Phase 8, ADR-024) | `send` answers in the background; `decide` confirms or cancels a proposed action. Its actions are a fixed catalogue run by the daemon's own services. |
 | GitHub | `github.status` / `setToken` / `removeToken` / `repos` (Phase 8, ADR-023) | The token goes to the keychain once GitHub accepts it; `status` names the account or says why GitHub refuses it. |
 | Chats | `chats.list` / `get` / `create` / `send` / `stop` / `rename` / `setProjects` / `remove` (Phase 8, ADR-025) | `get` returns the messages and, while it answers, the text so far (`answering`); events `chat.*` on `overview` say when to reload. |
-| Mail | `mail.accounts` / `addAccount` (`protocol` `imap` or `pop`) / `updateAccount` (name, `autoSend`, `appendSent`, `deleteFromServer` for POP) / `removeAccount` / `reconnect` (a new password, or the one kept) / `sync` · `mail.folders` / `threads` (a page, with a search) / `thread` / `attachment` / `allowImages` · `mail.flag` / `move` / `archive` / `delete` · `mail.drafts` / `replyTemplate` / `saveDraft` / `send` / `approve` / `discard` (Phase 12, [[ADR-032-Email]]) | Passwords go to the keychain; an account is saved only once its incoming server (IMAP or POP3) and SMTP accept its login. IMAP: every action is done on the server first. POP: folders and flags are Oraknid's; a delete for good reaches the server only with `deleteFromServer`. `approve` sends a draft, an agent's included, answering its inbox item when there is one. Events `mail.*` on the `mail` topic. |
+| Mail | `mail.accounts` / `addAccount` (`protocol` `imap` or `pop`) / `updateAccount` (name, `autoSend`, `appendSent`, `deleteFromServer` for POP) / `removeAccount` / `reconnect` (a new password, or the one kept) / `sync` · `mail.folders` / `threads` (a page, with a search) / `thread` / `attachment` / `allowImages` · `mail.images` (a message's allowed remote images, fetched by the daemon, as inline data) · `mail.flag` / `move` / `archive` / `delete` · `mail.drafts` / `replyTemplate` / `saveDraft` / `send` / `approve` / `discard` (Phase 12, [[ADR-032-Email]]) | Passwords go to the keychain; an account is saved only once its incoming server (IMAP or POP3) and SMTP accept its login. IMAP: every action is done on the server first. POP: folders and flags are Oraknid's; a delete for good reaches the server only with `deleteFromServer`. `approve` sends a draft, an agent's included, answering its inbox item when there is one. Events `mail.*` on the `mail` topic. |
 | Tools | `tools.list` / `create` / `update` / `remove` (Phase 6) | MCP servers for skills ([[ADR-021-Tools-Broker]]). Secrets go to the keychain; a view names them and those missing, never their values. A job lists its `tools` and `missingTools`; `jobs.start` refuses while one is missing. |
 | Stats | `stats.summary` / `tokens` / `activity` | Totals and charts per job, project or everything. |
 | Logs | `audit.search` · `logs.tail` (M2.0) | Filters: job, type or prefix, actor, text. `logs.tail`: the daemon log's last lines. The audit export is built in the UI from `audit.search` pages. |
@@ -30,20 +31,29 @@ table is the summary and is kept in step with the contracts.
 | Notifications | `notifications.get` / `update` / `configureEmail` / `test` / `vapidPublicKey` / `subscribe` / `unsubscribe` | Per-channel switches, SMTP setup (password to the secret store), web push. |
 | Settings | `settings.eyeModels` / `setEyeModels` (the Eye Leg, a model per kind of decision, the shadow planner; ADR-022) · `settings.setEyeLeg` · `maxRunningJobs` / `setMaxRunningJobs` (M3.3) · `maxTasksPerJob` / `setMaxTasksPerJob` (M3.1) · `sameProviderFallback` / `setSameProviderFallback` (ADR-009) · `policies.get` / `update` | |
 | Storage | `storage.usage` / `storage.prune` (M1.9) | |
-| The Nest | `nest.status` / `nest.configure` / `nest.pairAway` (Phase 4) | Reaching me away from home ([[Nest-Protocol]]). `pairAway` returns a link whose keys are in the fragment. |
+| The Nest | `nest.status` / `nest.configure` / `nest.pairAway` (Phase 4) · `nest.register` (Phase 11, [[ADR-031-Public-Nest]]) | Reaching me away from home ([[Nest-Protocol]]). `pairAway` needs the PIN set, returns a link whose keys are in the fragment, and with `full` (and the PIN) gives the device full rights. `register` registers this daemon on a public Nest (with an invite code if it asks one) and connects. All home only. |
 
-**Not built yet** (Audit 1 → Q1-15), with where they land: `projects.get`, `jobs.export` (Phase 2); a general `settings.get` / `update` when a second setting
-needs it.
+**Not built yet** (Audit 1 → Q1-15): `projects.get`, `jobs.export`
+(planned for Phase 2, not done; no phase holds them now); a general
+`settings.get` / `update`: each setting still has its own pair.
 
-Mutating procedures are not idempotent by a client `requestId` yet: they
+**Away from home** ([[ADR-029-App-Lock]], [[ADR-030-Device-Rights]]):
+the daemon refuses the calls that open a new way in from a standard
+device, and a few from every device; the lists are in
+`apps/daemon/src/auth/lock.ts` and [[Security]].
+
+Mutating procedures are not idempotent by a client `requestId`: they
 are safe to repeat by their own state (a second `start`, `pause` or
-`answer` is refused with a sentence). A `requestId` arrives with The Nest
-(Phase 4), where a retried request over a flaky link needs it. Errors
+`answer` is refused with a sentence). The `requestId` once planned for
+The Nest wasn't built. Errors
 carry a code (`BAD_REQUEST`, `NOT_FOUND`, `CONFLICT`,
-`INTERNAL_SERVER_ERROR`) **and** a sentence for the UI (BR-17); an
+`INTERNAL_SERVER_ERROR`; `LOCKED` with 423 for a locked device,
+`FORBIDDEN` with 403 for a call refused away from home) **and** a sentence for the UI (BR-17); an
 internal error's details stay in the daemon's log.
 
-Outside `/api`: `GET /health` (liveness, used by the CLI) and the
-`/live` WebSocket ([[Realtime-Transport]]).
+Outside `/api`: `GET /health` (liveness, used by the CLI), the `/live`
+WebSocket ([[Realtime-Transport]]) and the `/term` WebSocket
+([[ADR-028-Terminal]]), both with the device's token and unlocked
+session in their address.
 
 Related: [[ADR-010-API-Contracts]] · [[Realtime-Transport]] · [[Core-Entities]]

@@ -24,7 +24,11 @@ several devices. Linux first.
 | Inbox item | An approval or a question waiting for me. | [[Approvals-and-Autonomy]] |
 | Side effect | An external action with an idempotency key. | [[Durability]] |
 | Event / Audit entry | The append-only record. | [[Security]] |
-| Device | A paired browser or phone. | [[Security]] |
+| Device | A paired browser or phone, with its rights; the PIN unlocks it. | [[Security]] |
+| Tool | An MCP server a skill can require. | [[ADR-021-Tools-Broker]] |
+| Chat / Helper message | A free conversation with a model; the helper's conversation. | [[Chats-and-Helper]] |
+| Server / State document | A machine of mine over SSH, and what it has. | [[Servers]] |
+| Mail account / message / draft | My mail in Oraknid, and the agents' drafts. | [[ADR-032-Email]] |
 
 Full data model: [[Core-Entities]].
 
@@ -46,6 +50,12 @@ Full data model: [[Core-Entities]].
 | Parallelism | Several tasks and jobs at once, merges. | [[Phase-3-Parallelism]] | 3 |
 | The Nest | Remote relay. | [[The-Nest]] | 4 |
 | Non-coding jobs | MCP tools, scoped credentials, the email flow. | [[Phase-6-Non-Coding-Skills]] | 6 |
+| Eye decision models | A model per kind of Eye decision, a shadow planner to compare. | [[The-Eye]] | 7 |
+| Daily use | The New work page and drafts, skills per project, GitHub repos, Chats, the helper. | [[Jobs-and-Projects]] · [[Chats-and-Helper]] | 8 |
+| Servers | State documents, oraknid-monitor, a terminal. | [[Servers]] | 9 |
+| Lockdown | A PIN on every device, Audit 2's fixes. | [[Security]] | 10 |
+| Workspace | Pages in tabs, shortcuts, a terminal workspace, device rights, a public Nest. | [[Web-UI]] · [[The-Nest]] | 11 |
+| Email | A mail client, agents that read, sort and draft. | [[Web-UI]] → Mail | 12 |
 
 ## Business rules in one paragraph
 

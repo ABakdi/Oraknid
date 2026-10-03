@@ -1,6 +1,6 @@
 # ADR-028 — A terminal in the web UI: xterm.js, node-pty and SSH
 
-**Status:** Accepted · 2026-10-02 · [[Phase-9-Servers]]
+**Status:** Accepted · 2026-10-02 · [[Phase-9-Servers]] · amended by [[ADR-030-Device-Rights]] (2026-10-03)
 
 ## Context
 I want a terminal in Oraknid's web UI: on this computer, or on one of
@@ -19,6 +19,17 @@ the standard one.
   it off, `/term` refuses. Every terminal opened is audited (device,
   target, when; never what is typed). Not through The Nest yet.
 - A terminal closes when its page does; nothing keeps running after.
+
+## As built
+- The setting lives in Settings → Security (settings in tabs, Phase 10),
+  and the Terminal page itself turns it on, with the same confirmation.
+- *(2026-10-03, [[Phase-11-Workspace]])* The page is a workspace:
+  terminals in tabs, side by side or in a grid, a target picked from
+  cards (this computer, each server), shortcuts, copy on select.
+- *(2026-10-03, [[ADR-030-Device-Rights]])* Away from home a terminal
+  opens through The Nest's tunnel, on a channel of its own, for a device
+  with full rights only; it needs the device's token and an unlocked
+  session like every call ([[ADR-029-App-Lock]]).
 
 ## Consequences
 - Anyone with a paired device and the setting on has a shell on this
