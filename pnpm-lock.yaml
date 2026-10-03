@@ -120,6 +120,9 @@ importers:
       '@types/express':
         specifier: 5.0.6
         version: 5.0.6
+      '@types/libsodium-wrappers':
+        specifier: 0.7.14
+        version: 0.7.14
       '@types/mailparser':
         specifier: 3.9.0
         version: 3.9.0

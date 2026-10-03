@@ -1,4 +1,4 @@
-import type { Event, MetricsSample, ServerFrame } from "@oraknid/contracts";
+import type { CloudTransfer, Event, MetricsSample, ServerFrame } from "@oraknid/contracts";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { auth } from "./api";
 import { unlock } from "./lock";
@@ -20,6 +20,8 @@ class Live {
   #topics = new Map<string, number>();
   #listeners = new Set<Listener>();
   #metrics = new Set<(m: MetricsSample) => void>();
+  /** Uploads' and downloads' progress, on "storage" (ADR-046). */
+  #transfers = new Set<(t: CloudTransfer) => void>();
   /** Server logs followed while their screen is open (ADR-043), opened again after a reconnect. */
   #logs = new Map<
     string,
@@ -62,6 +64,7 @@ class Live {
         this.lastSeq = Math.max(this.lastSeq, frame.event.seq);
         for (const l of this.#listeners) l(frame.event);
       } else if (frame.type === "metrics") for (const l of this.#metrics) l(frame.sample);
+      else if (frame.type === "transfer") for (const l of this.#transfers) l(frame.transfer);
       else if (frame.type === "snapshot-needed") {
         this.lastSeq = frame.seq;
         this.epoch++;
@@ -129,6 +132,14 @@ class Live {
       if (!this.#logs.delete(id)) return;
       if (this.#ws?.readyState === WebSocket.OPEN)
         this.#ws.send(JSON.stringify({ type: "logs-close", id }));
+    };
+  }
+
+  /** Transfers' progress; subscribe to "storage" too for it to come. */
+  onTransfer(l: (t: CloudTransfer) => void) {
+    this.#transfers.add(l);
+    return () => {
+      this.#transfers.delete(l);
     };
   }
 

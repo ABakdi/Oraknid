@@ -9,9 +9,11 @@
 | `leg:<id>` | Condensed output stream of the Leg's current session. | Coalesced 4/s. |
 | `inbox` | Items opened, answered, withdrawn. | On change. |
 | `mail` | Accounts' state, `mail.new` (from IDLE on INBOX), `mail.synced`, `mail.changed`, drafts and sends, `mail.agent.*` (Phase 12). | On change; a sync pass is one event, not one per message. |
+| `storage` | `cloud.*` events: providers added, checked, changed, removed; the placement; files uploaded, moved, deleted; folders moved, deleted; a sign-in ready ([[ADR-046-Cloud-Storage]]). Uploads' progress comes as `transfer { transfer }` frames to sockets subscribed here, **not events**: never stored or replayed. | On change; a transfer at most 4/s. |
 | `metrics` | CPU/RAM/GPU/VRAM/disk/net per Leg and process. Sent as `metrics` frames, **not events**: never stored in the event log or replayed. The last hour is in memory (`metrics.recent`). | 1/s. |
 
 Server frames: `hello { version, seq }`, `event { event }`, `metrics { sample }`,
+`transfer { transfer }` (2026-10-03),
 `snapshot-needed { seq }`, `ping`, `error { message }` (`packages/contracts/src/live.ts`).
 Client → server: `subscribe`, `unsubscribe`, `resume { lastSeq }`.
 

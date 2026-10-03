@@ -1,6 +1,7 @@
 import type { IncomingMessage, Server } from "node:http";
 import {
   ClientFrame,
+  type CloudTransfer,
   type Event,
   MAX_REPLAY,
   type MetricsSample,
@@ -55,6 +56,8 @@ export function attachLive({ server, bus, allow, heartbeatMs = 15_000, followLog
   const wss = new WebSocketServer({ noServer: true });
   /** Clients subscribed to "metrics", for the ephemeral metrics stream. */
   const metricsClients = new Set<WebSocket>();
+  /** Clients subscribed to "storage", for uploads' and downloads' progress (ADR-046). */
+  const storageClients = new Set<WebSocket>();
 
   server.on("upgrade", (req, socket, head) => {
     const path = new URL(req.url ?? "/", "http://localhost").pathname;
@@ -124,10 +127,12 @@ export function attachLive({ server, bus, allow, heartbeatMs = 15_000, followLog
         case "subscribe":
           for (const t of frame.topics) topics.add(t);
           if (topics.has("metrics")) metricsClients.add(ws);
+          if (topics.has("storage")) storageClients.add(ws);
           break;
         case "unsubscribe":
           for (const t of frame.topics) topics.delete(t);
           if (!topics.has("metrics")) metricsClients.delete(ws);
+          if (!topics.has("storage")) storageClients.delete(ws);
           break;
         case "resume":
           replay(frame.lastSeq);
@@ -214,6 +219,7 @@ export function attachLive({ server, bus, allow, heartbeatMs = 15_000, followLog
       clearTimeout(relayTimer);
       clearInterval(heartbeat);
       metricsClients.delete(ws);
+      storageClients.delete(ws);
       off();
       for (const stop of logs.values()) stop();
       logs.clear();
@@ -234,6 +240,12 @@ export function attachLive({ server, bus, allow, heartbeatMs = 15_000, followLog
       if (metricsClients.size === 0) return;
       const data = JSON.stringify({ type: "metrics", sample } satisfies ServerFrame);
       for (const ws of metricsClients) if (ws.readyState === ws.OPEN) ws.send(data);
+    },
+    /** A transfer's progress is not an event either: sent to "storage" subscribers, never stored. */
+    broadcastTransfer(transfer: CloudTransfer) {
+      if (storageClients.size === 0) return;
+      const data = JSON.stringify({ type: "transfer", transfer } satisfies ServerFrame);
+      for (const ws of storageClients) if (ws.readyState === ws.OPEN) ws.send(data);
     },
     wss: wss as WebSocketServer & { clients: Set<WebSocket> },
   };

@@ -108,6 +108,7 @@ pkg() {
 	*:git) echo git ;;
 	*:bwrap) echo bubblewrap ;;
 	*:pasta) echo passt ;;
+	*:rclone) echo rclone ;;
 	pacman:python3) echo python ;;
 	*:python3) echo python3 ;;
 	apt-get:cc) echo build-essential ;;
@@ -175,15 +176,17 @@ ensure_packages() {
 	node_ok || needs="$needs node"
 	optional=""
 	have pasta || optional="pasta"
+	# Cloud storage's rclone (ADR-046): recommended, nothing else needs it.
+	have rclone || optional="${optional:+$optional }rclone"
 
 	if [ -z "$needs" ] && [ -z "$optional" ]; then
-		say "git, Node $(node -p 'process.versions.node'), bubblewrap, passt, python3 and a C++ compiler are here."
+		say "git, Node $(node -p 'process.versions.node'), bubblewrap, passt, rclone, python3 and a C++ compiler are here."
 		return
 	fi
 	detect_pm
 	if [ -z "$PM" ]; then
 		say "I don't know this system's package manager. Please install:$needs $optional"
-		say "(git, Node $NODE_MIN or newer, bubblewrap, python3, make and a C++ compiler; passt is recommended)"
+		say "(git, Node $NODE_MIN or newer, bubblewrap, python3, make and a C++ compiler; passt and rclone are recommended)"
 		case "$needs" in *git* | *bwrap* | *python3* | *cc*) die "missing:$needs" ;; esac
 		node_ok || NODE_LOCAL=1
 		return
@@ -218,9 +221,12 @@ ensure_packages() {
 		# shellcheck disable=SC2086 # one argument per package
 		install_pkgs $pkgs || die "$PM could not install:$pkgs"
 	fi
-	if [ -n "$optional" ]; then
-		install_pkgs "$(pkg pasta)" || warn "passt could not be installed; sandboxes will share the network."
-	fi
+	for want in $optional; do
+		case "$want" in
+		pasta) install_pkgs "$(pkg pasta)" || warn "passt could not be installed; sandboxes will share the network." ;;
+		rclone) install_pkgs "$(pkg rclone)" || warn "rclone could not be installed; Cloud storage waits for it (oraknid doctor says how)." ;;
+		esac
+	done
 }
 
 # ── Node and pnpm ─────────────────────────────────────────────────────

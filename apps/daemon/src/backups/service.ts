@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { createReadStream, createWriteStream, mkdirSync, renameSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type {
   BackupDestination,
@@ -17,6 +18,8 @@ import { BackupTarget as TargetSchema } from "@oraknid/contracts";
 import { describeSchedule, nextRun, toPrune } from "@oraknid/core";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import type { Client } from "ssh2";
+import type { Download } from "../cloud/routes.ts";
+import type { Cloud } from "../cloud/service.ts";
 import type { Db } from "../db/open.ts";
 import { backupKeys, backupPlans, backupRuns } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
@@ -66,6 +69,19 @@ export interface BackupsDeps {
   bus: EventBus;
   secrets: Secrets;
   servers: Pick<Servers, "client" | "row">;
+  /** Cloud storage, a destination (ADR-046). */
+  cloud?: Pick<
+    Cloud,
+    | "providers"
+    | "provider"
+    | "label"
+    | "putFile"
+    | "getFile"
+    | "open"
+    | "deleteFile"
+    | "tmpFile"
+    | "removeTmp"
+  >;
   now?: () => number;
   /** How often plans are looked at (ms). */
   tickMs?: number;
@@ -255,7 +271,10 @@ export class Backups {
       } catch {
         location = "a removed server";
       }
-    }
+    } else if (r.destination.kind === "cloud")
+      location = r.destination.providerId
+        ? `cloud storage, ${this.d.cloud?.label(r.destination.providerId) ?? "?"}`
+        : "cloud storage";
     return {
       id: r.id,
       planId: r.planId,
@@ -329,6 +348,13 @@ export class Backups {
     checkTarget(p.target);
     this.d.servers.row(p.target.serverId);
     if (p.destination.kind === "server") this.d.servers.row(p.destination.serverId);
+    if (p.destination.kind === "cloud") {
+      const cloud = this.d.cloud;
+      if (!cloud) throw new Error("Cloud storage isn't available here.");
+      if (p.destination.providerId) cloud.provider(p.destination.providerId);
+      else if (cloud.providers().length === 0)
+        throw new Error("There is no cloud storage yet: add a provider in Cloud storage first.");
+    }
     if (p.keyId) this.#keyRow(p.keyId);
     // Throws in words for a cron line that never comes round.
     nextRun(p.schedule, this.#now());
@@ -416,6 +442,10 @@ export class Backups {
       .map((r) => this.#runView(r));
   }
 
+  run(id: string): BackupRunView {
+    return this.#runView(this.#runRow(id));
+  }
+
   #runRow(id: string): RunRow {
     const r = this.d.db.select().from(backupRuns).where(eq(backupRuns.id, id)).get();
     if (!r) throw new Error(`No backup ${id}.`);
@@ -468,6 +498,8 @@ export class Backups {
     const name = `${stamp(started)}-${t.database ?? (t.kind === "sqlite" ? slug(t.path?.split("/").pop() ?? "db") : "all")}.${EXT[t.kind]}.zst${p.keyId ? ".age" : ""}`;
     const dir = `${slug(p.name)}-${p.id.slice(-6).toLowerCase()}`;
     let cleanup: () => Promise<void> = async () => {};
+    /** Where it went: in the pool, the provider it was placed in. */
+    let stored: BackupDestination = p.destination;
     let server = "?";
     let user = "?";
     try {
@@ -492,6 +524,28 @@ export class Backups {
         out = createWriteStream(part, { mode: 0o600 });
         cleanup = async () => rmSync(part, { force: true });
         finish = async () => renameSync(part, path);
+      } else if (p.destination.kind === "cloud") {
+        // Made here first (its size decides where it fits), then handed to the provider.
+        const cloud = this.d.cloud;
+        if (!cloud) throw new Error("Cloud storage isn't available here.");
+        const dest = p.destination;
+        const part = cloud.tmpFile("backup");
+        const inPool = `${dest.folder.replace(/^\/+|\/+$/g, "")}/${dir}/${name}`;
+        path = inPool;
+        out = createWriteStream(part, { mode: 0o600 });
+        cleanup = async () => cloud.removeTmp(part);
+        finish = async () => {
+          try {
+            const put = await cloud.putFile(part, inPool, {
+              providerId: dest.providerId,
+              actor: "oraknid",
+            });
+            path = put.path;
+            stored = { kind: "cloud", providerId: put.providerId, folder: dest.folder };
+          } finally {
+            cloud.removeTmp(part);
+          }
+        };
       } else {
         const dest = await this.d.servers.client(p.destination.serverId);
         const folder = `${remoteFolder(p.destination.folder).replace(/\/+$/, "")}/${dir}`;
@@ -545,6 +599,7 @@ export class Backups {
           durationMs: ended - started,
           checksum: counter.checksum,
           path,
+          destination: stored,
         })
         .where(eq(backupRuns.id, runId))
         .run();
@@ -602,7 +657,11 @@ export class Backups {
   async #deleteFile(r: RunRow) {
     if (!r.path) return;
     if (r.destination.kind === "local") rmSync(r.path, { force: true });
-    else {
+    else if (r.destination.kind === "cloud") {
+      if (!this.d.cloud || !r.destination.providerId)
+        throw new Error("Cloud storage isn't available here.");
+      await this.d.cloud.deleteFile(r.destination.providerId, r.path, "oraknid");
+    } else {
       const c = await this.d.servers.client(r.destination.serverId);
       const res = await exec(c, `rm -f ${q(r.path)}`);
       if (res.code !== 0) throw new Error(res.stderr.trim());
@@ -615,6 +674,24 @@ export class Backups {
       throw new Error("That backup isn't kept any more.");
     if (r.destination.kind === "local") {
       const s = createReadStream(r.path);
+      return { stream: s, done: Promise.resolve(null) };
+    }
+    if (r.destination.kind === "cloud") {
+      // Brought here first, into a file of mine, removed once read.
+      const cloud = this.d.cloud;
+      if (!cloud || !r.destination.providerId)
+        throw new Error("Cloud storage isn't available here.");
+      const file = cloud.tmpFile("verify");
+      try {
+        await cloud.getFile(r.destination.providerId, r.path, file);
+      } catch (error) {
+        cloud.removeTmp(file);
+        throw new Error(
+          `Couldn't bring it from ${cloud.label(r.destination.providerId)}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      const s = createReadStream(file);
+      s.once("close", () => cloud.removeTmp(file));
       return { stream: s, done: Promise.resolve(null) };
     }
     const c: Client = await this.d.servers.client(r.destination.serverId);
@@ -677,6 +754,60 @@ export class Backups {
       .run();
     this.#publish("backup.verified", { planId: p.id, runId, ok, note }, actor);
     return this.#runView(this.#runRow(runId));
+  }
+
+  /**
+   * A kept backup as a download (ADR-046): as stored, or decrypted with its
+   * key when I ask (still zstd-compressed). Only to a browser on this
+   * computer (`backups.downloadLink`).
+   */
+  async openStored(runId: string, decrypt = false): Promise<Download> {
+    const r = this.#runRow(runId);
+    if (!r.path || r.state !== "ok" || r.prunedAt)
+      throw new Error("That backup isn't kept any more.");
+    if (decrypt && !r.keyId) throw new Error("That backup isn't encrypted.");
+    const identity = decrypt && r.keyId ? await this.d.secrets.get(PRIVATE_KEY(r.keyId)) : null;
+    if (decrypt && !identity)
+      throw new Error("Its key's private half isn't in the keychain: import it first.");
+    const fileName = r.path.split("/").pop() ?? "backup";
+    let source: NodeJS.ReadableStream;
+    let size: number | null = r.size;
+    let done: Promise<string | null>;
+    if (r.destination.kind === "cloud" && r.destination.providerId && this.d.cloud) {
+      const o = await this.d.cloud.open(r.destination.providerId, r.path);
+      source = o.stream;
+      size = o.size;
+      done = o.done;
+    } else ({ stream: source, done } = await this.#read(r));
+    this.#publish("backup.downloaded", { planId: r.planId, runId, decrypted: !!identity }, "owner");
+    if (!identity) return { stream: source as Readable, name: fileName, size, done };
+    return {
+      stream: Readable.from(ageDecrypt(identity)(source as AsyncIterable<Buffer>)),
+      name: fileName.replace(/\.age$/, ""),
+      size: null,
+      done,
+    };
+  }
+
+  /** What keeps a cloud provider in use, in words; null when nothing does. */
+  cloudUse(providerId: string): string | null {
+    const plan = this.d.db
+      .select()
+      .from(backupPlans)
+      .all()
+      .find((p) => p.destination.kind === "cloud" && p.destination.providerId === providerId);
+    if (plan) return `The backup plan "${plan.name}" keeps its backups there.`;
+    const kept = this.d.db
+      .select()
+      .from(backupRuns)
+      .where(and(eq(backupRuns.state, "ok"), isNull(backupRuns.prunedAt)))
+      .all()
+      .filter(
+        (r) => r.destination.kind === "cloud" && r.destination.providerId === providerId,
+      ).length;
+    return kept
+      ? `${kept} kept backup${kept === 1 ? " is" : "s are"} there: without it ${kept === 1 ? "it" : "they"} can't be restored.`
+      : null;
   }
 
   /**
@@ -863,13 +994,15 @@ export class Backups {
     const dest =
       p.destination.kind === "local"
         ? `this computer, ${p.destination.folder}`
-        : `${(() => {
-            try {
-              return this.d.servers.row((p.destination as { serverId: string }).serverId).name;
-            } catch {
-              return "?";
-            }
-          })()}, ${p.destination.folder}`;
+        : p.destination.kind === "cloud"
+          ? `cloud storage (${p.destination.providerId ? (this.d.cloud?.label(p.destination.providerId) ?? "?") : "the pool, placed by its rule"}), ${p.destination.folder}`
+          : `${(() => {
+              try {
+                return this.d.servers.row((p.destination as { serverId: string }).serverId).name;
+              } catch {
+                return "?";
+              }
+            })()}, ${p.destination.folder}`;
     return `"${p.name}" (id ${p.id}): ${KIND_NAMES[p.target.kind]} ${p.target.database ?? "all"}${p.target.container ? ` in container ${p.target.container}` : ""} on ${server}; ${describeSchedule(p.schedule)}; to ${dest}; keep ${p.retention.count ?? "any number"} / ${p.retention.days ? `${p.retention.days} days` : "any age"}; ${p.keyId ? "encrypted" : "not encrypted"}; ${p.enabled ? "on" : "paused"}${p.hasPassword ? "" : ", no password kept"}; last run: ${p.lastRun ? `${p.lastRun.state}${p.lastRun.error ? ` (${p.lastRun.error})` : ""} (run id ${p.lastRun.id})` : "never"}.`;
   }
 }

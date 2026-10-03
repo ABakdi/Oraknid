@@ -41,6 +41,12 @@ export const BackupDestination = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("local"), folder: z.string().min(1) }),
   /** A folder on another of my servers, streamed there through Oraknid. */
   z.object({ kind: z.literal("server"), serverId: Id, folder: z.string().min(1) }),
+  /**
+   * Cloud storage (ADR-046): one provider, or the pool (null: placed by
+   * the upload rule when each backup is made). A run's own destination
+   * names the provider it went to.
+   */
+  z.object({ kind: z.literal("cloud"), providerId: Id.nullable(), folder: z.string().min(1) }),
 ]);
 export type BackupDestination = z.infer<typeof BackupDestination>;
 
@@ -88,7 +94,7 @@ export const BackupRunView = z.object({
   durationMs: z.number().int().nullable(),
   /** SHA-256 of the file as stored, hex. */
   checksum: z.string().nullable(),
-  /** Where, in words: "this computer" or a server's name. */
+  /** Where, in words: "this computer", a server's name, or a cloud provider's. */
   location: z.string(),
   path: z.string().nullable(),
   keyId: Id.nullable(),

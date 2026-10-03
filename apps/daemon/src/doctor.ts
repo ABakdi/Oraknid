@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { accessSync, constants, mkdirSync } from "node:fs";
 import type { DoctorCheck } from "@oraknid/contracts";
 import type { SandboxStatus, SecretStoreStatus, ServiceStatus } from "@oraknid/os";
+import { findRclone, RCLONE_FIX, rcloneVersion } from "./cloud/rclone.ts";
 import type { Paths } from "./paths.ts";
 
 export interface DoctorInputs {
@@ -52,7 +53,23 @@ export function runDoctor(paths: Paths, inputs: DoctorInputs): DoctorCheck[] {
       "Install libnotify: sudo pacman -S libnotify",
     ),
     checkOptional("nvidia-smi", ["--version"], "NVIDIA GPU metrics (nvidia-smi)"),
+    checkRclone(),
   ];
+}
+
+/** Cloud storage's rclone (ADR-046): optional, said with how to get it. */
+function checkRclone(): DoctorCheck {
+  const name = "Cloud storage (rclone)";
+  const bin = findRclone();
+  const version = bin ? rcloneVersion(bin) : null;
+  if (!bin || !version)
+    return {
+      name,
+      ok: true,
+      detail: "rclone not found — Cloud storage needs it; nothing else does.",
+      fix: RCLONE_FIX,
+    };
+  return { name, ok: true, detail: `${version} (${bin})`, fix: null };
 }
 
 function checkNode(): DoctorCheck {

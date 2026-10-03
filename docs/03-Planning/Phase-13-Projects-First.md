@@ -462,9 +462,29 @@ left to me; at desktop width and at 390 px (the conversation, the
 question's options, the inbox).
 
 ### M13.15 — Cloud storage ([[ADR-046-Cloud-Storage]])
-- [ ] Providers through rclone: Google Drive, Dropbox, MEGA, S3-compatible; the pool with upload, download, move, delete; automatic or chosen placement
-- [ ] Backups to cloud storage, and downloaded from the web page
-- [ ] The helper and the guide
+- [x] Providers through rclone: Google Drive, Dropbox, MEGA, S3-compatible; the pool with upload, download, move, delete; automatic or chosen placement
+- [x] Backups to cloud storage, and downloaded from the web page
+- [x] The helper and the guide
+
+Done 2026-10-04 (ADR-046 → As built, ADR-044 → As built). Tested:
+`pnpm check` green; daemon against a real MinIO in a throwaway
+unprivileged container and a real rclone (`cloud.docker.test.ts`: adding
+it with every process's command line watched for its secret, none in
+events, views or SQLite; the config unreadable by rclone without the
+keychain's password; upload with progress on `/live`, listing across
+two providers, search, a one-time download, rename, a move across
+providers, a folder renamed and deleted; placement by free space,
+priority, a picked provider, pay as you go, a limit; too big refused
+before a byte; SQLite backups to the pool and to one provider with
+retention, Verify and downloads as stored and decrypted; a provider in
+use kept), with a stand-in rclone (`cloud.test.ts`: Google Drive's and
+Dropbox's sign-in through `rclone authorize`, MEGA's password through
+stdin, home only, the helper's limits), `@oraknid/core` placement; web
+(`cloud-storage.test.tsx`: providers and the add dialog, Drive's
+sign-in, the pool, an upload's progress and a refusal, a backup's
+download). Checked in a browser on a sample daemon (its own data folder
+and port, MinIO in a container, all removed after) at desktop and at
+390 px.
 
 ## Exit criterion
 

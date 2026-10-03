@@ -12,6 +12,26 @@ Phase 1, Windows in the final phase, after everything else works on Linux.
 | `Notifier` | `notify-send` (with action to open the UI) for desktop, `web-push` (VAPID keys in the keychain), `nodemailer` for SMTP. | Toast notifications. |
 | `Sandbox` | `bwrap`, under a Landlock domain (Linux 6.12+), inside a network namespace of its own through `pasta` when `passt` is installed ([[Sandboxing]], [[Audit-2]]). | Job Object + restricted token, or WSL2 + bwrap (decided in the final phase). |
 
+**rclone** (2026-10-03, [[ADR-046-Cloud-Storage]]): cloud storage runs
+the `rclone` program, found by `ORAKNID_RCLONE` or on the `PATH`;
+`install.sh` installs it with the system's package manager (recommended,
+like passt), and `oraknid doctor` reports it (missing is not a failure:
+only Cloud storage needs it, and it says how to install it). Oraknid
+runs it per command, as a child process, always with
+`--config <data>/cloud/rclone.conf --ask-password=false --use-json-log`,
+with the config's password in its environment (`RCLONE_CONFIG_PASS`,
+other `RCLONE_*` of the shell removed), never on its command line.
+Oraknid writes that config itself, in rclone's encrypted format (NaCl
+secretbox, the key SHA-256 of the password as rclone makes it), so no
+credential is ever an argument; MEGA's password is obscured through
+`rclone obscure -` on stdin. JSON throughout: `lsjson` (`--stat
+--files-only` for one file), `about --json`, `size --json`; `copyto`,
+`moveto`, `deletefile`, `purge`, `mkdir`, `cat` for downloads; progress
+from `--stats 500ms -v` lines. Google Drive and Dropbox sign in with
+`rclone authorize <kind> --auth-no-open-browser`: its address (on
+127.0.0.1) is shown, the token it prints is kept in memory until the
+provider is added.
+
 `oraknid doctor` checks each one and prints what's wrong in plain words.
 
 Related: [[Durability]] · [[Notifications]] · [[Sandboxing]] · [[ADR-012-Sleep-Inhibition]]

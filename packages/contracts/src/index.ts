@@ -1,5 +1,6 @@
 export * from "./backups.ts";
 export * from "./chats.ts";
+export * from "./cloud.ts";
 export * from "./common.ts";
 export * from "./entities.ts";
 export * from "./events.ts";

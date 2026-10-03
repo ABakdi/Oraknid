@@ -83,8 +83,8 @@ Eye's conversation sit beside them ([[Chats-and-Helper]]).
   tabs never jumps the page. Nothing runs off the right edge on a phone:
   long names are cut with their full text on hover, and wrap in legends.
 - **Keyboard**: `?` lists every shortcut; `g` then `o`/`p`/`r`/`i`/`l`/
-  `c`/`s`/`t`/`m`/`k`/`d`/`,` goes to Overview, Projects, Repos, Inbox, Legs,
-  Chats, Servers, Terminal, Mail, Skills, Docs, Settings (`g j` went with the
+  `c`/`s`/`t`/`m`/`y`/`k`/`d`/`,` goes to Overview, Projects, Repos, Inbox, Legs,
+  Chats, Servers, Terminal, Mail, Cloud storage, Skills, Docs, Settings (`g j` went with the
   Jobs page, 2026-10-03); `1`…`9` goes to that tab on a page with tabs
   (a job's own tabs inside Work don't take them); `[` folds the sidebar; `n` new work; Ctrl+K
   the command palette. Single keys stay out of the way while I type. The
@@ -376,6 +376,38 @@ document**. Each part shows when it was read and a Refresh; what it
 couldn't read is in a yellow box with why. On a phone everything is a
 list that wraps, nothing scrolls sideways.
 
+### Cloud storage (2026-10-03, [[ADR-046-Cloud-Storage]])
+
+`/storage` in the sidebar (More on a phone), `g y`. Without rclone, it
+says how to install it. Otherwise the pool, with **Providers** and
+**Where uploads go** beside it (below it on a phone):
+
+- **The pool**: breadcrumbs (the folder is in the address,
+  `/storage/<path>`), a search (file names, every provider, under the
+  folder open), **Upload** (several files; or dropped on the list) with
+  where they go (the rule, or a provider for these), **New folder**
+  (opens an empty folder, kept once a file goes in), and the list:
+  folders first, merged across providers (each shows those holding
+  it), then files, each with its provider, size and date; a row's `…`
+  has Download, Rename or move (path, and provider for a file), Delete
+  (a second step naming the provider, or every provider for a folder).
+  Each upload shows its progress, to Oraknid (the browser's) then to the
+  provider (`transfer` frames on `storage`), then where it went, or why
+  it failed in words; a name taken asks to replace. Away from home,
+  uploads and downloads are off, said in a line.
+- **Providers**: each with its kind, what it is (preset, bucket and
+  endpoint, account, folder), used and free space as a bar, when it was
+  checked, its error; Check, Edit (name; a space limit or pay as you go
+  for object storage), Remove (a second step: its files stay in the
+  account). **Add a provider**: a dialog with the four kinds as tiles;
+  S3 (service, endpoint, region, bucket, keys, space), Google Drive and
+  Dropbox (**Sign in** gives rclone's sign-in page to open on this
+  computer, then Add; away from home it says to do it there), MEGA
+  (e-mail, password); each with the folder the pool shows.
+- **Where uploads go**: Automatic by a rule (most free space, my
+  priority order with up and down arrows, by size with "large from") or
+  always one provider.
+
 ### Terminal
 
 A terminal workspace (xterm.js), when turned on in Settings → Security
@@ -568,9 +600,11 @@ that opened Settings:
   why GitHub refuses one; add one, remove one after a second step;
   [[ADR-038-Project-Accounts]]), tools for skills.
 - **Backups** ([[ADR-044-Backups]]): every backup plan (what, when,
-  where to, how many kept, its key, its last run and error; Run now, a
+  where to: this computer, another server, or cloud storage, the pool
+  or one provider, [[ADR-046-Cloud-Storage]]; how many kept, its key, its last run and error; Run now, a
   switch to pause, edit, remove), the latest backups (size, duration,
-  checksum, where; Verify; Restore in two steps, the database's name
+  checksum, where; Download, as stored or decrypted with its key, on
+  this computer; Verify; Restore in two steps, the database's name
   typed back), and the encryption keys (public halves; Make a key shows
   the private one once to download or copy; Import a key).
 

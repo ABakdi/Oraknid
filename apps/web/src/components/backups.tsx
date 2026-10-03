@@ -5,6 +5,7 @@ import type {
   BackupRunView,
   BackupSchedule,
   BackupTarget,
+  CloudProviderView,
   DbKind,
   NewBackupPlan,
   RestorePreview,
@@ -38,6 +39,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -125,10 +132,43 @@ function useServers() {
 const serverName = (servers: ServerView[] | undefined, id: string) =>
   servers?.find((s) => s.id === id)?.name ?? t("a removed server");
 
-function destText(d: BackupDestination, servers: ServerView[] | undefined) {
-  return d.kind === "local"
-    ? t("this computer, {f}", { f: d.folder })
-    : t("{s}, {f}", { s: serverName(servers, d.serverId), f: d.folder });
+/** My cloud storage providers (ADR-046), a backup's destination. */
+function useCloudProviders() {
+  return useLive(() => api.cloud.providers(), {
+    topics: ["storage"],
+    refreshOn: (e) => e.type.startsWith("cloud.provider"),
+  });
+}
+
+function destText(
+  d: BackupDestination,
+  servers: ServerView[] | undefined,
+  providers: CloudProviderView[] | undefined,
+) {
+  if (d.kind === "local") return t("this computer, {f}", { f: d.folder });
+  if (d.kind === "cloud")
+    return t("cloud storage ({p}), {f}", {
+      p: d.providerId
+        ? (providers?.find((p) => p.id === d.providerId)?.name ?? t("a removed provider"))
+        : t("the pool"),
+      f: d.folder,
+    });
+  return t("{s}, {f}", { s: serverName(servers, d.serverId), f: d.folder });
+}
+
+/** A file from Oraknid: a one-time link, opened as a download by this browser. */
+export function fetchDownload(link: Promise<{ url: string }>) {
+  return link
+    .then(({ url }) => {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "";
+      a.rel = "noopener";
+      document.body.append(a);
+      a.click();
+      a.remove();
+    })
+    .catch((e) => toast.error(message(e)));
 }
 
 // ── Plans
@@ -217,6 +257,7 @@ function PlanRow({
 }) {
   const { confirm, dialog } = useConfirm();
   const [open, setOpen] = useState(false);
+  const providers = useCloudProviders();
   const key = keys.find((k) => k.id === plan.keyId);
   const last = plan.lastRun;
   return (
@@ -309,7 +350,7 @@ function PlanRow({
           {plan.enabled ? "" : ` · ${t("paused")}`}
         </div>
         <div className="[overflow-wrap:anywhere]">
-          {t("To {where}", { where: destText(plan.destination, servers) })}
+          {t("To {where}", { where: destText(plan.destination, servers, providers.data) })}
         </div>
         <div>
           {t("Keeps {count}{days}", {
@@ -402,6 +443,7 @@ export function PlanForm({
   const [error, setError] = useState<string | null>(null);
   const set = (patch: Partial<BackupTarget>) => setTarget((x) => ({ ...x, ...patch }));
   const others = servers.filter((s) => s.id !== target.serverId);
+  const providers = useCloudProviders();
 
   const pick = (i: string) => {
     const d = databases?.[Number(i)];
@@ -757,20 +799,35 @@ export function PlanForm({
             "bk-dest",
             t("Kept on"),
             <Select
-              value={dest.kind === "local" ? "local" : dest.serverId}
+              value={
+                dest.kind === "local"
+                  ? "local"
+                  : dest.kind === "cloud"
+                    ? `cloud:${dest.providerId ?? "pool"}`
+                    : dest.serverId
+              }
               onValueChange={(v) =>
                 setDest(
                   v === "local"
-                    ? { kind: "local", folder: dest.folder }
-                    : {
-                        kind: "server",
-                        serverId: v,
-                        folder: dest.kind === "server" ? dest.folder : "backups",
-                      },
+                    ? {
+                        kind: "local",
+                        folder: dest.kind === "local" ? dest.folder : "~/Backups/oraknid",
+                      }
+                    : v.startsWith("cloud:")
+                      ? {
+                          kind: "cloud",
+                          providerId: v === "cloud:pool" ? null : v.slice(6),
+                          folder: dest.kind === "cloud" ? dest.folder : "Oraknid backups",
+                        }
+                      : {
+                          kind: "server",
+                          serverId: v,
+                          folder: dest.kind === "server" ? dest.folder : "backups",
+                        },
                 )
               }
             >
-              <SelectTrigger id="bk-dest" className="w-full">
+              <SelectTrigger id="bk-dest" className="w-full" data-help="backups.destination">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -780,8 +837,19 @@ export function PlanForm({
                     {s.name}
                   </SelectItem>
                 ))}
+                {providers.data?.length ? (
+                  <SelectItem value="cloud:pool">{t("Cloud storage: the pool")}</SelectItem>
+                ) : null}
+                {providers.data?.map((p) => (
+                  <SelectItem key={p.id} value={`cloud:${p.id}`}>
+                    {t("Cloud storage: {name}", { name: p.name })}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>,
+            providers.data?.length
+              ? undefined
+              : t("Add cloud storage (Cloud storage in the sidebar) to keep backups there."),
           )}
           {field(
             "bk-folder",
@@ -793,7 +861,11 @@ export function PlanForm({
             />,
             dest.kind === "local"
               ? t("On this computer; ~ is your home.")
-              : t("On that server, from its login's home."),
+              : dest.kind === "cloud"
+                ? dest.providerId
+                  ? t("A folder in that provider.")
+                  : t("A folder in the pool; each backup goes where the upload rule puts it.")
+                : t("On that server, from its login's home."),
           )}
           {field(
             "bk-count",
@@ -883,6 +955,50 @@ export function BackupRuns({ planId, plans }: { planId?: string; plans?: BackupP
             <span className="flex-1" />
             {r.state === "ok" && !r.prunedAt ? (
               <>
+                {r.keyId ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 gap-1"
+                        data-help="backups.download"
+                      >
+                        <Download className="size-3.5" />
+                        {t("Download")}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onSelect={() =>
+                          void fetchDownload(api.backups.downloadLink({ runId: r.id }))
+                        }
+                      >
+                        {t("As stored (encrypted)")}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={() =>
+                          void fetchDownload(
+                            api.backups.downloadLink({ runId: r.id, decrypt: true }),
+                          )
+                        }
+                      >
+                        {t("Decrypted with its key")}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 gap-1"
+                    data-help="backups.download"
+                    onClick={() => void fetchDownload(api.backups.downloadLink({ runId: r.id }))}
+                  >
+                    <Download className="size-3.5" />
+                    {t("Download")}
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="ghost"
