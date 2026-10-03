@@ -7,6 +7,7 @@ import { Empty, ErrorNote, Loading, PageHeader, StateBadge } from "@/components/
 import { useConfirm } from "@/components/confirm";
 import { FindAgents } from "@/components/find-agents";
 import { LegLogin } from "@/components/leg-login";
+import { LegPlanUsageDetail } from "@/components/plan-usage";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -285,20 +286,7 @@ export function LegsPage({ focus }: { focus?: string } = {}) {
                   {leg.setupHint}
                 </div>
               ) : null}
-              {leg.quota.length ? (
-                <div className="flex flex-wrap gap-2 text-xs">
-                  {leg.quota.map((w) => (
-                    <Badge key={w.name} variant="secondary">
-                      {w.name}:{" "}
-                      {w.utilization === null
-                        ? t("no figure")
-                        : `${Math.round(w.utilization * 100)}%`}
-                      {w.estimated ? ` ${t("(estimated)")}` : ""}
-                      {w.resetsAt ? ` · ${until(w.resetsAt)}` : ""}
-                    </Badge>
-                  ))}
-                </div>
-              ) : null}
+              <LegPlanUsageDetail legId={leg.id} />
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>

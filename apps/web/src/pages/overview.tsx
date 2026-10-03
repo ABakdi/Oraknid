@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Link } from "wouter";
 import { Sparkline, TokensChart } from "@/components/charts";
 import { Empty, ErrorNote, Loading, PageHeader, Stat, StateBadge } from "@/components/common";
+import { PlanUsageCard } from "@/components/plan-usage";
 import { PauseResume } from "@/components/project-work";
 import { AddLegButtons } from "@/components/setup";
 import { ACTIVE } from "@/components/task-drawer";
@@ -11,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { api } from "@/lib/api";
-import { ago, bytes, clock, tokens, until } from "@/lib/format";
+import { ago, bytes, clock, tokens } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { jobHref, jobIdHref } from "@/lib/links";
 import { useEvents, useLive, useMetrics } from "@/lib/live";
@@ -106,6 +107,8 @@ export function OverviewPage() {
 
       <RunningNow jobs={activeJobs} names={names} />
 
+      <PlanUsageCard />
+
       <section aria-label={t("Legs now")}>
         <h2 className="mb-2 text-sm font-medium text-muted-foreground">{t("Legs now")}</h2>
         <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
@@ -158,23 +161,6 @@ export function OverviewPage() {
                       {leg.health === "healthy" ? t("idle") : (leg.healthDetail ?? "")}
                     </div>
                   )}
-                  {[...leg.quota, ...leg.models.flatMap((m) => m.quota)].map((w) => (
-                    <div key={w.name} className="space-y-1">
-                      <div className="flex justify-between text-muted-foreground">
-                        <span>
-                          {w.name}
-                          {w.estimated ? ` (${t("estimated")})` : ""}
-                        </span>
-                        <span>
-                          {w.utilization === null
-                            ? t("no figure yet")
-                            : t("{n}% used", { n: Math.round(w.utilization * 100) })}
-                          {w.resetsAt ? ` · ${t("resets")} ${until(w.resetsAt)}` : ""}
-                        </span>
-                      </div>
-                      <Progress value={(w.utilization ?? 0) * 100} className="h-1" />
-                    </div>
-                  ))}
                   {doing[0]?.contextTokens ? (
                     <div className="text-muted-foreground">
                       {t("Context: {n}", { n: tokens(doing[0].contextTokens) })}
