@@ -7,27 +7,28 @@ import { defaultRun, type Run, rootPrefix, rootStepper, shQuote } from "./exec.t
 /**
  * The OpenRC script (ADR-036): a system service that drops to my user,
  * kept alive by supervise-daemon, with as long to stop as systemd gives it.
+ * The environment goes through env(1): exporting PATH in the script would
+ * hide OpenRC's own helpers from it. OpenRC evals command_args, so each
+ * word is quoted, and the whole is quoted again for the assignment.
  */
 export function openrcScript(command: ServiceCommand, user: { name: string; home: string }) {
-  const env = { HOME: user.home, USER: user.name, ...command.env };
-  const exports = Object.entries(env)
-    .map(([k, v]) => `export ${k}=${shQuote(v)}`)
-    .join("\n");
+  const env = Object.entries({ HOME: user.home, USER: user.name, ...command.env }).map(
+    ([k, v]) => `${k}=${v}`,
+  );
+  const args = [...env, command.execPath, ...command.args].map(shQuote).join(" ");
   return `#!/sbin/openrc-run
 # Written by oraknid install. Remove it with: oraknid uninstall
 
 name="oraknid"
 description="Oraknid — always watching, many legs"
 supervisor=supervise-daemon
-command=${shQuote(command.execPath)}
-command_args="${command.args.map(shQuote).join(" ")}"
+command=/usr/bin/env
+command_args=${shQuote(args)}
 command_user=${shQuote(user.name)}
 directory=${shQuote(user.home)}
 respawn_delay=2
 respawn_max=0
 retry="TERM/150/KILL/5"
-
-${exports}
 
 depend() {
 \tneed localmount

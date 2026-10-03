@@ -78,12 +78,30 @@ describe("OpenRC", () => {
     const text = openrcScript(command, me);
     expect(text.startsWith("#!/sbin/openrc-run\n")).toBe(true);
     expect(text).toContain("supervisor=supervise-daemon");
-    expect(text).toContain(`command=${command.execPath}`);
-    expect(text).toContain(`command_args="${command.args[0]} run"`);
+    expect(text).toContain("command=/usr/bin/env");
     expect(text).toContain("command_user=me");
-    expect(text).toContain("export HOME=/home/me");
-    expect(text).toContain("export ORAKNID_DATA_DIR='/home/me/my data'");
     expect(text).toContain('retry="TERM/150/KILL/5"');
+    // No PATH exported in the script itself: OpenRC needs its own.
+    expect(text).not.toMatch(/^export /m);
+  });
+
+  it("hands the daemon its environment and command through env, as OpenRC's eval reads them", () => {
+    const text = openrcScript(command, me);
+    // What supervise-daemon gets: source the assignment, then eval the words, as OpenRC does.
+    const r = spawnSync(
+      "sh",
+      ["-c", `${text.match(/^command_args=.*$/m)?.[0]}\neval 'printf "%s\\n"' "$command_args"`],
+      { encoding: "utf8" },
+    );
+    expect(r.stdout.trim().split("\n")).toEqual([
+      "HOME=/home/me",
+      "USER=me",
+      "PATH=/usr/local/bin:/usr/bin",
+      "ORAKNID_DATA_DIR=/home/me/my data",
+      command.execPath,
+      command.args[0],
+      "run",
+    ]);
   });
 
   it("the script is valid sh", () => {

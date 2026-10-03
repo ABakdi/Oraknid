@@ -27,7 +27,6 @@ BIN_DIR="$HOME/.local/bin"
 SERVICE=1
 UNINSTALL=0
 PM=""
-PNPM=""
 
 say() { printf '%s\n' "$*"; }
 title() { printf '\n==> %s\n' "$*"; }
@@ -237,30 +236,36 @@ install_local_node() {
 	node_ok || die "the Node from nodejs.org does not run here"
 }
 
+# turbo looks for a `pnpm` binary: a small one in .tools/bin runs it through corepack.
+pnpm_shim() {
+	mkdir -p "$DIR/.tools/bin"
+	printf '#!/bin/sh\nexec %s pnpm "$@"\n' "'$1'" >"$DIR/.tools/bin/pnpm"
+	chmod 755 "$DIR/.tools/bin/pnpm"
+}
+
 pnpm_works() {
-	# shellcheck disable=SC2086 # PNPM may be "corepack pnpm"
-	(cd "$DIR" && $PNPM --version >/dev/null 2>&1 </dev/null)
+	(cd "$DIR" && pnpm --version >/dev/null 2>&1 </dev/null)
 }
 
 ensure_pnpm() {
+	title "Getting pnpm"
 	export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 	if have corepack; then
-		PNPM="corepack pnpm"
+		pnpm_shim "$(command -v corepack)"
 		pnpm_works && return
 	fi
-	if have pnpm && version_ge "$(pnpm --version 2>/dev/null || echo 0)" 9.0.0; then
-		PNPM="pnpm"
-		pnpm_works && return
+	rm -f "$DIR/.tools/bin/pnpm"
+	if have pnpm && version_ge "$(pnpm --version 2>/dev/null || echo 0)" 9.0.0 && pnpm_works; then
+		return
 	fi
-	# No corepack with this Node (or an old one): a current corepack, just for Oraknid.
+	# No corepack with this Node (or one too old to check pnpm's signature): a current one, just for Oraknid.
 	if ! have npm; then
 		[ -n "$PM" ] || detect_pm
 		[ -n "$PM" ] || die "pnpm needs corepack or npm, and neither is here"
-		install_pkgs "$(pkg npm)"
+		install_pkgs "$(pkg npm)" || die "$PM could not install npm"
 	fi
 	run npm install --prefix "$DIR/.tools/corepack" --no-fund --no-audit --loglevel=error corepack
-	PATH="$DIR/.tools/corepack/node_modules/.bin:$PATH"
-	PNPM="corepack pnpm"
+	pnpm_shim "$DIR/.tools/corepack/node_modules/.bin/corepack"
 	pnpm_works || die "pnpm does not run through corepack"
 }
 
@@ -287,8 +292,7 @@ fetch_source() {
 build() {
 	title "Installing dependencies and building"
 	export TURBO_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1
-	# shellcheck disable=SC2086 # PNPM may be "corepack pnpm"
-	(cd "$DIR" && run $PNPM install --frozen-lockfile && run $PNPM build)
+	(cd "$DIR" && run pnpm install --frozen-lockfile && run pnpm build)
 }
 
 link_command() {
@@ -373,7 +377,7 @@ main() {
 	[ "$(id -u)" != 0 ] || warn "running as root: Oraknid will run as root. It is meant to run as you."
 
 	# What an earlier run put here comes first.
-	PATH="$DIR/.tools/node/bin:$DIR/.tools/corepack/node_modules/.bin:$PATH"
+	PATH="$DIR/.tools/bin:$DIR/.tools/node/bin:$PATH"
 	export PATH
 
 	ensure_packages
