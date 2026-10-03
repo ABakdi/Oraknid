@@ -81,6 +81,11 @@ export const PAGES: HelpPage[] = [
         does: "The project's jobs as a diagram: compact (a box per job, open one for its tasks) or expanded (every job's tasks).",
       },
       {
+        id: "repo",
+        name: "Repo",
+        does: "The project's GitHub repo: which one and through which account, its latest commits, branches and open pull requests, Browse the code (in Repos), and linking, changing or unlinking it.",
+      },
+      {
         id: "work",
         name: "Work",
         does: "The jobs, newest first; one opens in place (item/work/<job id>).",
@@ -410,6 +415,24 @@ export const CONTROLS: HelpControl[] = [
     name: "New project",
     does: "Adds a project: an existing folder, a new one, a GitHub repo, a git URL.",
     where: "Projects, above the list",
+  },
+  {
+    id: "project.github",
+    page: "projects",
+    tab: "repo",
+    needsItem: true,
+    name: "The project's GitHub repo",
+    does: "Links the project to a GitHub repo (an account, a new or existing repo, public or private), changes or unlinks it; Oraknid pushes and opens pull requests there without asking.",
+    where: "A project's Repo tab, under what's on the repo",
+  },
+  {
+    id: "project.repo",
+    page: "projects",
+    tab: "repo",
+    needsItem: true,
+    name: "What's on the project's repo",
+    does: "The linked repo's latest commits, branches and open pull requests, with Browse the code and Open on GitHub.",
+    where: "A project's Repo tab, at the top, once a repo is linked and pushed to",
   },
   {
     id: "project.new-work",

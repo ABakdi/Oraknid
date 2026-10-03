@@ -60,7 +60,7 @@ export function ProjectGitHubCard({ project }: { project: ProjectView }) {
       .catch((e) => toast.error(message(e)));
   };
   return (
-    <Card>
+    <Card data-help="project.github">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-sm">
           <GitBranch className="size-4" />

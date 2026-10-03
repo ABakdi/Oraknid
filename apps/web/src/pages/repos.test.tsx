@@ -304,4 +304,35 @@ describe("syntax colouring", () => {
     expect(lines[2]).toContain('<span class="hljs-keyword">const</span>');
     expect(highlightLines("<script>", null)).toEqual(["&lt;script&gt;"]);
   });
+
+  it("shows a project's linked repo on its Repo tab: commits, branches, pull requests, a way into Repos", async () => {
+    const { ProjectRepoTab } = await import("@/components/project-repo");
+    const project = {
+      id: "P1",
+      name: "Piano",
+      github: {
+        account: "me",
+        owner: "me",
+        name: "piano",
+        visibility: "public",
+        origin: "new",
+        ready: true,
+        linkedAt: 1,
+      },
+    } as unknown as Parameters<typeof ProjectRepoTab>[0]["project"];
+    const { hook } = memoryLocation({ path: "/projects/P1/repo" });
+    render(
+      <Router hook={hook}>
+        <ProjectRepoTab project={project} />
+      </Router>,
+    );
+    expect((await screen.findAllByText("me/piano")).length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "Browse the code" }).getAttribute("href")).toBe(
+      "/repos/me/piano",
+    );
+    expect(await screen.findByText(/Latest commits on main/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Open on GitHub/ }).getAttribute("href")).toBe(
+      "https://github.com/me/piano",
+    );
+  });
 });

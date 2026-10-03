@@ -210,12 +210,15 @@ the address (`/projects/<id>/<tab>`):
   to change it; [[Budgets-and-Quotas]] → A project's budget), then
   tokens, time, tasks done, success, tokens per day and the breakdown
   by Leg.
-- **Settings**: its **GitHub repo** beside its **servers**
-  ([[ADR-038-Project-Accounts]]): the linked repository (owner/name, who
-  can see it, "to be created" until it is, the account), Change and
-  Unlink (a second step), or "Link a repo" (account, a new or an
-  existing repository, owner, name, who can see it); then the folder and
-  branches, archive or delete, and the project's command rules.
+- **Repo** (after Work; [[ADR-038-Project-Accounts]] → Changed): what
+  is on the linked GitHub repo (owner/name, who can see it, the account,
+  its last push; the latest commits on its default branch, its branches,
+  its open pull requests, each opening in Repos), **Browse the code** and
+  **Open on GitHub**; below, the link itself: Change and Unlink (a second
+  step), or "Link a repo" (account, a new or an existing repository,
+  owner, name, who can see it). A repo still to be created says so.
+- **Settings**: its **servers**, then the folder and branches, archive
+  or delete, and the project's command rules.
 - **Skills**, **Servers**, **Network** (the ports on this computer its
   jobs may reach, like a local database; [[Sandboxing]]).
 

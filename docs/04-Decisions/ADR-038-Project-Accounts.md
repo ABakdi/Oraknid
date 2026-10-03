@@ -51,6 +51,13 @@ the check repair didn't know the project's repo and kept them.
   remote become the two above. Once per task.
 - **The check repair knows the repo** and replaces such checks itself.
 
+## Changed (2026-10-03): the project's Repo tab
+The link was in the project's Settings and went unseen. A **Repo** tab,
+after Work, shows the linked repo (which one, through which account),
+its latest commits, branches and open pull requests, Browse the code
+(into Repos, ADR-040) and Open on GitHub, with the card to link, change
+or unlink it below. Settings keeps the project's servers.
+
 ## Consequences
 - ADR-023's "one account at a time" ends: several tokens, each named by
   its account.
