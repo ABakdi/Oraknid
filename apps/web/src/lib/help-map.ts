@@ -343,6 +343,14 @@ export const CONTROLS: HelpControl[] = [
     where: "New work → Options, first",
   },
   {
+    id: "work.github-account",
+    page: "new",
+    name: "GitHub account",
+    does: "Which of my GitHub accounts a new project's new GitHub repo is made on; the first (the default) unless I pick another.",
+    where:
+      "New work → Options, under the project, when it is a new GitHub repo and I have more than one account",
+  },
+  {
     id: "work.skill",
     page: "new",
     name: "Method (skill)",

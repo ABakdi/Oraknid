@@ -87,6 +87,8 @@ export function WorkPage({ draftId }: { draftId?: string }) {
   const [parent, setParent] = useState(remembered);
   const [name, setName] = useState("");
   const [isPrivate, setPrivate] = useState(true);
+  /** The account a new GitHub repo is made on: the first (the default) unless I pick another. */
+  const [account, setAccount] = useState("");
   const [repo, setRepo] = useState(arrived.repo);
   const [url, setUrl] = useState("");
   const [skill, setSkill] = useState("auto");
@@ -261,27 +263,17 @@ export function WorkPage({ draftId }: { draftId?: string }) {
     try {
       localStorage.setItem(PARENT_KEY, parent);
     } catch {}
-    const src: ProjectSource =
-      source === "folder"
-        ? { kind: "folder", path: path.trim(), initGit: true }
-        : source === "new-folder"
-          ? { kind: "new-folder", parent: parent.trim(), name: name.trim() }
-          : source === "github-new"
-            ? {
-                kind: "github-new",
-                parent: parent.trim(),
-                name: name.trim(),
-                private: isPrivate,
-                description: "",
-              }
-            : source === "github-clone"
-              ? {
-                  kind: "github-clone",
-                  parent: parent.trim(),
-                  fullName: repo,
-                  ...(arrived.account && repo === arrived.repo ? { account: arrived.account } : {}),
-                }
-              : { kind: "git-url", parent: parent.trim(), url: url.trim() };
+    const src = newProjectSource({
+      source,
+      path,
+      parent,
+      name,
+      isPrivate,
+      account,
+      repo,
+      url,
+      repoAccount: arrived.account && repo === arrived.repo ? arrived.account : "",
+    });
     const p = await api.projects.createFrom({ source: src });
     setProjectId(p.id);
     return p.id;
@@ -487,6 +479,9 @@ export function WorkPage({ draftId }: { draftId?: string }) {
                       placeholder="my-site"
                     />
                   </div>
+                ) : null}
+                {source === "github-new" ? (
+                  <GitHubAccountPicker value={account} onChange={setAccount} />
                 ) : null}
                 {source === "github-new" ? (
                   <label htmlFor="w-private" className="flex items-center gap-2">
@@ -776,6 +771,86 @@ function SkillUpload({ onAdded }: { onAdded: (id: string) => void }) {
         />
       </label>
     </Button>
+  );
+}
+
+/** Where a new project comes from, as the API takes it (Jobs-and-Projects → Starting work). */
+export function newProjectSource(o: {
+  source: SourceKind;
+  path: string;
+  parent: string;
+  name: string;
+  isPrivate: boolean;
+  /** The account a new GitHub repo is made on; "" for the default. */
+  account: string;
+  repo: string;
+  url: string;
+  /** The account that reads the repo to clone, when it came from Repos; "" otherwise. */
+  repoAccount: string;
+}): ProjectSource {
+  const parent = o.parent.trim();
+  switch (o.source) {
+    case "folder":
+      return { kind: "folder", path: o.path.trim(), initGit: true };
+    case "new-folder":
+      return { kind: "new-folder", parent, name: o.name.trim() };
+    case "github-new":
+      return {
+        kind: "github-new",
+        ...(o.account ? { account: o.account } : {}),
+        parent,
+        name: o.name.trim(),
+        private: o.isPrivate,
+        description: "",
+      };
+    case "github-clone":
+      return {
+        kind: "github-clone",
+        parent,
+        fullName: o.repo,
+        ...(o.repoAccount ? { account: o.repoAccount } : {}),
+      };
+    default:
+      return { kind: "git-url", parent, url: o.url.trim() };
+  }
+}
+
+/**
+ * The account a new GitHub repo is made on (ADR-038): shown when I have
+ * more than one, the first (the default) chosen until I pick another.
+ */
+export function GitHubAccountPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const accounts = useLive(() => api.github.accounts(), {
+    topics: ["overview"],
+    refreshOn: (e) => e.type.startsWith("github."),
+  });
+  const logins = (accounts.data ?? []).map((a) => a.login);
+  if (logins.length < 2) return null;
+  const chosen = logins.includes(value) ? value : (logins[0] as string);
+  return (
+    <div data-help="work.github-account" className="space-y-1.5">
+      <Label>{t("GitHub account")}</Label>
+      <Select value={chosen} onValueChange={onChange}>
+        <SelectTrigger className="w-full" aria-label={t("GitHub account")}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {(accounts.data ?? []).map((a, i) => (
+            <SelectItem key={a.login} value={a.login}>
+              {a.login}
+              {i === 0 ? ` · ${t("default")}` : ""}
+              {a.error ? ` · ${t("can't be used now")}` : ""}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 
