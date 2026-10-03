@@ -338,6 +338,7 @@ const EVENTS: [NotifyEvent, string][] = [
   ["recovered", "Recovered after a stop"],
   ["leg.unavailable", "A Leg became unavailable"],
   ["security", "Wrong PINs, a device unpaired"],
+  ["backup.failed", "A backup failed"],
 ];
 const DEFAULTS: Record<NotifyEvent, Route> = {
   approval: { desktop: true, push: true, email: "after-15-min" },
@@ -350,6 +351,7 @@ const DEFAULTS: Record<NotifyEvent, Route> = {
   recovered: { desktop: true, push: true, email: "never" },
   "leg.unavailable": { desktop: false, push: false, email: "never" },
   security: { desktop: true, push: true, email: "now" },
+  "backup.failed": { desktop: true, push: true, email: "now" },
 };
 
 function NotificationsCard() {

@@ -304,6 +304,15 @@ const HOME_ONLY = [
   "/servers/acceptHostKey",
   "/servers/editState",
   "/servers/remove",
+  // Backups (ADR-044): a plan's password and destination, keys, and restoring.
+  "/backups/createPlan",
+  "/backups/updatePlan",
+  "/backups/removePlan",
+  "/backups/prepareRestore",
+  "/backups/restore",
+  "/backups/importKey",
+  "/backups/exportKey",
+  "/backups/removeKey",
   // GitHub's accounts, a new repository and a project's link (ADR-038, ADR-040); reading stays open.
   "/github/addAccount",
   "/github/removeAccount",

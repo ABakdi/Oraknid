@@ -180,6 +180,24 @@ export function startNotificationRouter(o: {
           itemId: null,
         };
       }
+      case "backup.failed": {
+        // A database backup that failed (ADR-044): its error is already in plain words.
+        const b = payload as { planId?: string; name?: string; error?: string };
+        return {
+          p: {
+            event: "backup.failed",
+            jobId: null,
+            n: {
+              title: `Backup failed: ${b.name ?? "a plan"}`,
+              body: b.error ?? "It stopped without saying why.",
+              url: url("/settings/backups"),
+              urgency: "critical",
+              tag: `backup-${b.planId ?? ""}`,
+            },
+          },
+          itemId: null,
+        };
+      }
       case "system.recovered": {
         const s = payload as { jobsResumed?: string[]; effectsNeedingMe?: number };
         return {

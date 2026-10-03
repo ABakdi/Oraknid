@@ -1,4 +1,12 @@
-import type { GitHubLink, Question, QuestionAnswer } from "@oraknid/contracts";
+import type {
+  BackupDestination,
+  BackupRetention,
+  BackupSchedule,
+  BackupTarget,
+  GitHubLink,
+  Question,
+  QuestionAnswer,
+} from "@oraknid/contracts";
 import { sql } from "drizzle-orm";
 import {
   index,
@@ -703,4 +711,57 @@ export const mailPopUidls = sqliteTable(
     primaryKey({ columns: [t.accountId, t.uidl] }),
     index("mail_pop_uidls_message").on(t.messageId),
   ],
+);
+
+/** age keys for backups (ADR-044): the public half; the private one is in the keychain. */
+export const backupKeys = sqliteTable("backup_keys", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  publicKey: text("public_key").notNull(),
+  imported: integer("imported", { mode: "boolean" }).notNull().default(false),
+  /** When I took the private key away, once; null until then. */
+  exportedAt: integer("exported_at"),
+  createdAt: integer("created_at").notNull(),
+});
+
+/** A database's backup plan (ADR-044); its password is in the keychain. */
+export const backupPlans = sqliteTable("backup_plans", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  serverId: text("server_id").notNull(),
+  target: json<BackupTarget>("target").notNull(),
+  schedule: json<BackupSchedule>("schedule").notNull(),
+  destination: json<BackupDestination>("destination").notNull(),
+  retention: json<BackupRetention>("retention").notNull(),
+  keyId: text("key_id"),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  /** Its next time; one in the past at start is a missed run. */
+  nextRunAt: integer("next_run_at"),
+  createdAt: integer("created_at").notNull(),
+});
+
+/** Each run of a plan: what it made, or what went wrong. */
+export const backupRuns = sqliteTable(
+  "backup_runs",
+  {
+    id: text("id").primaryKey(),
+    planId: text("plan_id").notNull(),
+    state: text("state", { enum: ["running", "ok", "failed"] }).notNull(),
+    trigger: text("trigger", { enum: ["schedule", "missed", "manual"] }).notNull(),
+    startedAt: integer("started_at").notNull(),
+    endedAt: integer("ended_at"),
+    size: integer("size"),
+    durationMs: integer("duration_ms"),
+    checksum: text("checksum"),
+    /** Where it went: this computer's folder, or a server's. */
+    destination: json<BackupDestination>("destination").notNull(),
+    path: text("path"),
+    keyId: text("key_id"),
+    error: text("error"),
+    verifiedAt: integer("verified_at"),
+    verifyOk: integer("verify_ok", { mode: "boolean" }),
+    verifyNote: text("verify_note"),
+    prunedAt: integer("pruned_at"),
+  },
+  (t) => [index("backup_runs_plan").on(t.planId, t.startedAt)],
 );

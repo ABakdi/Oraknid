@@ -104,6 +104,34 @@ export function exec(
   });
 }
 
+/**
+ * One command whose output streams (backups, ADR-044): its channel to
+ * read from and write to, and its end with the exit code and the last of
+ * its stderr.
+ */
+export function execStream(
+  client: Client,
+  command: string,
+): Promise<{ channel: ClientChannel; done: Promise<{ code: number | null; stderr: string }> }> {
+  return new Promise((resolve, reject) => {
+    client.exec(command, (err, channel: ClientChannel) => {
+      if (err) return reject(err);
+      let stderr = "";
+      channel.stderr.on("data", (d: Buffer) => {
+        stderr = (stderr + d.toString()).slice(-16 * 1024);
+      });
+      const done = new Promise<{ code: number | null; stderr: string }>((r) => {
+        let code: number | null = null;
+        channel.on("exit", (c: number | null) => {
+          code = c;
+        });
+        channel.on("close", (c?: number | null) => r({ code: code ?? c ?? null, stderr }));
+      });
+      resolve({ channel, done });
+    });
+  });
+}
+
 /** A key pair Oraknid makes for one server (ADR-026), in OpenSSH format. */
 export function newKeyPair(comment: string): { privateKey: string; publicKey: string } {
   const k = utils.generateKeyPairSync("ed25519", { comment });

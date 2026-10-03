@@ -180,6 +180,11 @@ export class Servers {
     }
   }
 
+  /** The SSH connection to a server, for the backups (ADR-044); the host key is checked as always. */
+  client(id: string): Promise<Client> {
+    return this.#connect(this.row(id));
+  }
+
   /** The key a server now presents is mine to accept (ADR-026). */
   acceptHostKey(id: string) {
     const r = this.row(id);
