@@ -54,9 +54,29 @@ unknown paths a bare 404, its loader served, robots.txt); both kinds
 run locally and the public site checked at 1440 and 390 px.
 
 ### M13.3 — Install with one script ([[ADR-036-One-Script-Install]])
-- [ ] `install.sh` at the root: missing packages, clone, build, `oraknid` on my PATH, the service, a pairing code
-- [ ] Services for systemd, OpenRC and runit; an autostart entry otherwise; `oraknid install`/`uninstall` the same
-- [ ] The guide and the site's install block say the one command
+- [x] `install.sh` at the root: missing packages, clone, build, `oraknid` on my PATH, the service, a pairing code
+- [x] Services for systemd, OpenRC and runit; an autostart entry otherwise; `oraknid install`/`uninstall` the same
+- [x] The guide and the site's install block say the one command
+
+Tested (M13.3): `packages/os/src/linux/services.test.ts` (which service
+manager from PID 1 and the tools present, `ORAKNID_SERVICE`; the OpenRC
+script and the runit `run` valid sh, with what each runs as OpenRC's
+eval and chpst read it; install and uninstall commands through sudo or
+as root; the autostart entry's Exec). `install.sh` shellcheck-clean, and
+run for real in containers, as a user with sudo, from a clone of this
+branch (`--from`): Debian 12 (apt, Node 18 too old so Node 22 from
+nodejs.org with its checksum, autostart, then runit with `runsvdir`
+running: the service up as me, `--uninstall`), Ubuntu 24.04 (runit
+from the first run), Alpine 3.22 (apk, the
+distribution's Node, corepack through npm, OpenRC brought up by hand:
+the service up as me, killed and respawned, `--uninstall`), Arch
+(pacman, Node 26 without corepack), Fedora 42 (dnf, Node 22 without
+corepack), openSUSE Tumbleweed (zypper, no awk at first, `nodejs24`,
+and once Node from nodejs.org). Each built, linked `oraknid`, ran
+`doctor`, and ended with a pairing code; reruns updated. Not tried: the
+systemd path from the script (no systemd in the containers; the unit
+is unchanged and was tested in Phase 1), a real boot under OpenRC or
+runit, and the `curl | sh` form before it reaches `main`.
 
 ### M13.4 — Questions with options ([[ADR-037-Questions-With-Options]])
 - [ ] Questions shaped single, multi, text, confirm, with a recommended option and "Other"
