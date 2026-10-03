@@ -24,7 +24,7 @@ the canon. Code identifiers are shown in `code`.
 | **Silk** | `silk` | A job's persistent memory: decisions, architecture, progress, issues, handoffs. Lives outside every Leg's session and is the only source of continuity. |
 | **Silk mirror** | — | The readable markdown copy of Silk at `.oraknid/silk/` in the job's workspace. |
 | **Skill** | `skill` | A markdown methodology file. The user uploads it or picks a built-in. It may declare required tools. |
-| **Interview** | `interview` | The opening stage of a job whose skill requires the owner's answers before autonomous work. Questions go to the inbox. |
+| **Interview** | `interview` | The opening stage of a job whose skill requires the owner's answers before autonomous work. Held in the New work page's conversation with The Eye before Start; a started job still in its interview asks in the inbox. |
 | **Step** | `step` | One journaled unit of a job's program. Once done, it is never run again: its recorded output is replayed after a pause, crash or restart. |
 | **Safe point** | — | A step boundary: where a job can pause or stop without losing work. |
 | **Verification** | `verification` | Commands The Eye runs itself (tests, builds, linters, type checks) to decide whether a task is done. |
@@ -42,7 +42,22 @@ the canon. Code identifiers are shown in `code`.
 | **Sleep inhibitor** | `inhibitor` | The lock that keeps the machine awake while any job is active. |
 | **Watchdog** | `watchdog` | The supervisor of the daemon and every Leg process. |
 | **The Nest** | `nest` | The self-hosted remote relay. The daemon connects to it outbound so I can control Oraknid from anywhere. |
-| **Device** | `device` | A browser or phone paired with the daemon (and later The Nest). |
+| **Device** | `device` | A browser or phone paired with the daemon, at home or for away through The Nest. |
+| **PIN** | `lock` | The one PIN (or passphrase) that unlocks Oraknid on every device, checked by the daemon. Unlocking gives the device an **unlocked session**; idle, closed or revoked, it locks. |
+| **Rights** | `rights` | A device's rights: `standard` (away from home, nothing that opens a new way in) or `full` (away from home, what it may do at home). |
+| **Loader** | — | The small page The Nest serves; it opens the tunnel and runs the UI the daemon sends through it. |
+| **Public Nest** / **private Nest** | `NEST_MODE` | A Nest other people's daemons register on by themselves, or one that takes only the daemons I list. |
+| **Draft** | `draft` | A job being prepared on the New work page, saved as I go, not started. |
+| **Follow-up job** | — | A job started from new work I ask for on an ended job: same project and choices, its branch from the ended job's branch. |
+| **Decision model** | `eyeModels` | A Leg model pinned for one kind of Eye call: planning, judging or quick. The **shadow** plans too, never used, to compare. |
+| **Tool** | `tool` | An MCP server a skill can require, run by the daemon's broker; a Leg reaches it only through the broker. |
+| **Chat** | `chat` | A free conversation with one of my models, which may read attached projects and research the web. |
+| **Helper** | `helper` | The floating chat that does things in Oraknid for me through its own API. |
+| **Server** | `server` | A machine of mine Oraknid reaches over SSH with its own key. |
+| **State document** | — | What a server has and what must not be broken, written by The Eye from a discovery, kept current, editable. |
+| **oraknid-monitor** | — | The small shell program on a server that Oraknid asks for a reading every 15 seconds over SSH. |
+| **Mail account** | `mailAccount` | An IMAP or POP3 account with SMTP, read and written in Mail; agents reach it through the `email` tool. |
+| **Agent's draft** | — | A mail an agent wrote; sent only when I approve it, unless auto-send is on for its account. |
 | **Audit log** | `audit` | The append-only record of every action, decision, approval and side effect. |
 
 Related: [[Vision]] · [[Core-Entities]] · [[Product-Requirements]]

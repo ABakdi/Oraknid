@@ -66,6 +66,9 @@ with the last 24 hours as charts. Removing a server removes the program.
 **Terminal** (web UI): a terminal in the browser (xterm.js) on this
 computer, or on one of my servers over SSH. Off until I turn it on in
 Settings, because it is a full shell; then only on paired devices,
-each opening audited. Away from home through The Nest: later.
+each opening audited. Away from home, only on a device with full
+rights, through the tunnel ([[ADR-030-Device-Rights]]). The Terminal
+page is a workspace: terminals in tabs, side by side or in a grid
+([[Web-UI]] → Terminal).
 
 Related: [[ADR-026-Servers]] · [[ADR-027-Oraknid-Monitor]] · [[ADR-028-Terminal]] · [[Security]] · [[Web-UI]]

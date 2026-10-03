@@ -15,8 +15,9 @@ On creation Oraknid:
 1. Checks the path exists and is writable. If not, it says so and
    creates nothing.
 2. Detects git. If the folder has no repo, it asks whether to `git init`
-   it. If I say no, a shadow repo under `.oraknid/shadow.git` is used
-   for checkpoints only, and my folder stays untouched.
+   it. If I say no, a shadow repo in Oraknid's data folder is used for
+   checkpoints only, out of every Leg's reach, and my folder stays
+   untouched ([[Sandboxing]]).
 3. Detects the release and work branches (BR-14).
 4. Adds `.oraknid/` to `.git/info/exclude`, except `.oraknid/silk/`,
    which I may choose to commit.
@@ -51,6 +52,14 @@ it. A draft costs nothing until it starts, except The Eye's replies.
 
 A project's settings list my servers; I tick the ones its jobs may use.
 Their jobs get each server's state document and a way in ([[Servers]]).
+
+## This computer's services
+
+A job's sandbox reaches the internet, but none of the services running
+on this computer (a local database, a dev server, a model server),
+except the ports I list in the project's **Network** tab; a Leg's own
+local model, named in its settings, is always reachable by it
+([[Sandboxing]]). A change applies to the next sessions.
 
 ## Repositories
 

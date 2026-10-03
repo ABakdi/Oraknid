@@ -12,7 +12,7 @@ Settings → Notifications.
 | Channel | How | Default |
 | :-- | :-- | :-- |
 | **Desktop** | Native Linux notification via the freedesktop notification service. Clicking it opens the item in the UI. | On |
-| **Web push** | The UI is a PWA. Each paired device can subscribe. Works on my phone once it can reach the daemon (local network now, The Nest later). | On for devices that subscribed |
+| **Web push** | The UI is a PWA. Each paired device can subscribe; away from home, The Nest's loader holds the subscription and the daemon sends straight to the browser's push service. Subscriptions belong to a device and go with it; pushes go only to the browsers' push services ([[Audit-2]]). | On for devices that subscribed |
 | **Email** | SMTP. I enter the server and the address. The password goes to the keychain. | Off until configured |
 
 ## Events and default routing
@@ -28,9 +28,10 @@ Settings → Notifications.
 | Time alarm | ✓ | ✓ | ✓ |
 | Recovered after crash or reboot | ✓ | ✓ | — |
 | Leg unavailable / rate-limited | — | — | — |
+| Security: the 5th wrong PIN on a device, a device unpaired by ten ([[ADR-029-App-Lock]]) | ✓ | ✓ | ✓ |
 
 I can change every cell. **Quiet hours** hold everything except
-approvals for running jobs. Repeated events are grouped
+approvals for running jobs and security alerts. Repeated events are grouped
 ("3 approvals waiting").
 
 ## Content

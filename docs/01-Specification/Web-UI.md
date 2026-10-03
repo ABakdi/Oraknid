@@ -16,6 +16,12 @@ their questions and redirecting The Eye.
   indicator shows live / reconnecting / offline. When offline, the last
   known state stays on screen, clearly marked stale.
 - A PWA, installable on desktop and phone.
+- **The mark** (2026-10-03): an octopus's eye, round with a horizontal
+  pupil and an amber iris, on eight jointed spider legs in violet, on a
+  dark tile. `icon.svg` is the favicon and the mark in the sidebar, the
+  lock screen and pairing; PNG icons (192, 512, maskable) and an
+  `apple-touch-icon` for a phone's home screen; `logo.svg` is the mark
+  alone. The Nest's loader uses the same.
 
 ## Layout
 
@@ -23,11 +29,16 @@ their questions and redirecting The Eye.
 ┌───────────────────────────────────────────────────────────────┐
 │ Oraknid  ◉ live  ☕ awake (1 job)   Inbox (3)   ⌘K  ⚙         │ header
 ├──────────┬────────────────────────────────────────────────────┤
+│ New work │                                                    │
 │ Overview │                                                    │
 │ Jobs     │        main view                                   │
 │ Projects │                                                    │
 │ Inbox    │                                                    │
+│ Mail     │                                                    │
 │ Legs     │                                                    │
+│ Chats    │                                                    │
+│ Servers  │                                                    │
+│ Terminal │                                                    │
 │ Skills   │                                                    │
 │ Logs     │                                                    │
 │ Settings │                                                    │
@@ -45,8 +56,10 @@ their questions and redirecting The Eye.
   tabs never jumps the page. Nothing runs off the right edge on a phone:
   long names are cut with their full text on hover, and wrap in legends.
 - **Keyboard**: `?` lists every shortcut; `g` then `o`/`j`/`p`/`i`/`l`/
-  `c`/`s`/`t`/`m` goes to Overview, Jobs, Projects, Inbox, Legs, Chats,
-  Servers, Terminal, Mail; `[` folds the sidebar; `n` new work.
+  `c`/`s`/`t`/`m`/`k`/`,` goes to Overview, Jobs, Projects, Inbox, Legs,
+  Chats, Servers, Terminal, Mail, Skills, Settings; `1`…`9` goes to that
+  tab on a page with tabs; `[` folds the sidebar; `n` new work; Ctrl+K
+  the command palette. Single keys stay out of the way while I type.
 - **On mobile:** the sidebar becomes a bottom tab bar (Overview, Jobs,
   Inbox, Legs, More). Every control is reachable within two taps, and
   touch targets are at least 44 px (buttons, fields, tabs and the close
@@ -127,7 +140,9 @@ task), budget burn against limits.
 
 A list with totals. Each project page: history of jobs, tokens and time
 spent, tasks completed, failures, breakdown by Leg, and a link to the
-workspace and its Silk mirror. **New work** in its header starts a job
+workspace and its Silk mirror. A project's page is in tabs: Jobs, Stats,
+Skills, Servers, **Network** (the ports on this computer its jobs may
+reach, like a local database; [[Sandboxing]]), Commands, About. **New work** in its header starts a job
 there; its Servers tab adds a server or sets one up in place, its Skills
 tab shows which tools a skill still needs.
 
@@ -156,7 +171,8 @@ open a terminal, remove.
 A terminal workspace (xterm.js), when turned on in Settings → Security
 or on this page itself while it is off ([[ADR-028-Terminal]]): terminals in tabs, and side by side or in a grid
 (one, two columns, two by two). A new terminal is picked from cards:
-this computer, each server. Shortcuts (the browser keeps `Ctrl+Shift+T`
+this computer, each server. Away from home it opens only on a device
+with full rights ([[ADR-030-Device-Rights]]). Shortcuts (the browser keeps `Ctrl+Shift+T`
 and `W` for itself, and `Ctrl+Shift+Q` quits Chrome on Linux):
 `Ctrl+Shift+Enter` new, `Ctrl+Shift+X` close, `Ctrl+Shift+←/→`
 previous and next, `Ctrl+Shift+1…9` go to, `Ctrl+Shift+D` side by side,
@@ -268,7 +284,11 @@ that opened Settings:
   allow/deny list, the terminal.
 - **Devices & phone**: pairing my phone in one step (a QR code to scan;
   it needs the PIN and The Nest, and the code expires unused after ten
-  minutes), the paired devices, The Nest's connection.
+  minutes; "Full rights from this device", with the PIN, says what that
+  means before I tick it), the paired devices with their rights (full
+  rights given or taken on a device's row, at home, with the PIN;
+  [[ADR-030-Device-Rights]]), The Nest's connection: "Use a public
+  Nest" in one click, or "My own Nest" ([[ADR-031-Public-Nest]]).
 - **Connections**: email accounts ([[ADR-032-Email]]), GitHub, tools for skills.
 
 ### The lock

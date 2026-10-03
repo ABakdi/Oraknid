@@ -29,9 +29,14 @@ erDiagram
 | :-- | :-- |
 | `id`, `name` | |
 | `workspacePath` | Absolute path to the folder or repo. |
-| `isGitRepo` | Detected on creation. Non-git folders are `git init`ed into a shadow repo under `.oraknid/` for checkpoints (see [[Sandboxing]]). |
+| `isGitRepo`, `shadow` | Detected on creation. A non-git folder I don't `git init` gets a shadow repo in Oraknid's data folder for checkpoints (see [[Sandboxing]]). |
 | `releaseBranch`, `workBranch` | Detected from the repo. Fallback is `main` / `dev` (rule BR-14). |
 | `createdAt`, `archivedAt` | |
+| `skillIds` | The skills its jobs may use; The Eye picks one per job (Phase 8). Empty: the default. |
+| `serverIds` | The servers its jobs may use, none by default ([[Servers]]). |
+
+Its local ports (what its jobs' sandboxes may reach on this computer)
+are a setting, `project.localPorts.<project>` ([[Sandboxing]]).
 
 **Life cycle:** active → archived (hidden from lists, kept for stats,
 takes no new jobs; restorable) → deleted (only on my request, refused
@@ -55,7 +60,15 @@ folder, the job branches and the worktrees in it stay).
 | `verify`, `verifyRound` | Job-level checks (the skill's, mine, the plan's); rounds of verification so far. |
 | `blockedUntil` | When a job blocked on quota resumes on its own. |
 | `waived`, `unsandboxed` | Gates I waived; whether I chose to run it without the sandbox. |
+| `priority`, `queuedAt` | Its place among queued jobs; when it started waiting for a slot ([[ADR-016-Parallel-Work]]). |
+| `tools` | The tools its sessions get, by name ([[ADR-021-Tools-Broker]]). |
+| `skillChoices` | The project's skills The Eye chooses from when I didn't pick one; empty once chosen. |
+| `allowRules`, `denyRules` | My command rules for this job ([[Security]]). |
 | `createdAt`, `startedAt`, `finishedAt` | |
+
+A **follow-up job** (2026-10-03) starts its branch from the ended job's
+branch, kept in the setting `job.startFrom.<job>`
+([[Jobs-and-Projects]] → Follow-up jobs).
 
 **States:**
 
@@ -176,7 +189,8 @@ whether it happened. It is never blindly repeated (BR-6).
 
 ## Event
 
-Each carries its `actor` (`owner`, `eye`, `leg:<id>`, `oraknid`).
+Each carries its `actor` (`owner`, `eye`, `leg:<id>`, `agent` for an
+agent's action on mail, `oraknid`).
 The append-only stream of everything that happened: state changes, Leg
 output chunks (summarised), usage samples, drift detections, escalations,
 approvals. It feeds the live UI, the stats and the audit log.
@@ -189,7 +203,48 @@ versions, parsed front matter (`name`, `description`, `requires.tools[]`,
 
 ## Device
 
-A paired browser or phone: name, public key, paired-at, last seen,
-revoked-at, and notification preferences.
+A paired browser or phone: name, public key, the hash of its token,
+paired-at, last seen, revoked-at, and its push subscriptions. Its
+**rights**, `standard` or `full`, are kept in the setting
+`devices.fullRights` ([[ADR-030-Device-Rights]]). Its unlocked sessions
+live in the daemon's memory only ([[ADR-029-App-Lock]]).
+
+## Tool
+
+An MCP server for skills ([[ADR-021-Tools-Broker]]): its name (what a
+skill asks for), command and arguments, plain environment, the names
+of its secrets (values in the keychain), which of its calls only read
+and which send, and whether what it returns is untrusted.
+
+## Chat and helper message
+
+A **chat** ([[ADR-025-Chats]]): a title, the Leg and model (and effort)
+it talks to, the projects it may read, the Leg's own session id, and
+its messages (author `owner` or `model`, the model that answered, an
+error). A **helper message** ([[ADR-024-Oraknid-Helper]]): author
+`owner` or `helper`, the text, and its actions (done, failed, or
+waiting for my Confirm).
+
+## Server
+
+A machine of mine ([[Servers]]): name, host, port, user, my
+description, how Oraknid logs in (`oraknid-key`, `my-key` or, until
+setup, `password`), the pinned host key (and a different one offered,
+waiting for me), setup `new` or `ready`, oraknid-monitor's hash, last
+seen, the last error. Its **state documents** are versioned (written by
+`eye` or `owner`); its **samples** are kept 24 hours. Credentials are in
+the keychain, never here.
+
+## Mail account, folder, message, draft
+
+From [[ADR-032-Email]]: an **account** (name, address, provider preset
+`gmail` · `outlook` · `imap`, `protocol` `imap` or `pop`, incoming and
+SMTP servers with their security, `autoSend`, `appendSent`,
+`deleteFromServer` for POP, state `new` · `syncing` · `ready` ·
+`reconnect` · `error`); its **folders** (on the server for IMAP,
+Oraknid's own for POP); **messages** (headers, a body once opened,
+flags, thread); **drafts** (Oraknid's own, an agent's marked as such,
+waiting for my approval); the senders whose images I allow; a POP
+account's downloaded UIDLs.
 
 Related: [[Business-Rules]] · [[Glossary]] · [[Data-Map]] · [[Persistence-and-Recovery]]

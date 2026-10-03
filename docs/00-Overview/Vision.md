@@ -66,11 +66,15 @@ babysitting Claude Code:
 - Linux (systemd) only
 
 **After the MVP, in this order:** OpenCode → parallelism → The Nest
-(remote relay) → Antigravity → non-coding skills. Then dedicated
-decision models for The Eye (Jev, Kev), then containers and teams.
-Windows comes last, once the system works fully on Linux. See [[Roadmap]].
+(remote relay) → Antigravity → non-coding skills → dedicated decision
+models for The Eye → daily use (New work, repos, chats, the helper) →
+servers → lockdown (a PIN on every device) → workspace → email, all
+built by 2026-10-03. Then containers and teams. Windows comes last,
+once the system works fully on Linux. See [[Roadmap]].
 
 **Not in Oraknid at all:** a hosted multi-tenant service, or Oraknid's
-own model training.
+own model training. A public Nest ([[ADR-031-Public-Nest]]) isn't one:
+it relays other people's end-to-end encrypted traffic and holds none
+of their data.
 
 Related: [[Product-Requirements]] · [[Glossary]] · [[Roadmap]]
