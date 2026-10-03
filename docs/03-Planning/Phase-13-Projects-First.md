@@ -436,9 +436,30 @@ container picked fills its kind and name) at desktop and 390 px; a web
 test covers that mapping.
 
 ### M13.14 — The Eye speaks up ([[ADR-045-The-Eye-Speaks-Up]])
-- [ ] Task done, task left out, job done (a summary), blocked, a needed request denied: one moderate message each in the project's conversation
-- [ ] Every question's options say what they do; "keeps going wrong" in plain words; a denial says its consequence before and after
-- [ ] GitHub without fuss (after the piano job): merge and push are Oraknid's steps at the end; the job folder stays a worktree (`.git` changes refused, checked after each session); Oraknid's own checks never asked about
+- [x] Task done, task left out, job done (a summary), blocked, a needed request denied: one moderate message each in the project's conversation (also waiting, stopped, a folder put back); the job's summary on the quick model, the rest written by Oraknid; shown as a line, a card and notes
+- [x] Every question's options say what they do; "keeps going wrong" in plain words; a denial says its consequence before and after
+- [x] GitHub without fuss (after the piano job): merge and push are Oraknid's steps at the end; the job folder stays a worktree (`.git` changes refused, checked after each session); Oraknid's own checks never asked about
+
+Done 2026-10-04 (ADR-045 → As built; Jobs-and-Projects → Ending a job,
+As built). A job may now go from `waiting` back to `verifying` (its end
+steps waiting for the repo question). Tested: `pnpm check`'s lint and
+types green; the web's 109 tests and the daemon's 366 pass, two daemon
+tests (`startup.test.ts`, `faults.test.ts`) and one web test
+(`project-repo.test.tsx`) failed only under load beside another agent's
+runs and pass alone; new: `eye.test.ts` (seven: the Leg's own-check
+answered, `.git` commands refused, a separate repo put back, the
+messages per event, one blocked message, a denial before and after,
+"keeps going wrong" answered in the conversation), `questions.test.ts`,
+`brain.test.ts` (prompts and the ending), `project-links.test.ts` (merge
+and push at the end against the stand-in GitHub and its bare repo),
+`git.test.ts`, the policy's and the pack's tests in core,
+`eye-report.test.tsx`. By hand on a sample daemon (fake OS, scripted
+Legs, stand-in brain; its own data folder and port, stopped after):
+a job of two tasks said two lines and a card; a follow-up's task kept
+going wrong, asked in the conversation, answered "Leave it out" there:
+the note named the task that went with it, and the card listed both as
+left to me; at desktop width and at 390 px (the conversation, the
+question's options, the inbox).
 
 ### M13.15 — Cloud storage ([[ADR-046-Cloud-Storage]])
 - [ ] Providers through rclone: Google Drive, Dropbox, MEGA, S3-compatible; the pool with upload, download, move, delete; automatic or chosen placement

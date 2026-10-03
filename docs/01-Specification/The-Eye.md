@@ -193,10 +193,52 @@ me in a line:
 | Stop / pause | Pauses the job at a safe point. |
 | A question about the job | Answers from Silk and the job's state. |
 
+Asking for the work to be merged into the work branch or pushed to
+GitHub adds no task: it is the job's ending (Jobs-and-Projects → Ending a
+job), done when the job ends, or at once when it has ended, and said in
+the reply.
+
 New work for a job that has ended is kept for later instead. If no Leg
 can think (none healthy, or the call fails), my message is kept as my
 decision and passed on anyway: my words are never lost. The
 conversation is kept with the job and shown on its page.
+
+### The Eye speaks up ([[ADR-045-The-Eye-Speaks-Up]])
+
+The Eye also writes in the project's conversation on its own, one
+message per event and nothing while things go to plan:
+
+| Event | What it says |
+| :-- | :-- |
+| A task done | One line: the files its commit changed, its checks ("Done: **Write hello.sh** — changed `hello.sh`; its checks pass (`sh hello.sh`)"), the commit beside it. |
+| A task left out | The task, why, and the tasks that need it, left out with it; the job goes on without them. Those are not said again one by one. |
+| The job done | A short summary of what was built (the only one written by the brain, on the quick model, from the facts; written from them alone when no Leg can think), then its branch and commits, where it was merged and pushed (with a link), and what's left to me: merge it, a check by hand, what wasn't done, what was left out; and a link to the result. |
+| Blocked | Why, and what it needs from me (resume after looking at the task, a Leg, the quota reset). The same reason again says nothing. |
+| Waiting for me | The question, there too, answerable there (an item's own options become a question saying what each does). Not again when the item already has its message. |
+| A request I denied | That the Leg was told, that it tries another way, and that I'm asked if the task can't be done without it. |
+| Stopped | That the work so far stays on its branch. |
+| The folder put back | What happened to the job's folder and that the task starts again (Jobs-and-Projects → Ending a job). |
+
+They are messages with a report (`action.intent` "report", `action.report`
+kind, facts, what's left to me); the page shows them as such (Web-UI).
+
+### Questions that say what each answer does
+
+Every question and approval Oraknid asks gives each answer a line saying
+what it does (ADR-037 options with a detail). "\<task\> keeps going wrong"
+asks:
+
+| Answer | What happens |
+| :-- | :-- |
+| **Try again with my advice** (recommended; the advice on its own tab, optional) | My advice is kept in Silk as my decision and the task tries again, its escalation reset. |
+| **Give it to another Leg** (only when there is one; one may be picked on its own tab) | The Leg it went wrong on no longer takes the task; the one I picked does, else routing chooses. |
+| **I'll do it myself** | The task is mine (its folder named); the job waits until I mark it done or hand it back. |
+| **Leave it out** | The task and every task that needs it (listed) are left out; the job goes on. |
+| **Stop the job** | The job is cancelled; its work stays on its branch (named). |
+
+It is also asked in the conversation. An item asked before this
+(Retry · Take it over · Skip it · Cancel the job) still works: Skip it
+leaves out that task alone, as it did.
 
 ## A project's repos and servers (2026-10-03)
 

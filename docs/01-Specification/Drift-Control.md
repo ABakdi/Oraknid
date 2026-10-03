@@ -38,7 +38,20 @@ attempt doesn't start out of scope and trip D1 again (seen 2026-10-03).
 | 2. **Context reset** | End the session with a handoff, then start a fresh session on the same Leg from a new context pack. |
 | 3. **Step up or reassign** | Move the task to the next-best candidate: a higher effort or stronger model on the same Leg first, when the drift looks like the task is too hard for it (D3, D4, D6), otherwise another Leg. With the handoff and a Silk `issue` describing the drift. |
 | 4. **Kill** | Terminate the Leg's process tree. Roll the task's changes back to its last checkpoint. |
-| 5. **Ask me** | Inbox question with the evidence and options: retry with guidance, edit the task, take over, skip, cancel. The task waits. |
+| 5. **Ask me** | Inbox question with the evidence, also asked in the project's conversation, each answer saying what it does ([[ADR-045-The-Eye-Speaks-Up]], The-Eye → Questions that say what each answer does): try again with my advice, give it to another Leg (one may be picked), I'll do it myself, leave it out (with the tasks that need it, listed), stop the job (the work stays on its branch). The task waits. |
+
+**The job's folder after every turn** (after the piano job, 2026-10-03):
+when a Leg's turn ends Oraknid checks that the job's folder, and each
+repo's worktree in a job of several, still belongs to the project (its
+`.git` a link to a worktree record of the project that points back; a
+repository made at the top of a several-repo job's folder counts too).
+If not, the session is ended, whatever stood in for the `.git` goes to
+the project's trash, the link is written again (the record made again,
+without a checkout, when git lost it), the index is reset to the job's
+branch so the files' content shows as changes, and the attempt fails
+with the reason, kept in Silk as an issue and said in the conversation;
+the next attempt starts from the files as they were. If it can't be put
+back, the job blocks.
 
 Steps can be skipped when the evidence calls for it (D8 goes straight
 to step 4). Every step is an event in the activity stream and the audit

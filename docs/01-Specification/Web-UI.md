@@ -217,7 +217,15 @@ the address (`/projects/<id>/<tab>`):
   touched (and the follow-up it started); a line marks where the
   conversation moves to another job. The header says which job it talks
   to now. A reply with questions shows them under it (Questions, below)
-  until I answer; my answers show as a short list.
+  until I answer; my answers show as a short list. What The Eye says on
+  its own ([[ADR-045-The-Eye-Speaks-Up]]) shows as such: a task done is
+  one compact muted line with a check mark (its commit at its end, on a
+  wide screen); the job done is a card (a green edge, "Job done") with
+  its summary, its facts (branch and commits, merged into, pushed, a
+  link to GitHub), **Left to you** and **Open the result**; blocked,
+  waiting, a denial, a task left out, a stop and a folder put back are
+  short notes with an edge and a word saying which. A waiting note's
+  question is answered under it like any.
 - **Workflow** (the project's Web, named so in the UI, 2026-10-03,
   [[ADR-034-Projects-First]] → Changed): only the diagram, filling the
   tab, its controls floating over it (Compact / Expanded at the top
@@ -501,7 +509,11 @@ place, and reads well at any width: long commands and text wrap inside
 the card, never past it; a command in a title shows as code. An
 interview round, and any question asked with options, opens the
 questions component (Questions, below), with "Enough, start" beside
-Submit for a round; an old round asked in prose shows as before. Each item names its
+Submit for a round; an old round asked in prose shows as before. An
+approval's buttons each carry the line saying what that answer leads to
+(ADR-045), side by side on a wide screen and one under the other on a
+phone; a question that only explains an item's own options shows them
+in the component, not again as buttons beside Submit. Each item names its
 project and job. Filters: project, job, kind, state, and a search over
 the text.
 

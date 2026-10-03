@@ -54,7 +54,18 @@ the daemon; "Approve all like this" on a push waives `push` for the job.
 When a Leg asks for permission (e.g. Claude Code wants to run a shell
 command), The Eye decides by policy:
 
-1. Denied by the deny list → deny, and count it as drift D7.
+1. Denied by the deny list → deny, and count it as drift D7. Since the
+   piano job (2026-10-03) the list also keeps the job's folder a
+   worktree of its project: moving, deleting or re-creating a `.git`
+   (`mv`, `rm`, `cp`, `rsync`, a redirection, `sed -i`), `git init`
+   (except a scratch repo under `/tmp`), `git worktree add|remove|move|prune|repair`,
+   anything under `.git/worktrees`, and a file tool writing inside a
+   `.git` are refused outright at every autonomy, whatever my allow
+   rules say, never asked.
+   Before the list, Oraknid's own checks (`oraknid github-…`, ADR-038) a
+   Leg tries to run are answered: "Oraknid runs this check itself when
+   you finish… don't run it". Not a drift, never asked (the piano job's
+   Legs asked me four times).
 2. Inside the sandbox scope and on the allow list → approve.
 3. A gated action → becomes an approval in the inbox, and the Leg waits.
    If the attempt ends first (pause, reassignment, a crash), the
@@ -87,6 +98,20 @@ most blocking first. Each item shows:
   are kept structured and shown as a short list. When The Eye asked it
   in a project's conversation too, answering it in either place
   answers it, and my answers join the conversation.
+- **What each answer does** ([[ADR-045-The-Eye-Speaks-Up]]): every
+  approval and question says it on each answer. An approval's detail
+  ends with **If you deny it:** and what follows; its buttons carry a
+  line each (a Leg's request: it runs once / the Leg is told no and
+  tries another way, and I'm asked if it can't / every such request in
+  this job passes; the plan: work starts / nothing runs and the job
+  stops until I say what to change; an email: sent once / not sent,
+  the draft kept). Questions with plain options (a budget, Silk edits,
+  whether an action happened) carry a question with the same options,
+  each with its line; chosen there, the item is answered with the
+  option itself.
+- **After I deny a Leg's request** the Leg is told ("don't try it
+  again: find another way, or say it can't be done without it") and
+  The Eye says in the project's conversation what happens next.
 - Answering an item a job was waiting for resumes the job at once.
 - At Supervised, the plan approval is asked on every run of the job,
   before any work: once approved it passes, once denied the plan never

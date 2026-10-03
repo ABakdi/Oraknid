@@ -23,6 +23,10 @@ Everything is in its project, in tabs: **The Eye** (one conversation for the who
 
 Write anything in the project's **The Eye** tab: an instruction, a new task, some context, a question, or "stop that". It decides what your message is and acts on it, then tells you what it did.
 
+The Eye also speaks up on its own, once per event and never to narrate: a line when a task is done (what it changed, its checks), a note when a task is left out (and which tasks go with it), when the job is blocked (why, and what it needs from you), when it waits for you (with the question right there), and when you denied something a task needed (what happens next). When the job is done it sums it up in a card: what was built, its branch, where it was merged and pushed, what's left to you, and a link to the result.
+
+Committing, merging and pushing are Oraknid's own steps, not tasks. Ask for them in your request ("commit it into dev and push it to GitHub") or later in the conversation: when the job ends Oraknid merges it into your work branch (only if you asked for that in so many words), pushes it to the project's GitHub repo (asking which one, once, if none is linked), and says so. Agents never touch the job folder's `.git`, and if one does, Oraknid puts the folder back and starts the task again.
+
 When a job has already ended and you ask for more ("add a volume control"), The Eye starts a **follow-up job** in the same project, starting from what the first one built, and links to it.
 
 ## Answering questions
@@ -32,6 +36,8 @@ The Eye asks with options, one question at a time, the one it recommends marked:
 ## Approvals
 
 Some actions always wait for you: a push, a merge, a deploy, sending mail, spending money. Others depend on the job's **autonomy**: Supervised asks about anything unusual, Standard asks less, Full only for the actions above. Answer in the **Inbox**, from your computer or your phone.
+
+Every answer says what it does: under **Approve** and **Deny** you read what follows (if you deny, the agent is told and tries another way, and you're asked if it can't). When a task keeps going wrong you choose between **Try again with my advice**, **Give it to another Leg**, **I'll do it myself**, **Leave it out** (the tasks that need it are listed and left out too) and **Stop the job** (the work stays on its branch).
 
 ## When it's done
 

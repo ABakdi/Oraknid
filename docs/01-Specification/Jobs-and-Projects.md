@@ -198,6 +198,21 @@ fails once merged is redone on top of the newer work.
   not. Checks that Oraknid runs itself (`oraknid github-…`) are named to
   the Leg as Oraknid's, and a Leg trying to run one is told so, never
   asks me.
+  *As built (2026-10-04):* the plan and The Eye's triage carry the
+  job's **ending** (`merge`, `push`; the setting `job.ending.<job>`), never
+  a task; `merge` only when I asked in so many words ("commit it into
+  dev", "merge it", "push dev"), which is then my approval. When the job
+  is verified: with a push wanted and no link, The Eye asks for it as
+  for a task (ADR-038; the job waits, `verifying` → `waiting` →
+  `verifying`); then it merges as the Merge button does (Oraknid's
+  action in the events), creates the linked repo if it doesn't exist
+  yet and pushes the work branch once the job is in it, else the job's
+  branch (each touched repo to its link in a project of several),
+  through the github tool's own logic; then the job's `oraknid github-…`
+  checks run, against the project's own branches; what failed is said
+  in the job's summary as left to me. Asked once the job has ended, it
+  is done at once and said in the reply. The folder check is in
+  [[Drift-Control]]; the refused commands in [[Approvals-and-Autonomy]].
 - **Blocked**: it can't continue. The reason is shown in plain words
   ("All Legs are out of quota until 14:05" / "The tests fail the same
   way after 3 Legs tried"). It resumes on its own when the reason clears
