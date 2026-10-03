@@ -1,6 +1,8 @@
 import { toast } from "sonner";
 import { Link } from "wouter";
 import { Loading } from "@/components/common";
+import { AddServerButton } from "@/components/setup";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { api, message } from "@/lib/api";
 import { t } from "@/lib/i18n";
@@ -35,35 +37,55 @@ export function ProjectServersCard({ projectId }: { projectId: string }) {
           )}
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-1.5 text-sm">
+      <CardContent className="space-y-2 text-sm">
         {servers.data.length === 0 ? (
-          <div className="text-muted-foreground">
-            {t("No servers yet:")}{" "}
-            <Link href="/servers" className="underline">
-              {t("add one")}
-            </Link>
-            .
-          </div>
+          <div className="text-muted-foreground">{t("No servers yet.")}</div>
         ) : null}
         {servers.data.map((s) => (
-          <label key={s.id} className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={set.includes(s.id)}
-              disabled={s.setup !== "ready"}
-              onChange={(e) =>
-                save(e.target.checked ? [...set, s.id] : set.filter((x) => x !== s.id))
-              }
-            />
-            <span className="font-medium">{s.name}</span>
-            <span className="font-mono text-xs text-muted-foreground">
-              {s.user}@{s.host}
-            </span>
+          <div key={s.id} className="flex min-h-11 flex-wrap items-center gap-2">
+            <label className="flex min-w-0 flex-1 items-center gap-2">
+              <input
+                type="checkbox"
+                className="size-4 shrink-0"
+                checked={set.includes(s.id)}
+                disabled={s.setup !== "ready"}
+                onChange={(e) =>
+                  save(e.target.checked ? [...set, s.id] : set.filter((x) => x !== s.id))
+                }
+              />
+              <span className="min-w-0 truncate font-medium" title={s.name}>
+                {s.name}
+              </span>
+              <span className="hidden min-w-0 truncate font-mono text-xs text-muted-foreground sm:inline">
+                {s.user}@{s.host}
+              </span>
+            </label>
             {s.setup !== "ready" ? (
-              <span className="text-xs text-muted-foreground">({t("set it up first")})</span>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!!s.busy}
+                onClick={() =>
+                  api.servers
+                    .setup({ id: s.id })
+                    .then(() => toast.success(t("Set up.")))
+                    .catch((e) => toast.error(message(e)))
+                }
+              >
+                {s.busy ?? t("Set it up")}
+              </Button>
             ) : null}
-          </label>
+            <Link
+              href={`/servers/${s.id}`}
+              className="text-xs text-muted-foreground underline underline-offset-2"
+            >
+              {t("Open")}
+            </Link>
+          </div>
         ))}
+        <AddServerButton
+          onAdded={(x) => toast.success(t("Set {name} up, then tick it here.", { name: x.name }))}
+        />
       </CardContent>
     </Card>
   );

@@ -2,7 +2,9 @@ import type { LegView } from "@oraknid/contracts";
 import { Bot, ChevronRight, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { AddLeg } from "@/components/add-leg";
 import { Empty, ErrorNote, Loading, PageHeader, StateBadge } from "@/components/common";
+import { useConfirm } from "@/components/confirm";
 import { FindAgents } from "@/components/find-agents";
 import { LegLogin } from "@/components/leg-login";
 import { Badge } from "@/components/ui/badge";
@@ -83,6 +85,8 @@ export function LegsPage({ focus }: { focus?: string } = {}) {
     document.getElementById(`leg-${focus}`)?.scrollIntoView({ block: "start" });
   }, [focus, legs.loading]);
   const [profile, setProfile] = useState<{ leg: LegView; modelId: string } | null>(null);
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
+  const { confirm, dialog } = useConfirm();
   if (legs.error) return <ErrorNote error={legs.error} />;
   if (legs.loading) return <Loading />;
   const add = (
@@ -95,16 +99,25 @@ export function LegsPage({ focus }: { focus?: string } = {}) {
     <div className="space-y-4">
       <PageHeader
         title={t("Legs")}
+        back={focus ? { fallback: "/legs" } : undefined}
         sub={t("Agent accounts and local models Oraknid can hand work to.")}
         actions={
-          <div className="flex flex-wrap gap-2">
+          <>
             <FindAgents />
             {add}
-          </div>
+          </>
         }
       />
       {(legs.data ?? []).length === 0 ? (
-        <Empty title={t("No Legs yet")} action={<FindAgents />}>
+        <Empty
+          title={t("No Legs yet")}
+          action={
+            <>
+              <FindAgents />
+              {add}
+            </>
+          }
+        >
           {t(
             "Let Oraknid find the agents on this machine, or add one by hand: a Claude Code or Antigravity account, OpenCode, or an OpenAI-compatible server (Ollama, LM Studio, llama.cpp, vLLM). Any number of each; none is required.",
           )}
@@ -124,7 +137,9 @@ export function LegsPage({ focus }: { focus?: string } = {}) {
                   className={`size-4 shrink-0 transition-transform ${open.has(leg.id) ? "rotate-90" : ""}`}
                 />
                 <Bot className="size-4 shrink-0" />
-                <span className="truncate">{leg.name}</span>
+                <span className="truncate" title={leg.name}>
+                  {leg.name}
+                </span>
                 <StateBadge state={leg.paused ? "paused" : leg.health} />
                 <Badge variant="outline" className="hidden sm:inline-flex">
                   {leg.kind}
@@ -145,31 +160,6 @@ export function LegsPage({ focus }: { focus?: string } = {}) {
             <CardContent className="space-y-3 border-t pt-3 pb-4 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline">{leg.remote ? t("remote") : t("local")}</Badge>
-                <span className="flex-1" />
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="gap-1"
-                  onClick={() => act(() => api.legs.test({ id: leg.id }), t("Tested."))}
-                >
-                  <RefreshCw className="size-3.5" />
-                  {t("Test")}
-                </Button>
-                {(leg.kind === "claude-code" || leg.kind === "antigravity") &&
-                leg.health === "healthy" ? (
-                  <LegLogin legId={leg.id} legName={leg.name} kind={leg.kind} />
-                ) : null}
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() =>
-                    act(() =>
-                      leg.paused ? api.legs.resume({ id: leg.id }) : api.legs.pause({ id: leg.id }),
-                    )
-                  }
-                >
-                  {leg.paused ? t("Resume") : t("Pause")}
-                </Button>
                 <label
                   htmlFor={`enabled-${leg.id}`}
                   className="flex items-center gap-1.5 text-xs font-normal"
@@ -198,7 +188,92 @@ export function LegsPage({ focus }: { focus?: string } = {}) {
                     ))}
                   </SelectContent>
                 </Select>
+                <span className="flex-1" />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="gap-1"
+                  onClick={() => act(() => api.legs.test({ id: leg.id }), t("Tested."))}
+                >
+                  <RefreshCw className="size-3.5" />
+                  {t("Test")}
+                </Button>
+                {(leg.kind === "claude-code" || leg.kind === "antigravity") &&
+                leg.health === "healthy" ? (
+                  <LegLogin legId={leg.id} legName={leg.name} kind={leg.kind} />
+                ) : null}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() =>
+                    act(() =>
+                      leg.paused ? api.legs.resume({ id: leg.id }) : api.legs.pause({ id: leg.id }),
+                    )
+                  }
+                >
+                  {leg.paused ? t("Resume") : t("Pause")}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setRenaming({ id: leg.id, name: leg.name })}
+                >
+                  {t("Rename")}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-destructive"
+                  onClick={async () => {
+                    if (
+                      await confirm(
+                        t("Remove “{name}”?", { name: leg.name }),
+                        t(
+                          "Oraknid stops handing it work and forgets it, with its models and its secret. A folder it logs in from stays on disk.",
+                        ),
+                        t("Remove"),
+                        { keep: t("Keep it") },
+                      )
+                    )
+                      void act(() => api.legs.remove({ id: leg.id }), t("Removed."));
+                  }}
+                >
+                  {t("Remove")}
+                </Button>
               </div>
+              {renaming?.id === leg.id ? (
+                <form
+                  className="flex min-w-0 flex-wrap gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!renaming.name.trim()) return;
+                    void act(
+                      () => api.legs.update({ id: leg.id, name: renaming.name.trim() }),
+                      t("Renamed."),
+                    ).then(() => setRenaming(null));
+                  }}
+                >
+                  <Input
+                    className="h-8 min-w-40 flex-1"
+                    aria-label={t("Name")}
+                    autoFocus
+                    value={renaming.name}
+                    onChange={(e) => setRenaming({ id: leg.id, name: e.target.value })}
+                    onKeyDown={(e) => e.key === "Escape" && setRenaming(null)}
+                  />
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    type="button"
+                    onClick={() => setRenaming(null)}
+                  >
+                    {t("Cancel")}
+                  </Button>
+                  <Button size="sm" type="submit" disabled={!renaming.name.trim()}>
+                    {t("Save")}
+                  </Button>
+                </form>
+              ) : null}
               <div className="text-muted-foreground">
                 {leg.healthDetail}
                 {leg.limitedUntil
@@ -299,6 +374,7 @@ export function LegsPage({ focus }: { focus?: string } = {}) {
         </Card>
       ))}
       <AddLeg open={adding} onOpenChange={setAdding} />
+      {dialog}
       {profile ? (
         <ProfileEditor
           leg={profile.leg}
@@ -307,293 +383,6 @@ export function LegsPage({ focus }: { focus?: string } = {}) {
         />
       ) : null}
     </div>
-  );
-}
-
-function AddLeg({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const [kind, setKind] = useState<
-    "claude-code" | "openai-compatible" | "opencode" | "antigravity"
-  >("claude-code");
-  const [agyBinary, setAgyBinary] = useState("agy");
-  const [providerID, setProviderID] = useState("openrouter");
-  const [ocBaseURL, setOcBaseURL] = useState("https://openrouter.ai/api/v1");
-  const [models, setModels] = useState("");
-  const [ownProvider, setOwnProvider] = useState(false);
-  const [name, setName] = useState("");
-  const [binary, setBinary] = useState("claude");
-  const [configDir, setConfigDir] = useState("");
-  const [baseUrl, setBaseUrl] = useState("http://localhost:11434/v1");
-  const [secret, setSecret] = useState("");
-  const [result, setResult] = useState<LegView | null>(null);
-  const [error, setError] = useState<unknown>();
-  const [busy, setBusy] = useState(false);
-  const create = async () => {
-    setBusy(true);
-    setError(undefined);
-    try {
-      const leg =
-        kind === "claude-code"
-          ? await api.legs.create({
-              kind,
-              name,
-              config: { binary, ...(configDir ? { configDir } : {}) },
-            })
-          : kind === "antigravity"
-            ? await api.legs.create({ kind, name, config: { binary: agyBinary, models: [] } })
-            : kind === "opencode"
-              ? await api.legs.create({
-                  kind,
-                  name,
-                  config: ownProvider
-                    ? {
-                        binary: "opencode",
-                        providerID,
-                        package: "@opencode/ai/providers/openai-compatible",
-                        ...(ocBaseURL ? { baseURL: ocBaseURL } : {}),
-                        models: models
-                          .split(/[\s,]+/)
-                          .map((m) => m.trim())
-                          .filter(Boolean),
-                      }
-                    : {
-                        binary: "opencode",
-                        package: "@opencode/ai/providers/openai-compatible",
-                        models: [],
-                      },
-                  ...(ownProvider && secret ? { secret } : {}),
-                })
-              : await api.legs.create({
-                  kind,
-                  name,
-                  config: { baseUrl },
-                  ...(secret ? { secret } : {}),
-                });
-      setResult(leg);
-    } catch (e) {
-      setError(e);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(o) => {
-        onOpenChange(o);
-        if (!o) setResult(null);
-      }}
-    >
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{t("Add a Leg")}</DialogTitle>
-          <DialogDescription>
-            {t("It is tested straight away. Secrets go to the keychain, never the database.")}
-          </DialogDescription>
-        </DialogHeader>
-        {result ? (
-          <div className="space-y-2 text-sm">
-            <div className="flex items-center gap-2">
-              {result.name} <StateBadge state={result.health} />
-            </div>
-            <div className="text-muted-foreground">{result.healthDetail}</div>
-            {(result.kind === "claude-code" || result.kind === "antigravity") &&
-            result.health !== "healthy" &&
-            !/not installed/.test(result.healthDetail ?? "") ? (
-              <div className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
-                <span className="flex-1">{t("Log this account in to use it.")}</span>
-                <LegLogin legId={result.id} legName={result.name} kind={result.kind} />
-              </div>
-            ) : result.setupHint ? (
-              <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 font-mono text-xs [overflow-wrap:anywhere]">
-                {result.setupHint}
-              </div>
-            ) : null}
-            {result.models.length ? (
-              <div>{t("Models: {m}", { m: result.models.map((m) => m.model).join(", ") })}</div>
-            ) : null}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label>{t("Kind")}</Label>
-              <Select value={kind} onValueChange={(v) => setKind(v as typeof kind)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="claude-code">{t("Claude Code account")}</SelectItem>
-                  <SelectItem value="openai-compatible">
-                    {t("OpenAI-compatible server (Ollama, LM Studio…)")}
-                  </SelectItem>
-                  <SelectItem value="opencode">
-                    {t("OpenCode, with a provider's API key")}
-                  </SelectItem>
-                  <SelectItem value="antigravity">{t("Antigravity account (Google)")}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="ln">{t("Name")}</Label>
-              <Input
-                id="ln"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={
-                  kind === "claude-code"
-                    ? t("Claude — personal")
-                    : kind === "antigravity"
-                      ? t("Antigravity — personal")
-                      : kind === "opencode"
-                        ? t("OpenCode — free models")
-                        : t("Ollama on this machine")
-                }
-              />
-            </div>
-            {kind === "claude-code" ? (
-              <>
-                <div className="space-y-1.5">
-                  <Label htmlFor="lb">{t("Binary")}</Label>
-                  <Input
-                    id="lb"
-                    className="font-mono"
-                    value={binary}
-                    onChange={(e) => setBinary(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="lc">
-                    {t("Config directory (empty: a new one you log into)")}
-                  </Label>
-                  <Input
-                    id="lc"
-                    className="font-mono"
-                    value={configDir}
-                    onChange={(e) => setConfigDir(e.target.value)}
-                    placeholder={t("empty: a folder of its own")}
-                  />
-                </div>
-              </>
-            ) : kind === "antigravity" ? (
-              <>
-                <div className="rounded-md border px-3 py-2 text-xs text-muted-foreground">
-                  {t(
-                    "Antigravity's official CLI, agy, signed in to your Google account from this Leg's card. It must be installed on this machine first (antigravity.google/docs/cli). Commands it runs still go through your approvals.",
-                  )}
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="ab">{t("Binary")}</Label>
-                  <Input
-                    id="ab"
-                    className="font-mono"
-                    value={agyBinary}
-                    onChange={(e) => setAgyBinary(e.target.value)}
-                  />
-                </div>
-              </>
-            ) : kind === "opencode" ? (
-              <>
-                <div className="rounded-md border px-3 py-2 text-xs text-muted-foreground">
-                  {ownProvider
-                    ? t(
-                        "OpenCode with another provider's API key. Never a Claude subscription (Anthropic's terms).",
-                      )
-                    : t(
-                        "OpenCode's own free models, as your installed OpenCode uses them: no account, no key. The test lists them. Free models may use what they are sent to improve; see OpenCode Zen's terms.",
-                      )}
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <Switch id="own" checked={ownProvider} onCheckedChange={setOwnProvider} />
-                  <Label htmlFor="own" className="font-normal">
-                    {t("Use another provider, with its API key")}
-                  </Label>
-                </div>
-                {ownProvider ? (
-                  <>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="op">{t("Provider id")}</Label>
-                        <Input
-                          id="op"
-                          className="font-mono"
-                          value={providerID}
-                          onChange={(e) => setProviderID(e.target.value.toLowerCase())}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="ou">{t("Endpoint (OpenAI-compatible)")}</Label>
-                        <Input
-                          id="ou"
-                          className="font-mono"
-                          value={ocBaseURL}
-                          onChange={(e) => setOcBaseURL(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="om">{t("Models, by their id at the provider")}</Label>
-                      <Input
-                        id="om"
-                        className="font-mono"
-                        value={models}
-                        onChange={(e) => setModels(e.target.value)}
-                        placeholder="qwen/qwen3-coder, deepseek/deepseek-chat"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="ok">{t("API key")}</Label>
-                      <Input
-                        id="ok"
-                        type="password"
-                        value={secret}
-                        onChange={(e) => setSecret(e.target.value)}
-                      />
-                    </div>
-                  </>
-                ) : null}
-              </>
-            ) : (
-              <>
-                <div className="space-y-1.5">
-                  <Label htmlFor="lu">{t("Server URL")}</Label>
-                  <Input
-                    id="lu"
-                    className="font-mono"
-                    value={baseUrl}
-                    onChange={(e) => setBaseUrl(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="lk">{t("API key, if the server needs one")}</Label>
-                  <Input
-                    id="lk"
-                    type="password"
-                    value={secret}
-                    onChange={(e) => setSecret(e.target.value)}
-                  />
-                </div>
-              </>
-            )}
-            <ErrorNote error={error} />
-          </div>
-        )}
-        <DialogFooter>
-          {result ? (
-            <Button
-              onClick={() => {
-                onOpenChange(false);
-                setResult(null);
-              }}
-            >
-              {t("Done")}
-            </Button>
-          ) : (
-            <Button disabled={!name || busy} onClick={create}>
-              {busy ? t("Testing…") : name ? t("Add and test") : t("Give it a name")}
-            </Button>
-          )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -701,6 +490,9 @@ function ProfileEditor({
           </div>
         </div>
         <DialogFooter>
+          <Button variant="secondary" onClick={onClose}>
+            {t("Cancel")}
+          </Button>
           <Button onClick={save}>{t("Save")}</Button>
         </DialogFooter>
       </DialogContent>

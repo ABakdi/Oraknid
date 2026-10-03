@@ -1,10 +1,19 @@
 import type { ProjectView } from "@oraknid/contracts";
-import { ChevronLeft, FolderGit2, Plus } from "lucide-react";
+import { FolderGit2, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Link, useLocation } from "wouter";
 import { LegComparison, TokensChart } from "@/components/charts";
-import { Empty, ErrorNote, Loading, PageHeader, Stat, StateBadge } from "@/components/common";
+import {
+  BackButton,
+  Empty,
+  ErrorNote,
+  Loading,
+  PageHeader,
+  Stat,
+  StateBadge,
+} from "@/components/common";
+import { useConfirm } from "@/components/confirm";
 import { type PageTab, PageTabs } from "@/components/page-tabs";
 import { ProjectServersCard } from "@/components/project-servers";
 import { ProjectSkillsCard } from "@/components/project-skills";
@@ -87,12 +96,16 @@ export function ProjectsPage({ id, tab }: { id?: string; tab?: string }) {
             >
               <div className="flex items-center gap-2 font-medium">
                 <FolderGit2 className="size-4 shrink-0" />
-                <span className="truncate">{p.name}</span>
+                <span className="truncate" title={p.name}>
+                  {p.name}
+                </span>
                 {p.archivedAt ? (
                   <span className="text-xs font-normal text-muted-foreground">{t("archived")}</span>
                 ) : null}
               </div>
-              <div className="truncate text-xs text-muted-foreground">{p.workspacePath}</div>
+              <div className="truncate text-xs text-muted-foreground" title={p.workspacePath}>
+                {p.workspacePath}
+              </div>
               <div className="truncate text-xs text-muted-foreground">
                 {t("{n} job(s)", { n: p.jobCount })} ·{" "}
                 {p.shadow
@@ -122,19 +135,26 @@ function ProjectDetail({ project, tab }: { project: ProjectView; tab?: string })
   const id = project.id;
   const header = (
     <div className="flex shrink-0 items-center gap-2">
-      <Button
-        variant="ghost"
-        size="icon"
-        className="md:hidden"
-        aria-label={t("All projects")}
-        onClick={() => go("/projects")}
+      <BackButton fallback="/projects" label={t("All projects")} className="md:hidden" />
+      <h2 className="min-w-0 truncate text-lg font-semibold" title={project.name}>
+        {project.name}
+      </h2>
+      <span
+        className="hidden min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground sm:inline"
+        title={project.workspacePath}
       >
-        <ChevronLeft className="size-4" />
-      </Button>
-      <h2 className="min-w-0 truncate text-lg font-semibold">{project.name}</h2>
-      <span className="hidden min-w-0 truncate font-mono text-xs text-muted-foreground sm:inline">
         {project.workspacePath}
       </span>
+      <span className="flex-1 sm:hidden" />
+      <Button
+        size="sm"
+        className="shrink-0 gap-1"
+        disabled={!!project.archivedAt}
+        onClick={() => go("/new", { state: { projectId: id } })}
+      >
+        <Plus className="size-4" />
+        {t("New work")}
+      </Button>
     </div>
   );
   const tabs: PageTab[] = [
@@ -181,20 +201,35 @@ function ProjectJobs({ id }: { id: string }) {
     topics: ["overview"],
     refreshOn: (e) => e.type.startsWith("job."),
   });
+  const [, go] = useLocation();
+  if (jobs.loading) return <Loading />;
   const mine = (jobs.data ?? []).filter((j) => j.projectId === id).reverse();
+  if (mine.length === 0)
+    return (
+      <Empty
+        title={t("No jobs yet")}
+        action={
+          <Button className="gap-1" onClick={() => go("/new", { state: { projectId: id } })}>
+            <Plus className="size-4" />
+            {t("New work in this project")}
+          </Button>
+        }
+      >
+        {t("A job works in its own worktree here and never on your branch.")}
+      </Empty>
+    );
   return (
-    <Card>
+    <Card className="py-0">
       <CardContent className="divide-y p-0">
-        {mine.length === 0 ? (
-          <div className="px-4 py-3 text-sm text-muted-foreground">{t("No jobs yet.")}</div>
-        ) : null}
         {mine.map((j) => (
           <Link
             key={j.id}
-            href={`/jobs/${j.id}`}
-            className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-accent/50"
+            href={j.state === "draft" ? `/new/${j.id}` : `/jobs/${j.id}`}
+            className="flex min-h-11 items-center gap-2 px-4 py-2 text-sm hover:bg-accent/50"
           >
-            <span className="flex-1 truncate">{j.title}</span>
+            <span className="min-w-0 flex-1 truncate" title={j.title}>
+              {j.title}
+            </span>
             <StateBadge state={j.state} />
           </Link>
         ))}
@@ -205,7 +240,8 @@ function ProjectJobs({ id }: { id: string }) {
 
 /** Archive (hidden, kept for stats) or delete (gone from Oraknid, my folder untouched). */
 function ProjectActions({ project }: { project: ProjectView }) {
-  const [confirming, setConfirming] = useState(false);
+  const [, go] = useLocation();
+  const { confirm, dialog } = useConfirm();
   const archive = async () => {
     try {
       await api.projects.archive({ id: project.id, archived: !project.archivedAt });
@@ -215,52 +251,60 @@ function ProjectActions({ project }: { project: ProjectView }) {
     }
   };
   const remove = async () => {
-    setConfirming(false);
+    if (
+      !(await confirm(
+        t("Delete “{name}”?", { name: project.name }),
+        t(
+          "Its jobs and their history (tasks, sessions, Silk, logs) leave Oraknid for good. Your folder, the job branches and worktrees in it stay as they are.",
+        ),
+        t("Delete"),
+        { keep: t("Keep it") },
+      ))
+    )
+      return;
     try {
       const r = await api.projects.delete({ id: project.id });
       toast.success(
         t("Deleted, with {n} job(s). {folder} is untouched.", { n: r.jobs, folder: r.folder }),
       );
+      go("/projects", { replace: true });
     } catch (e) {
       toast.error(message(e));
     }
   };
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-        {project.workspacePath}
-      </span>
-      <Button variant="secondary" size="sm" onClick={archive}>
-        {project.archivedAt ? t("Restore") : t("Archive")}
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="text-destructive"
-        onClick={() => setConfirming(true)}
-      >
-        {t("Delete")}
-      </Button>
-      <Dialog open={confirming} onOpenChange={setConfirming}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("Delete “{name}”?", { name: project.name })}</DialogTitle>
-            <DialogDescription>
-              {t(
-                "Its jobs and their history (tasks, sessions, Silk, logs) leave Oraknid for good. Your folder, the job branches and worktrees in it stay as they are.",
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="secondary" onClick={() => setConfirming(false)}>
-              {t("Keep it")}
-            </Button>
-            <Button variant="destructive" onClick={remove}>
-              {t("Delete")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+    <div className="space-y-3 text-sm">
+      <div className="space-y-1">
+        <div className="text-xs text-muted-foreground">{t("Folder")}</div>
+        <code className="block font-mono text-xs [overflow-wrap:anywhere]">
+          {project.workspacePath}
+        </code>
+      </div>
+      <div className="space-y-1">
+        <div className="text-xs text-muted-foreground">{t("Branches")}</div>
+        <div>
+          {project.shadow
+            ? t("no git (checkpoints in a shadow repo)")
+            : t("Release branch {release}, work branch {work}", {
+                release: project.releaseBranch,
+                work: project.workBranch,
+              })}
+        </div>
+      </div>
+      <div className="text-xs text-muted-foreground">
+        {project.archivedAt
+          ? t("Archived: hidden from the lists and New work, kept for stats.")
+          : t("Archive hides it from the lists and New work and keeps its stats.")}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="secondary" size="sm" onClick={archive}>
+          {project.archivedAt ? t("Restore") : t("Archive")}
+        </Button>
+        <Button variant="ghost" size="sm" className="text-destructive" onClick={remove}>
+          {t("Delete")}
+        </Button>
+      </div>
+      {dialog}
     </div>
   );
 }
@@ -389,6 +433,9 @@ function NewProject({ open, onOpenChange }: { open: boolean; onOpenChange: (o: b
           ) : null}
         </div>
         <DialogFooter>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+            {t("Cancel")}
+          </Button>
           <Button disabled={!path.startsWith("/")} onClick={() => create()}>
             {path.startsWith("/") ? t("Create") : t("Enter a full path")}
           </Button>

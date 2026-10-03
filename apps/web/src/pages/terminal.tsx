@@ -1,8 +1,8 @@
 import "@xterm/xterm/css/xterm.css";
 import { Columns2, Grid2x2, Laptop, Maximize2, Plus, Server, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { Link } from "wouter";
-import { ErrorNote, Loading } from "@/components/common";
+import { ErrorNote, Loading, PageHeader } from "@/components/common";
+import { TerminalCard } from "@/components/terminal-card";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -126,15 +126,16 @@ export function TerminalPage({ target }: { target?: string }) {
         )}
       </Note>
     );
+  // Off: turned on right here, with the same confirmation as in Settings → Security.
   if (!enabled.data)
     return (
-      <Note>
-        {t("The terminal is off: it is a full shell as you.")}{" "}
-        <Link href="/settings/security" className="underline">
-          {t("Turn it on in Settings")}
-        </Link>
-        .
-      </Note>
+      <div className="mx-auto max-w-2xl space-y-4">
+        <PageHeader
+          title={t("Terminal")}
+          sub={t("The terminal is off: it is a full shell as you.")}
+        />
+        <TerminalCard onChange={() => enabled.reload()} />
+      </div>
     );
 
   const visible = (i: number) => layout !== "one" || i === active;
@@ -153,7 +154,7 @@ export function TerminalPage({ target }: { target?: string }) {
               <button
                 type="button"
                 className={cn(
-                  "flex items-center gap-1.5 py-2 pl-3 text-muted-foreground hover:text-foreground",
+                  "flex max-w-48 items-center gap-1.5 py-2 pl-3 text-muted-foreground hover:text-foreground pointer-coarse:min-h-11",
                   i === active && "font-medium text-foreground",
                 )}
                 onClick={() => setActive(i)}
@@ -164,11 +165,11 @@ export function TerminalPage({ target }: { target?: string }) {
                 ) : (
                   <Server className="size-3.5" />
                 )}
-                {s.label}
+                <span className="truncate">{s.label}</span>
               </button>
               <button
                 type="button"
-                className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="flex items-center justify-center rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground pointer-coarse:size-11"
                 onClick={() => close(s.key)}
                 title={t("Close (Ctrl+Shift+X)")}
                 aria-label={t("Close {name}", { name: s.label })}

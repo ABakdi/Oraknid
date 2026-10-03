@@ -2,12 +2,13 @@ import type { EyeModels, NotificationSettings, NotifyEvent, Route } from "@orakn
 import type React from "react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { useLocation } from "wouter";
 import { AwayCard, PhoneCard } from "@/components/away-card";
 import { ErrorNote, Loading, PageHeader } from "@/components/common";
+import { useConfirm } from "@/components/confirm";
 import { GitHubCard } from "@/components/github-card";
 import { LockCard } from "@/components/lock-card";
 import { MailAccountsCard } from "@/components/mail-accounts-card";
+import { type PageTab, PageTabs } from "@/components/page-tabs";
 import { RulesCard } from "@/components/rules-card";
 import { StorageCard } from "@/components/storage-card";
 import { TerminalCard } from "@/components/terminal-card";
@@ -41,11 +42,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, auth, message } from "@/lib/api";
 import { ago } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { useLive } from "@/lib/live";
+import { cameFromPage } from "@/lib/nav";
 import { remote } from "@/lib/remote";
 import { type ThemeChoice, useTheme } from "@/lib/theme";
 
@@ -72,22 +73,15 @@ const TABS = [
 type TabId = (typeof TABS)[number]["id"];
 
 export function SettingsPage({ tab }: { tab?: string }) {
-  const [, go] = useLocation();
-  const current: TabId = TABS.some((x) => x.id === tab) ? (tab as TabId) : "general";
-  return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <PageHeader title={t("Settings")} />
-      <Tabs value={current} onValueChange={(v) => go(`/settings/${v}`)}>
-        <div className="-mx-1 overflow-x-auto px-1 pb-1">
-          <TabsList>
-            {TABS.map((x) => (
-              <TabsTrigger key={x.id} value={x.id} className="px-3">
-                {t(x.label)}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </div>
-        <TabsContent value="general" className="space-y-6 pt-2">
+  // Opened from another page (a "Settings" link next to a control): a way back to it.
+  const [from] = useState(cameFromPage);
+  const wrap = (node: React.ReactNode) => (
+    <div className="mx-auto max-w-3xl space-y-6 pt-1">{node}</div>
+  );
+  const content: Record<TabId, () => React.ReactNode> = {
+    general: () =>
+      wrap(
+        <>
           <Section title={t("This computer")}>
             <SystemCard />
             <StorageCard />
@@ -98,8 +92,11 @@ export function SettingsPage({ tab }: { tab?: string }) {
           <Section title={t("Look")}>
             <ThemeCard />
           </Section>
-        </TabsContent>
-        <TabsContent value="work" className="space-y-6 pt-2">
+        </>,
+      ),
+    work: () =>
+      wrap(
+        <>
           <Section title={t("The Eye")}>
             <EyeCard />
           </Section>
@@ -107,8 +104,11 @@ export function SettingsPage({ tab }: { tab?: string }) {
             <JobsLimitCard />
             <FallbackCard />
           </Section>
-        </TabsContent>
-        <TabsContent value="security" className="space-y-6 pt-2">
+        </>,
+      ),
+    security: () =>
+      wrap(
+        <>
           <Section title={t("Unlocking")}>
             <LockCard />
           </Section>
@@ -118,8 +118,11 @@ export function SettingsPage({ tab }: { tab?: string }) {
           <Section title={t("Terminal")}>
             <TerminalCard />
           </Section>
-        </TabsContent>
-        <TabsContent value="devices" className="space-y-6 pt-2">
+        </>,
+      ),
+    devices: () =>
+      wrap(
+        <>
           <Section title={t("Your phone, from anywhere")}>
             <PhoneCard />
           </Section>
@@ -129,8 +132,11 @@ export function SettingsPage({ tab }: { tab?: string }) {
           <Section title={t("The Nest")}>
             <AwayCard />
           </Section>
-        </TabsContent>
-        <TabsContent value="connections" className="space-y-6 pt-2">
+        </>,
+      ),
+    connections: () =>
+      wrap(
+        <>
           <Section title={t("Email accounts")}>
             <MailAccountsCard />
           </Section>
@@ -140,9 +146,25 @@ export function SettingsPage({ tab }: { tab?: string }) {
           <Section title={t("Tools for skills")}>
             <ToolsCard />
           </Section>
-        </TabsContent>
-      </Tabs>
-    </div>
+        </>,
+      ),
+  };
+  const tabs: PageTab[] = TABS.map((x) => ({
+    id: x.id,
+    label: t(x.label),
+    content: content[x.id],
+  }));
+  return (
+    <PageTabs
+      base="/settings"
+      tab={TABS.some((x) => x.id === tab) ? tab : "general"}
+      tabs={tabs}
+      header={
+        <div className="mx-auto w-full max-w-3xl">
+          <PageHeader title={t("Settings")} back={from ? { fallback: "/" } : undefined} />
+        </div>
+      }
+    />
   );
 }
 
@@ -168,7 +190,7 @@ function SystemCard() {
   const row = (label: string, ok: boolean, detail: string) => (
     <div className="flex items-start gap-2 text-sm">
       <span className={`mt-1.5 size-2 shrink-0 rounded-full ${ok ? "bg-success" : "bg-warning"}`} />
-      <span className="w-36 shrink-0 font-medium">{label}</span>
+      <span className="w-24 shrink-0 font-medium sm:w-36">{label}</span>
       <span className="text-muted-foreground [overflow-wrap:anywhere]">{detail}</span>
     </div>
   );
@@ -197,7 +219,8 @@ function SystemCard() {
           <div className="flex flex-wrap gap-2 pt-1">
             <Input
               type="password"
-              className="w-64"
+              className="w-full sm:w-64"
+              aria-label={t("Passphrase for the secrets file")}
               placeholder={t("Passphrase for the secrets file")}
               value={pass}
               onChange={(e) => setPass(e.target.value)}
@@ -445,9 +468,21 @@ function NotificationsCard() {
           <div className="space-y-1.5">
             <Label>{t("Quiet hours")}</Label>
             <div className="flex items-center gap-2">
-              <Input type="time" className="w-28" defaultValue={s.quietHours?.from ?? ""} id="qf" />
+              <Input
+                type="time"
+                className="w-28"
+                aria-label={t("From")}
+                defaultValue={s.quietHours?.from ?? ""}
+                id="qf"
+              />
               <span>–</span>
-              <Input type="time" className="w-28" defaultValue={s.quietHours?.to ?? ""} id="qt" />
+              <Input
+                type="time"
+                className="w-28"
+                aria-label={t("To")}
+                defaultValue={s.quietHours?.to ?? ""}
+                id="qt"
+              />
             </div>
           </div>
           <Button
@@ -475,6 +510,7 @@ function NotificationsCard() {
             {(["host", "port", "user", "from", "to"] as const).map((k) => (
               <Input
                 key={k}
+                aria-label={t(k)}
                 placeholder={t(k)}
                 value={smtp[k]}
                 onChange={(e) => setSmtp({ ...smtp, [k]: e.target.value })}
@@ -700,6 +736,7 @@ function DevicesCard() {
   const [rights, setRights] = useState<{ id: string; name: string; full: boolean } | null>(null);
   const [pin, setPin] = useState("");
   const remoteHere = !!remote();
+  const { confirm, dialog } = useConfirm();
   return (
     <Card>
       <CardHeader>
@@ -709,8 +746,13 @@ function DevicesCard() {
       <CardContent className="space-y-2">
         <ErrorNote error={d.error} />
         {(d.data ?? []).map((x) => (
-          <div key={x.id} className="flex items-center gap-2 text-sm">
-            <span className={x.revokedAt ? "line-through opacity-60" : ""}>{x.name}</span>
+          <div key={x.id} className="flex flex-wrap items-center gap-2 text-sm">
+            <span
+              className={`min-w-0 truncate ${x.revokedAt ? "line-through opacity-60" : ""}`}
+              title={x.name}
+            >
+              {x.name}
+            </span>
             {x.rights === "full" && !x.revokedAt ? (
               <Badge variant="destructive" className="h-5 text-[10px]">
                 {t("full rights")}
@@ -739,9 +781,20 @@ function DevicesCard() {
                 size="sm"
                 variant="ghost"
                 className="text-destructive"
-                onClick={() =>
-                  act(() => api.devices.revoke({ id: x.id }).then(() => d.reload()), t("Revoked."))
-                }
+                onClick={async () => {
+                  if (
+                    await confirm(
+                      t("Revoke {name}?", { name: x.name }),
+                      t("It is signed out at once and must be paired again to come back."),
+                      t("Revoke"),
+                      { keep: t("Keep it") },
+                    )
+                  )
+                    void act(
+                      () => api.devices.revoke({ id: x.id }).then(() => d.reload()),
+                      t("Revoked."),
+                    );
+                }}
               >
                 {t("Revoke")}
               </Button>
@@ -769,7 +822,16 @@ function DevicesCard() {
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => {
+            onClick={async () => {
+              if (
+                !(await confirm(
+                  t("Unpair this device?"),
+                  t("This browser forgets Oraknid; pairing it again needs a new code."),
+                  t("Unpair"),
+                  { keep: t("Stay paired") },
+                ))
+              )
+                return;
               auth.set(null);
               location.reload();
             }}
@@ -834,6 +896,7 @@ function DevicesCard() {
             </form>
           </DialogContent>
         </Dialog>
+        {dialog}
       </CardContent>
     </Card>
   );
@@ -846,9 +909,14 @@ function ThemeCard() {
       <CardHeader>
         <CardTitle>{t("Look")}</CardTitle>
       </CardHeader>
-      <CardContent className="flex gap-2">
+      <CardContent className="flex flex-wrap gap-2">
         {(["dark", "light", "system"] as ThemeChoice[]).map((c) => (
-          <Button key={c} variant={choice === c ? "default" : "secondary"} onClick={() => set(c)}>
+          <Button
+            key={c}
+            variant={choice === c ? "default" : "secondary"}
+            aria-pressed={choice === c}
+            onClick={() => set(c)}
+          >
             {t(c === "system" ? "Follow the system" : c === "dark" ? "Dark" : "Light")}
           </Button>
         ))}

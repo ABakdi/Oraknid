@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { ErrorNote, Loading, PageHeader } from "@/components/common";
+import { type PageTab, PageTabs } from "@/components/page-tabs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,27 +12,29 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, message } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useLive } from "@/lib/live";
 import { describe } from "@/pages/overview";
 
-/** The audit trail (Security → Audit log): search by type, actor and text. */
-export function LogsPage() {
+/** The audit trail (Security → Audit log) and the daemon's log, in tabs (`/logs/<tab>`). */
+export function LogsPage({ tab }: { tab?: string }) {
+  const tabs: PageTab[] = [
+    { id: "audit", label: t("What happened"), content: () => <AuditLog /> },
+    { id: "daemon", label: t("Daemon log"), content: () => <DaemonLog /> },
+  ];
   return (
-    <Tabs defaultValue="audit" className="space-y-3">
-      <TabsList>
-        <TabsTrigger value="audit">{t("What happened")}</TabsTrigger>
-        <TabsTrigger value="daemon">{t("Daemon log")}</TabsTrigger>
-      </TabsList>
-      <TabsContent value="audit">
-        <AuditLog />
-      </TabsContent>
-      <TabsContent value="daemon">
-        <DaemonLog />
-      </TabsContent>
-    </Tabs>
+    <PageTabs
+      base="/logs"
+      tab={tab}
+      tabs={tabs}
+      header={
+        <PageHeader
+          title={t("Logs")}
+          sub={t("Everything Oraknid did, who caused it, and when. Secrets are never stored.")}
+        />
+      }
+    />
   );
 }
 
@@ -98,44 +101,35 @@ function AuditLog() {
   const [exporting, setExporting] = useState(false);
   return (
     <div className="space-y-3">
-      <PageHeader
-        title={t("Logs")}
-        sub={t("Everything Oraknid did, who caused it, and when. Secrets are never stored.")}
-        actions={
-          <Button
-            variant="secondary"
-            disabled={exporting}
-            onClick={async () => {
-              setExporting(true);
-              try {
-                const n = await exportAudit({ ...q, beforeSeq: undefined });
-                toast.success(t("Exported {n} events.", { n }));
-              } catch (e) {
-                toast.error(message(e));
-              } finally {
-                setExporting(false);
-              }
-            }}
-          >
-            {t("Export")}
-          </Button>
-        }
-      />
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Input
-          className="w-48"
+          className="w-full sm:w-48"
           placeholder={t("Text…")}
+          aria-label={t("Search the text")}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            setBefore(undefined);
+          }}
         />
         <Input
-          className="w-48"
+          className="w-full sm:w-48"
           placeholder={t("Type, or prefix like job.")}
+          aria-label={t("Event type")}
           value={type}
-          onChange={(e) => setType(e.target.value)}
+          onChange={(e) => {
+            setType(e.target.value);
+            setBefore(undefined);
+          }}
         />
-        <Select value={actor} onValueChange={setActor}>
-          <SelectTrigger className="w-36" aria-label={t("Actor")}>
+        <Select
+          value={actor}
+          onValueChange={(v) => {
+            setActor(v);
+            setBefore(undefined);
+          }}
+        >
+          <SelectTrigger className="w-40" aria-label={t("Actor")}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -146,6 +140,24 @@ function AuditLog() {
             <SelectItem value="oraknid">{t("Oraknid")}</SelectItem>
           </SelectContent>
         </Select>
+        <span className="flex-1" />
+        <Button
+          variant="secondary"
+          disabled={exporting}
+          onClick={async () => {
+            setExporting(true);
+            try {
+              const n = await exportAudit({ ...q, beforeSeq: undefined });
+              toast.success(t("Exported {n} events.", { n }));
+            } catch (e) {
+              toast.error(message(e));
+            } finally {
+              setExporting(false);
+            }
+          }}
+        >
+          {exporting ? t("Exporting…") : t("Export")}
+        </Button>
       </div>
       <ErrorNote error={events.error} />
       {events.loading ? <Loading /> : null}
@@ -157,18 +169,32 @@ function AuditLog() {
                 <span className="text-muted-foreground">{new Date(e.at).toLocaleString()}</span>
                 <span className="text-chart-2">{e.actor}</span>
                 <span className="text-primary">{e.type}</span>
-                <span className="min-w-0 flex-1 truncate text-muted-foreground">{describe(e)}</span>
+                <span className="min-w-0 flex-1 truncate text-muted-foreground" title={describe(e)}>
+                  {describe(e)}
+                </span>
               </summary>
               <pre className="mt-1 overflow-x-auto rounded bg-muted p-2">
                 {JSON.stringify(e.payload, null, 2)}
               </pre>
             </details>
           ))}
-          {(events.data ?? []).length === 200 ? (
-            <Button variant="ghost" size="sm" onClick={() => setBefore(events.data?.at(-1)?.seq)}>
-              {t("Older")}
-            </Button>
+          {!events.loading && (events.data ?? []).length === 0 ? (
+            <div className="font-sans text-sm text-muted-foreground">
+              {text || type || actor !== "any" ? t("Nothing matches.") : t("Nothing yet.")}
+            </div>
           ) : null}
+          <div className="flex gap-2 pt-1 font-sans">
+            {before ? (
+              <Button variant="ghost" size="sm" onClick={() => setBefore(undefined)}>
+                {t("Back to the newest")}
+              </Button>
+            ) : null}
+            {(events.data ?? []).length === 200 ? (
+              <Button variant="ghost" size="sm" onClick={() => setBefore(events.data?.at(-1)?.seq)}>
+                {t("Older")}
+              </Button>
+            ) : null}
+          </div>
         </CardContent>
       </Card>
     </div>

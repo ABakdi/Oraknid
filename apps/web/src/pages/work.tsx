@@ -1,9 +1,11 @@
 import type { Budget, JobInput, ProjectSource } from "@oraknid/contracts";
-import { Play, Send, Trash2 } from "lucide-react";
+import { Play, Send, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Link, useLocation } from "wouter";
 import { ErrorNote, Loading, Markdown, PageHeader } from "@/components/common";
+import { useConfirm } from "@/components/confirm";
+import { AddLegButtons, GitHubSetupButton, ToolsSetupButton } from "@/components/setup";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -69,7 +71,16 @@ export function WorkPage({ draftId }: { draftId?: string }) {
   );
 
   // ── The options.
-  const [projectId, setProjectId] = useState<string>("");
+  // "New work" from a project's page arrives with that project chosen.
+  const [projectId, setProjectId] = useState<string>(() => {
+    const st: unknown = history.state;
+    return st &&
+      typeof st === "object" &&
+      typeof (st as { projectId?: unknown }).projectId === "string"
+      ? (st as { projectId: string }).projectId
+      : "";
+  });
+  const { confirm, dialog } = useConfirm();
   const [source, setSource] = useState<SourceKind>("folder");
   const [path, setPath] = useState("");
   const [parent, setParent] = useState(remembered);
@@ -213,8 +224,16 @@ export function WorkPage({ draftId }: { draftId?: string }) {
           : healthy.length === 0
             ? t("No Leg is healthy right now.")
             : missingTools.length
-              ? t("Set up {tools} in Settings → Tools first.", { tools: missingTools.join(", ") })
+              ? t("Set up {tools} first.", { tools: missingTools.join(", ") })
               : null;
+  // What holds the start and can be set up right here.
+  const fixes =
+    healthy.length === 0 || missingTools.length ? (
+      <div className="flex flex-wrap items-center gap-2">
+        {healthy.length === 0 ? <AddLegButtons size="sm" /> : null}
+        {missingTools.length ? <ToolsSetupButton missing={missingTools} /> : null}
+      </div>
+    ) : null;
 
   /** The project, made now when it is a new one. */
   const projectForJob = async (): Promise<string> => {
@@ -295,6 +314,15 @@ export function WorkPage({ draftId }: { draftId?: string }) {
 
   const remove = async () => {
     if (!draftId) return;
+    if (
+      !(await confirm(
+        t("Delete this draft?"),
+        t("Its goal, options and conversation with The Eye are gone for good."),
+        t("Delete"),
+        { keep: t("Keep it") },
+      ))
+    )
+      return;
     await api.jobs
       .remove({ id: draftId })
       .then(() => {
@@ -308,9 +336,12 @@ export function WorkPage({ draftId }: { draftId?: string }) {
   if (draftId && draftJob.data && draftJob.data.state !== "draft")
     return (
       <div className="mx-auto max-w-xl space-y-3 text-sm">
-        <PageHeader title={t("New work")} />
+        <PageHeader title={t("New work")} back={{ fallback: "/jobs" }} />
         <div>
-          {t("This job has started.")} <Link href={`/jobs/${draftId}`}>{t("Open it")}</Link>
+          {t("This job has started.")}{" "}
+          <Link href={`/jobs/${draftId}`} className="underline underline-offset-2">
+            {t("Open it")}
+          </Link>
         </div>
       </div>
     );
@@ -319,6 +350,7 @@ export function WorkPage({ draftId }: { draftId?: string }) {
     <div className="space-y-4">
       <PageHeader
         title={draftId ? t("Draft") : t("New work")}
+        back={draftId ? { fallback: "/jobs" } : undefined}
         sub={
           draftId
             ? t("Saved as you go: leave and come back from Jobs, start it, or delete it.")
@@ -381,12 +413,9 @@ export function WorkPage({ draftId }: { draftId?: string }) {
                     </SelectContent>
                   </Select>
                   {!github.data?.connected ? (
-                    <div className="text-xs text-muted-foreground">
-                      {t("GitHub repos: connect GitHub in")}{" "}
-                      <Link href="/settings/connections" className="underline">
-                        {t("Settings")}
-                      </Link>
-                      .
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>{t("For GitHub repos, connect GitHub.")}</span>
+                      <GitHubSetupButton />
                     </div>
                   ) : null}
                 </div>
@@ -472,19 +501,32 @@ export function WorkPage({ draftId }: { draftId?: string }) {
                       {ready.has(n) ? n : t("{tool} (not set up)", { tool: n })}
                     </Badge>
                   ))}
+                  {missingTools.length ? <ToolsSetupButton missing={missingTools} /> : null}
                 </div>
               ) : null}
+              <SkillUpload
+                onAdded={(id) => {
+                  skills.reload();
+                  setSkill(id);
+                }}
+              />
             </div>
 
-            <fieldset className="space-y-1">
+            <fieldset className="min-w-0 space-y-1">
               <legend className="font-medium">{t("Legs")}</legend>
               <div className="text-xs text-muted-foreground">
                 {t("None ticked: any healthy Leg.")}
               </div>
+              {(legs.data ?? []).length === 0 ? (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <AddLegButtons size="sm" />
+                </div>
+              ) : null}
               {(legs.data ?? []).map((l) => (
-                <label key={l.id} className="flex items-center gap-2">
+                <label key={l.id} className="flex min-h-9 items-center gap-2">
                   <input
                     type="checkbox"
+                    className="size-4 shrink-0"
                     checked={legIds.includes(l.id)}
                     onChange={(e) =>
                       setLegIds(
@@ -492,8 +534,10 @@ export function WorkPage({ draftId }: { draftId?: string }) {
                       )
                     }
                   />
-                  <span className="min-w-0 truncate">{l.name}</span>
-                  <span className="text-xs text-muted-foreground">({l.health})</span>
+                  <span className="min-w-0 truncate" title={l.name}>
+                    {l.name}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">({t(l.health)})</span>
                 </label>
               ))}
             </fieldset>
@@ -588,8 +632,9 @@ export function WorkPage({ draftId }: { draftId?: string }) {
               footer={
                 <div className="flex flex-wrap items-center gap-2">
                   <ErrorNote error={error} />
+                  {fixes}
                   <span className="flex-1" />
-                  <Button variant="ghost" className="gap-1" onClick={remove}>
+                  <Button variant="ghost" className="gap-1 text-destructive" onClick={remove}>
                     <Trash2 className="size-4" />
                     {t("Delete")}
                   </Button>
@@ -613,14 +658,51 @@ export function WorkPage({ draftId }: { draftId?: string }) {
                 placeholder={t("Describe it in your words: the goal, what matters, what to avoid.")}
               />
               <ErrorNote error={error} />
-              <Button className="self-end" disabled={!!why || busy} onClick={begin}>
-                {busy ? t("Saving…") : (why ?? t("Continue"))}
-              </Button>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {fixes}
+                <Button disabled={!!why || busy} onClick={begin}>
+                  {busy ? t("Saving…") : (why ?? t("Continue"))}
+                </Button>
+              </div>
             </CardContent>
           )}
         </Card>
       </div>
+      {dialog}
     </div>
+  );
+}
+
+/** A skill added from a .md file, here where the method is chosen. */
+function SkillUpload({ onAdded }: { onAdded: (id: string) => void }) {
+  return (
+    <Button asChild variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs">
+      <label className="cursor-pointer">
+        <Upload className="size-3.5" />
+        {t("Add a skill from a .md file")}
+        <input
+          type="file"
+          accept=".md,.markdown,text/markdown"
+          className="sr-only"
+          onChange={async (e) => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            if (!f) return;
+            try {
+              const up = await api.skills.upload({
+                name: f.name.replace(/\.(md|markdown)$/i, ""),
+                markdown: await f.text(),
+              });
+              if (up.ignored.length) toast.warning(up.ignored.join(" "));
+              toast.success(t("Added {name}; this job uses it.", { name: up.skill.name }));
+              onAdded(up.skill.id);
+            } catch (x) {
+              toast.error(message(x));
+            }
+          }}
+        />
+      </label>
+    </Button>
   );
 }
 

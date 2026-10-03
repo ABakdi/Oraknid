@@ -70,7 +70,7 @@ export function EyeChat({ jobId, full = false }: { jobId: string; full?: boolean
           <Eye className="size-4 text-primary" />
           {t("The Eye")}
           {full ? (
-            <span className="font-normal text-muted-foreground">
+            <span className="hidden min-w-0 truncate font-normal text-muted-foreground sm:inline">
               {t("— instructions, questions, new work, context: it decides what it is and acts.")}
             </span>
           ) : null}

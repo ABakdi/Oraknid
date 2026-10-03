@@ -25,7 +25,7 @@ const create = (f: FoundAgent, name: string) =>
  * Finding agents on this machine (Legs → Finding agents): what Oraknid
  * can drive here, each made a Leg with one click, or all at once.
  */
-export function FindAgents() {
+export function FindAgents({ size = "default" }: { size?: "default" | "sm" } = {}) {
   const [open, setOpen] = useState(false);
   const [found, setFound] = useState<FoundAgent[] | null>(null);
   const [error, setError] = useState<unknown>();
@@ -65,7 +65,7 @@ export function FindAgents() {
   const fresh = (found ?? []).filter((f) => f.usedBy.length === 0 && !made.has(f.where));
   return (
     <>
-      <Button variant="secondary" className="gap-1" onClick={look}>
+      <Button variant="secondary" size={size} className="gap-1" onClick={look}>
         <Search className="size-4" />
         {t("Find agents on this machine")}
       </Button>

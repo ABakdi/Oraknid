@@ -1,19 +1,14 @@
 import type { ServerSample, ServerView } from "@oraknid/contracts";
-import { ChevronLeft, Plus, RefreshCw, Server, SquareTerminal, Trash2, Upload } from "lucide-react";
+import { Pencil, Plus, RefreshCw, Server, SquareTerminal, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
-import { Empty, ErrorNote, Loading, Markdown, PageHeader } from "@/components/common";
+import { AddServer } from "@/components/add-server";
+import { BackButton, Empty, ErrorNote, Loading, Markdown, PageHeader } from "@/components/common";
+import { useConfirm } from "@/components/confirm";
 import { type PageTab, PageTabs } from "@/components/page-tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -55,7 +50,7 @@ export function ServersPage({ id, tab }: { id?: string; tab?: string }) {
             "Add one over SSH: Oraknid reads what's on it (only reads), writes its state document, and shows how it's doing.",
           )}
         </Empty>
-        <AddServer open={adding} onOpenChange={setAdding} />
+        <AddServer open={adding} onOpenChange={setAdding} onAdded={(x) => go(`/servers/${x.id}`)} />
       </div>
     );
   // A server open: its id in the address; on a computer the first one by default.
@@ -89,7 +84,9 @@ export function ServersPage({ id, tab }: { id?: string; tab?: string }) {
               >
                 <span className="flex items-center gap-2">
                   <Server className="size-4 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate font-medium">{x.name}</span>
+                  <span className="min-w-0 flex-1 truncate font-medium" title={x.name}>
+                    {x.name}
+                  </span>
                   <span
                     className={cn(
                       "size-2 shrink-0 rounded-full",
@@ -118,7 +115,7 @@ export function ServersPage({ id, tab }: { id?: string; tab?: string }) {
       <section className={cn("min-h-0 min-w-0 flex-1", !selected && "hidden md:block")}>
         {shown ? <ServerDetail key={shown.id} s={shown} tab={tab} /> : null}
       </section>
-      <AddServer open={adding} onOpenChange={setAdding} />
+      <AddServer open={adding} onOpenChange={setAdding} onAdded={(x) => go(`/servers/${x.id}`)} />
     </div>
   );
 }
@@ -128,19 +125,51 @@ const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0);
 /** One server: its header and actions, then Readings · State document · About in tabs. */
 function ServerDetail({ s, tab }: { s: ServerView; tab?: string }) {
   const [, go] = useLocation();
+  const { confirm, dialog } = useConfirm();
+  const [editing, setEditing] = useState<{ name: string; description: string } | null>(null);
+  const remove = async () => {
+    if (
+      !(await confirm(
+        t("Remove “{name}”?", { name: s.name }),
+        t(
+          "Oraknid takes its key and oraknid-monitor off the server if it can reach it, and forgets the server, its readings and its state document. Projects stop using it.",
+        ),
+        t("Remove"),
+        { keep: t("Keep it") },
+      ))
+    )
+      return;
+    api.servers
+      .remove({ id: s.id })
+      .then((r) => {
+        toast.success(
+          r.cleaned
+            ? t("Removed, and Oraknid's things taken off it.")
+            : t("Removed here; Oraknid couldn't reach it to take its things off."),
+        );
+        go("/servers", { replace: true });
+      })
+      .catch((e) => toast.error(message(e)));
+  };
+  const acceptKey = async () => {
+    if (
+      await confirm(
+        t("Trust the new host key?"),
+        t(
+          "Only if you know why it changed (a reinstall, a new server at the same address). Otherwise someone may be in the middle.",
+        ),
+        t("Accept the new key"),
+      )
+    )
+      void act(api.servers.acceptHostKey({ id: s.id }), t("Accepted."));
+  };
   const header = (
     <div className="shrink-0 space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="md:hidden"
-          aria-label={t("All servers")}
-          onClick={() => go("/servers")}
-        >
-          <ChevronLeft className="size-4" />
-        </Button>
-        <h2 className="min-w-0 truncate text-lg font-semibold">{s.name}</h2>
+        <BackButton fallback="/servers" label={t("All servers")} className="md:hidden" />
+        <h2 className="min-w-0 truncate text-lg font-semibold" title={s.name}>
+          {s.name}
+        </h2>
         <Badge variant={s.error ? "destructive" : s.setup === "ready" ? "outline" : "secondary"}>
           {s.busy ??
             (s.error ? t("unreachable") : s.setup === "ready" ? t("ready") : t("not set up"))}
@@ -192,11 +221,7 @@ function ServerDetail({ s, tab }: { s: ServerView; tab?: string }) {
           <div className="font-mono text-xs [overflow-wrap:anywhere]">
             {t("was")} {s.hostKey} → {t("now")} {s.hostKeyOffered}
           </div>
-          <Button
-            size="sm"
-            variant="destructive"
-            onClick={() => act(api.servers.acceptHostKey({ id: s.id }), t("Accepted."))}
-          >
+          <Button size="sm" variant="destructive" onClick={acceptKey}>
             {t("Accept the new key")}
           </Button>
         </div>
@@ -235,27 +260,71 @@ function ServerDetail({ s, tab }: { s: ServerView; tab?: string }) {
                 ? t("Seen {when}.", { when: ago(s.lastSeenAt) })
                 : ""}
           </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="gap-1 text-destructive"
-            onClick={() =>
-              api.servers
-                .remove({ id: s.id })
-                .then((r) => {
-                  toast.success(
-                    r.cleaned
-                      ? t("Removed, and Oraknid's things taken off it.")
-                      : t("Removed here; Oraknid couldn't reach it to take its things off."),
-                  );
-                  go("/servers");
-                })
-                .catch((e) => toast.error(message(e)))
-            }
-          >
-            <Trash2 className="size-3.5" />
-            {t("Remove this server")}
-          </Button>
+          {editing ? (
+            <form
+              className="space-y-3 rounded-md border p-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void act(
+                  api.servers
+                    .update({
+                      id: s.id,
+                      name: editing.name.trim(),
+                      description: editing.description,
+                    })
+                    .then(() => setEditing(null)),
+                  t("Saved."),
+                );
+              }}
+            >
+              <div className="space-y-1.5">
+                <Label htmlFor="se-name">{t("Name")}</Label>
+                <Input
+                  id="se-name"
+                  value={editing.name}
+                  onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="se-desc">{t("What it is and what it has")}</Label>
+                <Textarea
+                  id="se-desc"
+                  rows={3}
+                  value={editing.description}
+                  onChange={(e) => setEditing({ ...editing, description: e.target.value })}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setEditing(null)}
+                >
+                  {t("Cancel")}
+                </Button>
+                <Button type="submit" size="sm" disabled={!editing.name.trim()}>
+                  {t("Save")}
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                className="gap-1"
+                onClick={() => setEditing({ name: s.name, description: s.description })}
+              >
+                <Pencil className="size-3.5" />
+                {t("Edit")}
+              </Button>
+              <Button size="sm" variant="ghost" className="gap-1 text-destructive" onClick={remove}>
+                <Trash2 className="size-3.5" />
+                {t("Remove this server")}
+              </Button>
+            </div>
+          )}
         </div>
       ),
     },
@@ -265,7 +334,12 @@ function ServerDetail({ s, tab }: { s: ServerView; tab?: string }) {
       base={`/servers/${s.id}`}
       tab={tab}
       tabs={tabs}
-      header={header}
+      header={
+        <>
+          {header}
+          {dialog}
+        </>
+      }
       className="mb-0 h-full md:mb-0 md:h-full"
     />
   );
@@ -422,175 +496,5 @@ function StateDocument({ id }: { id: string }) {
         />
       )}
     </div>
-  );
-}
-
-function AddServer({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const [f, setF] = useState({
-    name: "",
-    host: "",
-    port: "22",
-    user: "root",
-    description: "",
-    password: "",
-    privateKey: "",
-    passphrase: "",
-  });
-  const [withKey, setWithKey] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const set = (k: keyof typeof f) => (e: { target: { value: string } }) =>
-    setF({ ...f, [k]: e.target.value });
-  const save = async () => {
-    setBusy(true);
-    try {
-      await api.servers.add({
-        name: f.name,
-        host: f.host.trim(),
-        port: Number(f.port) || 22,
-        user: f.user.trim(),
-        description: f.description,
-        ...(withKey
-          ? { privateKey: f.privateKey, ...(f.passphrase ? { passphrase: f.passphrase } : {}) }
-          : { password: f.password }),
-      });
-      toast.success(t("Added. Set it up from its card."));
-      onOpenChange(false);
-      setF({ ...f, password: "", privateKey: "", passphrase: "" });
-    } catch (e) {
-      toast.error(message(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{t("Add a server")}</DialogTitle>
-          <DialogDescription>
-            {t(
-              "Over SSH. Credentials go to the keychain; a password is used once, to install a key of Oraknid's own.",
-            )}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3 text-sm">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2 space-y-1.5">
-              <Label htmlFor="sv-name">{t("Name")}</Label>
-              <Input id="sv-name" value={f.name} onChange={set("name")} placeholder="staging" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="sv-host">{t("Host")}</Label>
-              <Input
-                id="sv-host"
-                className="font-mono"
-                value={f.host}
-                onChange={set("host")}
-                placeholder="203.0.113.7"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="sv-port">{t("Port")}</Label>
-                <Input id="sv-port" inputMode="numeric" value={f.port} onChange={set("port")} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="sv-user">{t("User")}</Label>
-                <Input id="sv-user" value={f.user} onChange={set("user")} />
-              </div>
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="sv-desc">{t("What it is and what it has")}</Label>
-            <Textarea
-              id="sv-desc"
-              rows={3}
-              value={f.description}
-              onChange={set("description")}
-              placeholder={t("The VPS for my sites: nginx, two Node apps under pm2, Postgres.")}
-            />
-          </div>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant={withKey ? "default" : "secondary"}
-              onClick={() => setWithKey(true)}
-            >
-              {t("A private key")}
-            </Button>
-            <Button
-              size="sm"
-              variant={withKey ? "secondary" : "default"}
-              onClick={() => setWithKey(false)}
-            >
-              {t("A password")}
-            </Button>
-          </div>
-          {withKey ? (
-            <>
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="sv-key" className="flex-1">
-                    {t("Private key")}
-                  </Label>
-                  <Button asChild size="sm" variant="ghost" className="h-7 gap-1">
-                    <label className="cursor-pointer">
-                      <Upload className="size-3.5" />
-                      {t("From a file")}
-                      <input
-                        type="file"
-                        className="sr-only"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          if (file) setF({ ...f, privateKey: await file.text() });
-                        }}
-                      />
-                    </label>
-                  </Button>
-                </div>
-                <Textarea
-                  id="sv-key"
-                  rows={4}
-                  className="font-mono text-xs"
-                  value={f.privateKey}
-                  onChange={set("privateKey")}
-                  placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="sv-pass">{t("Its passphrase, if it has one")}</Label>
-                <Input
-                  id="sv-pass"
-                  type="password"
-                  autoComplete="off"
-                  value={f.passphrase}
-                  onChange={set("passphrase")}
-                />
-              </div>
-            </>
-          ) : (
-            <div className="space-y-1.5">
-              <Label htmlFor="sv-pw">{t("Password")}</Label>
-              <Input
-                id="sv-pw"
-                type="password"
-                autoComplete="off"
-                value={f.password}
-                onChange={set("password")}
-              />
-            </div>
-          )}
-          <Button
-            className="w-full"
-            disabled={
-              busy || !f.name || !f.host || !f.user || (withKey ? !f.privateKey : !f.password)
-            }
-            onClick={save}
-          >
-            {t("Add")}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }
