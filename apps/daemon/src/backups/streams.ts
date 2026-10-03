@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { Duplex, Transform } from "node:stream";
+import { ReadableStream as WebReadable } from "node:stream/web";
 import zlib from "node:zlib";
 import { Decrypter, Encrypter, generateX25519Identity, identityToRecipient } from "age-encryption";
 
@@ -56,12 +57,16 @@ export function zstdDecompress(): Duplex {
   return binary(["-q", "-d", "-c"]);
 }
 
+/** A Node stream's chunks as the web stream age-encryption reads. */
+const webStream = (source: AsyncIterable<Buffer>) =>
+  WebReadable.from(source) as unknown as ReadableStream<Uint8Array>;
+
 /** The stream encrypted to one age recipient (age1…). */
 export function ageEncrypt(recipient: string) {
   return async function* (source: AsyncIterable<Buffer>): AsyncGenerator<Uint8Array> {
     const e = new Encrypter();
     e.addRecipient(recipient);
-    const out = await e.encrypt(ReadableStream.from(source) as ReadableStream<Uint8Array>);
+    const out = await e.encrypt(webStream(source));
     for await (const chunk of out as unknown as AsyncIterable<Uint8Array>) yield chunk;
   };
 }
@@ -73,7 +78,7 @@ export function ageDecrypt(identity: string) {
     d.addIdentity(identity);
     let out: ReadableStream<Uint8Array>;
     try {
-      out = await d.decrypt(ReadableStream.from(source) as ReadableStream<Uint8Array>);
+      out = await d.decrypt(webStream(source));
     } catch (error) {
       throw new Error(
         `It can't be decrypted with its key: ${error instanceof Error ? error.message : String(error)}`,
