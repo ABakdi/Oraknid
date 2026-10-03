@@ -185,8 +185,11 @@ import { backupsRouter } from "./backups.ts";
 import {
   Activity,
   activity,
+  Charts,
+  ChartsInput,
   StatsScope,
   Summary,
+  charts as statsCharts,
   summary as statsSummary,
   TokenBucket,
   tokensOverTime,
@@ -1261,6 +1264,11 @@ export const router = {
       .output(Summary)
       .handler(({ context: c, input }) => statsSummary(c.jobs.db, input)),
     activity: base.output(z.array(Activity)).handler(({ context: c }) => activity(c.jobs.db)),
+    /** Throughput, success by Leg and task kind, per verified task, money, burn (Web-UI → Charts). */
+    charts: base
+      .input(ChartsInput)
+      .output(Charts)
+      .handler(({ context: c, input }) => statsCharts(c.jobs.db, input)),
   },
   tasks: {
     pin: base

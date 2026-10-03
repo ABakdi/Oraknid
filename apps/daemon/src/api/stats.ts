@@ -1,7 +1,9 @@
+import type { Budget } from "@oraknid/contracts";
 import { and, eq, gte, inArray, isNull, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "../db/open.ts";
 import { attempts, jobs, legModels, legs, sessions, tasks } from "../db/schema.ts";
+import { projectBudget } from "../settings.ts";
 
 // Stats for the charts and the per-project numbers (Web-UI → Charts, Projects).
 
@@ -144,6 +146,197 @@ export function summary(
       ? ended.filter((x) => x.outcome === "succeeded").length / ended.length
       : null,
     byLeg: [...byLeg.values()].sort((x, y) => y.tokens - x.tokens),
+  };
+}
+
+const Outcomes = { succeeded: z.number(), failed: z.number(), other: z.number() };
+
+export const ChartsInput = StatsScope.extend({
+  /** Attempts from this time on; budget burn always covers the whole scope. */
+  since: z.number().default(0),
+  bucketMs: z.number().int().positive().default(86400_000),
+});
+
+export const Charts = z.object({
+  bucketMs: z.number(),
+  /** Tasks verified (an attempt that succeeded) and attempts that failed, per bucket. */
+  throughput: z.array(z.object({ t: z.number(), done: z.number(), failed: z.number() })),
+  /** Per Leg: attempts by outcome ("other": reassigned or abandoned), tokens, time. */
+  byLeg: z.array(
+    z.object({
+      legId: z.string(),
+      leg: z.string(),
+      kind: z.string(),
+      ...Outcomes,
+      tokens: z.number(),
+      ms: z.number(),
+      /** Every token its attempts used, over the tasks they verified; null before one is. */
+      tokensPerVerified: z.number().nullable(),
+      /** Every millisecond its attempts ran, over the tasks they verified. */
+      msPerVerified: z.number().nullable(),
+    }),
+  ),
+  /** Per task kind: attempts by outcome. */
+  byKind: z.array(z.object({ kind: z.string(), ...Outcomes })),
+  /** Money spent (US dollars). Nothing counts money yet (paid Legs come later): always 0. */
+  money: z.object({
+    total: z.number(),
+    points: z.array(z.object({ t: z.number(), money: z.number() })),
+  }),
+  /** Tokens used so far against the token limit: a job's, a project's; null for everything. */
+  burn: z
+    .object({
+      limit: z.number().nullable(),
+      hard: z.boolean(),
+      used: z.number(),
+      points: z.array(z.object({ t: z.number(), used: z.number() })),
+    })
+    .nullable(),
+});
+export type Charts = z.infer<typeof Charts>;
+
+/** At most this many buckets in a series, the newest kept. */
+const MAX_BUCKETS = 400;
+
+type Counted = { succeeded: number; failed: number; other: number };
+const count = (r: Counted, outcome: string | null) => {
+  if (outcome === "succeeded") r.succeeded++;
+  else if (outcome === "failed") r.failed++;
+  else if (outcome) r.other++;
+};
+const tried = (r: Counted) => r.succeeded + r.failed + r.other;
+
+/**
+ * The charts' numbers (Web-UI → Charts) for a job, a project or everything:
+ * throughput, success and failure by Leg and by task kind, tokens and time
+ * per verified task, money, and budget burn against the limit.
+ */
+export function charts(db: Db, i: z.input<typeof ChartsInput>, now = Date.now()): Charts {
+  const since = i.since ?? 0;
+  const bucketMs = i.bucketMs ?? 86400_000;
+  const bucket = (t: number) => Math.floor(t / bucketMs) * bucketMs;
+  const ids = jobIds(db, i);
+  const inScope = (col: typeof attempts.jobId | typeof sessions.jobId) =>
+    ids ? inArray(col, ids.length ? ids : [""]) : undefined;
+  const a = db
+    .select({
+      id: attempts.id,
+      legId: attempts.legId,
+      outcome: attempts.outcome,
+      startedAt: attempts.startedAt,
+      endedAt: attempts.endedAt,
+      kind: tasks.kind,
+    })
+    .from(attempts)
+    .leftJoin(tasks, eq(tasks.id, attempts.taskId))
+    .where(and(inScope(attempts.jobId), gte(attempts.startedAt, since)))
+    .all();
+  const s = db
+    .select({
+      attemptId: sessions.attemptId,
+      startedAt: sessions.startedAt,
+      input: sessions.inputTokens,
+      output: sessions.outputTokens,
+      write: sessions.cacheWriteTokens,
+    })
+    .from(sessions)
+    .where(inScope(sessions.jobId))
+    .all()
+    .map((x) => ({ ...x, tokens: x.input + x.output + x.write }));
+  const legRows = new Map(
+    db
+      .select({ id: legs.id, name: legs.name, kind: legs.kind })
+      .from(legs)
+      .all()
+      .map((l) => [l.id, l]),
+  );
+
+  // Throughput: every bucket between the first and the last, an empty one as 0.
+  const tp = new Map<number, { t: number; done: number; failed: number }>();
+  for (const x of a) {
+    if (x.endedAt === null || (x.outcome !== "succeeded" && x.outcome !== "failed")) continue;
+    const t = bucket(x.endedAt);
+    const r = tp.get(t) ?? { t, done: 0, failed: 0 };
+    if (x.outcome === "succeeded") r.done++;
+    else r.failed++;
+    tp.set(t, r);
+  }
+  const throughput: Charts["throughput"] = [];
+  if (tp.size) {
+    const last = Math.max(...tp.keys());
+    const first = Math.max(Math.min(...tp.keys()), last - (MAX_BUCKETS - 1) * bucketMs);
+    for (let t = first; t <= last; t += bucketMs)
+      throughput.push(tp.get(t) ?? { t, done: 0, failed: 0 });
+  }
+
+  const tokensOf = new Map<string, number>();
+  for (const x of s)
+    if (x.attemptId) tokensOf.set(x.attemptId, (tokensOf.get(x.attemptId) ?? 0) + x.tokens);
+  const byLeg = new Map<string, Charts["byLeg"][number]>();
+  const byKind = new Map<string, Charts["byKind"][number]>();
+  for (const x of a) {
+    const l = legRows.get(x.legId);
+    const leg = byLeg.get(x.legId) ?? {
+      legId: x.legId,
+      leg: l?.name ?? "?",
+      kind: l?.kind ?? "?",
+      succeeded: 0,
+      failed: 0,
+      other: 0,
+      tokens: 0,
+      ms: 0,
+      tokensPerVerified: null,
+      msPerVerified: null,
+    };
+    count(leg, x.outcome);
+    leg.tokens += tokensOf.get(x.id) ?? 0;
+    leg.ms += (x.endedAt ?? now) - x.startedAt;
+    byLeg.set(x.legId, leg);
+    const kind = x.kind ?? "?";
+    const k = byKind.get(kind) ?? { kind, succeeded: 0, failed: 0, other: 0 };
+    count(k, x.outcome);
+    byKind.set(kind, k);
+  }
+  for (const r of byLeg.values())
+    if (r.succeeded) {
+      r.tokensPerVerified = Math.round(r.tokens / r.succeeded);
+      r.msPerVerified = Math.round(r.ms / r.succeeded);
+    }
+
+  // Burn: the scope's tokens added up over its whole life, against its limit.
+  let burn: Charts["burn"] = null;
+  const limit = i.jobId
+    ? (
+        db.select({ budget: jobs.budget }).from(jobs).where(eq(jobs.id, i.jobId)).get()?.budget as
+          | Budget
+          | undefined
+      )?.tokens
+    : i.projectId
+      ? projectBudget(db, i.projectId).tokens
+      : undefined;
+  if (limit !== undefined) {
+    const per = new Map<number, number>();
+    for (const x of s) per.set(bucket(x.startedAt), (per.get(bucket(x.startedAt)) ?? 0) + x.tokens);
+    let used = 0;
+    const points = [...per.entries()]
+      .sort((x, y) => x[0] - y[0])
+      .map(([t, n]) => {
+        used += n;
+        return { t, used };
+      })
+      .slice(-MAX_BUCKETS);
+    burn = { limit: limit?.limit ?? null, hard: limit?.hard ?? false, used, points };
+  }
+
+  return {
+    bucketMs,
+    throughput,
+    byLeg: [...byLeg.values()].sort((x, y) => tried(y) - tried(x) || x.leg.localeCompare(y.leg)),
+    byKind: [...byKind.values()].sort(
+      (x, y) => tried(y) - tried(x) || x.kind.localeCompare(y.kind),
+    ),
+    money: { total: 0, points: [] },
+    burn,
   };
 }
 
