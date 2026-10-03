@@ -44,7 +44,8 @@ Eye's conversation sit beside them ([[Chats-and-Helper]]).
   alone. The Nest's loader uses the same.
 
 - The three concepts drawn for a new mark stay in
-  `docs/assets/logo-concepts/`; I kept the current mark, with its pupil
+  `docs/assets/logo-concepts/`, with the kept mark beside them
+  (`chosen.svg`, `chosen-icon.svg`, `chosen.png`); I kept the current mark, with its pupil
   made vertical and gently wavy ([[Phase-11-Workspace]] → M11.6).
 
 ## Layout
