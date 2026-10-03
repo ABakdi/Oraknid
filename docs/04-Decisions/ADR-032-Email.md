@@ -4,23 +4,23 @@
 
 ## Context
 I want my mail in Oraknid: several accounts (Gmail, Outlook/Hotmail,
-any IMAP/SMTP), read, sorted and answered with the agents' help, and
+any IMAP or POP3 server with SMTP), read, sorted and answered with the agents' help, and
 never sent by an agent without me.
 
 ## Decision
 - **A client only**: no mail server. Libraries: `imapflow` (read,
-  search, IDLE, flags, move), `nodemailer` (send, OAuth2), `mailparser`
+  search, IDLE, flags, move), `nodemailer` (send), a small POP3 client of its own (added later, see below), `mailparser`
   (MIME), DOMPurify and a sandboxed frame to show HTML, TanStack Virtual
   for long lists, Tiptap to write.
 - **Fitted to Oraknid**, not to a generic web app: SQLite (the existing
   database, new tables), sync jobs in the daemon itself (no Redis or
   BullMQ: one user, one machine), the live socket for new mail, my
   existing data hooks instead of TanStack Query.
-- **Accounts**: IMAP/SMTP with a password (an app password for Gmail and
-  Outlook works today); OAuth2 (XOAUTH2) for Gmail and Microsoft once I
-  register Oraknid as an app with them and paste its client id and
-  secret. Secrets and tokens in the keychain. A failed login or revoked
-  token shows "Reconnect", never a silent failure.
+- **Accounts**: IMAP or POP3, and SMTP, with a password (an app
+  password for Gmail and Outlook). Passwords in the keychain. A failed
+  login shows "Reconnect", never a silent failure. *Changed
+  2026-10-03:* OAuth (Google and Microsoft sign-in) is taken out for
+  now and comes back after a few releases; see As built.
 - **Sync**: IMAP IDLE per account's inbox, a periodic pass for other
   folders; headers and bodies cached in SQLite, bodies fetched on first
   open; threads by `Message-ID`/`In-Reply-To`/`References`, and Gmail's
@@ -72,13 +72,40 @@ Decided while building Phase 12, in the spirit of the above:
   so the UI's content policy stays closed (Audit 2).
 - **The email tool** is registered with the first account, so a tool of
   mine already named "email" stays as it is.
-- **Not yet**: chats and the helper don't take the email tool; OAuth is
-  built but untried against Google and Microsoft until I register the
-  apps.
+- **Not yet**: chats and the helper don't take the email tool.
+
+### Changed after building (2026-10-03)
+- **OAuth: later, after a few releases.** Sign-in with Google and
+  Microsoft is removed (its routes, the `/oauth/mail/callback` handler,
+  the client id and secret in Settings, the code): accounts are app
+  passwords or server settings only. Gmail and Outlook stay as presets
+  of their servers, with a short hint and a link to where each makes an
+  app password. Migration 0028 drops the accounts' `auth` column and
+  the saved app ids.
+- **POP3 as well as IMAP.** An account picks IMAP or POP3 for incoming
+  mail (POP3 over TLS, 995, or STARTTLS; no TLS only to this machine,
+  as for IMAP), and SMTP to send. POP has no folders nor flags, so: new
+  messages are downloaded by UIDL into a local Inbox, every two minutes
+  and on demand; Sent, Archive, Trash and Drafts are Oraknid's own
+  folders; read, star, move and archive are local; delete moves to
+  Trash, and from Trash removes the message here, and on the server
+  only if the account's "delete from the server" is on (off by
+  default: it stays there and is never downloaded again). What I send
+  is kept in the local Sent. The first check takes the latest 10,000
+  messages, as an IMAP folder's first sync. A small POP3 client of
+  Oraknid's own (`mail/pop3.ts`, over `node:net`/`node:tls`) does it:
+  the maintained npm clients lack STLS or hand messages over as text,
+  which breaks 8-bit mail. Each message's bytes are kept in
+  `mail/local/<account>/`, for its attachments and forwards.
+- **Accounts from Mail itself**: add one, check, reconnect, its
+  settings (auto-send, Sent, delete from the server) and remove, from
+  each account's menu in the folder list; and the folders in a drawer
+  on a phone.
 
 ## Consequences
-- Gmail and Outlook with OAuth need me to create an app with Google and
-  Microsoft; until then, app passwords.
+- Gmail and Outlook need an app password (and two-step verification)
+  until OAuth comes back; POP must be turned on in their settings to be
+  used.
 - Mail adds a long-lived connection per account to the daemon.
 
 Related: [[ADR-021-Tools-Broker]] · [[Security]] · [[Chats-and-Helper]]
