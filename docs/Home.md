@@ -76,6 +76,7 @@ Nothing is built yet.
 - [[ADR-026-Servers]] · [[ADR-027-Oraknid-Monitor]] · [[ADR-028-Terminal]] — Phase 9: servers over SSH with a state document, the monitor read over SSH, a terminal with xterm.js
 - [[ADR-029-App-Lock]] — Phase 10: a PIN on every device, checked by the daemon
 - [[ADR-030-Device-Rights]] · [[ADR-031-Public-Nest]] — Phase 11: full rights for a chosen device; a public Nest
+- [[ADR-033-Product-Site]] — the product site at a Nest's root, the phone loader under `/app/`
 - [[ADR-032-Email]] — Phase 12: an email client, mail for agents through the broker
 - [[ADR-013-Model-Aware-Routing]] — route to Leg + model + effort; smallest sufficient model; reserve scarce windows
 

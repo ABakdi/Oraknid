@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Oraknid</title>
+  <rect width="64" height="64" rx="14" fill="#14121F"/>
+  <g transform="translate(6.4 6.4) scale(0.8)">
+  <defs>
+    <radialGradient id="oraknid-iris" cx="0.4" cy="0.36" r="0.72">
+      <stop offset="0" stop-color="#FFD98A"/>
+      <stop offset="0.5" stop-color="#F4A73A"/>
+      <stop offset="1" stop-color="#C2621B"/>
+    </radialGradient>
+  </defs>
+  <!-- Eight jointed legs: two at the top meeting in a V; three a side, bent at the knee, pointing down. -->
+  <g fill="none" stroke="#8F7CFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M28.5 16.5 L23 8 L18 3.5"/>
+    <path d="M35.5 16.5 L41 8 L46 3.5"/>
+    <path d="M18.5 23 L9 15 L4 28"/>
+    <path d="M16.6 31 L6.5 28.5 L3 44"/>
+    <path d="M19 39 L11 41.5 L9 57"/>
+    <path d="M45.5 23 L55 15 L60 28"/>
+    <path d="M47.4 31 L57.5 28.5 L61 44"/>
+    <path d="M45 39 L53 41.5 L55 57"/>
+  </g>
+  <!-- The Eye: big and round, an octopus's horizontal pupil. -->
+  <circle cx="32" cy="31" r="16" fill="#1B1730" stroke="#8F7CFF" stroke-width="2.6"/>
+  <circle cx="32" cy="31" r="12.6" fill="url(#oraknid-iris)"/>
+  <rect x="21.8" y="27.9" width="20.4" height="6.2" rx="3.1" fill="#120F1F"/>
+  <circle cx="26.8" cy="25.4" r="2" fill="#FFF6E0" opacity="0.9"/>
+  </g>
+</svg>

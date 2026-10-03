@@ -1,0 +1,16 @@
+{
+  "name": "@oraknid/site",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The product site served at the root of a Nest: what Oraknid is, how to install it, its guide.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "@fontsource-variable/geist": "5.2.8",
+    "@fontsource-variable/geist-mono": "5.2.7",
+    "@phosphor-icons/core": "2.1.1",
+    "marked": "16.4.1"
+  }
+}

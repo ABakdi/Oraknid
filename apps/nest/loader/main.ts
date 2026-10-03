@@ -56,7 +56,8 @@ async function main() {
   void showHash();
   void showKind().catch(() => {});
   // For notifications while I'm away (M4.3); it caches nothing.
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+  if ("serviceWorker" in navigator)
+    navigator.serviceWorker.register("/app/sw.js", { scope: "/app/" }).catch(() => {});
   const b = bundle();
   if (!b) {
     say(

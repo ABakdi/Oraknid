@@ -7,7 +7,7 @@
     "oraknid-nest": "./dist/main.mjs"
   },
   "scripts": {
-    "build": "tsdown && vite build --config loader.vite.config.ts",
+    "build": "tsdown && vite build --config loader.vite.config.ts && node ../site/build.mjs public",
     "start": "node dist/main.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run"
@@ -17,6 +17,7 @@
     "ws": "8.22.0"
   },
   "devDependencies": {
+    "@oraknid/site": "workspace:*",
     "@oraknid/tunnel": "workspace:^",
     "@types/express": "5.0.6",
     "@types/ws": "8.18.2",

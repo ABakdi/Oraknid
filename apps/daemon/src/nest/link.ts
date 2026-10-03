@@ -184,7 +184,7 @@ export class NestLink {
     // In the fragment: a browser never sends it to The Nest.
     return {
       deviceId,
-      link: `${c.url}/#oraknid=${Buffer.from(JSON.stringify(bundle)).toString("base64url")}`,
+      link: `${c.url}/app/#oraknid=${Buffer.from(JSON.stringify(bundle)).toString("base64url")}`,
     };
   }
 

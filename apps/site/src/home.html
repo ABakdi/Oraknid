@@ -1,0 +1,127 @@
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="hero-copy reveal">
+      <h1>Coding agents that finish the job.</h1>
+      <p class="lead">Oraknid plans your goal, runs Claude Code, OpenCode and local models in a sandbox, and checks their work before calling it done.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#install">{{icon:download-simple}}Install</a>
+        <a class="btn btn-ghost" href="/docs/">{{icon:book-open}}Read the guide</a>
+      </div>
+    </div>
+    <figure class="hero-shot reveal">
+      <img src="/shots/job.webp" width="1600" height="1000" alt="A job in Oraknid: its tasks as a graph, the agents working on them, and the conversation with The Eye." />
+    </figure>
+  </div>
+</section>
+
+<section class="anatomy" id="how">
+  <div class="wrap">
+    <p class="eyebrow">How it works</p>
+    <h2>One Eye. Many Legs.</h2>
+    <p class="section-lead">You describe the work. Oraknid takes it from there, on your own computer, while you do something else.</p>
+    <div class="bento">
+      <article class="cell cell-eye">
+        <img class="cell-mark" src="/logo.svg" alt="" width="132" height="132" />
+        <h3>The Eye plans and watches</h3>
+        <p>It turns your goal into small tasks with checks, gives each to the best agent for it, reads what they do, and steps in when one drifts, loops or burns tokens.</p>
+      </article>
+      <article class="cell cell-legs">
+        <h3>{{icon:robot}}Legs do the work</h3>
+        <p>Your agent accounts and models: Claude Code, OpenCode, Antigravity, or anything that speaks the OpenAI API, like Ollama. Several at once, each in its own worktree.</p>
+        <ul class="chips" aria-label="Supported Legs">
+          <li>Claude Code</li><li>OpenCode</li><li>Antigravity</li><li>OpenAI-compatible</li><li>Ollama</li>
+        </ul>
+      </article>
+      <article class="cell cell-silk">
+        <h3>{{icon:tree-structure}}Silk remembers</h3>
+        <p>Decisions, facts and handoffs, kept per job. When a usage limit hits, the next agent picks up exactly where the last one stopped.</p>
+      </article>
+      <article class="cell cell-checks">
+        <h3>{{icon:check-circle}}Checked, not claimed</h3>
+        <p>A task is done when its checks pass, not when an agent says so. Broken checks get repaired; failures get another attempt or come to you.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="showcase">
+  <div class="wrap showcase-grid">
+    <figure class="shot shot-wide reveal">
+      <img src="/shots/terminal.webp" width="1600" height="1000" loading="lazy" alt="The terminal workspace: two shells side by side, one on this computer and one on a server." />
+      <figcaption>Terminals in tabs, side by side or in a grid, on this computer or your servers.</figcaption>
+    </figure>
+    <div class="showcase-copy">
+      <h2>Everything in one place</h2>
+      <ul class="feature-list">
+        <li>{{icon:git-branch}}<span><strong>Projects and repos.</strong> Your folders and GitHub repos; every job on its own branch, merged when you say so.</span></li>
+        <li>{{icon:cpu}}<span><strong>Servers.</strong> Discovered, documented, monitored, and given to the projects that deploy there.</span></li>
+        <li>{{icon:envelope-simple}}<span><strong>Mail.</strong> Your accounts, with agents that read, sort and draft. Nothing is sent without you.</span></li>
+        <li>{{icon:graph}}<span><strong>Live.</strong> Tokens, quotas, costs and every agent's output as it happens.</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="phone">
+  <div class="wrap phone-grid">
+    <figure class="shot shot-phone reveal">
+      <img src="/shots/phone.webp" width="780" height="1688" loading="lazy" alt="Oraknid on a phone: the inbox with a request waiting for approval." />
+    </figure>
+    <div class="phone-copy">
+      <h2>Approve from your phone, anywhere</h2>
+      <p>Agents ask before anything risky: a push, a deploy, a mail. Answer from your phone over an end-to-end encrypted tunnel through The Nest, a small relay you can host yourself. No ports open at home.</p>
+      <a class="link-arrow" href="/docs/phone.html">How pairing works{{icon:arrow-right:icon arrow}}</a>
+    </div>
+  </div>
+</section>
+
+<section class="safety">
+  <div class="wrap">
+    <h2>Your computer stays yours</h2>
+    <div class="safety-grid">
+      <div class="safety-item">{{icon:shield-check:icon big}}<h3>A sandbox per agent</h3><p>Each agent works in its own bubblewrap sandbox: its worktree, its own network, none of your files or local services.</p></div>
+      <div class="safety-item">{{icon:lock-key:icon big}}<h3>A PIN on every device</h3><p>Checked by Oraknid itself. Ten wrong tries and the device is unpaired. Idle devices lock.</p></div>
+      <div class="safety-item">{{icon:plugs-connected:icon big}}<h3>Approvals you control</h3><p>Commands are judged against your rules. Pushes, deploys and sends wait for you, whatever the autonomy level.</p></div>
+      <div class="safety-item">{{icon:device-mobile:icon big}}<h3>End to end, away from home</h3><p>The relay only moves encrypted frames. It can't read a request, an answer or a single line of code.</p></div>
+    </div>
+    <a class="link-arrow" href="/docs/security.html">The full security model{{icon:arrow-right:icon arrow}}</a>
+  </div>
+</section>
+
+<section class="install" id="install">
+  <div class="wrap install-grid">
+    <div>
+      <h2>Install</h2>
+      <p>Oraknid runs on Linux. You need Node 22.12 or newer, pnpm 9, git and bubblewrap. Python 3 and passt make the sandbox tighter; <code>doctor</code> tells you what is missing.</p>
+      <p class="muted">It isn't packaged yet: you build it from the repository. Releases come next.</p>
+    </div>
+    <div class="code" data-copy>
+      <button class="copy" type="button" aria-label="Copy the commands">{{icon:copy}}<span>Copy</span></button>
+<pre><code><span class="c"># get it and build it</span>
+git clone -b dev {{repo}}.git
+cd Oraknid
+pnpm install
+pnpm build
+
+<span class="c"># check this computer, then run it in the background</span>
+node apps/daemon/dist/cli.mjs doctor
+node apps/daemon/dist/cli.mjs install
+
+<span class="c"># open it in your browser and set your PIN</span>
+node apps/daemon/dist/cli.mjs open</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="guide">
+  <div class="wrap">
+    <h2>The guide</h2>
+    <div class="doc-grid">
+{{guide}}
+    </div>
+    <div class="resources">
+      <a class="resource" href="{{repo}}" rel="noopener">{{icon:github-logo:icon big}}<span><strong>Source on GitHub</strong><span>Code, issues and releases.</span></span></a>
+      <a class="resource" href="{{repo}}/tree/dev/docs" rel="noopener">{{icon:book-open:icon big}}<span><strong>The design notes</strong><span>Specification, architecture and every decision.</span></span></a>
+    </div>
+  </div>
+</section>

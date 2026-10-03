@@ -100,7 +100,7 @@ describe("away from home, through The Nest (Phase 4)", () => {
     await expect(api.nest.pairAway({ name: "x" })).rejects.toThrow(/Set your PIN/);
     await api.lock.setPin({ current: null, pin: "583920" });
     const { link } = await api.nest.pairAway({ name: "My phone, away" });
-    expect(link.startsWith(`${nestUrl}/#oraknid=`)).toBe(true);
+    expect(link.startsWith(`${nestUrl}/app/#oraknid=`)).toBe(true);
     const b = JSON.parse(
       Buffer.from(link.split("#oraknid=")[1] as string, "base64url").toString(),
     ) as Bundle;

@@ -10,7 +10,7 @@ self.addEventListener("push", (e) => {
     self.registration.showNotification(n.title, {
       body: n.body,
       tag: n.tag || undefined,
-      icon: "/icon.svg",
+      icon: "/app/icon.svg",
       requireInteraction: n.urgency === "critical",
     }),
   );

@@ -699,7 +699,7 @@ export type Daemon = Awaited<ReturnType<typeof startDaemon>>;
 function nestLoader(): string | null {
   let dir = dirname(fileURLToPath(import.meta.url));
   for (let i = 0; i < 5; i++) {
-    const assets = join(dir, "nest", "public", "assets");
+    const assets = join(dir, "nest", "public", "app", "assets");
     if (existsSync(assets)) {
       const js = readdirSync(assets).find((f) => f.endsWith(".js"));
       if (js) return join(assets, js);
