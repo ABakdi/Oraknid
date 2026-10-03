@@ -119,7 +119,7 @@ async function layoutGroups(groups: FlowGroup[], vertical: boolean) {
 
 const RUNNING_TASK = ["running", "verifying", "assigned"];
 
-const TaskCard = memo(({ data }: NodeProps<TaskNode>) => {
+const TaskCard = memo(({ data, targetPosition, sourcePosition }: NodeProps<TaskNode>) => {
   const { task, leg } = data;
   const running = RUNNING_TASK.includes(task.state);
   return (
@@ -134,7 +134,7 @@ const TaskCard = memo(({ data }: NodeProps<TaskNode>) => {
         task.state === "failed" && "border-destructive/60",
       )}
     >
-      <Handle type="target" position={Position.Left} className="!opacity-0" />
+      <Handle type="target" position={targetPosition ?? Position.Left} className="!opacity-0" />
       <div className="line-clamp-2 text-xs font-medium leading-snug">{task.title}</div>
       <div className="flex items-center gap-1.5">
         <StateBadge state={task.state} className="h-4 px-1 text-[10px]" />
@@ -143,12 +143,12 @@ const TaskCard = memo(({ data }: NodeProps<TaskNode>) => {
           <span className="ml-auto text-[10px] text-muted-foreground">×{task.attemptCount}</span>
         ) : null}
       </div>
-      <Handle type="source" position={Position.Right} className="!opacity-0" />
+      <Handle type="source" position={sourcePosition ?? Position.Right} className="!opacity-0" />
     </button>
   );
 });
 
-const JobCard = memo(({ data }: NodeProps<JobNode>) => {
+const JobCard = memo(({ data, targetPosition, sourcePosition }: NodeProps<JobNode>) => {
   const { job } = data;
   return (
     <button
@@ -162,7 +162,7 @@ const JobCard = memo(({ data }: NodeProps<JobNode>) => {
           "border-primary shadow-[0_0_0_3px_color-mix(in_oklch,var(--primary)_25%,transparent)]",
       )}
     >
-      <Handle type="target" position={Position.Left} className="!opacity-0" />
+      <Handle type="target" position={targetPosition ?? Position.Left} className="!opacity-0" />
       <div className="flex items-start gap-1">
         <div className="line-clamp-2 min-w-0 flex-1 text-xs font-medium leading-snug">
           {job.title}
@@ -175,12 +175,12 @@ const JobCard = memo(({ data }: NodeProps<JobNode>) => {
           {t("{done}/{total} tasks done", { done: job.done, total: job.total })}
         </span>
       </div>
-      <Handle type="source" position={Position.Right} className="!opacity-0" />
+      <Handle type="source" position={sourcePosition ?? Position.Right} className="!opacity-0" />
     </button>
   );
 });
 
-const FrameCard = memo(({ data }: NodeProps<FrameNode>) => {
+const FrameCard = memo(({ data, targetPosition, sourcePosition }: NodeProps<FrameNode>) => {
   const { job } = data;
   return (
     <div
@@ -190,7 +190,7 @@ const FrameCard = memo(({ data }: NodeProps<FrameNode>) => {
         job.current && "border-primary/70 bg-primary/5",
       )}
     >
-      <Handle type="target" position={Position.Left} className="!opacity-0" />
+      <Handle type="target" position={targetPosition ?? Position.Left} className="!opacity-0" />
       <button
         type="button"
         onClick={() => data.onOpen(job.id)}
@@ -206,7 +206,7 @@ const FrameCard = memo(({ data }: NodeProps<FrameNode>) => {
       {job.total === 0 ? (
         <div className="px-4 text-xs text-muted-foreground">{t("No tasks yet.")}</div>
       ) : null}
-      <Handle type="source" position={Position.Right} className="!opacity-0" />
+      <Handle type="source" position={sourcePosition ?? Position.Right} className="!opacity-0" />
     </div>
   );
 });
