@@ -104,7 +104,11 @@ program
   .action(async () => {
     const info = await findRunning();
     if (!info) {
-      console.log("Oraknid is not running. Start it with: oraknid start");
+      // Its process is there but doesn't answer yet: it is starting, not stopped.
+      const runtime = readRuntime();
+      if (runtime && isAlive(runtime.pid))
+        console.log(`Oraknid is starting (pid ${runtime.pid}): ask again in a moment.`);
+      else console.log("Oraknid is not running. Start it with: oraknid start");
       process.exitCode = 1;
       return;
     }
