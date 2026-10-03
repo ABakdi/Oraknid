@@ -322,7 +322,10 @@ traffic** (sites, certificates, the config check, then the last 15
 minutes of traffic as bars, status tiles and top lists), **Logs** (a log
 picked from the server's services, containers and proxy files; Follow on
 by default, a filter while following, a search on the server when not),
-**Backups**, **Terminal** (one shell, opened with a click) and **State
+**Backups** (`ServerBackupsTab`, [[ADR-044-Backups]]: its backup plans
+and those keeping their backups on it, each with its backups, and New
+backup plan with the databases found on it to pick from, or one
+described), **Terminal** (one shell, opened with a click) and **State
 document**. Each part shows when it was read and a Refresh; what it
 couldn't read is in a yellow box with why. On a phone everything is a
 list that wraps, nothing scrolls sideways.
@@ -510,6 +513,12 @@ that opened Settings:
   accounts by name, the first the default, each token checked, with
   why GitHub refuses one; add one, remove one after a second step;
   [[ADR-038-Project-Accounts]]), tools for skills.
+- **Backups** ([[ADR-044-Backups]]): every backup plan (what, when,
+  where to, how many kept, its key, its last run and error; Run now, a
+  switch to pause, edit, remove), the latest backups (size, duration,
+  checksum, where; Verify; Restore in two steps, the database's name
+  typed back), and the encryption keys (public halves; Make a key shows
+  the private one once to download or copy; Import a key).
 
 ### The lock
 

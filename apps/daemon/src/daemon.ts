@@ -27,6 +27,7 @@ import { router } from "./api/router.ts";
 import { startAuditExport } from "./audit/audit.ts";
 import { Devices, tokenOf } from "./auth/devices.ts";
 import { AppLock, LOCK_FREE, remoteAllowed, unlockOf } from "./auth/lock.ts";
+import { Backups } from "./backups/service.ts";
 import { Chats } from "./chats/service.ts";
 import { closeDatabase, openDatabase } from "./db/open.ts";
 import { jobs as jobsTable } from "./db/schema.ts";
@@ -93,6 +94,8 @@ export interface DaemonOptions {
   metricsIntervalMs?: number;
   /** Seconds between oraknid-monitor readings (tests: shorter). */
   serverSampleSec?: number;
+  /** How often backup plans are looked at (ms; tests). */
+  backupTickMs?: number;
   /** GitHub's addresses, for tests against a stand-in. */
   github?: { api?: string; web?: string };
   /** What runs a job: The Eye, unless a test replaces it. */
@@ -270,6 +273,15 @@ export async function startDaemon(options: DaemonOptions) {
     ...(options.serverSampleSec ? { sampleEverySec: options.serverSampleSec } : {}),
   });
   serverService.start();
+  // Scheduled, encrypted database backups (ADR-044); the schedule starts once notifications do.
+  const backupPlans = new Backups({
+    db,
+    bus,
+    secrets,
+    servers: serverService,
+    now,
+    ...(options.backupTickMs ? { tickMs: options.backupTickMs } : {}),
+  });
   // A server added while The Eye waits for one: it asks again with it (ADR-042).
   bus.subscribe((e) => {
     if (e.type === "server.added") serverAdded(inbox);
@@ -322,6 +334,7 @@ export async function startDaemon(options: DaemonOptions) {
     // What it reads of mine, as the pages do (ADR-041).
     mail,
     servers: serverService,
+    backups: backupPlans,
     inbox,
     decisions,
     logsDir: paths.logs,
@@ -344,6 +357,7 @@ export async function startDaemon(options: DaemonOptions) {
     uiUrl: () => url,
     ...(options.emailDelayMs ? { emailDelayMs: options.emailDelayMs } : {}),
   });
+  backupPlans.start();
   const recovery = await recover({
     db,
     bus,
@@ -614,6 +628,7 @@ export async function startDaemon(options: DaemonOptions) {
         repos,
         helper,
         servers: serverService,
+        backups: backupPlans,
         mail,
         devices,
         brain,
@@ -695,6 +710,7 @@ export async function startDaemon(options: DaemonOptions) {
       logins.stopAll();
       chats.stopAll();
       serverService.stop();
+      backupPlans.stop();
       await mail.stop();
       nest.stop();
       await supervisor.killAll();
@@ -734,6 +750,7 @@ export async function startDaemon(options: DaemonOptions) {
     budgets,
     projects: projectsService,
     servers: serverService,
+    backups: backupPlans,
     mail,
     devices,
     cliToken: devices.cliToken,

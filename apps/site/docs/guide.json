@@ -3,6 +3,7 @@
   ["jobs", "Jobs and The Eye", "Starting work, following it, talking to The Eye."],
   ["legs", "Legs", "The agents and models Oraknid hands work to."],
   ["projects", "Projects, repos and servers", "Where work happens, and what it may reach."],
+  ["backups", "Backups", "Your servers' databases, on a schedule, encrypted, checked."],
   ["phone", "Your phone, from anywhere", "Pairing, the PIN, and The Nest."],
   ["mail", "Mail", "Your accounts, and agents that draft for you."],
   ["security", "Security", "What keeps your computer yours."],

@@ -104,6 +104,7 @@ import { z } from "zod";
 import { AuditQuery, searchAudit } from "../audit/audit.ts";
 import type { Devices } from "../auth/devices.ts";
 import { type AppLock, IDLE_CHOICES, Pin } from "../auth/lock.ts";
+import type { Backups } from "../backups/service.ts";
 import type { Chats } from "../chats/service.ts";
 import {
   attempts as attemptsTable,
@@ -179,6 +180,7 @@ import type { Repos } from "../workspace/github-repos.ts";
 import type { Projects } from "../workspace/projects.ts";
 import { jobResult, mergeJob, taskDiff } from "../workspace/result.ts";
 import { projectFrom } from "../workspace/sources.ts";
+import { backupsRouter } from "./backups.ts";
 import {
   Activity,
   activity,
@@ -235,6 +237,8 @@ export interface ApiContext {
   helper: Helper;
   /** My servers (ADR-026). */
   servers: Servers;
+  /** Scheduled, encrypted database backups (ADR-044). */
+  backups: Backups;
   /** My mail (ADR-032). */
   mail: MailService;
   devices: Devices;
@@ -799,6 +803,8 @@ export const router = {
       .handler(({ context: c, input }) => guard(() => c.servers.remove(input.id))),
     ...serverInsightRoutes,
   },
+  /** Database backups: plans, runs, keys, Verify, Restore (ADR-044). */
+  backups: backupsRouter,
   /** The Oraknid helper: what I ask in words, done through this API (ADR-024). */
   helper: {
     conversation: base

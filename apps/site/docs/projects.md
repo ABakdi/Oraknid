@@ -40,6 +40,8 @@ Give a server to a project, with a **role** there (testing, staging, productionâ
 
 When work needs a server, say which: "deploy to staging", or "on vps-2". The Eye finds it by its role or its name and only asks you to confirm ("Deploy to production, vps-2?"). If you don't say, it asks with your servers, the project's by role first, then **Add a new server**, which sends you to the add dialog and asks again as soon as it's added. **Production** (a role named so, or one you mark) is always confirmed, even when it's the only server. Your choice is kept for the job and saved to the project with its role. Anything that changes the server goes through your approvals, and the document is brought up to date after.
 
+A server's databases can be backed up on a schedule, encrypted, to this computer or another server: see [Backups](/docs/backups.html).
+
 ## Terminal
 
 **Terminal** opens shells on your computer or your servers, in tabs, side by side or in a grid. It is off until you turn it on: it is a full shell as you.

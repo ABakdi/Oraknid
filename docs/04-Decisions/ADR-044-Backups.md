@@ -46,4 +46,52 @@ set up from the web interface or by asking the helper.
   container it always does).
 - Restoring is mine: an agent can propose it, never run it.
 
+## As built (2026-10-03, M13.13)
+- **Plans, runs, keys** in SQLite (migration 0033: `backup_plans`,
+  `backup_runs`, `backup_keys`); passwords (`backup.plan.<id>.password`)
+  and age private keys (`backup.key.<id>`) in the keychain
+  ([[Servers]] → Backups, [[Data-Map]]).
+- **The dump** is one command over the server's SSH connection: the
+  password is the first line of its stdin, read into a shell variable,
+  exported under the tool's own name (`PGPASSWORD`, `MYSQL_PWD`,
+  `REDISCLI_AUTH`) and handed on by name (`docker exec -i -e NAME`);
+  MongoDB's tools get a `--config` file made for the run (0600) and
+  removed. Redis: `BGSAVE`, waited for, then its RDB file. The output
+  streams through zstd, age (with a key) and a SHA-256 tap into
+  `<file>.part`, renamed once the dump ended well; to another server
+  through its own SSH connection. A command at the far end that stops
+  early ends the stream instead of leaving it waiting.
+- **zstd**: Node's own (`node:zlib`, Node 22.15 and later), so nothing
+  is installed; on an older Node, the `zstd` program if it's there,
+  otherwise a run fails saying so. **age**: the `age-encryption`
+  package (by age's author, JavaScript, streaming), X25519 keys; files
+  read with `age -d -i key.txt file.zst.age | zstd -d`.
+- **Schedule** in this computer's time (`@oraknid/core` → `nextRun`,
+  cron's rules for both day fields); looked at every 30 s; a time more
+  than 10 minutes past is a *missed* run, run once when Oraknid starts.
+  Retention: `toPrune`, the newest good backup always kept.
+- **Verify**: checksum, decrypt, decompress, and the dump's own header
+  and ending. **Restore**: `backups.prepareRestore` (what it replaces,
+  a token for five minutes) then `backups.restore` with the database's
+  name typed back; into the plan's database or another (its password for
+  that restore only). PostgreSQL dumps are plain SQL with `--clean
+  --if-exists --no-owner --no-privileges`, so they restore into another
+  database; MongoDB renames with `--nsFrom/--nsTo`; Redis's file is put
+  in place and Redis stopped without saving, its container started
+  again (a Redis keeping an append-only file is refused, in words).
+- **Away from home**: changing plans and keys, taking a private key and
+  restoring need full rights (`HOME_ONLY`); running and verifying don't.
+- **The helper**: `list_backups`, `create_backup_plan`,
+  `update_backup_plan`, `run_backup`, `verify_backup`,
+  `make_backup_key`; it asks first for a plan writing on a server (a
+  server destination, Redis, SQLite), for a changed target or
+  destination, and for every run; no password in its inputs, no private
+  key in what it sees, no restore.
+- **Web**: Settings → Backups (plans, latest backups, keys) and
+  a server's Backups tab (`ServerBackupsTab`), which offers the
+  databases ADR-043 finds (`servers.databases`) to pick from in a new
+  plan: a container's by its name, a host service by its port.
+- **Not yet**: a backup can't be downloaded from the web page (it's a
+  file in its folder); plans can't back up to object storage.
+
 Related: [[ADR-043-Server-Insight]] · [[ADR-026-Servers]] · [[Security]] · [[Business-Rules]] · [[ADR-041-Docs-And-A-Guiding-Helper]]

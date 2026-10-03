@@ -302,7 +302,7 @@ dialog; nothing wider than the screen.
 ### M13.12 — What runs on a server ([[ADR-043-Server-Insight]])
 - [x] Docker containers, images, volumes and compose projects; databases; the reverse proxy and its sites; traffic; logs live
 - [x] A server's page in tabs; restart a container or a service, asked first; the helper reads it all
-- [~] SQLite files from the state document, and sizes inside containers: wait for the credentials of ADR-044 (M13.13); the light reading every few minutes became a part of every discovery
+- [~] SQLite files from the state document, and sizes inside containers: not read yet. ADR-044 (M13.13) now keeps a database's credentials, per backup plan, but Databases doesn't use them; a SQLite file is backed up by describing it in a plan. The light reading every few minutes became a part of every discovery
 
 Tested (M13.12, 2026-10-03): `pnpm check` green. oraknid-monitor
 (`apps/daemon/src/servers/monitor.test.ts`): the real script under `sh`
@@ -353,10 +353,47 @@ hand and fixed: a database process inside a container showed twice; the
 log picker squeezed the search on a phone.
 
 ### M13.13 — Scheduled, encrypted backups ([[ADR-044-Backups]])
-- [ ] Backup plans per database (Docker or not): schedule, destination (this computer or another server), retention, credentials in the keychain
-- [ ] Encryption with age: keys made and kept in the web interface
-- [ ] Runs recorded, failures notified, Verify; Restore always mine
-- [ ] The helper sets plans up, runs and verifies them
+- [x] Backup plans per database (Docker or not): schedule, destination (this computer or another server), retention, credentials in the keychain
+- [x] Encryption with age: keys made and kept in the web interface
+- [x] Runs recorded, failures notified, Verify; Restore always mine
+- [x] The helper sets plans up, runs and verifies them
+
+Tested (M13.13, 2026-10-03): `pnpm check` green, the Docker tests run.
+Daemon, real dumps (`apps/daemon/src/backups/backups.docker.test.ts`):
+throwaway PostgreSQL 16, MariaDB 11, MongoDB 7 and Redis 7 containers
+(passwords required even from inside), reached through a stand-in SSH
+server whose commands run here; every process's command line watched
+every 2 ms during each dump and restore never held the password, nor
+did the commands sent over SSH or the events. PostgreSQL: encrypted
+with a new age key to this computer (age header, no plain text,
+checksum, size, no `.part` left), verified, restored into a fresh
+container under another name, the two-step token refused with the
+wrong word and once used; a wrong password and a missing container
+fail in words, notify ("Backup failed: …"), leave no file. MariaDB:
+streamed to a real sshd in a container as a second server, three runs
+with a count of two (the oldest gone from that server, files 600),
+verified, a lost row restored. MongoDB: archive, verified, no password
+file left in the container, restored into a fresh one. Redis: BGSAVE
+and its RDB, verified, restored into a fresh container that came back
+with the key. Without Docker (`backups.test.ts`): SQLite on the host,
+encrypted, pruned by count, verified, a changed byte and a missing
+private key caught, restored; keys made, exported once, imported,
+kept while needed; a missed run with a fake clock (Oraknid off at
+03:30, back at 09:00: one *missed* run, said so; then a scheduled one;
+paused, none); the helper's confirmations and its lack of a password,
+a private key or a restore; away-from-home rights. Core: schedules and
+cron lines, retention. Web (`backups.test.tsx`): the plan form with a
+found database, a cron line, a server destination and a password; one
+on the host; an edit keeping the kept password; a key's private half
+shown once and never again; Restore in two steps. Help map: every new
+id in the screens. By hand on a sample daemon (temp data dir, free
+port, stand-in keychain and SSH, a throwaway Postgres): Settings →
+Backups at desktop width and at 390 px (no sideways scroll), the plan
+form, a failed plan's error, Verify's result, the restore's second step;
+after merging ADR-042 and ADR-043, a server's Backups tab on a set-up
+server offering the databases `servers.databases` found (a Postgres
+container picked fills its kind and name) at desktop and 390 px; a web
+test covers that mapping.
 
 ## Exit criterion
 

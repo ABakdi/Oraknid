@@ -13,6 +13,7 @@ export const DEFAULT_ROUTES: Record<NotifyEvent, Route> = {
   recovered: { desktop: true, push: true, email: "never" },
   "leg.unavailable": { desktop: false, push: false, email: "never" },
   security: { desktop: true, push: true, email: "now" },
+  "backup.failed": { desktop: true, push: true, email: "now" },
 };
 
 export const routeFor = (event: NotifyEvent, mine: Partial<Record<NotifyEvent, Route>>): Route =>

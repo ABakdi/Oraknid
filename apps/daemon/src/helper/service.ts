@@ -12,6 +12,7 @@ import {
 import { wrapUntrusted } from "@oraknid/core";
 import { asc, desc, eq } from "drizzle-orm";
 import { z } from "zod";
+import type { Backups } from "../backups/service.ts";
 import type { Db } from "../db/open.ts";
 import { helperMessages, inboxItems, jobs } from "../db/schema.ts";
 import type { JobRunner } from "../engine/runner.ts";
@@ -32,6 +33,7 @@ import type { ToolRegistry } from "../tools/registry.ts";
 import type { GitHub } from "../workspace/github.ts";
 import type { Projects } from "../workspace/projects.ts";
 import { projectFrom } from "../workspace/sources.ts";
+import { BACKUP_ACTIONS } from "./backups-actions.ts";
 
 // The Oraknid helper (ADR-024): I say what I want in words; one reasoning
 // call answers and names actions from a fixed catalogue, which run through
@@ -52,6 +54,20 @@ export interface HelperDeps {
   tools: ToolRegistry;
   mail: Pick<MailService, "accounts" | "folders" | "threads" | "thread">;
   servers: Pick<Servers, "list" | "insight">;
+  /** Database backups (ADR-044): plans, runs and keys, never a restore. */
+  backups?: Pick<
+    Backups,
+    | "plans"
+    | "plan"
+    | "runs"
+    | "keys"
+    | "createPlan"
+    | "updatePlan"
+    | "begin"
+    | "verify"
+    | "createKey"
+    | "describe"
+  >;
   inbox: Pick<InboxStore, "list">;
   decisions: Pick<EyeDecisions, "models">;
   logsDir: string;
@@ -60,7 +76,7 @@ export interface HelperDeps {
   now?: () => number;
 }
 
-interface ActionDef {
+export interface ActionDef {
   description: string;
   input: z.ZodType;
   /**
@@ -588,6 +604,7 @@ const ACTIONS: Record<string, ActionDef> = {
     confirm: () => false,
     run: async () => ({ result: "Filled in on your screen, not saved.", link: null }),
   },
+  ...BACKUP_ACTIONS,
 };
 
 for (const name of HELPER_CLIENT_ACTIONS)

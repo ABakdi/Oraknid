@@ -122,6 +122,23 @@ sandbox limits damage, but it doesn't make that safe.
   and every attempt is in the audit log. What a server prints (logs,
   names) reaches the helper as untrusted data.
 
+## Backups (2026-10-03, [[ADR-044-Backups]])
+- A database's password is in the keychain, given to the dump on the
+  server as the first line of its stdin and handed on in the
+  environment by name (`docker exec -e NAME`), or for MongoDB in a file
+  only its user can read, removed when the run ends: never on a command
+  line (tested by watching every process's command line during real
+  dumps), never in a log or an event; a tool's error is scrubbed of it.
+- age private keys are made by Oraknid and kept in the keychain; I can
+  take one away once. They are used only for Verify and Restore, never
+  shown again, never given to the helper or an agent.
+- Backups are written mine-only (0600 in 0700 folders here, `umask
+  077` on a server), as `.part` until the dump ends well.
+- Restoring always takes two steps (what it replaces, then the
+  database's name typed back) and is only mine: no agent tool reaches
+  backups, and the helper has no restore action. Away from home,
+  changing plans or keys and restoring need a device with full rights.
+
 ## Mail
 - Mail passwords (app passwords) are in the keychain, never in SQLite.
   An account is saved only once its incoming server (IMAP or POP3) and

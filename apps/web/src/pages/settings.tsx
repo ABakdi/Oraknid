@@ -3,6 +3,7 @@ import type React from "react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AwayCard, PhoneCard } from "@/components/away-card";
+import { BackupsSettings } from "@/components/backups";
 import { ErrorNote, Loading, PageHeader } from "@/components/common";
 import { useConfirm } from "@/components/confirm";
 import { GitHubCard } from "@/components/github-card";
@@ -69,6 +70,7 @@ const TABS = [
   { id: "security", label: "Security" },
   { id: "devices", label: "Devices & phone" },
   { id: "connections", label: "Connections" },
+  { id: "backups", label: "Backups" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -148,6 +150,8 @@ export function SettingsPage({ tab }: { tab?: string }) {
           </Section>
         </>,
       ),
+    // Database backups on my servers (ADR-044).
+    backups: () => wrap(<BackupsSettings />),
   };
   const tabs: PageTab[] = TABS.map((x) => ({
     id: x.id,
@@ -338,6 +342,7 @@ const EVENTS: [NotifyEvent, string][] = [
   ["recovered", "Recovered after a stop"],
   ["leg.unavailable", "A Leg became unavailable"],
   ["security", "Wrong PINs, a device unpaired"],
+  ["backup.failed", "A backup failed"],
 ];
 const DEFAULTS: Record<NotifyEvent, Route> = {
   approval: { desktop: true, push: true, email: "after-15-min" },
@@ -350,6 +355,7 @@ const DEFAULTS: Record<NotifyEvent, Route> = {
   recovered: { desktop: true, push: true, email: "never" },
   "leg.unavailable": { desktop: false, push: false, email: "never" },
   security: { desktop: true, push: true, email: "now" },
+  "backup.failed": { desktop: true, push: true, email: "now" },
 };
 
 function NotificationsCard() {

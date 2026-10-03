@@ -189,6 +189,11 @@ export class Servers {
     }
   }
 
+  /** The SSH connection to a server, for the backups (ADR-044); the host key is checked as always. */
+  client(id: string): Promise<Client> {
+    return this.#connect(this.row(id));
+  }
+
   /** A ready server's connection, with oraknid-monitor up to date (ADR-043 reads through it). */
   async monitor(id: string): Promise<Client> {
     const r = this.row(id);
