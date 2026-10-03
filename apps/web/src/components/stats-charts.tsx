@@ -239,10 +239,14 @@ export function BurnChart({
   const config: ChartConfig = { used: { label: t("Tokens used"), color: "var(--chart-1)" } };
   const top = Math.max(burn.used, burn.limit ?? 0) * 1.08 || 1;
   const limitColor = burn.hard ? "var(--destructive)" : "var(--warning)";
+  // A single point is drawn from nothing, so it reads as a step and not a dot.
+  const first = burn.points[0];
+  const data =
+    burn.points.length === 1 && first ? [{ t: first.t - bucketMs, used: 0 }, first] : burn.points;
   return (
     <div className="min-w-0 space-y-3" data-chart="burn">
       <ChartContainer config={config} className="w-full min-w-0" style={{ height }}>
-        <AreaChart data={burn.points} margin={{ left: 0, right: 8, top: 8 }}>
+        <AreaChart data={data} margin={{ left: 0, right: 8, top: 8 }}>
           <CartesianGrid vertical={false} />
           {TimeAxis({ bucketMs })}
           <YAxis
