@@ -55,6 +55,9 @@ const ownerFirst = (a: SilkEntry, b: SilkEntry) =>
  * a workspace digest. When it doesn't fit, the oldest entries are cut to
  * their titles first, then the digest is trimmed; the task never is.
  */
+/** A check Oraknid answers itself, outside the sandbox (ADR-038): named so to the Leg. */
+const OWN_CHECK = /^\s*oraknid\s+github-/;
+
 export function buildContextPack(p: PackInput): Pack {
   const live = current(p.entries);
   const standing = live
@@ -87,7 +90,15 @@ export function buildContextPack(p: PackInput): Pack {
     p.task.instructions,
     `**You may change only:** ${p.task.scope.length ? p.task.scope.join(", ") : "(nothing — this task changes no files)"}`,
     p.task.verify.length
-      ? `**It is done when these pass (Oraknid runs them itself):**\n${p.task.verify.map((v) => `- \`${v}\``).join("\n")}\n\nIf a check itself looks wrong (it fails for a reason that has nothing to do with your work), don't investigate it: finish the work, then say DONE and why the check is wrong. Oraknid reviews its checks.`
+      ? `**It is done when these pass (Oraknid runs them itself):**\n${p.task.verify
+          .map((v) =>
+            OWN_CHECK.test(v)
+              ? `- \`${v}\` — Oraknid's own check of GitHub, run after you finish; there is no \`oraknid\` command for you, so don't run it`
+              : `- \`${v}\``,
+          )
+          .join(
+            "\n",
+          )}\n\nIf a check itself looks wrong (it fails for a reason that has nothing to do with your work), don't investigate it: finish the work, then say DONE and why the check is wrong. Oraknid reviews its checks.`
       : "",
   ]
     .filter(Boolean)

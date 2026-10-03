@@ -126,7 +126,10 @@ async function until(api: Api, id: string, states: string[], ms = 8000): Promise
 async function replies(api: Api, projectId: string, n: number) {
   const end = Date.now() + 5000;
   for (;;) {
-    const c = await api.projects.conversation({ id: projectId });
+    // The Eye's replies to me; what it says on its own is its report (ADR-045).
+    const c = (await api.projects.conversation({ id: projectId })).filter(
+      (m) => m.action?.intent !== "report",
+    );
     if (c.filter((m) => m.author === "eye").length >= n || Date.now() > end) return c;
     await new Promise((r) => setTimeout(r, 20));
   }
@@ -246,6 +249,12 @@ describe("the project's conversation (ADR-034)", () => {
     ]);
     // In order, from every job.
     expect(c.map((m) => m.createdAt)).toEqual([...c.map((m) => m.createdAt)].sort((a, b) => a - b));
+    // Each job's end said once, in the same conversation (ADR-045).
+    const all = await api.projects.conversation({ id: projectId });
+    expect(all.filter((m) => m.action?.report?.kind === "job-done").map((m) => m.jobId)).toEqual([
+      first.jobId,
+      followId,
+    ]);
     expect(await api.jobs.list({ projectId })).toHaveLength(2);
   }, 30_000);
 

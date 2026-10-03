@@ -438,6 +438,35 @@ export type SessionLogPage = z.infer<typeof SessionLogPage>;
 export const EyeIntent = z.enum(["instruction", "task", "context", "later", "stop", "question"]);
 export type EyeIntent = z.infer<typeof EyeIntent>;
 
+/**
+ * What The Eye says on its own in the project's conversation (ADR-045):
+ * a task done, a task left out, the job done, blocked, waiting for me, a
+ * request I denied. One message per event; the text says it in words,
+ * these are what the page shows beside it.
+ */
+export const EyeReport = z.object({
+  kind: z.enum([
+    "task-done",
+    "task-left-out",
+    "job-done",
+    "blocked",
+    "waiting",
+    "denied",
+    "cancelled",
+    "folder-restored",
+  ]),
+  taskId: Id.nullable().default(null),
+  /** Short facts: the branch, its commits, where it was pushed (with a link). */
+  facts: z
+    .array(
+      z.object({ label: z.string(), value: z.string(), href: z.string().nullable().default(null) }),
+    )
+    .default([]),
+  /** What's left to me: merge it, a check by hand. */
+  todo: z.array(z.string()).default([]),
+});
+export type EyeReport = z.infer<typeof EyeReport>;
+
 export const EyeMessage = z.object({
   id: Id,
   jobId: Id,
@@ -447,7 +476,10 @@ export const EyeMessage = z.object({
   text: z.string(),
   action: z
     .object({
-      intent: EyeIntent,
+      /** What The Eye made of my message; "report" when it speaks up on its own (ADR-045). */
+      intent: z.union([EyeIntent, z.literal("report")]),
+      /** Its report, when it speaks up on its own. */
+      report: EyeReport.nullable().optional(),
       /** What it did, in words: "Recorded as your decision", "Added 2 tasks"… */
       did: z.array(z.string()),
       silkIds: z.array(Id).default([]),

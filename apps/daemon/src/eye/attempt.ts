@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import {
   type Autonomy,
   type Budget,
+  choiceQuestion,
   type Difficulty,
   isProduction,
   type MetricsSample,
@@ -28,6 +29,7 @@ import {
   nextEscalation,
   type Observed,
   type PolicyVerdict,
+  programsOf,
   type RouteCandidate,
   record,
   route,
@@ -69,7 +71,7 @@ import type { WorkTree } from "../workspace/tree.ts";
 import { waitForAnswer } from "./approvals.ts";
 import type { CheckRepair, EyeBrain } from "./brain.ts";
 import { runBuiltinCheck } from "./builtin-checks.ts";
-import { LegStop, legLimits, stopWaiting, trackAttempt } from "./leg-work.ts";
+import { giveToLeg, LegStop, legLimits, stopWaiting, trackAttempt } from "./leg-work.ts";
 
 /** The providers (Leg kinds) for which I allowed same-provider fallback (ADR-009). */
 export const SAME_PROVIDER_FALLBACK = "fallback.sameProvider";
@@ -80,7 +82,8 @@ import { approveAllLikeThis, policyFor } from "./policy.ts";
 export const ALL_LIKE_THIS = "Approve all like this for this job";
 
 import { summarizeShortened } from "../silk/summarize.ts";
-import { guidanceMark, takeGuidance } from "./talk.ts";
+import { dependentsOf, keepsGoingWrong, readKeepsGoingWrong } from "./questions.ts";
+import { addMessage, guidanceMark, takeGuidance } from "./talk.ts";
 import { looksBroken, runVerify, verifyRefusal } from "./verify.ts";
 
 export type TaskRow = typeof tasks.$inferSelect;
@@ -148,7 +151,8 @@ export type AttemptOutcome =
   | { kind: "done"; commit: string | null; commits?: { repo: string; sha: string }[] }
   | { kind: "retry"; reason: string }
   | { kind: "blocked"; reason: string; until: number | null }
-  | { kind: "skipped" }
+  /** Left out by me; `dependents`: the tasks that need it are left out too (ADR-045). */
+  | { kind: "skipped"; dependents?: boolean }
   | { kind: "owner-held" }
   | { kind: "cancel-job"; reason: string }
   /** Its Leg was paused, or its work in the job cancelled: stopped at a safe point, the job goes on. */
@@ -517,8 +521,14 @@ export async function runAttempt(
         : first;
     if (v.verdict === "allow") return { allow: true };
     if (v.verdict === "deny") {
-      observed.forbidden.push(`tried \`${r.command ?? r.tool}\` (${v.reason})`);
-      return { allow: false, message: `Not allowed: ${v.reason}.` };
+      // A forbidden action counts against the Leg (D7); Oraknid's own check is only answered.
+      if (v.drift) observed.forbidden.push(`tried \`${r.command ?? r.tool}\` (${v.reason})`);
+      event("task.refused", {
+        command: (r.command ?? r.tool).slice(0, 300),
+        reason: v.reason,
+        drift: v.drift,
+      });
+      return { allow: false, message: v.message ?? `Not allowed: ${v.reason}.` };
     }
     // Asked once; trying the same refused action again is a gate bypass attempt (D8).
     const key = `${r.tool}:${r.command ?? r.path}`;
@@ -526,15 +536,32 @@ export async function runAttempt(
       observed.gateBypass.push(`tried \`${r.command ?? r.tool}\` again after I refused it`);
       return { allow: false, message: "I already refused that." };
     }
+    const what = r.command ? `run \`${r.command.slice(0, 80)}\`` : `use ${r.tool}`;
     const itemId = d.inbox.open({
       kind: "approval",
       jobId: job.id,
       taskId,
       raisedBy: { legId: leg.legId },
-      title: `${leg.legName} wants to ${r.command ? `run \`${r.command.slice(0, 80)}\`` : `use ${r.tool}`}`,
-      detail: `Task: ${task.title}\nWhy it asks: ${v.reason}.\n\n${r.command ? fence(r.command) : fence(JSON.stringify(r.input, null, 2), "json")}`,
+      title: `${leg.legName} wants to ${what}`,
+      detail: `Task: ${task.title}\nWhy it asks: ${v.reason}.\n\n${r.command ? fence(r.command) : fence(JSON.stringify(r.input, null, 2), "json")}\n\n**If you deny it:** ${leg.legName} is told no and tries another way; if the task can't be done without it, it keeps going wrong and I ask you what to do.`,
       options: ["Approve", "Deny", ALL_LIKE_THIS],
       defaultOption: null,
+      // What each answer does (ADR-045).
+      questions: [
+        choiceQuestion(`Let ${leg.legName} ${what}?`, [
+          { label: "Approve", detail: "It runs this once; the task goes on." },
+          {
+            label: "Deny",
+            detail: `${leg.legName} is told no and tries another way; if it can't, I ask you what to do.`,
+          },
+          {
+            label: ALL_LIKE_THIS,
+            detail: v.gated
+              ? `Every ${v.gated} in this job runs without asking from now on.`
+              : `Every command using ${(r.command ? [...new Set(programsOf(r.command))].join(", ") : r.tool) || "this"} runs without asking in this job.`,
+          },
+        ]),
+      ],
     });
     asked.push(itemId);
     event("task.waiting", { itemId, reason: v.reason });
@@ -560,7 +587,26 @@ export async function runAttempt(
     }
     if (answer === "Approve") return { allow: true };
     deniedGates.add(key);
-    return { allow: false, message: "I denied it. Find another way, or say what you need." };
+    // The consequence, said in the project's conversation (ADR-045).
+    addMessage(
+      d,
+      job.id,
+      "eye",
+      `You said no to ${leg.legName}'s request to ${what} (“${task.title}”). I told it, and it tries another way; if the task can't be done without it, I'll ask you what to do.`,
+      {
+        intent: "report",
+        did: [],
+        silkIds: [],
+        taskIds: [taskId],
+        jobId: null,
+        report: { kind: "denied", taskId, facts: [], todo: [] },
+      },
+    );
+    return {
+      allow: false,
+      message:
+        "The owner denied it. Don't try it again: find another way to finish the task, or, if it can't be done without it, say so and why, then stop.",
+    };
   };
 
   const pack = (): string => {
@@ -596,7 +642,13 @@ export async function runAttempt(
       void summarizeShortened(d, job.id, ws.cwd, built.shortened).catch((e) =>
         console.error("silk summary failed", e),
       );
-    return [built.text, job.layout ? `# The repos\n\n${job.layout}` : "", serversText, githubText()]
+    return [
+      built.text,
+      job.layout ? `# The repos\n\n${job.layout}` : "",
+      GIT_TEXT,
+      serversText,
+      githubText(),
+    ]
       .filter(Boolean)
       .join("\n\n");
   };
@@ -824,33 +876,73 @@ export async function runAttempt(
   };
 
   const ask = async (drift: Drift): Promise<never> => {
+    const jobRow = d.db.select().from(jobs).where(eq(jobs.id, job.id)).get();
+    const others = d.registry
+      .all()
+      .filter(
+        (l) =>
+          l.id !== leg.legId &&
+          !l.paused &&
+          (!job.allowedLegIds.length || job.allowedLegIds.includes(l.id)),
+      );
+    const dropped = dependentsOf(d.db, job.id, taskId);
+    const asking = keepsGoingWrong({
+      task: task.title,
+      leg: `${leg.legName} · ${leg.model}`,
+      evidence: drift.evidence,
+      escalations,
+      others: others.map((l) => ({ id: l.id, name: l.name })),
+      dropped: dropped.map((t) => t.title),
+      folder: ws.cwd,
+      branch: jobRow?.branch ?? null,
+    });
     const itemId = d.inbox.open({
       kind: "question",
       jobId: job.id,
       taskId,
       raisedBy: "eye",
-      title: `"${task.title}" keeps going wrong`,
-      detail: `${leg.legName} · ${leg.model}: ${drift.evidence}.\nEscalations so far: ${escalations.join(", ") || "none"}.\nAnswer with guidance to retry, or choose another option.`,
-      options: ["Retry", "Take it over", "Skip it", "Cancel the job"],
-      defaultOption: "Retry",
+      title: asking.title,
+      detail: asking.detail,
+      options: [],
+      defaultOption: null,
+      questions: asking.questions,
     });
+    // Asked in the project's conversation too (ADR-045); answering there answers the item.
+    addMessage(
+      d,
+      job.id,
+      "eye",
+      `“${task.title}” keeps going wrong on ${leg.legName}: ${drift.evidence}. What should I do?`,
+      {
+        intent: "report",
+        did: [],
+        silkIds: [],
+        taskIds: [taskId],
+        jobId: null,
+        report: { kind: "waiting", taskId, facts: [], todo: [] },
+      },
+      { questions: asking.questions, itemId },
+    );
     // Withdrawn if the attempt stops before I answer (Audit 1 → D1-07).
     asked.push(itemId);
-    const answer = await waitForAnswer(d.inbox, d.bus, itemId, signal);
-    if (answer === "Take it over") throw new EndAttempt({ kind: "owner-held" });
-    if (answer === "Skip it") throw new EndAttempt({ kind: "skipped" });
-    if (answer === "Cancel the job")
+    const text = await waitForAnswer(d.inbox, d.bus, itemId, signal);
+    const answered = d.inbox.get(itemId);
+    const choice = readKeepsGoingWrong(text, answered?.answers ?? null);
+    if (choice.kind === "mine") throw new EndAttempt({ kind: "owner-held" });
+    if (choice.kind === "leave-out")
+      throw new EndAttempt({ kind: "skipped", dependents: choice.dependents });
+    if (choice.kind === "stop")
       throw new EndAttempt({
         kind: "cancel-job",
-        reason: `Cancelled by me after "${task.title}" kept going wrong.`,
+        reason: `Stopped by me after "${task.title}" kept going wrong; the work so far stays on its branch.`,
       });
-    if (answer !== "Retry") {
+    if (choice.advice) {
       d.silk.add({
         jobId: job.id,
         taskId,
         kind: "decision",
         title: `Guidance for ${task.title}`,
-        body: answer,
+        body: choice.advice,
         authoredBy: "owner",
       });
     }
@@ -859,7 +951,19 @@ export async function runAttempt(
       .set({ stepUp: 0, escalation: 0, avoid: [] })
       .where(eq(tasks.id, taskId))
       .run();
-    throw new EndAttempt({ kind: "retry", reason: "retrying with my guidance" });
+    if (choice.kind === "another-leg") {
+      giveToLeg(d.db, job.id, taskId, leg.legId, choice.legId);
+      throw new EndAttempt({
+        kind: "retry",
+        reason: choice.legId
+          ? `given to ${d.registry.get(choice.legId)?.name ?? "another Leg"} by me`
+          : "given to another Leg by me",
+      });
+    }
+    throw new EndAttempt({
+      kind: "retry",
+      reason: choice.advice ? "retrying with my advice" : "retrying, as I asked",
+    });
   };
 
   /** Climbs one step of the ladder for the worst drift seen. `failure` is the last check's output, if it failed. */
@@ -983,6 +1087,44 @@ export async function runAttempt(
         continue;
       }
       turns++;
+      // The job's folder is still a worktree of the project, else put back and the attempt fails
+      // (Jobs-and-Projects → Ending a job, after the piano job).
+      const strayed = safeStrayed(ws.tree);
+      if (strayed.length) {
+        await closeSession("kill");
+        const why = strayed.map((x) => x.problem).join("; ");
+        let restored = true;
+        try {
+          ws.tree.putBack(ws.trash);
+        } catch (error) {
+          restored = false;
+          event("task.folder-not-restored", {
+            reason: error instanceof Error ? error.message : String(error),
+          });
+        }
+        const reason = `The job's folder stopped belonging to the project: ${why}. ${
+          restored
+            ? "Oraknid put it back as a worktree of the project, its files kept, and the task starts again."
+            : "Oraknid couldn't put it back."
+        }`;
+        event("task.folder-restored", { problems: strayed, restored });
+        d.silk.add({
+          jobId: job.id,
+          taskId,
+          kind: "issue",
+          title: `Folder put back: ${task.title}`,
+          body: `${reason} Never run git init, nor move, delete or edit a .git: Oraknid commits the work on the job's branch, and merges and pushes at the end.`,
+          authoredBy: "eye",
+        });
+        d.db
+          .update(tasks)
+          .set({ avoid: [...new Set([...task.avoid, leg.legModelId])] })
+          .where(eq(tasks.id, taskId))
+          .run();
+        finish("failed", false);
+        if (!restored) return { kind: "blocked", reason, until: null };
+        return { kind: "retry", reason };
+      }
       if (end.reason === "rate-limited") {
         await handOff(false);
         await closeSession();
@@ -1292,6 +1434,20 @@ export function isBrokered(tool: string, servers: string[]): boolean {
   const norm = (x: string) => x.replace(/[^A-Za-z0-9_]/g, "_");
   const t = norm(tool);
   return servers.some((s) => t.startsWith(`mcp__${norm(s)}__`) || t.startsWith(`${norm(s)}_`));
+}
+
+/** What every Leg is told about git: the folder stays a worktree, the repo's part is Oraknid's. */
+const GIT_TEXT = `# Git
+
+This folder is a git worktree of the project, on the job's branch. Oraknid commits your work there when its checks pass; merging into the work branch and pushing to GitHub are Oraknid's own steps when the job ends. So don't commit into other branches, merge, push, or run git init, and never move, delete or edit a .git or the project's worktrees: such commands are refused.`;
+
+/** The worktrees that left the project, or none when that can't be told. */
+function safeStrayed(tree: WorkTree): { folder: string; problem: string }[] {
+  try {
+    return tree.strayed();
+  } catch {
+    return [];
+  }
 }
 
 /** A Leg's limit of task sessions at once: its own setting, else one (ADR-016). */
