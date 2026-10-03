@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DaemonEnd, DeviceEnd, newKeyPair, ready } from "@oraknid/tunnel";
@@ -212,5 +212,46 @@ describe("A public Nest (ADR-031)", () => {
     const base = await startPublic({ dataDir: dir });
     await expect(opened(daemon(base, "d-old", "s".repeat(43)))).rejects.toThrow("401");
     expect(readFileSync(join(dir, "daemons.json"), "utf8")).not.toContain("d-old");
+  });
+});
+
+describe("What a Nest shows (ADR-035)", () => {
+  const site = () => {
+    const dir = mkdtempSync(join(tmpdir(), "nest-site-"));
+    mkdirSync(join(dir, "app"));
+    writeFileSync(join(dir, "index.html"), "<title>Oraknid site</title>");
+    writeFileSync(join(dir, "app", "index.html"), "<title>Oraknid loader</title>");
+    return dir;
+  };
+  const serve = async (mode: "public" | "private") => {
+    nest = createNest({ daemons: new Map([["home", "s3cret"]]), mode, publicDir: site() });
+    await new Promise<void>((r) => nest?.server.listen(0, "127.0.0.1", () => r()));
+    return `http://127.0.0.1:${(nest.server.address() as { port: number }).port}`;
+  };
+
+  it("a public Nest shows its site to search engines, not its loader", async () => {
+    const base = await serve("public");
+    const home = await fetch(`${base}/`);
+    expect(await home.text()).toContain("Oraknid site");
+    expect(home.headers.get("x-robots-tag")).toBeNull();
+    const loader = await fetch(`${base}/app/`);
+    expect(await loader.text()).toContain("Oraknid loader");
+    expect(loader.headers.get("x-robots-tag")).toContain("noindex");
+    expect(await (await fetch(`${base}/robots.txt`)).text()).toContain("Disallow: /app/");
+  });
+
+  it("a private Nest has no site: only its loader, a bare not-found elsewhere, indexed nowhere", async () => {
+    const base = await serve("private");
+    for (const path of ["/", "/index.html", "/docs/", "/anything"]) {
+      const r = await fetch(`${base}${path}`);
+      expect(r.status).toBe(404);
+      const body = await r.text();
+      expect(body).toBe("Not found");
+      expect(r.headers.get("x-robots-tag")).toContain("noindex");
+    }
+    const loader = await fetch(`${base}/app/`);
+    expect(await loader.text()).toContain("Oraknid loader");
+    expect(loader.headers.get("x-robots-tag")).toContain("noindex");
+    expect(await (await fetch(`${base}/robots.txt`)).text()).toBe("User-agent: *\nDisallow: /\n");
   });
 });

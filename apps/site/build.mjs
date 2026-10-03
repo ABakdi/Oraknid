@@ -59,6 +59,7 @@ const nav = (active) => `
       <a href="/docs/"${active === "docs" ? ' aria-current="page"' : ""}>Docs</a>
       <a href="/#install"${active === "install" ? ' aria-current="page"' : ""}>Install</a>
       <a class="nav-gh" href="${SITE.repo}" rel="noopener">${icon("github-logo")}<span>GitHub</span></a>
+      <a class="nav-open" href="/app/">${icon("device-mobile")}<span>Open<span class="wide"> Oraknid</span></span></a>
     </nav>
   </div>
 </header>`;

@@ -4,7 +4,7 @@ The Nest is the relay your phone uses to reach Oraknid. Anyone can host one on a
 
 ## Private or public
 
-- **Private** (the default): only the daemons you list can connect. Use it for yourself.
+- **Private** (the default): only the daemons you list can connect. Use it for yourself. It has no site: its address shows only "Not found", and it asks search engines not to index anything. Its certificate is still listed in public Certificate Transparency logs, which name the domain; an unguessable name, or a wildcard certificate, keeps it out of sight.
 - **Public**: any Oraknid daemon can register itself in one click, with limits per address and per daemon. This server is one.
 
 ## One script

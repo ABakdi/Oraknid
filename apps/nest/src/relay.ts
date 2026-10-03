@@ -78,13 +78,21 @@ const same = (a: string, b: string) =>
 // The secrets are long and random, so a plain hash is enough to keep them.
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
+/** What a public Nest lets search engines index: its site, not the loader or the relay. */
+function isSitePath(path: string): boolean {
+  return !/^\/(app(\/|$)|info$|health$|register$|robots\.txt$)/.test(path);
+}
+
 export function createNest(o: NestOptions): { server: Server; close(): Promise<void> } {
   const limits = { ...DEFAULTS, ...o.limits };
   const publicNest = o.mode === "public";
   const app = express();
   app.disable("x-powered-by");
   // Its page is never framed by another site, and loads nothing it doesn't name (Audit 2).
-  app.use((_req, res, next) => {
+  app.use((req, res, next) => {
+    // A private Nest is found by no search engine; a public one only shows its site (ADR-035).
+    if (!publicNest || !isSitePath(req.path))
+      res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
     res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -206,7 +214,20 @@ export function createNest(o: NestOptions): { server: Server; close(): Promise<v
       save();
       res.status(201).json({ id, secret });
     });
-  if (o.publicDir && existsSync(o.publicDir)) app.use(express.static(o.publicDir));
+  app.get("/robots.txt", (_req, res) => {
+    res
+      .type("text/plain")
+      .send(publicNest ? "User-agent: *\nDisallow: /app/\n" : "User-agent: *\nDisallow: /\n");
+  });
+  // A public Nest serves the product site and the loader; a private one only the loader,
+  // and a bare "not found" everywhere else, naming nothing (ADR-035).
+  if (o.publicDir && existsSync(o.publicDir)) {
+    if (publicNest) app.use(express.static(o.publicDir));
+    else app.use("/app", express.static(join(o.publicDir, "app")));
+  }
+  app.use((_req, res) => {
+    res.status(404).type("text/plain").send("Not found");
+  });
   const server = createServer(app);
   const wss = new WebSocketServer({ noServer: true, maxPayload: limits.frameBytes });
 

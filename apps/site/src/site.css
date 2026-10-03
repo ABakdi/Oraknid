@@ -164,12 +164,67 @@ pre {
   align-items: center;
   gap: 6px;
 }
+.nav nav a.nav-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 6px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+.nav nav a.nav-open:hover {
+  background: color-mix(in srgb, var(--accent) 88%, white);
+  color: var(--accent-ink);
+}
 @media (max-width: 640px) {
-  .nav nav a:not(.nav-gh):nth-child(3) {
+  .nav nav a:not(.nav-gh):not(.nav-open):nth-child(3),
+  .nav nav a:not(.nav-gh):not(.nav-open):nth-child(1) {
     display: none;
   }
-  .nav-gh span {
+  .nav-gh span,
+  .nav-open .wide {
     display: none;
+  }
+}
+
+/* The public Nest, right under the hero: this is a working server too. */
+.nest-bar {
+  padding: 28px 0;
+  background: var(--accent-soft);
+}
+.nest-row {
+  display: grid;
+  gap: 20px;
+  align-items: center;
+}
+.nest-copy p:last-child {
+  margin: 0;
+  color: var(--muted);
+  max-width: 70ch;
+}
+.nest-copy .eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.nest-state:not(:empty) {
+  color: var(--muted);
+}
+.nest-state:not(:empty)::before {
+  content: "·";
+  margin-right: 8px;
+}
+.nest-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+@media (min-width: 960px) {
+  .nest-row {
+    grid-template-columns: 1fr auto;
   }
 }
 

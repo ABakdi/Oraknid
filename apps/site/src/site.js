@@ -31,6 +31,18 @@
         } catch {}
       });
     }
+    // Whether registering on this Nest needs an invite.
+    const state = document.querySelector("[data-nest-state]");
+    if (state)
+      fetch("/info")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((i) => {
+          if (i?.mode === "public")
+            state.textContent = i.inviteRequired
+              ? "registering needs an invite"
+              : "open to register";
+        })
+        .catch(() => {});
     // What the page shows arrives once, as it comes into view.
     const io =
       "IntersectionObserver" in window

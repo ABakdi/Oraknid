@@ -38,8 +38,9 @@ flowchart LR
 - E2E with libsodium ([[ADR-017-Nest-E2E-Protocol]]); a VPS with
   Docker Compose and Caddy, `deploy/nest/` ([[ADR-018-Nest-Hosting]]);
   the UI comes from the daemon through the tunnel, only a small loader
-  from The Nest ([[ADR-019-Nest-UI-Serving]]), at `/app/`; its root is
-  the product site ([[ADR-033-Product-Site]]).
+  from The Nest ([[ADR-019-Nest-UI-Serving]]), at `/app/`; a public
+  Nest's root is the product site ([[ADR-033-Product-Site]]), a private
+  one shows nothing and is indexed nowhere ([[ADR-035-Nest-Pages-By-Mode]]).
 - Several daemons per Nest: yes, each with its own id and secret in
   `NEST_DAEMONS`; a public Nest lets daemons register themselves
   ([[ADR-031-Public-Nest]]).

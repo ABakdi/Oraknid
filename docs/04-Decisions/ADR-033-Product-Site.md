@@ -26,8 +26,8 @@ already serves The Nest's loader at `/`, which paired phones open.
   now; `oraknid.com`, the name's own domain, isn't set up yet.
 
 ## Consequences
-- Every Nest built from this repository serves the product site; a
-  self-hosted private Nest shows it too.
+- A public Nest serves the product site; a private one shows no site
+  at all (*changed 2026-10-03*, [[ADR-035-Nest-Pages-By-Mode]]).
 - The guide on the site is for users; the canon (this folder) stays the
   design record.
 
