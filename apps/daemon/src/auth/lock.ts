@@ -296,6 +296,11 @@ const HOME_ONLY = [
   "/projects/createFrom",
   "/projects/setPolicy",
   "/projects/setServers",
+  "/projects/setServerRole",
+  // A project's repos (ADR-042): adding one may clone or make a folder on this computer.
+  "/projects/addRepo",
+  "/projects/detectRepos",
+  "/projects/removeRepo",
   "/projects/setLocalPorts",
   "/projects/delete",
   "/servers/add",

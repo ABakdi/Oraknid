@@ -50,4 +50,61 @@ I name, asking only to confirm.
   with their roles.
 - A one-repo project behaves as before.
 
+## As built (2026-10-03)
+- **The repos** are a column of the project (`projects.repos`: name,
+  folder, branches, link). A project of one repo has one, folder "";
+  migration 0031 made that repo for every git project, its single link
+  of ADR-038 moved into it, and 0032 dropped `projects.github`. The API
+  still shows a project of one repo's link as `github`. Found: a folder
+  that isn't a repo but holds some (two folders down, not inside each
+  other, a submodule being its parent's) is a project of several when
+  added; a folder that is a repo stays one repo until I add or find the
+  others (the Repo tab), its own repo then the first of them. Repos
+  don't change while one of the project's jobs runs.
+- **The job's folder mirrors the project's.** I chose a folder per job
+  (`.oraknid/worktrees/<job>`) holding each repo it touches as a worktree
+  on the job branch at that repo's folder, rather than a worktree beside
+  each repo: paths, scopes, checks and what a Leg reads are the
+  project's own, a task needs no idea of where each repo lives, and a
+  check like `cd web && npm test` works unchanged. A repo is opened
+  lazily: when the plan's tasks or the task about to run name it in
+  their scope, or when a Leg writes in its folder (moved aside, the
+  worktree made, the files put back). When the project's folder is one
+  of the repos, the job's folder is its worktree and the others sit in
+  it, left out of its snapshots and commits. Git finds a worktree by its
+  folder's name, and several jobs' `web` share one, so Oraknid looks for
+  the record whose path is the worktree's.
+- **One code path, two trees.** A job's work tree is either one git work
+  tree (a project of one repo, or a shadow repo: exactly as before) or
+  the several-repo tree; checkpoints, the scope's changes (D1), putting
+  back, rollback, diffs and commits go through it. Each repo keeps the
+  job's checkpoints on its own refs; a repo opened after a checkpoint
+  counts from where its worktree started (`refs/oraknid/<job>/start`).
+  Files outside every repo (no repo at the top) are changes too: out of
+  scope, they go to the trash. A task's commits are one per repo it
+  changed, `feat(web): …` when it changed several, kept on the task
+  (`tasks.commits`). Tasks of such a job run one at a time.
+- **Merge** computes every repo's merge (`git merge-tree`) before
+  merging any: a conflict in one merges none.
+- **The github tool** takes `repo`: a repo's name in the project, or an
+  owner/name to push elsewhere (which asks, as before). In a project of
+  several, a repo of several is pushed from its own folder; a call that
+  names none while several are linked is refused by the tool with the
+  list, so it isn't asked. `repo_info` with no repo says each repo's.
+  The built-in checks take `--repo <name>` (or `--repo=<name>`).
+- **The Eye asks for the links** of the repos a task is about in one
+  question set (`repo:<name>` per repo); an existing repo's visibility
+  is read from GitHub.
+- **Servers' roles** are a column of the project (`server_roles`, by
+  server id: role, production mark or null). The server chosen for a
+  job is the setting `job.server.<job>`, with the ones I declined. "My
+  message" is the task, the job's goal and my latest message to The
+  Eye in that job, not my answers. The question that waits for a new
+  server is an inbox item answered by itself when a server is added
+  (the `server.added` event).
+- **Not built**: tasks side by side in a job across several repos (it
+  needs a worktree per task per repo and an all-or-nothing merge of
+  them); renaming a repo or changing its branches in the UI (a repo
+  taken out and added again takes the branches it has).
+
 Related: [[ADR-038-Project-Accounts]] · [[ADR-026-Servers]] · [[Jobs-and-Projects]] · [[ADR-016-Parallel-Work]] · [[ADR-037-Questions-With-Options]]

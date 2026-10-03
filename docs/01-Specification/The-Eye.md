@@ -118,6 +118,11 @@ the earliest quota reset, and resumes on its own.
 After each Leg turn The Eye decides what comes next. It doesn't
 wait for me:
 
+In a project of several repos ([[ADR-042-Several-Repos-And-Servers]]),
+both take `--repo <name>` (its name in the project), as
+`oraknid github-branch <branch> --repo web`; without it, the project's
+only repo, or its only linked one.
+
 BR-1 holds: a task is still done only when Oraknid's own run of its
 checks passes; the change of a check is visible, never silent.
 
@@ -192,6 +197,52 @@ New work for a job that has ended is kept for later instead. If no Leg
 can think (none healthy, or the call fails), my message is kept as my
 decision and passed on anyway: my words are never lost. The
 conversation is kept with the job and shown on its page.
+
+## A project's repos and servers (2026-10-03)
+
+Before a task's attempt, The Eye makes sure the task has what it needs,
+asked once in the project's conversation ([[ADR-038-Project-Accounts]],
+[[ADR-042-Several-Repos-And-Servers]]):
+
+- **GitHub** (the task's words name GitHub or a pull request): every repo
+  the task is about has a link. In a project of several repos those are
+  the repos its scope names when it names some of them, else the ones its
+  words name, else all. With one account, a repo whose folder's `origin`
+  is one of its repositories is linked to it at once; the others are
+  asked in one question set: the account when there are several, a
+  repository per repo (a new one named after the project, `site-api` for
+  the repo `api` of `site`, recommended; or one of mine; or typed), and
+  who can see a new one. A repo that exists keeps the visibility GitHub
+  says. Then the task is brought to the links: a note naming each repo's
+  link, and its checks that call `gh` or read a remote become Oraknid's
+  own, one per repo it is about (`oraknid github-repo --repo api`).
+- **A server** (the task deploys, or works on the server, the VPS):
+  chosen once per job, kept in the setting `job.server.<job>`.
+  - My words name one (the task, the job's goal, or my latest message to
+    The Eye about this job, not my answers to its questions): its name
+    among the project's servers then all mine, or a role among the
+    project's (`production` or `prod`, `staging`, `testing`, or any role
+    a server has there). The Eye asks only to confirm: `confirm`, "Deploy
+    to production, vps-2?", Yes recommended. No: that one isn't proposed
+    again and the options follow.
+  - I name none: the project's only server is used and said, unless it
+    is production; otherwise The Eye asks with options, the project's
+    servers by role (production last, never recommended), then my other
+    servers, then **Add a new server** and **Go on without a server**, and
+    a role for a server new to the project.
+  - **Add a new server** posts a link to Servers → Add a server
+    (`/servers?add=1`) and a waiting question (I've added it · Go on
+    without a server); the job waits on it. Adding a server answers it
+    by itself, and The Eye asks again with the new server recommended.
+  - **Production** (a role named so, or a server I marked) is always
+    confirmed, even as the project's only server; choosing it from the
+    options is my confirmation.
+  - My choice is saved to the project with its role (one I named, or
+    answered), and the job's sessions are told which server is the job's.
+
+Triage is told the project's repos when there are several and its
+servers with their roles, so a deploy task names in its title the server
+or role I named.
 
 ## Evaluation
 

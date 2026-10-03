@@ -51,6 +51,7 @@ import {
   NewMailAccount,
   NewProject,
   NewProjectFrom,
+  NewProjectRepo,
   NewServer,
   NewTool,
   NotificationChannel,
@@ -61,11 +62,13 @@ import {
   ProfileOverrides,
   ProjectBudget,
   ProjectBudgetView,
+  ProjectRepo,
   ProjectView,
   PruneRequest,
   PushSubscriptionInput,
   QuestionAnswers,
   QuietHours,
+  ServerRole,
   ServerSample,
   ServerState,
   ServerView,
@@ -597,9 +600,18 @@ export const router = {
           ),
         ),
       ),
-    /** Its GitHub link (ADR-038): the account and repository Oraknid uses for it, or none. */
+    /**
+     * Its GitHub link (ADR-038): the account and repository Oraknid uses for
+     * it, or none. In a project of several repos, one repo's (ADR-042).
+     */
     setGitHub: base
-      .input(z.object({ id: z.string(), link: GitHubLinkInput.nullable() }))
+      .input(
+        z.object({
+          id: z.string(),
+          link: GitHubLinkInput.nullable(),
+          repo: z.string().optional(),
+        }),
+      )
       .handler(({ context: c, input }) =>
         guard(async () => {
           if (input.link) {
@@ -607,7 +619,42 @@ export const router = {
             if (!logins.includes(input.link.account))
               throw new Error(`No GitHub account ${input.link.account} in Oraknid.`);
           }
-          c.projects.setGitHub(input.id, input.link);
+          c.projects.setGitHub(input.id, input.link, "owner", input.repo ?? null);
+        }),
+      ),
+    /** A server's role in the project (ADR-042): testing, staging, production… */
+    setServerRole: base
+      .input(z.object({ id: z.string(), serverId: z.string(), role: ServerRole }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.projects.setServerRole(input.id, input.serverId, input.role)),
+      ),
+    /** Looks again for the git repositories in its folder (ADR-042). */
+    detectRepos: base
+      .input(z.object({ id: z.string() }))
+      .output(z.array(ProjectRepo))
+      .handler(({ context: c, input }) => guard(() => c.projects.detectRepos(input.id))),
+    /** A repo added to it: a folder of it, a new empty one, or a clone (ADR-042). */
+    addRepo: base
+      .input(NewProjectRepo)
+      .output(ProjectView)
+      .handler(({ context: c, input }) =>
+        guard(async () => {
+          const p = await c.projects.addRepo(
+            input,
+            (url, dest, login) => c.github.clone(url, dest, login),
+            (fullName) => c.github.cloneUrl(fullName),
+          );
+          return { ...p, jobCount: c.projects.list().find((x) => x.id === p.id)?.jobCount ?? 0 };
+        }),
+      ),
+    /** A repo no longer part of it; its folder stays (ADR-042). */
+    removeRepo: base
+      .input(z.object({ id: z.string(), name: z.string() }))
+      .output(ProjectView)
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          const p = c.projects.removeRepo(input.id, input.name);
+          return { ...p, jobCount: c.projects.list().find((x) => x.id === p.id)?.jobCount ?? 0 };
         }),
       ),
     /** Its budget across its jobs, and what they used (ADR-034). */

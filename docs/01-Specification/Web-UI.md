@@ -217,8 +217,25 @@ the address (`/projects/<id>/<tab>`):
   **Open on GitHub**; below, the link itself: Change and Unlink (a second
   step), or "Link a repo" (account, a new or an existing repository,
   owner, name, who can see it). A repo still to be created says so.
-- **Settings**: its **servers**, then the folder and branches, archive
-  or delete, and the project's command rules.
+  Under them, **Its repo**: the project's one repo, its folder and
+  branches, **Add a repo** and **Find repos in its folder**. A project of
+  several repos ([[ADR-042-Several-Repos-And-Servers]]) shows **Its
+  repos** first (each repo's name, folder, release / work branches and
+  GitHub repo or "not on GitHub yet", and an ✕ to take it out, with a
+  confirmation), then a section per repo with what's on its GitHub repo
+  and its own link card ("GitHub repo of api"). Add a repo is a dialog:
+  where from (a folder of the project that is a repo, a new empty repo,
+  a clone of my GitHub repo or of a git URL), the folder, its name.
+- **Settings**: its **servers**, each ticked one with its role (a word,
+  suggestions testing, staging, production, saved when I leave the
+  field) and a **Production** mark, "live" beside a production server;
+  then its repos (the same card), the folder and branches (each repo's
+  for several), archive or delete, and the project's command rules.
+- In the projects list, a project of several repos says how many; New
+  project says how many repos it found, and their names. A job's Result
+  lists each repo's branch, merged or not, and its commits; Merge
+  merges each. `/servers?add=1` opens Servers' add dialog (The Eye's link
+  when it waits for a new server).
 - **Skills**, **Servers**, **Network** (the ports on this computer its
   jobs may reach, like a local database; [[Sandboxing]]).
 

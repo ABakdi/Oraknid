@@ -8,6 +8,9 @@ import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 import type { SilkStore } from "../silk/store.ts";
 import { rollback, shadowRepo, worktreeGit } from "../workspace/git.ts";
+import { viewOf } from "../workspace/projects.ts";
+import { isSeveral } from "../workspace/repos.ts";
+import { multiTreeOf } from "../workspace/tree.ts";
 
 // My controls over a job's work (Jobs-and-Projects → Controls, BR-18).
 
@@ -92,6 +95,15 @@ export async function rollbackTask(d: ControlDeps, taskId: string, attempt: numb
     throw new Error("Pause the job before rolling back.");
   }
   const project = d.db.select().from(projects).where(eq(projects.id, job.projectId)).get();
+  // A project of several repos: each repo the job opened goes back to that checkpoint (ADR-042).
+  if (project && isSeveral(viewOf(project).repos)) {
+    const result = await multiTreeOf(d.db, job, viewOf(project), d.tmpDir).rollback(
+      `refs/oraknid/${job.id}/${taskId}/${attempt}`,
+      `${project.workspacePath}/.oraknid/trash`,
+    );
+    emit(d, t.jobId, "task.rolled-back", { taskId, attempt, ...result });
+    return result;
+  }
   // A task that ran beside others has its own worktree (ADR-016).
   const tree = t.worktree ?? job.worktree;
   const g = project?.shadow

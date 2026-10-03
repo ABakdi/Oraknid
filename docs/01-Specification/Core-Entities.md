@@ -34,7 +34,9 @@ erDiagram
 | `createdAt`, `archivedAt` | |
 | `skillIds` | The skills its jobs may use; The Eye picks one per job (Phase 8). Empty: the default. |
 | `serverIds` | The servers its jobs may use, none by default ([[Servers]]). |
-| `github` | Its GitHub link, or none (2026-10-03, [[ADR-038-Project-Accounts]]): `account` (the login whose token is used), `owner`, `name`, `visibility` (`public` · `private`), `origin` (`new`: Oraknid creates it · `existing`), `ready` (false until a new one is created), `linkedAt`. |
+| `serverRoles` | Each of its servers' role in it, by server id (2026-10-03, [[ADR-042-Several-Repos-And-Servers]]): `role` (a word of mine: testing, staging, production…) and `production` (true or false when I marked it; null: production when the role is `production` or `prod`). |
+| `repos` | Its git repositories (2026-10-03, [[ADR-042-Several-Repos-And-Servers]]): one with `folder` "" when its folder is the repo, several each in its folder, none when it isn't a git repo. Each: `name` (in the project; its folder's last part by default), `folder`, `releaseBranch`, `workBranch`, `github` (its link, or none: `account`, `owner`, `name`, `visibility`, `origin` new or existing, `ready`, `linkedAt`, [[ADR-038-Project-Accounts]]). For a project of one repo, the project's own branches are its repo's. |
+| `github` | In the API's view only: the link of a project of one repo (its repo's), null for several. Until 2026-10-03 the project's single link was stored here; migration 0031 moved it into its one repo. |
 
 Its local ports (what its jobs' sandboxes may reach on this computer)
 are a setting, `project.localPorts.<project>` ([[Sandboxing]]). Its
@@ -62,7 +64,8 @@ folder, the job branches and the worktrees in it stay).
 | `state` | See below. |
 | `pauseReason`, `blockedReason` | Written in my language, shown in the UI. |
 | `resumeState` | The active state a `paused`, `waiting` or `blocked` job returns to. |
-| `worktree`, `branch` | Where the job works (Sandboxing). |
+| `worktree`, `branch` | Where the job works (Sandboxing). In a project of several repos, `worktree` is the job's folder and `branch` the job branch's name in every repo. |
+| `repos` | In a project of several repos: the ones it opened, each `{name, folder, worktree}`, the worktree at its folder inside the job's folder ([[ADR-042-Several-Repos-And-Servers]]). |
 | `verify`, `verifyRound` | Job-level checks (the skill's, mine, the plan's); rounds of verification so far. |
 | `blockedUntil` | When a job blocked on quota resumes on its own. |
 | `waived`, `unsandboxed` | Gates I waived; whether I chose to run it without the sandbox. |
@@ -124,6 +127,7 @@ a version number that increases on every plan change.
 | `stepUp`, `avoid`, `escalation` | Escalation state across attempts (ADR-013, Drift-Control). |
 | `pinnedModelId`, `ownerHeld` | I pinned it to a Leg model; I took it over (BR-18). |
 | `position`, `planKey` | Plan order, and the plan's own key for the task. |
+| `commit`, `commits` | Its work's commit once done; in a project of several repos, its commit in each repo it changed (`{repo, sha}`), `commit` the first. |
 | `budget` | Optional per-task limits. |
 
 ## Attempt and Session

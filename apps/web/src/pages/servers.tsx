@@ -28,7 +28,10 @@ export function ServersPage({ id, tab }: { id?: string; tab?: string }) {
     topics: ["overview"],
     refreshOn: (e) => e.type.startsWith("server."),
   });
-  const [adding, setAdding] = useState(false);
+  // `/servers?add=1`: The Eye's link when it waits for a new server (ADR-042).
+  const [adding, setAdding] = useState(
+    () => typeof window !== "undefined" && new URLSearchParams(window.location.search).has("add"),
+  );
   if (servers.error) return <ErrorNote error={servers.error} />;
   if (servers.loading) return <Loading />;
   const list = servers.data ?? [];

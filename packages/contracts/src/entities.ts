@@ -7,6 +7,43 @@ import { Question, QuestionAnswer } from "./questions.ts";
 
 // ── Project ─────────────────────────────────────────────────────────
 
+/** A repo's name in its project (ADR-042): its folder's name by default. */
+export const RepoName = z
+  .string()
+  .regex(/^[A-Za-z0-9._-]{1,100}$/, "letters, digits, dots, dashes and underscores")
+  .refine((n) => n !== "." && n !== "..", "a name");
+
+/**
+ * One git repository of a project (ADR-042): the project's folder itself
+ * (folder "") for a project of one repo, or a folder in it for a project of
+ * several. Each has its own branches and, if I want, its GitHub link.
+ */
+export const ProjectRepo = z.object({
+  name: RepoName,
+  /** Its folder inside the project's, parts joined by "/"; "" is the project's folder itself. */
+  folder: z.string(),
+  releaseBranch: z.string().min(1),
+  workBranch: z.string().min(1),
+  /** Its GitHub account and repository, used by Oraknid's github tool (ADR-038). */
+  github: GitHubLink.nullable().default(null),
+});
+export type ProjectRepo = z.infer<typeof ProjectRepo>;
+
+/**
+ * A server's role in a project (ADR-042): a word I choose (testing,
+ * staging, production…). Production is a role named so, or one I mark.
+ */
+export const ServerRole = z.object({
+  role: z.string().max(40).default(""),
+  /** Marked by me; null: production when the role is "production" or "prod". */
+  production: z.boolean().nullable().default(null),
+});
+export type ServerRole = z.infer<typeof ServerRole>;
+
+/** Whether a server's role in a project makes it production (ADR-042). */
+export const isProduction = (r: { role: string; production: boolean | null } | null | undefined) =>
+  r?.production ?? /^(production|prod)$/i.test(r?.role.trim() ?? "");
+
 export const Project = z.object({
   id: Id,
   name: z.string().min(1),
@@ -20,7 +57,14 @@ export const Project = z.object({
   skillIds: z.array(Id).default([]),
   /** The servers its jobs may use (Servers → Servers in projects). */
   serverIds: z.array(Id).default([]),
-  /** Its GitHub account and repository, used by Oraknid's github tool (ADR-038). */
+  /** Each of its servers' role in it, by server id (ADR-042). */
+  serverRoles: z.record(z.string(), ServerRole).default({}),
+  /**
+   * Its repositories (ADR-042): one with folder "" when the project's folder
+   * is the repo, several in their folders, none when it isn't a git repo.
+   */
+  repos: z.array(ProjectRepo).default([]),
+  /** The GitHub link of a project of one repo: its repo's (ADR-038). Null for several repos. */
   github: GitHubLink.nullable().default(null),
 });
 export type Project = z.infer<typeof Project>;
