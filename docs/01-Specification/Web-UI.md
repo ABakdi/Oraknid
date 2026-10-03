@@ -119,7 +119,8 @@ Eye's conversation sit beside them ([[Chats-and-Helper]]).
 
 | Panel | Shows |
 | :-- | :-- |
-| **Legs now** | One card per Leg: state (idle / working / waiting / rate-limited / down), the model in use, the current task, tokens this window, remaining quota (exact or *estimated*), reset time, context used by the current session. |
+| **Plan usage** | (2026-10-03, [[ADR-039-Plan-Usage-In-View]]) A row per Claude Code Leg (and any Leg with windows), the one closest to a limit first: each window fullest first, as a bar and a percentage, when it resets, Oraknid's tokens in it, and how old the figures are ("as of 4 min ago"); near (80%) and at (100%) the limit said in words. Fresh figures are asked for every minute while it is open. |
+| **Legs now** | One card per Leg: state (idle / working / waiting / rate-limited / down), the model in use, the current task, context used by the current session. Its windows are in Plan usage. |
 | **Activity stream** | Every Leg's and The Eye's actions as they happen, filterable by job, Leg and kind. Leg output appears as condensed lines that expand. |
 | **Problems** | Errors, drift events, kills, escalations, blocked jobs. Each links to the evidence. |
 | **Resources** | Per Leg and per process: CPU, RAM, GPU and VRAM (local models), disk I/O, network. Sparklines, with the full chart a click away. |
@@ -179,11 +180,19 @@ the address (`/projects/<id>/<tab>`):
   touched (and the follow-up it started); a line marks where the
   conversation moves to another job. The header says which job it talks
   to now.
-- **The Web**: the project's tasks across its jobs. The job running now
-  (else the newest) is laid out in full; each earlier job is folded to
-  one node (title, state, tasks done) in the order they ran, opened in
-  place on a click or from the row of earlier jobs above, and folded
-  again the same way. A task opens its drawer.
+- **Workflow** (the project's Web, named so in the UI, 2026-10-03,
+  [[ADR-034-Projects-First]] → Changed): only the diagram, filling the
+  tab, its controls floating over it (Compact / Expanded at the top
+  left, zoom and fit at the bottom right); pinch and drag on a phone.
+  **Compact**, the default: a box per job in the order they ran (title,
+  state, tasks done), the job the project is about now highlighted.
+  Selecting a box goes inside it, `/projects/<id>/workflow/<job>`: that
+  job's own tasks, with **All jobs** to come back and "Open in Work".
+  **Expanded**: every job's tasks drawn in full, each inside a frame
+  named by its job (a click on the name goes inside it), one after
+  another, left to right on a computer, top to bottom on a phone. The
+  choice is kept per project on the device. A task opens its drawer.
+  `/projects/<id>/web` (the old address) opens Workflow.
 - **Work**: the jobs as a timeline, newest first: title, state,
   progress, branch, tokens, a queued mark, Pause or Resume. Opening one
   shows it in place (Job, above); a draft opens on New work.
@@ -316,7 +325,11 @@ The registry: health, kind, model, quota, observed performance. Each
 Leg is a card collapsed to one line (name, health, kind, quota), opened
 to see its models and configure it: test, log in, pause, enable,
 sessions at once, rename, remove; a Leg named on the Overview links
-here, opened. **Add Leg** with a live test, and **Find agents on this
+here, opened. An opened Leg shows its **plan usage**
+([[ADR-039-Plan-Usage-In-View]]): each window larger, with its reset,
+how old it is and where it was read, the models' share of Oraknid's
+tokens in it, and the last eight days as a line with when it filled and
+reset; another kind says what it has instead. **Add Leg** with a live test, and **Find agents on this
 machine**. The capability profile editor shows learned
 values next to my overrides.
 

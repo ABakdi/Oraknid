@@ -46,6 +46,37 @@ windows:
   Leg model is only eligible while **all** the windows that apply to it
   have room.
 
+### Plan usage in view ([[ADR-039-Plan-Usage-In-View]], 2026-10-03)
+
+For each Claude Code Leg I see every window of its plan: how full (a
+bar and a percentage), when it resets, how old the figure is, and
+Oraknid's own tokens in that window by model.
+
+- **Where it comes from.** The official CLI's own `/usage` data, read
+  through the Agent SDK's usage request on a session that is never sent
+  a message, inside the Leg's sandbox, like the health check: no
+  tokens, and Oraknid never touches the login. When that reading isn't
+  there (an older CLI; the SDK marks it experimental), the windows come
+  from the sessions' rate-limit events, refreshed by a one-word prompt
+  on the Leg's cheapest model.
+- **Only while I look.** The Overview and a Leg's details ask for fresh
+  figures every minute while open; the daemon reads a Leg at most every
+  5 minutes, and prompts at most every 15, never while the Leg is busy
+  or a session has reported in those 15 minutes.
+- **Kept with their time.** Each window is stored with when it was
+  seen and where from (`usage` or `session`). A reading that didn't
+  change only moves its time; a change is a `leg.quota` event, so its
+  history (when it filled and reset) is kept in the event log. A
+  model's window (weekly Opus, Sonnet, or one the server names) goes to
+  that model's rows, as routing reads it.
+- **Shown**: on the Overview, a **Plan usage** card, a row per Leg, the
+  Leg closest to a limit first, each Leg's fullest window first; near
+  (80%) and at (100%) the limit say so in words. In the Leg's details,
+  the same windows larger, the models' share of Oraknid's tokens, and
+  the last eight days as a line with each fill and reset.
+- **Other kinds** say what they have: OpenCode's free models no window,
+  Antigravity its quota errors when they come, a local model nothing.
+
 ### Finding agents on this machine
 
 **Find agents on this machine** (Legs page) lists what Oraknid can

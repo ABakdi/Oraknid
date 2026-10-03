@@ -29,6 +29,8 @@ Where each piece of data lives, and who can read it.
 | Chats and the helper (Phase 8) | SQLite: `chats`, `chat_messages`, `helper_messages` | Daemon, paired devices | What I write goes to the chosen Leg's provider (the helper: The Eye's). |
 | Plans and their shadows (Phase 7) | SQLite: `eye_plans` | Daemon, paired devices | The plan input goes to both models' providers. |
 | The Eye's conversations | SQLite: `eye_messages`, each with its job and its project (migration 0029 filled the project from the job, [[ADR-034-Projects-First]]) | Daemon, paired devices | What I write goes to the Eye's model for triage. |
+| A Leg's plan windows (2026-10-03, [[ADR-039-Plan-Usage-In-View]]) | SQLite: the `quota` JSON of `legs` (account windows) and `leg_models` (a model's), each window with its figure, reset, `observedAt` and source; their history as `leg.quota` events. | Daemon, paired devices | The usage reading is the official CLI asking its provider, from inside the Leg's sandbox with the Leg's own login; Oraknid sends nothing. |
+| A project's Workflow: compact or expanded (2026-10-03) | The browser's storage on each device (`oraknid.workflow.<project>`) | That device | No. |
 | Earlier jobs' Silk in a pack (2026-10-03) | Read from SQLite when a session's context pack is built | The receiving Leg | As part of the pack, to a remote Leg's provider, like the job's own Silk. |
 
 ## Settings keys
