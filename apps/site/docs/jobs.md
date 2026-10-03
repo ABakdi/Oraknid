@@ -4,7 +4,7 @@ A **job** is one piece of work: a goal in a project. **The Eye** is the part of 
 
 ## Starting a job
 
-**New work** opens a page with the options on one side and a conversation on the other. Describe the goal; The Eye may ask a few questions first, then writes the plan. You can keep a draft and start it later.
+In a project, ask for it in the project's **The Eye** tab: The Eye starts a job, or adds the work to the one running. **New work** is for a first request, a new project, or a draft to keep and start later. The Eye may ask a few questions first, then writes the plan.
 
 Each job works on its own branch, in its own worktree inside your project. Your branch is never touched until you merge.
 
@@ -17,13 +17,17 @@ Each job works on its own branch, in its own worktree inside your project. Your 
 
 ## Following a job
 
-A job's page is in tabs: **The Web** (its tasks as a graph; click one for its details and diff), **The Eye** (your conversation with it), **Agents** (every session, live), **Activity**, **Silk** (what is known), **Inbox**, **Budget & stats**, **Settings**. Keys `1` to `9` switch tabs.
+Everything is in its project, in tabs: **The Eye** (one conversation for the whole project), **Workflow** (the jobs as a diagram: compact, a box per job you open for its tasks, or expanded, every job's tasks), **Work** (the jobs newest first; open one for its tasks, result, agents, activity, controls and settings), **Inbox**, **Silk** (what is known, by job), **Activity**, **Budget & stats** and **Settings**. Keys `1` to `9` switch tabs. **Running now** on the Overview lists every job running or waiting, across projects.
 
 ## Talking to The Eye
 
-Write anything in **The Eye** tab: an instruction, a new task, some context, a question, or "stop that". It decides what your message is and acts on it, then tells you what it did.
+Write anything in the project's **The Eye** tab: an instruction, a new task, some context, a question, or "stop that". It decides what your message is and acts on it, then tells you what it did.
 
 When a job has already ended and you ask for more ("add a volume control"), The Eye starts a **follow-up job** in the same project, starting from what the first one built, and links to it.
+
+## Answering questions
+
+The Eye asks with options, one question at a time, the one it recommends marked: **↑/↓** move, **Space** selects, **Enter** confirms and goes on, **←/→** or **Tab** move between questions, **1** to **9** pick, and you can always type your own answer. The last tab sums up your answers before you send them.
 
 ## Approvals
 
@@ -31,4 +35,4 @@ Some actions always wait for you: a push, a merge, a deploy, sending mail, spend
 
 ## When it's done
 
-The **Result** tab shows where the work is (folder, branch, commits). **Merge** puts it into your work branch, after you confirm.
+The job's **Result**, in Work, shows where the work is (folder, branch, commits). **Merge** puts it into your work branch, after you confirm.

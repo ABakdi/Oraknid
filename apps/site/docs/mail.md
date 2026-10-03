@@ -7,7 +7,7 @@ Oraknid can hold your mail accounts, so your agents can read, sort and draft, an
 On the **Mail** page, **Add an account**. Pick Gmail, Outlook or another provider, and IMAP or POP3:
 
 - **Gmail and Outlook**: use an **app password**, made in your account's security settings. Oraknid shows the link.
-- **Any other provider**: its IMAP or POP3 server and its SMTP server.
+- **Any other provider**: its IMAP or POP3 server and its SMTP server. Type your address and Oraknid finds them from your domain (Namecheap, Zoho, Fastmail, iCloud and others); **Test** checks both before you connect, and a refusal says what to check.
 
 The password goes to your keychain, never to Oraknid's database. If it stops working, the account shows **Reconnect**.
 

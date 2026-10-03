@@ -75,7 +75,11 @@ export const PAGES: HelpPage[] = [
         name: "The Eye",
         does: "The project's conversation with The Eye: ask for work here.",
       },
-      { id: "web", name: "The Web", does: "The project's tasks across its jobs, as a graph." },
+      {
+        id: "workflow",
+        name: "Workflow",
+        does: "The project's jobs as a diagram: compact (a box per job, open one for its tasks) or expanded (every job's tasks).",
+      },
       {
         id: "work",
         name: "Work",

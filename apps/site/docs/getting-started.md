@@ -89,3 +89,7 @@ A **Leg** is an agent or model Oraknid can hand work to. Go to **Legs** and use 
 Press **New work** (or `n`). Pick a project (a folder, a new folder, or one of your GitHub repos), describe what you want, and start. The Eye plans it, the Legs do it, and you can follow everything live.
 
 Next: [Jobs and The Eye](jobs.html).
+
+## Help inside Oraknid
+
+This guide is in Oraknid too, under **Docs** (`g d`). The helper, the round button at the bottom left, knows it, your screens and your data: ask it how something works or where an option is, and it opens the page and points at the control, or does it for you, asking first before anything big.
