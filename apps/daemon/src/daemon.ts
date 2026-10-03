@@ -605,7 +605,8 @@ export async function startDaemon(options: DaemonOptions) {
   const web = webDist();
   if (web) {
     app.use(express.static(web, { index: false, maxAge: "1h" }));
-    app.get(/^\/(?!api\/|live$).*/, (_req, res) => res.sendFile(join(web, "index.html")));
+    // Relative to its folder: a path with a hidden folder in it (~/.local/…) is served all the same.
+    app.get(/^\/(?!api\/|live$).*/, (_req, res) => res.sendFile("index.html", { root: web }));
   }
 
   await new Promise<void>((resolve, reject) => {
