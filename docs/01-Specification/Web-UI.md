@@ -139,22 +139,25 @@ previous and next, `Ctrl+Shift+1…9` go to, `Ctrl+Shift+D` side by side,
 
 An email client ([[ADR-032-Email]]) at `/mail`, in the sidebar. Three
 panes on a wide screen: accounts and their folders, the conversations
-of a folder, the open conversation; on a phone one pane at a time, with
-a way back.
+of a folder, the open conversation. On a phone the list fills the
+screen: a button in its header (and the account and folder named under
+it) opens the folders and accounts in a drawer, which closes once I
+pick one; Write is beside the search; an open conversation has "Back
+to the list". Everything works at 390 px wide.
 
 - **The list** is virtual: only the rows on screen are drawn, and pages
   of a hundred conversations are fetched as they scroll into view, so a
   folder of ten thousand scrolls smoothly. Each row: who wrote, how
   many messages, the subject, a snippet, unread, starred, attachments,
   an agent's draft waiting. A search box searches the folder, here and
-  on the server. New mail appears on its own (IDLE); a button checks
-  every folder now.
+  on the server (IMAP). New mail appears on its own (IDLE for IMAP, a
+  check every two minutes for POP); a button checks now.
 - **The conversation**: each message once, the last and the unread
-  ones open; opening it marks it read on the server. Archive, delete,
-  mark unread, star, move to a folder, reply, reply all, forward.
-  Attachments download. HTML is cleaned and shown in a sandboxed frame;
-  remote images are hidden, with "Show images" and "Always from this
-  sender".
+  ones open; opening it marks it read (on the server, for IMAP).
+  Archive, delete, mark unread, star, move to a folder, reply, reply
+  all, forward. Attachments download. HTML is cleaned and shown in a
+  sandboxed frame; remote images are hidden, with "Show images" and
+  "Always from this sender".
 - **Writing**: a dialog with From (when there are several accounts),
   To, Cc/Bcc, Subject, a rich text editor (bold, italic, lists, quote),
   attachments up to 25 MB; Send (Ctrl+Enter) or Save draft. A reply is
@@ -163,18 +166,24 @@ a way back.
   conversation, with Approve and send, Edit, Discard; those waiting for
   me are also in a "Waiting for you" folder, and in the inbox when a
   job wrote them.
+- **Accounts, here**: "Add an account" under the folders (and on the
+  empty page) opens the same form as Settings. Each account has a menu:
+  Check for mail, Reconnect… (a new password, or the one kept after the
+  server was out of reach), Account settings… (auto-send, keep what I
+  send in Sent, and for POP delete from the server), and Remove from
+  Oraknid…, after a second step. Not from away, except checking.
 - **Reconnect**: an account whose login stopped working says so above
-  the list, with a Reconnect button (a new password, or signing in with
-  Google or Microsoft again).
+  the list, with a Reconnect button that asks for the new password.
 - **Keys**: c write, / search, j and k next and previous conversation,
   e archive, # delete, r reply, a reply all, f forward, s star, u
   unread, Esc back.
 
-Settings → Connections has **Email accounts**: add Gmail, Outlook or
-any IMAP account (an app password, or IMAP and SMTP servers), remove
-one, auto-send per account (off by default), file sent mail in Sent;
-and Google's and Microsoft's app ids, which turn on "Connect with
-Google" and "Connect with Microsoft". Not from away.
+Settings → Connections has **Email accounts** too: add Gmail, Outlook
+(with an app password, and a link to where each provider makes one) or
+another server, by IMAP or POP3 with SMTP; remove one; auto-send per
+account (off by default), file sent mail in Sent, and for POP delete
+from the server (off by default). Sign-in with Google or Microsoft
+(OAuth) waits until a few releases from now. Not from away.
 
 ### The helper
 

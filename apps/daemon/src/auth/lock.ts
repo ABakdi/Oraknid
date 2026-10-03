@@ -310,8 +310,6 @@ const HOME_ONLY = [
   "/mail/updateAccount",
   "/mail/removeAccount",
   "/mail/reconnect",
-  "/mail/setOAuth",
-  "/mail/oauthStart",
   "/tools/create",
   "/tools/update",
   "/tools/remove",

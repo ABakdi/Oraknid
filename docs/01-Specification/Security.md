@@ -90,16 +90,19 @@ sandbox limits damage, but it doesn't make that safe.
   audited; it is a full shell as me ([[ADR-028-Terminal]]).
 
 ## Mail
-- Mail passwords (app passwords) and OAuth refresh tokens are in the
-  keychain, never in SQLite; access tokens live in memory. An account is
-  saved only once its IMAP and SMTP servers accept the login, over TLS
-  or STARTTLS; a connection without TLS is refused unless the server is
-  this machine ([[ADR-032-Email]]).
-- OAuth uses the code flow with PKCE, back to the daemon on
-  `127.0.0.1`; the callback takes only a sign-in it started in the last
-  ten minutes. The apps' client secrets are in the keychain too.
-- A login refused, or a token revoked, stops that account and shows
-  "Reconnect"; nothing retries a refused password.
+- Mail passwords (app passwords) are in the keychain, never in SQLite.
+  An account is saved only once its incoming server (IMAP or POP3) and
+  its SMTP server accept the login, over TLS or STARTTLS; a connection
+  without TLS is refused unless the server is this machine
+  ([[ADR-032-Email]]). There is no OAuth sign-in for now: no client
+  secret or token is kept.
+- A login refused stops that account and shows "Reconnect"; nothing
+  retries a refused password.
+- POP accounts keep their messages here: each one's bytes in
+  `mail/local/<account>/` in the data folder (only I can read it), its
+  text in SQLite. Removing the account deletes both. A message is
+  deleted on the server only when I delete it for good here and turned
+  on "delete from the server" for the account.
 - Mail's HTML is cleaned with DOMPurify and shown in a sandboxed frame
   where no script runs, with its own content policy: nothing loads from
   outside; remote images I allow for a message or its sender are fetched
@@ -111,8 +114,8 @@ sandbox limits damage, but it doesn't make that safe.
   auto-send for the account. Everything the tool returns is wrapped as
   untrusted data, and every agent action on mail is in the audit log
   (`mail.agent.*`, actor `agent`).
-- Away from home, accounts and OAuth settings can't be added, changed
-  or removed.
+- Away from home, accounts can't be added, changed, reconnected or
+  removed.
 
 ## Chats and the helper
 - A chat may read its folder and the projects I attach, and research

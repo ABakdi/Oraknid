@@ -539,18 +539,21 @@ export const silkMirror = sqliteTable(
 type Address = { name: string; address: string };
 type Attachment = { filename: string; contentType: string; size: number };
 
-/** My mail accounts (ADR-032). Passwords and tokens are in the keychain, never here (BR-13). */
+/** My mail accounts (ADR-032). Passwords are in the keychain, never here (BR-13). */
 export const mailAccounts = sqliteTable("mail_accounts", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull(),
   provider: text("provider", { enum: ["gmail", "outlook", "imap"] }).notNull(),
-  /** A password (or app password), or OAuth2 with Google or Microsoft. */
-  auth: text("auth", { enum: ["password", "google", "microsoft"] }).notNull(),
+  /** IMAP (folders on the server) or POP3 (downloaded into folders kept here). */
+  protocol: text("protocol", { enum: ["imap", "pop"] })
+    .notNull()
+    .default("imap"),
   login: text("login").notNull(),
-  imapHost: text("imap_host").notNull(),
-  imapPort: integer("imap_port").notNull(),
-  imapSecurity: text("imap_security", { enum: ["tls", "starttls", "plain"] }).notNull(),
+  /** The incoming server, IMAP or POP3 (its columns kept their first name). */
+  incomingHost: text("imap_host").notNull(),
+  incomingPort: integer("imap_port").notNull(),
+  incomingSecurity: text("imap_security", { enum: ["tls", "starttls", "plain"] }).notNull(),
   smtpHost: text("smtp_host").notNull(),
   smtpPort: integer("smtp_port").notNull(),
   smtpSecurity: text("smtp_security", { enum: ["tls", "starttls", "plain"] }).notNull(),
@@ -558,6 +561,8 @@ export const mailAccounts = sqliteTable("mail_accounts", {
   autoSend: integer("auto_send", { mode: "boolean" }).notNull().default(false),
   /** The provider doesn't file sent mail itself: Oraknid appends it to Sent. */
   appendSent: integer("append_sent", { mode: "boolean" }).notNull(),
+  /** POP: a message deleted for good here is deleted on the server too. Off: left there. */
+  deleteFromServer: integer("delete_from_server", { mode: "boolean" }).notNull().default(false),
   state: text("state", { enum: ["new", "syncing", "ready", "reconnect", "error"] })
     .notNull()
     .default("new"),
@@ -661,4 +666,25 @@ export const mailImageSenders = sqliteTable(
     createdAt: integer("created_at").notNull(),
   },
   (t) => [primaryKey({ columns: [t.accountId, t.address] })],
+);
+
+/**
+ * POP accounts: each message downloaded, by the server's UIDL, so none is
+ * fetched twice, even once I deleted it here. `messageId` is the row that
+ * holds it; null once it is gone from Oraknid.
+ */
+export const mailPopUidls = sqliteTable(
+  "mail_pop_uidls",
+  {
+    accountId: text("account_id").notNull(),
+    uidl: text("uidl").notNull(),
+    messageId: text("message_id"),
+    /** Deleted here for good with "delete from the server" on: the next pass deletes it there. */
+    deleteOnServer: integer("delete_on_server", { mode: "boolean" }).notNull().default(false),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.accountId, t.uidl] }),
+    index("mail_pop_uidls_message").on(t.messageId),
+  ],
 );

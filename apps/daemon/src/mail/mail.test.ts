@@ -1,6 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
-import { createServer, type Server } from "node:http";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Event } from "@oraknid/contracts";
@@ -70,7 +69,7 @@ async function boot(extra: Parameters<typeof startDaemon>[0]["mail"] = {}) {
       headers: { authorization: `Bearer ${daemon.cliToken}` },
     }),
   );
-  return { d: daemon, api, store: os.store };
+  return { d: daemon, api, store: os.store, dir };
 }
 
 const plain = (port: number) => ({ host: "127.0.0.1", port, security: "plain" as const });
@@ -121,11 +120,10 @@ describe("mail (ADR-032)", () => {
         name: "Big",
         email: "big@example.com",
         provider: "imap",
-        auth: "password",
         login: "big@example.com",
-        imapHost: "127.0.0.1",
-        imapPort: 1,
-        imapSecurity: "plain",
+        incomingHost: "127.0.0.1",
+        incomingPort: 1,
+        incomingSecurity: "plain",
         smtpHost: "127.0.0.1",
         smtpPort: 1,
         smtpSecurity: "plain",
@@ -521,98 +519,169 @@ describe("mail (ADR-032)", () => {
     await until(async () => (await api.mail.accounts())[0]?.state === "ready");
   }, 30_000);
 
-  it("signs in with OAuth2 (XOAUTH2) once I add an app's id, and asks me to reconnect when the token is revoked", async () => {
-    const mail = await fakeMail({ gmail: true, accessToken: "tok-1" });
+  it("fetches a POP account into a local Inbox by UIDL; flags, folders and Sent are kept here", async () => {
+    const mail = await fakeMail();
     closing.push(mail.close);
-    const token = await fakeTokenServer(mail.user);
-    closing.push(token.close);
-    const { api } = await boot({
-      oauthEndpoints: { google: { authUrl: "https://accounts.example/auth", tokenUrl: token.url } },
-      presets: {
-        gmail: { imap: plain(mail.imapPort), smtp: plain(mail.smtpPort), appendSent: false },
-      },
-    });
-    await expect(api.mail.oauthStart({ provider: "google" })).rejects.toThrow(/isn't set up/);
-    await api.mail.setOAuth({ provider: "google", clientId: "app-id", clientSecret: "app-secret" });
-    expect(await api.mail.oauthSettings()).toMatchObject({
-      google: { clientId: "app-id", hasSecret: true },
-      microsoft: { clientId: "", hasSecret: false },
-      redirectUri: `${daemon?.url}/oauth/mail/callback`,
-    });
-    const { url } = await api.mail.oauthStart({ provider: "google" });
-    const u = new URL(url);
-    expect(u.searchParams.get("client_id")).toBe("app-id");
-    expect(u.searchParams.get("redirect_uri")).toBe(`${daemon?.url}/oauth/mail/callback`);
-    expect(u.searchParams.get("code_challenge_method")).toBe("S256");
-    // Only a sign-in started here is accepted.
-    const forged = await fetch(`${daemon?.url}/oauth/mail/callback?state=nope&code=x`);
-    expect(forged.status).toBe(400);
-    const back = await fetch(
-      `${daemon?.url}/oauth/mail/callback?state=${u.searchParams.get("state")}&code=the-code`,
+    const { d, api, dir } = await boot();
+    mail.deliver(
+      msg({ id: "<p1@x>", subject: "Plan", body: "Shall we meet?\r\n.A line with a dot." }),
     );
-    expect(await back.text()).toContain(`${mail.user} is connected`);
-    expect(token.grants).toEqual(["authorization_code"]);
-    const a = await until(async () => {
-      const x = (await api.mail.accounts())[0];
-      return x?.state === "ready" ? x : null;
-    });
-    expect(a).toMatchObject({ auth: "google", provider: "gmail" });
-    // It sends with XOAUTH2 too.
+    mail.deliver(
+      msg({ id: "<p2@x>", subject: "Re: Plan", inReplyTo: "<p1@x>", references: "<p1@x>" }),
+    );
+    mail.deliver(
+      [
+        "Message-ID: <p3@x>",
+        "From: Carol <carol@example.com>",
+        "To: me@example.com",
+        "Subject: Menu",
+        "Date: Fri, 02 Oct 2026 11:00:00 +0000",
+        "MIME-Version: 1.0",
+        'Content-Type: multipart/mixed; boundary="b"',
+        "",
+        "--b",
+        "Content-Type: text/plain; charset=utf-8",
+        "",
+        "See the menu.",
+        "--b",
+        'Content-Type: text/plain; name="menu.txt"',
+        'Content-Disposition: attachment; filename="menu.txt"',
+        "",
+        "soup",
+        "--b--",
+        "",
+      ].join("\r\n"),
+    );
+    const pop = (o: Partial<Parameters<typeof api.mail.addAccount>[0]> = {}) =>
+      api.mail.addAccount({
+        provider: "imap",
+        protocol: "pop",
+        email: mail.user,
+        password: "app-password",
+        pop: plain(mail.popPort),
+        smtp: plain(mail.smtpPort),
+        ...o,
+      });
+    await expect(pop({ password: "wrong" })).rejects.toThrow(/POP3 .* refused/);
+    await expect(
+      pop({ pop: { host: "pop.example.com", port: 110, security: "plain" } }),
+    ).rejects.toThrow(/in clear/);
+    const a = await pop();
+    expect(a).toMatchObject({ protocol: "pop", appendSent: true, deleteFromServer: false });
+    await until(async () => (await api.mail.accounts())[0]?.state === "ready");
+
+    const folders = async () => api.mail.folders({ accountId: a.id });
+    const by = async (use: string) => (await folders()).find((f) => f.specialUse === use);
+    expect((await folders()).map((f) => f.specialUse)).toEqual([
+      "\\Inbox",
+      "\\Drafts",
+      "\\Sent",
+      "\\Archive",
+      "\\Trash",
+    ]);
+    expect(await by("\\Inbox")).toMatchObject({ total: 3, unread: 3 });
+    const thread = await api.mail.thread({ accountId: a.id, threadId: "<p1@x>" });
+    expect(thread.messages.map((m) => m.messageId)).toEqual(["<p1@x>", "<p2@x>"]);
+    // The bytes as sent: a line starting with a dot comes back as it was.
+    expect(thread.messages[0]?.text).toContain("Shall we meet?\n.A line with a dot.");
+    const menu = (await api.mail.threads({ accountId: a.id, query: "menu" })).threads[0];
+    const att = await api.mail.attachment({ id: menu?.messageIds[0] as string, index: 0 });
+    expect(Buffer.from(att.base64, "base64").toString()).toBe("soup");
+    // Downloaded, never deleted: the server still has everything.
+    expect(mail.messages("INBOX")).toHaveLength(3);
+    expect(mail.popCommands).toContain("UIDL");
+    expect(mail.popCommands.some((c) => c.startsWith("DELE"))).toBe(false);
+    expect(mail.popCommands).not.toContain("PASS app-password");
+    expect(existsSync(join(dir, "mail", "local", a.id))).toBe(true);
+
+    // Checking again downloads only what is new, and says so.
+    const events: Event[] = [];
+    d.bus.subscribe((e) => events.push(e));
+    mail.deliver(msg({ id: "<p4@x>", subject: "Fresh" }));
+    await api.mail.sync({ id: a.id });
+    expect(await by("\\Inbox")).toMatchObject({ total: 4 });
+    expect(events.find((e) => e.type === "mail.new")?.payload).toMatchObject({ count: 1 });
+    expect(mail.popCommands.filter((c) => c.startsWith("RETR"))).toHaveLength(4);
+
+    // Read, star, archive and delete are Oraknid's own: the server isn't touched.
+    const inbox = await api.mail.threads({ accountId: a.id, folderId: (await by("\\Inbox"))?.id });
+    const id = (s: string) => inbox.threads.find((t) => t.subject === s)?.messageIds[0] as string;
+    await api.mail.flag({ ids: [id("Fresh")], seen: true, flagged: true });
+    expect(
+      (await api.mail.thread({ accountId: a.id, threadId: "<p4@x>" })).messages[0]?.flags.sort(),
+    ).toEqual(["\\Flagged", "\\Seen"]);
+    expect(mail.messages("INBOX").every((m) => m.flags.size === 0)).toBe(true);
+    await api.mail.archive({ ids: [id("Fresh")] });
+    expect(await by("\\Archive")).toMatchObject({ total: 1 });
+    await api.mail.delete({ ids: [id("Menu")] });
+    expect(await by("\\Trash")).toMatchObject({ total: 1 });
+    const trash = await api.mail.threads({ accountId: a.id, folderId: (await by("\\Trash"))?.id });
+    await api.mail.delete({ ids: trash.threads[0]?.messageIds ?? [] });
+    expect(await by("\\Trash")).toMatchObject({ total: 0 });
+    // Gone from Oraknid, still on the server, and never downloaded again.
+    expect(mail.messages("INBOX")).toHaveLength(4);
+    await api.mail.sync({ id: a.id });
+    expect(await by("\\Inbox")).toMatchObject({ total: 2 });
+
+    // With "delete from the server" on, deleting for good deletes it there too.
+    await expect(
+      api.mail.updateAccount({ id: a.id, deleteFromServer: true }),
+    ).resolves.toBeUndefined();
+    const plan = (await api.mail.thread({ accountId: a.id, threadId: "<p1@x>" })).messages;
+    await api.mail.delete({ ids: plan.map((m) => m.id) });
+    await api.mail.delete({ ids: plan.map((m) => m.id) });
+    await until(() => mail.messages("INBOX").length === 2);
+    expect(mail.popCommands.filter((c) => c.startsWith("DELE"))).toHaveLength(2);
+    await api.mail.sync({ id: a.id });
+    expect(await by("\\Inbox")).toMatchObject({ total: 0 });
+
+    // What I send goes through SMTP and into Oraknid's own Sent.
     await api.mail.send({ accountId: a.id, to: ["x@example.com"], subject: "Hi", text: "Hi" });
     expect(mail.sent).toHaveLength(1);
+    expect(await by("\\Sent")).toMatchObject({ total: 1 });
+    expect(mail.messages("Sent")).toHaveLength(0);
 
-    // Revoked at Google: the token stops working and can't be refreshed.
-    mail.setAccessToken("tok-2");
-    token.revoke();
-    mail.dropConnections();
-    await until(async () => (await api.mail.accounts())[0]?.state === "reconnect", 15_000);
+    // Removing the account removes what was downloaded; the server keeps its mail.
+    await api.mail.removeAccount({ id: a.id });
+    expect(existsSync(join(dir, "mail", "local", a.id))).toBe(false);
+    expect(mail.messages("INBOX")).toHaveLength(2);
+  }, 30_000);
+
+  it("checks a POP account on its own every two minutes, and asks for the password when it changes", async () => {
+    const mail = await fakeMail();
+    closing.push(mail.close);
+    const { api } = await boot({ popEveryMs: 200 });
+    const a = await api.mail.addAccount({
+      provider: "imap",
+      protocol: "pop",
+      email: mail.user,
+      password: "app-password",
+      pop: plain(mail.popPort),
+      smtp: plain(mail.smtpPort),
+    });
+    await until(async () => (await api.mail.accounts())[0]?.state === "ready");
+    mail.deliver(msg({ id: "<later@x>", subject: "Later" }));
+    await until(async () => (await api.mail.folders({ accountId: a.id }))[0]?.total === 1);
+
+    mail.setPassword("changed");
+    const stuck = await until(async () => {
+      const x = (await api.mail.accounts())[0];
+      return x?.state === "reconnect" ? x : null;
+    });
+    expect(stuck.error).toMatch(/not accepted/);
+    await expect(api.mail.reconnect({ id: a.id })).rejects.toThrow(/new password/);
+    await api.mail.reconnect({ id: a.id, password: "changed" });
+    await until(async () => (await api.mail.accounts())[0]?.state === "ready");
+  }, 30_000);
+
+  it("keeps the delete-from-server option to POP accounts", async () => {
+    const { mail, api } = await connected();
+    const a = await addAccount(api, mail);
+    await expect(api.mail.updateAccount({ id: a.id, deleteFromServer: true })).rejects.toThrow(
+      /Only a POP account/,
+    );
   }, 30_000);
 });
-
-/** Google's token endpoint, as far as Oraknid uses it. */
-async function fakeTokenServer(email: string) {
-  const grants: string[] = [];
-  let revoked = false;
-  const idToken = `x.${Buffer.from(JSON.stringify({ email })).toString("base64url")}.y`;
-  const server: Server = createServer((req, res) => {
-    let body = "";
-    req.on("data", (c) => {
-      body += c;
-    });
-    req.on("end", () => {
-      const p = new URLSearchParams(body);
-      grants.push(p.get("grant_type") ?? "");
-      res.setHeader("content-type", "application/json");
-      if (revoked || p.get("client_secret") !== "app-secret") {
-        res.statusCode = 400;
-        return res.end(
-          JSON.stringify({
-            error: "invalid_grant",
-            error_description: "Token has been expired or revoked.",
-          }),
-        );
-      }
-      res.end(
-        JSON.stringify({
-          access_token: "tok-1",
-          refresh_token: "refresh-1",
-          // Already stale: every connection refreshes it.
-          expires_in: p.get("grant_type") === "refresh_token" ? 3600 : 1,
-          id_token: idToken,
-        }),
-      );
-    });
-  });
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  return {
-    url: `http://127.0.0.1:${(server.address() as { port: number }).port}/token`,
-    grants,
-    revoke() {
-      revoked = true;
-    },
-    close: () => new Promise<void>((r) => server.close(() => r())),
-  };
-}
 
 /** Speaks JSON-RPC to a bridge, as a Leg's MCP client would. */
 function bridge(server: { command: string; args: string[] }) {

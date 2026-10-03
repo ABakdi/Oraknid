@@ -14,9 +14,20 @@ export type MailSecurity = z.infer<typeof MailSecurity>;
 export const MailAddress = z.object({ name: z.string(), address: z.string() });
 export type MailAddress = z.infer<typeof MailAddress>;
 
+/** How mail comes in: IMAP (folders on the server) or POP3 (downloaded into local folders). */
+export const MailProtocol = z.enum(["imap", "pop"]);
+export type MailProtocol = z.infer<typeof MailProtocol>;
+
+const MailServer = z.object({
+  host: z.string().min(1),
+  port: z.number().int().min(1).max(65535),
+  security: MailSecurity,
+});
+
 /** An account with a password (an app password for Gmail and Outlook). */
 export const NewMailAccount = z.object({
   provider: MailProvider,
+  protocol: MailProtocol.default("imap"),
   email: z.string().email(),
   /** Shown in the list; the address when empty. */
   name: z.string().max(60).default(""),
@@ -24,21 +35,13 @@ export const NewMailAccount = z.object({
   login: z.string().optional(),
   /** Kept in the keychain, never in the database (BR-13). */
   password: z.string().min(1),
-  /** Only for "imap": Gmail and Outlook have theirs. */
-  imap: z
-    .object({
-      host: z.string().min(1),
-      port: z.number().int().min(1).max(65535),
-      security: MailSecurity,
-    })
-    .optional(),
-  smtp: z
-    .object({
-      host: z.string().min(1),
-      port: z.number().int().min(1).max(65535),
-      security: MailSecurity,
-    })
-    .optional(),
+  /** The servers, for "imap" (any other server): Gmail and Outlook have theirs. */
+  imap: MailServer.optional(),
+  /** The POP3 server, when the protocol is "pop" on any other server. */
+  pop: MailServer.optional(),
+  smtp: MailServer.optional(),
+  /** POP only: a message deleted for good here is deleted on the server too. Off: it stays there. */
+  deleteFromServer: z.boolean().default(false),
 });
 export type NewMailAccount = z.infer<typeof NewMailAccount>;
 
@@ -50,14 +53,17 @@ export const MailAccountView = z.object({
   name: z.string(),
   email: z.string(),
   provider: MailProvider,
-  auth: z.enum(["password", "google", "microsoft"]),
-  imapHost: z.string(),
+  protocol: MailProtocol,
+  /** The IMAP or POP3 server. */
+  incomingHost: z.string(),
   smtpHost: z.string(),
   /** An agent's draft goes out without my approval. Off unless I turn it on. */
   autoSend: z.boolean(),
   /** Oraknid files what it sends in Sent itself (the provider doesn't). */
   appendSent: z.boolean(),
-  /** "reconnect": the login failed or the token was revoked; nothing syncs until I sign in again. */
+  /** POP only: deleting a message for good deletes it on the server too. */
+  deleteFromServer: z.boolean(),
+  /** "reconnect": the login failed; nothing syncs until I give the password again. */
   state: MailAccountState,
   error: z.string().nullable(),
   lastSyncAt: Timestamp.nullable(),
@@ -186,12 +192,3 @@ export const MailDraftView = z.object({
   sentAt: Timestamp.nullable(),
 });
 export type MailDraftView = z.infer<typeof MailDraftView>;
-
-/** The app ids I registered with Google and Microsoft; the secrets stay in the keychain. */
-export const MailOAuthSettings = z.object({
-  google: z.object({ clientId: z.string(), hasSecret: z.boolean() }),
-  microsoft: z.object({ clientId: z.string(), hasSecret: z.boolean() }),
-  /** Where Google and Microsoft send me back; registered with them as is. */
-  redirectUri: z.string(),
-});
-export type MailOAuthSettings = z.infer<typeof MailOAuthSettings>;
