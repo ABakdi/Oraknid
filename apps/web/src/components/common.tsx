@@ -1,11 +1,14 @@
+import { ChevronLeft } from "lucide-react";
 import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { message } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { useBack } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
 const TONE: Record<string, string> = {
@@ -49,22 +52,58 @@ export function StateBadge({ state, className }: { state: string; className?: st
   );
 }
 
+/**
+ * The way back from a page I drilled into (Web-UI → Going back): where I
+ * came from when that was in Oraknid, else the page above it.
+ */
+export function BackButton({
+  fallback,
+  label = t("Back"),
+  className,
+}: {
+  fallback: string;
+  label?: string;
+  className?: string;
+}) {
+  const back = useBack(fallback);
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className={cn("-ml-2 shrink-0", className)}
+      aria-label={label}
+      title={label}
+      onClick={back}
+    >
+      <ChevronLeft className="size-5" />
+    </Button>
+  );
+}
+
 export function PageHeader({
   title,
   sub,
   actions,
+  back,
 }: {
   title: string;
   sub?: ReactNode;
   actions?: ReactNode;
+  /** A back control before the title: where it falls back to, and what it says. */
+  back?: { fallback: string; label?: string };
 }) {
   return (
     <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-      <div className="min-w-0">
-        <h1 className="truncate text-xl font-semibold tracking-tight">{title}</h1>
-        {sub ? <div className="text-sm text-muted-foreground">{sub}</div> : null}
+      <div className="flex min-w-0 flex-1 items-start gap-1">
+        {back ? <BackButton fallback={back.fallback} label={back.label} /> : null}
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-xl font-semibold tracking-tight" title={title}>
+            {title}
+          </h1>
+          {sub ? <div className="text-sm text-muted-foreground">{sub}</div> : null}
+        </div>
       </div>
-      {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
+      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
     </div>
   );
 }
@@ -80,10 +119,10 @@ export function Empty({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-8 text-center">
+    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-6 text-center sm:p-8">
       <div className="font-medium">{title}</div>
       {children ? <div className="max-w-md text-sm text-muted-foreground">{children}</div> : null}
-      {action}
+      {action ? <div className="flex flex-wrap justify-center gap-2 pt-1">{action}</div> : null}
     </div>
   );
 }

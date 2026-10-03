@@ -10,6 +10,13 @@ import {
 } from "@/components/ui/dialog";
 import { t } from "@/lib/i18n";
 
+export interface ConfirmOptions {
+  /** What the button that changes nothing says, when "Cancel" would be confusing ("Keep it"). */
+  keep?: string;
+  /** Not destructive (a merge, turning something on): the action is a plain button. */
+  safe?: boolean;
+}
+
 /**
  * A second step for what can't be taken back or opens my computer
  * (Audit 2): it says exactly what will happen, and Cancel has the focus.
@@ -19,10 +26,11 @@ export function useConfirm() {
     title: string;
     body: ReactNode;
     action: string;
+    opts: ConfirmOptions;
     resolve: (ok: boolean) => void;
   } | null>(null);
-  const confirm = (title: string, body: ReactNode, action: string) =>
-    new Promise<boolean>((resolve) => setAsk({ title, body, action, resolve }));
+  const confirm = (title: string, body: ReactNode, action: string, opts: ConfirmOptions = {}) =>
+    new Promise<boolean>((resolve) => setAsk({ title, body, action, opts, resolve }));
   const close = (ok: boolean) => {
     ask?.resolve(ok);
     setAsk(null);
@@ -38,9 +46,9 @@ export function useConfirm() {
         </DialogHeader>
         <DialogFooter>
           <Button variant="secondary" autoFocus onClick={() => close(false)}>
-            {t("Cancel")}
+            {ask?.opts.keep ?? t("Cancel")}
           </Button>
-          <Button variant="destructive" onClick={() => close(true)}>
+          <Button variant={ask?.opts.safe ? "default" : "destructive"} onClick={() => close(true)}>
             {ask?.action}
           </Button>
         </DialogFooter>

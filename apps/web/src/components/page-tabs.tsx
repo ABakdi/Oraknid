@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { typing } from "@/components/shell";
 import { Badge } from "@/components/ui/badge";
@@ -37,9 +37,14 @@ export function PageTabs({
   const [, go] = useLocation();
   const current = tabs.find((x) => x.id === tab) ?? tabs[0];
   const [seen, setSeen] = useState<Set<string>>(() => new Set(current ? [current.id] : []));
+  const list = useRef<HTMLDivElement>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: only the current tab matters
   useEffect(() => {
     if (current && !seen.has(current.id)) setSeen(new Set([...seen, current.id]));
+    // On a phone the tab I am on is always in sight, even far along the row.
+    list.current
+      ?.querySelector<HTMLElement>("[aria-selected=true]")
+      ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   }, [current?.id]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the tabs' ids are what matter
@@ -48,7 +53,7 @@ export function PageTabs({
       if (e.metaKey || e.ctrlKey || e.altKey || typing(e)) return;
       const n = Number(e.key);
       const to = n >= 1 && n <= 9 ? tabs[n - 1] : undefined;
-      if (to) go(`${base}/${to.id}`, { replace: true });
+      if (to) go(`${base}/${to.id}`, { replace: true, state: history.state });
     };
     window.addEventListener("keydown", on);
     return () => window.removeEventListener("keydown", on);
@@ -64,6 +69,7 @@ export function PageTabs({
     >
       {header}
       <div
+        ref={list}
         role="tablist"
         className="flex shrink-0 gap-1 overflow-x-auto border-b [scrollbar-width:none]"
       >
@@ -74,9 +80,10 @@ export function PageTabs({
             role="tab"
             aria-selected={x.id === current?.id}
             title={i < 9 ? `${x.label} (${i + 1})` : x.label}
-            onClick={() => go(`${base}/${x.id}`, { replace: true })}
+            // The entry keeps what it was opened with (where I came from), only the tab changes.
+            onClick={() => go(`${base}/${x.id}`, { replace: true, state: history.state })}
             className={cn(
-              "-mb-px flex shrink-0 items-center gap-1.5 border-b-2 border-transparent px-3 py-2 text-sm text-muted-foreground hover:text-foreground",
+              "-mb-px flex shrink-0 items-center gap-1.5 rounded-t-md border-b-2 border-transparent px-3 py-2 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 pointer-coarse:min-h-11",
               x.id === current?.id && "border-primary font-medium text-foreground",
             )}
           >
