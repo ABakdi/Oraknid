@@ -155,7 +155,8 @@ is on the Overview. An old `/jobs/<id>` link opens the job there.
 | Pause job | Every running task reaches a safe point (BR-7), then the job is `paused`. The UI shows "Pausing…" until then, and names any Leg it is waiting for. |
 | Resume job | Continues from the recorded point. Sessions restart from a Silk context pack, never from a Leg's native session (BR-2). |
 | Cancel job | Pauses first, then marks the job `cancelled`. The worktree and checkpoints are kept until I delete them. |
-| Pause/resume a Leg | Stops new assignments to that Leg; a session it is running goes on to its end (pausing it in place is not built yet, [[Phase-1-MVP]] → Left from the brief). Other Legs continue. |
+| Pause/resume a Leg | No new sessions on that Leg, and each session it runs is paused in place: it stops at a safe point (BR-7: its work kept on a checkpoint, a handoff in Silk), the attempt doesn't count as a failure, and its task waits for that Leg ("It waits for Claude A, paused"), the job still running. Resumed, the task goes on on that Leg from the handoff; **Reassign** on the task sends it to another Leg instead. Other Legs continue. With one task at a time, the job waits with it. |
+| Stop a Leg's work in a job | On the job (per Leg working in it) or on a task: that Leg's sessions there end at a safe point (BR-7), their tasks go back to ready and don't use that Leg again in this job (that task). The Leg itself isn't paused; other jobs keep it. When no other Leg can take a task, the job blocks and says so. |
 | Redirect | A new instruction for The Eye. It is written to Silk as an `owner` decision, and The Eye replans. |
 | Edit the plan | Add, remove, reorder or rewrite tasks in The Web. Running tasks I change are paused first. |
 | Take over a task | The task becomes `owner`-held. Oraknid stops touching its scope until I mark it done or hand it back; handed back, it starts with its escalation reset ([[Drift-Control]]). |
