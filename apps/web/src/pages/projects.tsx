@@ -10,6 +10,7 @@ import { useConfirm } from "@/components/confirm";
 import { EyeChat } from "@/components/eye-chat";
 import { ProjectBudgetCard } from "@/components/job-budget";
 import { type PageTab, PageTabs } from "@/components/page-tabs";
+import { ProjectGitHubCard } from "@/components/project-github";
 import { ProjectNetworkCard } from "@/components/project-network";
 import { ProjectServersCard } from "@/components/project-servers";
 import { ProjectSkillsCard } from "@/components/project-skills";
@@ -262,6 +263,11 @@ function ProjectDetail({
       label: t("Settings"),
       content: () => (
         <div className="space-y-4">
+          {/* Its GitHub repo and its servers, side by side: chosen once, used by Oraknid (ADR-038). */}
+          <div className="grid gap-4 xl:grid-cols-2">
+            <ProjectGitHubCard project={project} />
+            <ProjectServersCard projectId={id} />
+          </div>
           <ProjectActions project={project} />
           <RulesCard
             scope={id}
