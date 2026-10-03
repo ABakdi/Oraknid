@@ -44,4 +44,27 @@ services.
 - OpenRC and runit services are system services that drop to my user:
   they need `sudo` once to be written.
 
+## As built (2026-10-03)
+- A **C++ compiler** (and `make`) is among what it installs: `node-pty`
+  has no Linux prebuild and compiles on install.
+- The user-local Node is the latest 22 from nodejs.org, checked
+  against its `SHASUMS256.txt`, in `<dir>/.tools/node`. nodejs.org
+  builds only for glibc: on musl (Alpine) the distribution's Node must
+  be recent enough, or the script stops and says so.
+- pnpm runs through corepack: the one with Node, or, when Node comes
+  without it (Arch, Alpine, Fedora's packages), a current corepack
+  installed with npm into `<dir>/.tools/corepack`. A small `pnpm` in
+  `<dir>/.tools/bin` runs it, because turbo looks for a `pnpm` binary.
+  On openSUSE, Node is `nodejs24` or `nodejs22`, with its `corepack24`
+  or `corepack22` (the plain `npm` and `corepack` are wrappers needing
+  them).
+- The script reads versions with awk, so it installs awk first on a
+  system without it (openSUSE's minimal image).
+- `--from <path or URL>` installs from another clone (how the script is
+  tested); `ORAKNID_SERVICE=systemd|openrc|runit|autostart` chooses the
+  service by hand.
+- `oraknid` in `~/.local/bin` is a two-line script running the build
+  with the Node it was built with; `--uninstall` removes only one it
+  wrote, and keeps the program folder and the data.
+
 Related: [[OS-Integration]] · [[ADR-012-Sleep-Inhibition]] · [[ADR-033-Product-Site]]

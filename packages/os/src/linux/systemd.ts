@@ -1,8 +1,9 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
-import type { InstallStep, ServiceManager, ServiceNotifier, ServiceStatus } from "../service.ts";
+import type { ServiceManager, ServiceNotifier, ServiceStatus } from "../service.ts";
+import { defaultRun, type Run, stepper } from "./exec.ts";
 
 export const UNIT_NAME = "oraknid.service";
 
@@ -46,7 +47,7 @@ function quote(s: string): string {
 
 export interface SystemdOptions {
   unitDir?: string;
-  run?: (cmd: string, args: string[]) => { status: number | null; stdout: string; stderr: string };
+  run?: Run;
   user?: string;
 }
 
@@ -54,24 +55,8 @@ export function createSystemdService(options: SystemdOptions = {}): ServiceManag
   const unitDir = options.unitDir ?? join(homedir(), ".config/systemd/user");
   const unitPath = join(unitDir, UNIT_NAME);
   const user = options.user ?? userInfo().username;
-  const run =
-    options.run ??
-    ((cmd: string, args: string[]) => {
-      const r = spawnSync(cmd, args, { encoding: "utf8", timeout: 30_000 });
-      return {
-        status: r.status,
-        stdout: r.stdout ?? "",
-        stderr: r.stderr ?? r.error?.message ?? "",
-      };
-    });
-  const step = (name: string, cmd: string, args: string[]): InstallStep => {
-    const r = run(cmd, args);
-    return {
-      step: name,
-      ok: r.status === 0,
-      detail: r.status === 0 ? "done" : (r.stderr || r.stdout).trim() || `exit ${r.status}`,
-    };
-  };
+  const run = options.run ?? defaultRun;
+  const step = stepper(run);
 
   return {
     install(command) {

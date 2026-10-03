@@ -105,23 +105,16 @@
   <div class="wrap install-grid">
     <div>
       <h2>Install</h2>
-      <p>Oraknid runs on Linux. You need Node 22.12 or newer, pnpm 9, git and bubblewrap. Python 3 and passt make the sandbox tighter; <code>doctor</code> tells you what is missing.</p>
-      <p class="muted">It isn't packaged yet: you build it from the repository. Releases come next.</p>
+      <p>Oraknid runs on Linux. One command installs what is missing (git, Node 22.12 or newer, pnpm, bubblewrap, passt, Python 3), builds it, and starts it in the background with systemd, OpenRC or runit. Run it as yourself: it asks for <code>sudo</code> only for packages.</p>
+      <p class="muted">Until the work on <code>dev</code> is merged into <code>main</code>, add <code>| sh -s -- --ref dev</code> in place of <code>| sh</code>. The steps by hand are in <a href="/docs/getting-started.html">Getting started</a>.</p>
     </div>
     <div class="code" data-copy>
       <button class="copy" type="button" aria-label="Copy the commands">{{icon:copy}}<span>Copy</span></button>
-<pre><code><span class="c"># get it and build it</span>
-git clone -b dev {{repo}}.git
-cd Oraknid
-pnpm install
-pnpm build
-
-<span class="c"># check this computer, then run it in the background</span>
-node apps/daemon/dist/cli.mjs doctor
-node apps/daemon/dist/cli.mjs install
+<pre><code><span class="c"># install, build, and run it in the background</span>
+curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/main/install.sh | sh
 
 <span class="c"># open it in your browser and set your PIN</span>
-node apps/daemon/dist/cli.mjs open</code></pre>
+oraknid open</code></pre>
     </div>
   </div>
 </section>

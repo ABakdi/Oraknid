@@ -13,13 +13,16 @@ export interface InstallStep {
   detail: string;
 }
 
+/** What the service runs: node, the CLI and "run", with the environment it needs. */
+export interface ServiceCommand {
+  execPath: string;
+  args: string[];
+  env: Record<string, string>;
+}
+
 /** Runs Oraknid as a background service that starts on boot. */
 export interface ServiceManager {
-  install(command: {
-    execPath: string;
-    args: string[];
-    env: Record<string, string>;
-  }): InstallStep[];
+  install(command: ServiceCommand): InstallStep[];
   uninstall(): InstallStep[];
   status(): ServiceStatus;
 }
