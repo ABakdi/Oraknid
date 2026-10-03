@@ -24,6 +24,8 @@ Add a server with its address and a password or key. Oraknid installs a key of i
 
 Give a server to a project (The Eye asks which one when the work needs a server and you have several), and that project's jobs can reach it by name (`ssh <alias>`), with its state document in mind. Anything that changes the server goes through your approvals, and the document is brought up to date after.
 
+A server's databases can be backed up on a schedule, encrypted, to this computer or another server: see [Backups](/docs/backups.html).
+
 ## Terminal
 
 **Terminal** opens shells on your computer or your servers, in tabs, side by side or in a grid. It is off until you turn it on: it is a full shell as you.
