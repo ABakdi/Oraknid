@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
-import type { ServiceManager, ServiceNotifier, ServiceStatus } from "../service.ts";
+import type { InstallStep, ServiceManager, ServiceNotifier, ServiceStatus } from "../service.ts";
 import { defaultRun, type Run, stepper } from "./exec.ts";
 
 export const UNIT_NAME = "oraknid.service";
@@ -58,6 +58,30 @@ export function createSystemdService(options: SystemdOptions = {}): ServiceManag
   const run = options.run ?? defaultRun;
   const step = stepper(run);
 
+  /**
+   * Linger, so Oraknid starts at boot: left alone when it's on already;
+   * otherwise asked for, then once more with sudo if it needs no password.
+   * Refused (polkit, no session), the service still runs from login on:
+   * a warning with the command, not a failure (seen 2026-10-03).
+   */
+  const lingerStep = (): InstallStep => {
+    const name = "Start at boot, before login (linger)";
+    const isOn = () =>
+      run("loginctl", ["show-user", user, "-p", "Linger", "--value"]).stdout.trim() === "yes";
+    if (isOn()) return { step: name, ok: true, detail: "already on" };
+    const mine = run("loginctl", ["enable-linger", user]);
+    if (mine.status === 0 && isOn()) return { step: name, ok: true, detail: "done" };
+    const viaSudo = run("sudo", ["-n", "loginctl", "enable-linger", user]);
+    if (viaSudo.status === 0 && isOn()) return { step: name, ok: true, detail: "done (sudo)" };
+    const why = (mine.stderr || mine.stdout).trim().split("\n").pop() || `exit ${mine.status}`;
+    return {
+      step: name,
+      ok: false,
+      warning: true,
+      detail: `${why}. Oraknid starts when you log in; to start it at boot, run: sudo loginctl enable-linger ${user}`,
+    };
+  };
+
   return {
     install(command) {
       mkdirSync(unitDir, { recursive: true });
@@ -71,7 +95,7 @@ export function createSystemdService(options: SystemdOptions = {}): ServiceManag
           "--now",
           UNIT_NAME,
         ]),
-        step("Start at boot, before login (linger)", "loginctl", ["enable-linger", user]),
+        lingerStep(),
       ];
     },
     uninstall() {

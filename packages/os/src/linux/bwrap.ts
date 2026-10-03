@@ -87,7 +87,9 @@ export function createBwrapSandbox(options: BwrapOptions = {}): Sandbox {
       }
       const net = ownNet()
         ? "each sandbox has a network of its own (pasta): the internet, not this computer's services"
-        : "sandboxes share this computer's network: install passt (pasta) so they can't reach its services";
+        : spawnSync("pasta", ["--version"], { timeout: 5000 }).error
+          ? "sandboxes share this computer's network: install passt (pasta) so they can't reach its services"
+          : "sandboxes share this computer's network: passt (pasta) is installed but can't make them a network of their own here (it needs user namespaces and /dev/net/tun)";
       return {
         available: true,
         detail: scoped()

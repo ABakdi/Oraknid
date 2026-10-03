@@ -22,7 +22,9 @@ describe("unit file", () => {
 });
 
 describe("service manager", () => {
-  it("installs: writes the unit, reloads, enables, turns on linger — and reports each step", () => {
+  const installWith = (
+    loginctl: (args: string[]) => { status: number; stdout: string; stderr: string },
+  ) => {
     const dir = mkdtempSync(join(tmpdir(), "oraknid-unit-"));
     const calls: string[] = [];
     const svc = createSystemdService({
@@ -30,23 +32,53 @@ describe("service manager", () => {
       user: "me",
       run: (cmd, args) => {
         calls.push([cmd, ...args].join(" "));
-        return cmd === "loginctl"
-          ? { status: 1, stdout: "", stderr: "Access denied" }
-          : { status: 0, stdout: "", stderr: "" };
+        if (cmd === "loginctl") return loginctl(args);
+        if (cmd === "sudo") return { status: 1, stdout: "", stderr: "a password is required" };
+        return { status: 0, stdout: "", stderr: "" };
       },
     });
     const steps = svc.install({ execPath: "/usr/bin/node", args: ["cli.mjs", "run"], env: {} });
+    return { dir, calls, steps };
+  };
+
+  it("installs: writes the unit, reloads, enables, turns on linger — and reports each step", () => {
+    let on = false;
+    const { dir, calls, steps } = installWith((args) => {
+      if (args[0] === "enable-linger") on = true;
+      return { status: 0, stdout: on ? "yes\n" : "no\n", stderr: "" };
+    });
     expect(readFileSync(join(dir, "oraknid.service"), "utf8")).toContain("ExecStart=");
     expect(calls).toEqual([
       "systemctl --user daemon-reload",
       "systemctl --user enable --now oraknid.service",
+      "loginctl show-user me -p Linger --value",
       "loginctl enable-linger me",
+      "loginctl show-user me -p Linger --value",
     ]);
     expect(steps.at(-1)).toEqual({
       step: "Start at boot, before login (linger)",
-      ok: false,
-      detail: "Access denied",
+      ok: true,
+      detail: "done",
     });
+  });
+
+  it("leaves linger alone when it is on already (it was asked again and refused, 2026-10-03)", () => {
+    const { calls, steps } = installWith(() => ({ status: 0, stdout: "yes\n", stderr: "" }));
+    expect(calls).not.toContain("loginctl enable-linger me");
+    expect(steps.at(-1)).toMatchObject({ ok: true, detail: "already on" });
+  });
+
+  it("makes a refused linger a warning with the command, not a failure", () => {
+    const { calls, steps } = installWith((args) =>
+      args[0] === "enable-linger"
+        ? { status: 1, stdout: "", stderr: "Could not enable linger: Access denied" }
+        : { status: 0, stdout: "no\n", stderr: "" },
+    );
+    expect(calls).toContain("sudo -n loginctl enable-linger me");
+    expect(steps.at(-1)).toMatchObject({ ok: false, warning: true });
+    expect(steps.at(-1)?.detail).toMatch(
+      /Access denied\. Oraknid starts when you log in; to start it at boot, run: sudo loginctl enable-linger me/,
+    );
   });
 
   it("explains what is missing for starting at boot", () => {

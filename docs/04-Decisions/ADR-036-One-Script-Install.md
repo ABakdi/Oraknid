@@ -71,9 +71,18 @@ services.
   no longer told to run `oraknid install`; `oraknid install` removes any
   other manager's service it finds before installing (two would fight
   over the port), and `oraknid uninstall` removes every one it finds.
-- **Not tested**: the script's systemd path in a container. Booting
-  systemd in a container needs host access this machine does not allow
-  without my yes; the unit is unchanged since Phase 1, where it was
-  tested on this computer.
-
+- **The systemd path, tested** (2026-10-03, with the owner's yes): a
+  Debian 12 system prepared by an unprivileged Docker build (which ran
+  `install.sh --no-service` from scratch: packages, Node, pnpm, the
+  build), then booted with `systemd-nspawn` (its own namespaces and
+  cgroup scope, a private network; never `--privileged` or the host's
+  cgroups, see CLAUDE.md): `oraknid install` wrote, enabled and started
+  the user unit, health answered, a restart came back, `doctor` said it
+  starts at boot, `oraknid uninstall` removed it. Two bugs found and
+  fixed: linger already on was asked for again and, refused by polkit,
+  failed the install although the service ran; linger is now checked
+  first, then asked, then tried with `sudo -n`, and a refusal is a
+  warning with the command to run. `doctor` said "install passt" when
+  passt was installed but couldn't make a network there; it now tells
+  the two apart.
 Related: [[OS-Integration]] · [[ADR-012-Sleep-Inhibition]] · [[ADR-033-Product-Site]]

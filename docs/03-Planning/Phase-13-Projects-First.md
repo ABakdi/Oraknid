@@ -85,7 +85,7 @@ state needs (nothing for an autostart entry that is there; linger,
 removes another's service first (an autostart entry, then runit);
 `oraknid uninstall` removes every kind found. Tested in
 `services.test.ts` and `systemd.test.ts` with stand-in commands. The
-systemd path of `install.sh` is still not tested in a container: a
+systemd path of `install.sh` was tested on 2026-10-03 under `systemd-nspawn` (ADR-036 → As built); before that it was not tested in a container: a
 container booting systemd needs host access that is not allowed on this
 machine without the owner's yes (`CLAUDE.md`); the unit is unchanged
 since Phase 1.

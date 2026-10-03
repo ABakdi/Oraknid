@@ -301,8 +301,10 @@ function formatDuration(ms: number): string {
 }
 
 function report(steps: InstallStep[]) {
-  for (const s of steps) console.log(`${s.ok ? "✓" : "✗"} ${s.step}${s.ok ? "" : `: ${s.detail}`}`);
-  if (steps.some((s) => !s.ok)) process.exitCode = 1;
+  for (const s of steps)
+    console.log(`${s.ok ? "✓" : s.warning ? "!" : "✗"} ${s.step}${s.ok ? "" : `: ${s.detail}`}`);
+  // A warning leaves the service running: only a real failure fails the command.
+  if (steps.some((s) => !s.ok && !s.warning)) process.exitCode = 1;
 }
 
 /** Everything the daemon prints also goes to its log file, rotated at 10 MB (one old file kept). */

@@ -13,6 +13,8 @@ export interface InstallStep {
   step: string;
   ok: boolean;
   detail: string;
+  /** A step that didn't work but leaves the service running: said, not a failure. */
+  warning?: boolean;
 }
 
 /** What the service runs: node, the CLI and "run", with the environment it needs. */
