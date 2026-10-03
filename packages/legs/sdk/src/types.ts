@@ -137,10 +137,35 @@ export interface LegSession {
   usage(): UsageSnapshot;
 }
 
+/** One window of a plan's usage, as the backend's own tooling reads it (ADR-039). */
+export interface PlanWindowReport {
+  /** As the provider names it: "five_hour", "seven_day_opus"… */
+  window: string;
+  scope: "account" | "model";
+  /** The provider's own name for a model's window ("Fable"), when it gives one. */
+  label: string | null;
+  /** Share used, 0–1. */
+  utilization: number | null;
+  resetsAt: number | null;
+}
+
+/** A plan's usage windows, read without sending a prompt (ADR-039). */
+export interface PlanUsageReport {
+  /** False when no plan limits apply (an API key, a provider's cloud): no windows. */
+  available: boolean;
+  windows: PlanWindowReport[];
+}
+
 export interface LegAdapter {
   kind: LegKind;
   probe(leg: LegConfig, sandbox: SandboxPlan | null): Promise<ProbeResult>;
   start(start: SessionStart): Promise<LegSession>;
+  /**
+   * The plan's usage windows, read through the backend's own tooling,
+   * inside the sandbox, costing no tokens (ADR-039). null when the
+   * tooling can't say; an adapter without it has no such reading.
+   */
+  planUsage?(leg: LegConfig, sandbox: SandboxPlan | null): Promise<PlanUsageReport | null>;
 }
 
 export const emptyUsage = (estimated = false): UsageSnapshot => ({
