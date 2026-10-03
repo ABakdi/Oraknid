@@ -382,6 +382,8 @@ export type EyeIntent = z.infer<typeof EyeIntent>;
 export const EyeMessage = z.object({
   id: Id,
   jobId: Id,
+  /** The project's conversation is its messages from every job (ADR-034). */
+  projectId: Id,
   author: z.enum(["owner", "eye"]),
   text: z.string(),
   action: z

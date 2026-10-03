@@ -2,7 +2,6 @@ import { accessSync, constants, existsSync, rmSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import {
   ACTIVE_JOB_STATES,
-  DEFAULT_BUDGET,
   type DraftPatch,
   type NewJob,
   type NewProject,
@@ -29,6 +28,12 @@ import {
 } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
+import {
+  jobBudgetFor,
+  projectBudgetKey,
+  projectBudgetStateKey,
+  projectPortsKey,
+} from "../settings.ts";
 import { BUILT_IN_DEFAULT, type SkillStore } from "../skills/store.ts";
 import { detectBranches, git, isGitRepo, shadowRepo } from "./git.ts";
 
@@ -266,7 +271,14 @@ export class Projects {
       }
       this.db
         .delete(settings)
-        .where(eq(settings.key, `policy.project.${id}`))
+        .where(
+          inArray(settings.key, [
+            `policy.project.${id}`,
+            projectBudgetKey(id),
+            projectBudgetStateKey(id),
+            projectPortsKey(id),
+          ]),
+        )
         .run();
       this.db.delete(projects).where(eq(projects.id, id)).run();
       this.bus.publish({
@@ -305,7 +317,8 @@ export class Projects {
           skillVersion: skill.version,
           autonomy: input.autonomy,
           allowedLegIds: input.allowedLegIds,
-          budget: input.budget ?? DEFAULT_BUDGET,
+          // Unset: the project's budget is where a new job starts (ADR-034).
+          budget: input.budget ?? jobBudgetFor(this.db, project.id),
           state: "draft",
           verify: [...skill.verify, ...input.verify],
           // The skill's tools (ADR-021); set up in Settings → Tools before the job starts.

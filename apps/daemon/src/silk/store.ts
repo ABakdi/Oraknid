@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { Actor, SilkEntry, SilkKind } from "@oraknid/contracts";
+import type { Actor, SilkByJob, SilkEntry, SilkKind } from "@oraknid/contracts";
 import { current, parseMirrorEdits, renderMirror } from "@oraknid/core";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, lt } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
 import { jobs, projects, silkEntries, silkMirror } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
@@ -102,6 +102,46 @@ export class SilkStore {
 
   current(jobId: string): SilkEntry[] {
     return current(this.all(jobId));
+  }
+
+  /**
+   * A project's Silk, kept by job (ADR-034): a group per job with entries,
+   * newest job first.
+   */
+  byProject(projectId: string, includeSuperseded = false): SilkByJob[] {
+    return this.db
+      .select({ id: jobs.id, title: jobs.title, state: jobs.state, createdAt: jobs.createdAt })
+      .from(jobs)
+      .where(eq(jobs.projectId, projectId))
+      .orderBy(desc(jobs.createdAt), desc(jobs.id))
+      .all()
+      .map((j) => ({
+        jobId: j.id,
+        title: j.title,
+        state: j.state as SilkByJob["state"],
+        createdAt: j.createdAt,
+        entries: includeSuperseded ? this.all(j.id) : this.current(j.id),
+      }))
+      .filter((g) => g.entries.length > 0);
+  }
+
+  /**
+   * What earlier jobs of the same project settled (ADR-034): their standing
+   * decisions, architecture and facts, for a new job's context packs. The
+   * newest `max`, newest first.
+   */
+  earlier(jobId: string, max = 40): SilkEntry[] {
+    const job = this.db.select().from(jobs).where(eq(jobs.id, jobId)).get();
+    if (!job) return [];
+    return this.db
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(and(eq(jobs.projectId, job.projectId), lt(jobs.createdAt, job.createdAt)))
+      .all()
+      .flatMap((j) => this.current(j.id))
+      .filter((e) => e.kind === "decision" || e.kind === "architecture" || e.kind === "fact")
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, max);
   }
 
   /** The mirror lives in the job's worktree, or its project folder before there is one. */

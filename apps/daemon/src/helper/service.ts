@@ -65,7 +65,10 @@ const ACTIONS: Record<string, ActionDef> = {
     confirm: () => true,
     run: async (d, i: { name?: string; source: z.infer<typeof ProjectSource> }) => {
       const p = await projectFrom(d, { source: i.source, ...(i.name ? { name: i.name } : {}) });
-      return { result: `Project "${p.name}" at ${p.workspacePath}.`, link: "/projects" };
+      return {
+        result: `Project "${p.name}" at ${p.workspacePath}.`,
+        link: `/projects/${p.id}/eye`,
+      };
     },
   },
   create_draft: {
@@ -116,7 +119,10 @@ const ACTIONS: Record<string, ActionDef> = {
         throw new Error(`Set up ${missing.join(", ")} in Settings → Tools first.`);
       if (job.state === "paused") await d.runner.resume(i.jobId);
       else await d.runner.start(i.jobId);
-      return { result: `"${job.title}" started.`, link: `/jobs/${i.jobId}` };
+      return {
+        result: `"${job.title}" started.`,
+        link: `/projects/${job.projectId}/work/${i.jobId}`,
+      };
     },
   },
   delete_job: {
@@ -125,7 +131,7 @@ const ACTIONS: Record<string, ActionDef> = {
     confirm: () => true,
     run: async (d, i: { jobId: string }) => {
       d.projects.removeJob(i.jobId, d.logsDir);
-      return { result: "Deleted.", link: "/jobs" };
+      return { result: "Deleted.", link: "/" };
     },
   },
   add_leg: {
@@ -159,7 +165,7 @@ const ACTIONS: Record<string, ActionDef> = {
   },
   open_page: {
     description:
-      "Show me a page: /, /jobs, /jobs/<id>, /new, /new/<draft id>, /projects, /inbox, /legs, /chats, /skills, /settings.",
+      "Show me a page: / (the Overview, with what runs now), /projects, /projects/<id>/<tab> (tabs: eye, web, work, inbox, silk, activity, budget, settings), /jobs/<id> (that job, in its project), /new, /new/<draft id>, /inbox, /legs, /chats, /skills, /settings.",
     input: z.object({ path: z.string().regex(/^\/[\w/-]*$/) }),
     confirm: () => false,
     run: async (_d, i: { path: string }) => ({ result: "Here.", link: i.path }),

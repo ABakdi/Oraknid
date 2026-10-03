@@ -361,13 +361,18 @@ export const eyeMessages = sqliteTable(
     jobId: text("job_id")
       .notNull()
       .references(() => jobs.id),
+    /** The project's conversation is its messages from every job (ADR-034). */
+    projectId: text("project_id").notNull().default(""),
     author: text("author", { enum: ["owner", "eye"] }).notNull(),
     text: text("text").notNull(),
     /** What The Eye made of my message and did about it (its replies only). */
     action: json<unknown>("action"),
     createdAt: integer("created_at").notNull(),
   },
-  (t) => [index("eye_messages_job").on(t.jobId, t.createdAt)],
+  (t) => [
+    index("eye_messages_job").on(t.jobId, t.createdAt),
+    index("eye_messages_project").on(t.projectId, t.createdAt),
+  ],
 );
 
 export const inboxItems = sqliteTable(

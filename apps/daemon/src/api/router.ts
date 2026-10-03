@@ -39,6 +39,8 @@ import {
   PlanComparison,
   PlanOutcome,
   ProfileOverrides,
+  ProjectBudget,
+  ProjectBudgetView,
   ProjectView,
   PruneRequest,
   PushSubscriptionInput,
@@ -48,6 +50,7 @@ import {
   ServerView,
   SessionLogPage,
   SessionView,
+  SilkByJob,
   SilkEntry,
   SilkKind,
   StorageUsage,
@@ -84,7 +87,7 @@ import type { JobRunner } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
 import { SAME_PROVIDER_FALLBACK } from "../eye/attempt.ts";
 import type { EyeBrain } from "../eye/brain.ts";
-import { setBudget } from "../eye/budgets.ts";
+import { jobTokens, projectBudgetView, setBudget, setProjectBudget } from "../eye/budgets.ts";
 import {
   editWeb,
   handBack,
@@ -103,7 +106,7 @@ import {
   writeGlobalPolicy,
   writeProjectPolicy,
 } from "../eye/policy.ts";
-import { conversation, talk } from "../eye/talk.ts";
+import { conversation, projectConversation, talk, talkInProject } from "../eye/talk.ts";
 import type { Helper } from "../helper/service.ts";
 import type { InboxStore } from "../inbox/store.ts";
 import { discoverAgents } from "../legs/discover.ts";
@@ -281,6 +284,32 @@ async function followUp(c: ApiContext, fromId: string, goal: string): Promise<st
   return id;
 }
 
+/** What talking to The Eye needs, from a job or from its project (ADR-034). */
+const talkDeps = (c: ApiContext) => ({
+  db: c.jobs.db,
+  bus: c.bus,
+  silk: c.silk,
+  runner: c.runner,
+  brain: c.brain,
+  tmpDir: c.tmpDir,
+  now: c.now,
+  followUp: (from: string, goal: string) => followUp(c, from, goal),
+  // A project's first job, from my first message there: the project's skills and budget.
+  newJob: (projectId: string, goal: string) =>
+    c.projects.createJob({
+      projectId,
+      goal,
+      inputs: [],
+      autonomy: "standard",
+      allowedLegIds: [],
+      verify: [],
+      unsandboxed: false,
+    }),
+  startJob: async (id: string) => {
+    await startJob(c, id);
+  },
+});
+
 const SkillSummary = z.object({
   id: z.string(),
   name: z.string(),
@@ -353,6 +382,7 @@ function jobView(c: ApiContext, id: string): JobView {
     worktree: job.worktree,
     branch: job.branch,
     missingTools: c.tools.missing(job.tools),
+    tokens: jobTokens(c.jobs.db, id),
   });
 }
 
@@ -482,6 +512,45 @@ export const router = {
       .input(z.object({ id: z.string(), skillIds: z.array(z.string()) }))
       .handler(({ context: c, input }) =>
         guard(() => c.projects.setSkills(input.id, input.skillIds)),
+      ),
+    /**
+     * The project's conversation with The Eye (ADR-034): its messages from
+     * every job, in order. Each names the job it was about.
+     */
+    conversation: base
+      .input(z.object({ id: z.string() }))
+      .output(z.array(EyeMessage))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          c.projects.require(input.id);
+          return projectConversation(c.jobs.db, input.id);
+        }),
+      ),
+    /**
+     * My message to the project's Eye: to the job going now, else to the
+     * newest ended one (new work starts a follow-up), else a new job from it.
+     */
+    talk: base
+      .input(z.object({ id: z.string(), text: z.string().min(1).max(8000) }))
+      .output(z.object({ id: z.string(), jobId: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(() => talkInProject(talkDeps(c), input.id, input.text.trim())),
+      ),
+    /** Its budget across its jobs, and what they used (ADR-034). */
+    budget: base
+      .input(z.object({ id: z.string() }))
+      .output(ProjectBudgetView)
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          c.projects.require(input.id);
+          return projectBudgetView(c.jobs.db, input.id);
+        }),
+      ),
+    setBudget: base
+      .input(z.object({ id: z.string(), budget: ProjectBudget }))
+      .output(z.object({ changed: z.array(z.string()) }))
+      .handler(({ context: c, input }) =>
+        guard(() => setProjectBudget(c.jobs.db, c.bus, input.id, input.budget)),
       ),
     /** Hidden from the lists, kept for stats; or back again. */
     archive: base
@@ -1232,14 +1301,18 @@ export const router = {
       .input(z.object({ id: z.string() }))
       .output(JobView)
       .handler(({ context: c, input }) => guard(() => jobView(c, input.id))),
-    list: base.output(z.array(JobView)).handler(({ context: c }) =>
-      c.jobs.db
-        .select({ id: jobsTable.id })
-        .from(jobsTable)
-        .orderBy(asc(jobsTable.id))
-        .all()
-        .map((j) => jobView(c, j.id)),
-    ),
+    list: base
+      .input(z.object({ projectId: z.string().optional() }).optional())
+      .output(z.array(JobView))
+      .handler(({ context: c, input }) =>
+        c.jobs.db
+          .select({ id: jobsTable.id })
+          .from(jobsTable)
+          .where(input?.projectId ? eq(jobsTable.projectId, input.projectId) : undefined)
+          .orderBy(asc(jobsTable.id))
+          .all()
+          .map((j) => jobView(c, j.id)),
+      ),
     /** Its plans and their shadows', side by side, and how the plans that ran fared (ADR-022). */
     planComparisons: base
       .input(z.object({ id: z.string() }))
@@ -1277,20 +1350,7 @@ export const router = {
       .output(z.object({ id: z.string() }))
       .handler(({ context: c, input }) =>
         guard(() => ({
-          id: talk(
-            {
-              db: c.jobs.db,
-              bus: c.bus,
-              silk: c.silk,
-              runner: c.runner,
-              brain: c.brain,
-              tmpDir: c.tmpDir,
-              now: c.now,
-              followUp: (from, goal) => followUp(c, from, goal),
-            },
-            input.id,
-            input.text.trim(),
-          ),
+          id: talk(talkDeps(c), input.id, input.text.trim()),
         })),
       ),
     /** A draft's options, changed as I go (New work page). */
@@ -1526,6 +1586,13 @@ export const router = {
       .output(z.array(SilkEntry))
       .handler(({ context: c, input }) =>
         input.includeSuperseded ? c.silk.all(input.jobId) : c.silk.current(input.jobId),
+      ),
+    /** A project's Silk, kept by job: newest job first (ADR-034). */
+    byProject: base
+      .input(z.object({ projectId: z.string(), includeSuperseded: z.boolean().default(false) }))
+      .output(z.array(SilkByJob))
+      .handler(({ context: c, input }) =>
+        c.silk.byProject(input.projectId, input.includeSuperseded),
       ),
     /** I add an entry: marked mine, never superseded automatically. */
     add: base

@@ -1,6 +1,16 @@
 import { z } from "zod";
 import { Id } from "./common.ts";
-import { Autonomy, Budget, Job, JobInput, Project, Task } from "./entities.ts";
+import {
+  Autonomy,
+  Budget,
+  BudgetLimit,
+  Job,
+  JobInput,
+  JobState,
+  Project,
+  SilkEntry,
+  Task,
+} from "./entities.ts";
 
 // Creating and following projects and jobs (docs/01-Specification/Jobs-and-Projects.md).
 
@@ -126,6 +136,8 @@ export const JobView = Job.extend({
   missingTools: z.array(z.string()).default([]),
   /** The skills The Eye still chooses from (none once chosen, or when I picked one). */
   skillChoices: z.array(z.string()).default([]),
+  /** Tokens its sessions used, what a project's Work tab shows as its cost (ADR-034). */
+  tokens: z.number().default(0),
 });
 export type JobView = z.infer<typeof JobView>;
 
@@ -150,3 +162,35 @@ export const JobResult = z.object({
   cannotMerge: z.string().nullable(),
 });
 export type JobResult = z.infer<typeof JobResult>;
+
+/**
+ * A project's budget (ADR-034): limits on tokens and money across all its
+ * jobs, and the default a new job in it starts with. Null: no limit.
+ */
+export const ProjectBudget = z.object({
+  tokens: BudgetLimit.nullable(),
+  /** In US dollars. */
+  money: BudgetLimit.nullable(),
+});
+export type ProjectBudget = z.infer<typeof ProjectBudget>;
+
+export const NO_PROJECT_BUDGET: ProjectBudget = { tokens: null, money: null };
+
+/** A project's budget and what its jobs used against it. */
+export const ProjectBudgetView = z.object({
+  budget: ProjectBudget,
+  used: z.object({ tokens: z.number(), money: z.number() }),
+  /** Waiting for my answer: a job of it paused at the limit. */
+  asking: z.boolean(),
+});
+export type ProjectBudgetView = z.infer<typeof ProjectBudgetView>;
+
+/** A project's Silk, kept by job (ADR-034): one group per job, newest job first. */
+export const SilkByJob = z.object({
+  jobId: Id,
+  title: z.string(),
+  state: JobState,
+  createdAt: z.number(),
+  entries: z.array(SilkEntry),
+});
+export type SilkByJob = z.infer<typeof SilkByJob>;

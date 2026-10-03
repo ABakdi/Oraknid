@@ -1,5 +1,5 @@
 import type { EyeMessage } from "@oraknid/contracts";
-import { asc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
 import { eyeMessages, jobs, projects, taskEdges, tasks } from "../db/schema.ts";
 import type { JobRunner } from "../engine/runner.ts";
@@ -27,9 +27,17 @@ export interface TalkDeps {
    * Returns its id.
    */
   followUp?: (fromJobId: string, goal: string) => Promise<string>;
+  /**
+   * A project with no job to talk to (ADR-034): a new job in it, its goal my
+   * message, made a draft. Returns its id.
+   */
+  newJob?: (projectId: string, goal: string) => string;
+  /** Starts a job made by `newJob`; throws a sentence when it can't. */
+  startJob?: (jobId: string) => Promise<void>;
 }
 
 const ENDED = new Set(["completed", "cancelled"]);
+const PASSED = "Passed to the follow-up job";
 const RUNNING = new Set(["interviewing", "planning", "running", "verifying", "waiting"]);
 
 /**
@@ -71,6 +79,98 @@ export function conversation(db: Db, jobId: string): EyeMessage[] {
     .where(eq(eyeMessages.jobId, jobId))
     .orderBy(asc(eyeMessages.createdAt), asc(eyeMessages.id))
     .all() as EyeMessage[];
+}
+
+/**
+ * The project's conversation (ADR-034): its messages from every job that
+ * has started, in order. A message an ended job passed to its follow-up is
+ * shown once, where the follow-up answered it.
+ */
+export function projectConversation(db: Db, projectId: string): EyeMessage[] {
+  const started = new Set(
+    db
+      .select({ id: jobs.id, state: jobs.state })
+      .from(jobs)
+      .where(eq(jobs.projectId, projectId))
+      .all()
+      .filter((j) => j.state !== "draft")
+      .map((j) => j.id),
+  );
+  const all = (
+    db
+      .select()
+      .from(eyeMessages)
+      .where(eq(eyeMessages.projectId, projectId))
+      .orderBy(asc(eyeMessages.createdAt), asc(eyeMessages.id))
+      .all() as EyeMessage[]
+  ).filter((m) => started.has(m.jobId));
+  const hidden = new Set<string>();
+  for (const [i, m] of all.entries()) {
+    if (!m.action?.did.includes(PASSED)) continue;
+    hidden.add(m.id);
+    // My message it answered: the last of mine in the same job before it.
+    for (let k = i - 1; k >= 0; k--) {
+      const prev = all[k] as EyeMessage;
+      if (prev.jobId === m.jobId && prev.author === "owner") {
+        hidden.add(prev.id);
+        break;
+      }
+    }
+  }
+  return all.filter((m) => !hidden.has(m.id));
+}
+
+/** The job a project's conversation talks to now: the newest going, else the newest ended. */
+export function projectTarget(db: Db, projectId: string) {
+  const list = db
+    .select()
+    .from(jobs)
+    .where(eq(jobs.projectId, projectId))
+    .orderBy(desc(jobs.createdAt), desc(jobs.id))
+    .all()
+    .filter((j) => j.state !== "draft");
+  return list.find((j) => !ENDED.has(j.state)) ?? list[0] ?? null;
+}
+
+/**
+ * My message to a project's Eye (ADR-034): to the job going now, as on its
+ * own; else to the newest ended job, where new work starts a follow-up;
+ * else, with no job yet, a new job is made from it and started. Returns my
+ * message's id and the job it went to.
+ */
+export async function talkInProject(
+  d: TalkDeps,
+  projectId: string,
+  text: string,
+): Promise<{ id: string; jobId: string }> {
+  const project = d.db.select().from(projects).where(eq(projects.id, projectId)).get();
+  if (!project) throw new Error(`No project ${projectId}.`);
+  const target = projectTarget(d.db, projectId);
+  if (target) return { id: talk(d, target.id, text), jobId: target.id };
+  if (project.archivedAt) throw new Error("The project is archived: restore it to ask for work.");
+  if (!d.newJob || !d.startJob) throw new Error("New work can't start from here.");
+  const jobId = d.newJob(projectId, text);
+  const id = add(d, jobId, "owner", text, null);
+  const title = d.db.select({ t: jobs.title }).from(jobs).where(eq(jobs.id, jobId)).get()?.t;
+  try {
+    await d.startJob(jobId);
+    add(d, jobId, "eye", `I started a job for this, “${title}”: I'll plan it, then get going.`, {
+      intent: "task",
+      did: ["Started a new job"],
+      silkIds: [],
+      taskIds: [],
+      jobId,
+    });
+  } catch (e) {
+    add(
+      d,
+      jobId,
+      "eye",
+      `I made a job for this, “${title}”, but couldn't start it: ${e instanceof Error ? e.message : String(e)} It waits as a draft in New work.`,
+      { intent: "task", did: ["Kept as a draft"], silkIds: [], taskIds: [], jobId },
+    );
+  }
+  return { id, jobId };
 }
 
 /**
@@ -220,7 +320,7 @@ async function act(d: TalkDeps, jobId: string, jobState: string, text: string, v
         const open = openFollowUp(d, jobId);
         if (open) {
           talk(d, open.id, text);
-          did.push("Passed to the follow-up job");
+          did.push(PASSED);
           reply = `I passed this to the follow-up job, “${open.title}”, which is working now.`;
           jobRef = open.id;
           break;
@@ -304,10 +404,12 @@ function add(
   action: EyeMessage["action"],
 ): string {
   const id = newId((d.now ?? Date.now)());
+  const projectId =
+    d.db.select({ p: jobs.projectId }).from(jobs).where(eq(jobs.id, jobId)).get()?.p ?? "";
   d.bus.atomically(() => {
     d.db
       .insert(eyeMessages)
-      .values({ id, jobId, author, text, action, createdAt: (d.now ?? Date.now)() })
+      .values({ id, jobId, projectId, author, text, action, createdAt: (d.now ?? Date.now)() })
       .run();
     d.bus.publish({
       type: author === "owner" ? "eye.message" : "eye.replied",

@@ -511,6 +511,8 @@ export async function runAttempt(
         .filter(Boolean)
         .join("\n\n"),
       entries: d.silk.all(job.id),
+      // What earlier jobs of the project settled, not only what this branch holds (ADR-034).
+      earlier: d.silk.earlier(job.id),
       digest: "",
       inputs: job.inputs,
       capTokens: Math.floor(window * 0.15),
