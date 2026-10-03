@@ -22,6 +22,11 @@ export interface PackInput {
   /** The relevant part of the skill, not the whole file. */
   skill: string;
   entries: SilkEntry[];
+  /**
+   * Earlier jobs of the same project: their standing decisions, architecture
+   * and facts (ADR-034). Shown after the job's own and cut first.
+   */
+  earlier?: SilkEntry[];
   /** A small digest of the files in scope. */
   digest: string;
   /** The job's inputs, already rendered (untrusted ones wrapped as data). */
@@ -35,7 +40,7 @@ export interface Pack {
   tokens: number;
   /** Entries included in full. */
   included: string[];
-  /** Entries cut down to their title to fit: candidates for a summary entry. */
+  /** The job's own entries cut down to their title to fit: candidates for a summary entry. */
   shortened: string[];
 }
 
@@ -67,6 +72,15 @@ export function buildContextPack(p: PackInput): Pack {
     )
     .sort(byNewest);
   const facts = live.filter((e) => e.kind === "fact").sort(byNewest);
+  // An earlier job's entry the job has its own word on is left out (same title).
+  const own = new Set(live.map((e) => e.title));
+  const earlier = current(p.earlier ?? [])
+    .filter(
+      (e) =>
+        (e.kind === "decision" || e.kind === "architecture" || e.kind === "fact") &&
+        !own.has(e.title),
+    )
+    .sort(byNewest);
 
   const taskPart = [
     `# Your task: ${p.task.title}`,
@@ -89,8 +103,10 @@ export function buildContextPack(p: PackInput): Pack {
     ...standing,
     ...issues,
     ...facts,
+    ...earlier,
   ];
   const full = new Set(ranked.map((e) => e.id));
+  const past = new Set(earlier.map((e) => e.id));
   let digest = p.digest;
 
   const render = () => {
@@ -106,6 +122,7 @@ export function buildContextPack(p: PackInput): Pack {
       handoff ? `# Where the last session left this task\n${show(handoff)}` : "",
       section("Known issues", issues),
       section("Facts", facts),
+      section("From earlier jobs in this project", earlier),
       digest ? `# The files in scope\n${digest}` : "",
     ]
       .filter(Boolean)
@@ -116,7 +133,8 @@ export function buildContextPack(p: PackInput): Pack {
   // Shorten from the least important, oldest end.
   for (let i = ranked.length - 1; i >= 0 && estimateTokens(text) > p.capTokens; i--) {
     const entry = ranked[i] as SilkEntry;
-    if (entry.authoredBy === "owner" && entry.kind !== "issue") continue; // my words are kept whole
+    // My words in this job are kept whole; an earlier job's may be cut to fit.
+    if (entry.authoredBy === "owner" && entry.kind !== "issue" && !past.has(entry.id)) continue;
     full.delete(entry.id);
     text = render();
   }
@@ -128,7 +146,7 @@ export function buildContextPack(p: PackInput): Pack {
     text,
     tokens: estimateTokens(text),
     included: ranked.filter((e) => full.has(e.id)).map((e) => e.id),
-    shortened: ranked.filter((e) => !full.has(e.id)).map((e) => e.id),
+    shortened: ranked.filter((e) => !full.has(e.id) && !past.has(e.id)).map((e) => e.id),
   };
 }
 

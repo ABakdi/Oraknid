@@ -14,8 +14,8 @@ the canon. Code identifiers are shown in `code`.
 | **Leg kind** | `legKind` | The type of backend a Leg uses: `claude-code`, `openai-compatible`, `opencode`, `antigravity`. Each kind has one adapter. |
 | **Leg adapter** | `LegAdapter` | The code that drives one Leg kind behind the uniform interface: start, send, stream, interrupt, resume, kill, usage, permissions. |
 | **Capability profile** | `CapabilityProfile` | What a Leg model is good and bad at: strengths, context window, quota model, rate limits, speed, known failure patterns. The user can edit it, and observed performance updates it. |
-| **Project** | `project` | A workspace (a folder or repo) and everything run against it. Holds many jobs. Stats roll up per project. |
-| **Job** | `job` | One goal run to completion: its inputs, a skill, constraints (budget, allowed Legs, autonomy level) and a life-cycle state. |
+| **Project** | `project` | A workspace (a folder or repo) and everything run against it: the place I work, with one conversation with The Eye, its Web across jobs, its Silk kept by job and an optional budget. Holds many jobs. Stats roll up per project (ADR-034). |
+| **Job** | `job` | One goal run to completion: its inputs, a skill, constraints (budget, allowed Legs, autonomy level) and a life-cycle state. Shown as a project's history, in its Work tab, never as a page of its own (ADR-034). |
 | **The Web** | `web` | A job's task graph. |
 | **Task** | `task` | One node of The Web: a unit of work given to exactly one Leg at a time. |
 | **Attempt** | `attempt` | One try at a task by one Leg in one or more sessions. A task can have several attempts (retries, reassignments). |

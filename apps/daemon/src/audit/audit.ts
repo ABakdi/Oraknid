@@ -1,10 +1,10 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Event } from "@oraknid/contracts";
-import { and, desc, eq, gt, like, lt, or, type SQL } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, like, lt, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "../db/open.ts";
-import { events } from "../db/schema.ts";
+import { events, jobs } from "../db/schema.ts";
 import { readSetting, writeSetting } from "../settings.ts";
 
 // The audit log (Security → Audit log, BR-16): the append-only event
@@ -12,6 +12,8 @@ import { readSetting, writeSetting } from "../settings.ts";
 
 export const AuditQuery = z.object({
   jobId: z.string().optional(),
+  /** Every job of a project (ADR-034). */
+  projectId: z.string().optional(),
   /** A type or a type prefix ending with ".", e.g. "policy." */
   type: z.string().optional(),
   actor: z.string().optional(),
@@ -25,6 +27,13 @@ export type AuditQuery = z.infer<typeof AuditQuery>;
 export function searchAudit(db: Db, q: AuditQuery): Event[] {
   const where: SQL[] = [];
   if (q.jobId) where.push(eq(events.jobId, q.jobId));
+  if (q.projectId)
+    where.push(
+      inArray(
+        events.jobId,
+        db.select({ id: jobs.id }).from(jobs).where(eq(jobs.projectId, q.projectId)),
+      ),
+    );
   if (q.type)
     where.push(q.type.endsWith(".") ? like(events.type, `${q.type}%`) : eq(events.type, q.type));
   if (q.actor) where.push(eq(events.actor, q.actor));

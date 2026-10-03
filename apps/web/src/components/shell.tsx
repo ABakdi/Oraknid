@@ -44,6 +44,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api, message } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { jobHref } from "@/lib/links";
 import { useLive, useLiveStatus } from "@/lib/live";
 import { store } from "@/lib/store";
 import { useTheme } from "@/lib/theme";
@@ -51,7 +52,6 @@ import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
-  { href: "/jobs", label: "Jobs", icon: ListTodo },
   { href: "/projects", label: "Projects", icon: FolderGit2 },
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/mail", label: "Mail", icon: Mail },
@@ -64,18 +64,17 @@ const NAV = [
   { href: "/settings", label: "Settings", icon: Cog },
 ];
 /** On a phone: four tabs and "More" (Web-UI → Layout). */
-const TABS = ["/", "/jobs", "/inbox", "/legs"];
+const TABS = ["/", "/projects", "/inbox", "/legs"];
 /** A phone tab; the one I'm on gets a violet bar on top. */
 const TAB =
   "relative flex min-h-14 flex-col items-center justify-center gap-0.5 text-[11px] text-muted-foreground before:absolute before:top-0 before:left-1/2 before:h-0.5 before:w-8 before:-translate-x-1/2 before:rounded-b-full before:bg-primary before:opacity-0 before:transition-opacity";
 
 /** Pages with a side panel of their own fold the sidebar while open (Web-UI → Layout). */
-const FOLDS = [/^\/chats/, /^\/terminal/, /^\/mail/, /^\/jobs\/(?!new)[^/]+/];
+const FOLDS = [/^\/chats/, /^\/terminal/, /^\/mail/, /^\/projects\/[^/]+\/work\/[^/]+/];
 
 /** `g` then a key: where it goes (Web-UI → Keyboard). */
 const GO: Record<string, string> = {
   o: "/",
-  j: "/jobs",
   p: "/projects",
   i: "/inbox",
   l: "/legs",
@@ -94,7 +93,6 @@ export const SHORTCUTS: { keys: string; does: string; where?: string }[] = [
   { keys: "[", does: "Fold or unfold the sidebar" },
   { keys: "n", does: "New work" },
   { keys: "g o", does: "Overview" },
-  { keys: "g j", does: "Jobs" },
   { keys: "g p", does: "Projects" },
   { keys: "g i", does: "Inbox" },
   { keys: "g l", does: "Legs" },
@@ -503,7 +501,7 @@ function Palette({ open, onOpenChange }: { open: boolean; onOpenChange: (o: bool
             <CommandItem
               key={j.id}
               value={`job ${j.title} ${j.state}`}
-              onSelect={() => run(() => go(j.state === "draft" ? `/new/${j.id}` : `/jobs/${j.id}`))}
+              onSelect={() => run(() => go(jobHref(j)))}
             >
               <ListTodo className="size-4" />
               <span className="flex-1 truncate">{j.title}</span>

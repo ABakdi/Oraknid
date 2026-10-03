@@ -56,16 +56,31 @@ specific task:
 3. The current `decision` and `architecture` entries (not superseded).
 4. The latest handoff for this task, if any.
 5. `issue` entries touching the task's scope.
-6. A small workspace digest of the files in scope.
+6. **From earlier jobs in this project** ([[ADR-034-Projects-First]]):
+   the current `decision`, `architecture` and `fact` entries of the
+   project's jobs that started before this one, the newest 40; not their
+   progress, issues, handoffs or notes for later. An entry this job has
+   its own word on (the same title) is left out.
+7. A small workspace digest of the files in scope.
 
 The pack has a token cap: by default 15% of the receiving Leg's context
-window. If it goes over, the least important and oldest entries are cut
-to their titles first (entries I wrote stay whole), then the digest is
+window. If it goes over, the earlier jobs' entries are cut to their
+titles first (mine too), then this job's least important and oldest
+(entries I wrote in this job stay whole), then the digest is
 trimmed. The task itself is never cut. Shortened entries are then
 summarised in the background by a cheap Leg, one summary per kind (two
 entries or more), stored as a new entry whose `covers` lists the
 entries it replaces; they leave the current Silk together. My entries,
-handoffs and interview answers are never summarised.
+handoffs and interview answers are never summarised, and an earlier
+job's entries are never summarised into this job's Silk.
+
+## Per project, kept by job
+
+Each job keeps its own Silk (and its own mirror in its worktree). A
+project's Silk tab shows its entries grouped by job, newest job first,
+the newest open (`silk.byProject`). A decision I add there goes to the
+job The Eye talks to now. A new job reads the earlier jobs' standing
+entries through its context packs (above), not by copying them.
 
 ## Storage and mirror
 

@@ -43,7 +43,11 @@ export function checkBudget(
   budget: Budget,
   use: BudgetUse,
   already: ReadonlySet<string>,
+  /** Whose budget it is: a job's, or a project's across its jobs (ADR-034). */
+  of: "job" | "project" = "job",
 ): BudgetFinding[] {
+  const who = of === "project" ? "The project" : "The job";
+  const paused = of === "project" ? "its jobs are paused" : "it is paused";
   const out: BudgetFinding[] = [];
   const dims: [BudgetDimension, { limit: number; hard: boolean } | null][] = [
     ["tokens", budget.tokens],
@@ -62,8 +66,8 @@ export function checkBudget(
         used,
         limit: b.limit,
         message: b.hard
-          ? `The job used its ${NAMES[d]} budget (${show(d, used)} of ${show(d, b.limit)}); it is paused until I raise it.`
-          : `The job passed its ${NAMES[d]} alarm (${show(d, used)} of ${show(d, b.limit)}); it carries on. Come and look.`,
+          ? `${who} used its ${NAMES[d]} budget (${show(d, used)} of ${show(d, b.limit)}); ${paused} until I raise it.`
+          : `${who} passed its ${NAMES[d]} alarm (${show(d, used)} of ${show(d, b.limit)}); it carries on. Come and look.`,
       });
     } else if (b.hard && used >= b.limit * 0.8 && used < b.limit && !already.has(`${d}:warning`)) {
       out.push({
@@ -72,7 +76,7 @@ export function checkBudget(
         hard: true,
         used,
         limit: b.limit,
-        message: `The job has used 80% of its ${NAMES[d]} budget (${show(d, used)} of ${show(d, b.limit)}).`,
+        message: `${who} has used 80% of its ${NAMES[d]} budget (${show(d, used)} of ${show(d, b.limit)}).`,
       });
     }
   }

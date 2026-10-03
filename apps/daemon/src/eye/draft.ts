@@ -36,7 +36,12 @@ function say(d: DraftDeps, jobId: string, author: "owner" | "eye", text: string)
   const at = (d.now ?? Date.now)();
   const id = newId(at);
   d.bus.atomically(() => {
-    d.db.insert(eyeMessages).values({ id, jobId, author, text, action: null, createdAt: at }).run();
+    const projectId =
+      d.db.select({ p: jobs.projectId }).from(jobs).where(eq(jobs.id, jobId)).get()?.p ?? "";
+    d.db
+      .insert(eyeMessages)
+      .values({ id, jobId, projectId, author, text, action: null, createdAt: at })
+      .run();
     d.bus.publish({
       type: author === "owner" ? "eye.message" : "eye.replied",
       topic: `job:${jobId}`,

@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { api, message } from "@/lib/api";
 import { ago } from "@/lib/format";
 import { t } from "@/lib/i18n";
+import { jobHref } from "@/lib/links";
 import { useLive } from "@/lib/live";
 import { cn } from "@/lib/utils";
 
@@ -223,7 +224,11 @@ export function InboxItemCard({ item, highlight }: { item: InboxItem; highlight?
         </CardTitle>
         {/* Where it comes from, on its own line: each part may wrap, nothing squeezes the title. */}
         <Link
-          href={`/jobs/${item.jobId}`}
+          href={
+            item.projectId
+              ? jobHref({ id: item.jobId, projectId: item.projectId })
+              : `/jobs/${item.jobId}`
+          }
           className="block text-xs text-muted-foreground underline-offset-2 [overflow-wrap:anywhere] hover:underline"
         >
           {item.projectName && item.jobTitle

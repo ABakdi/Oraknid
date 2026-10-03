@@ -1121,7 +1121,10 @@ describe("the interview (M1.7)", () => {
     expect(zero[1]?.actions[0]).toMatchObject({ name: "create_project", state: "proposed" });
     await expect(
       api.helper.decide({ messageId: zero[1]?.id as string, index: 0, confirm: true }),
-    ).resolves.toMatchObject({ state: "done", link: "/projects" });
+    ).resolves.toMatchObject({
+      state: "done",
+      link: expect.stringMatching(/^\/projects\/\w{26}\/eye$/),
+    });
     await api.helper.send({ text: "and the job" });
     const one = await settle(4);
     expect(one[3]?.actions[0]).toMatchObject({ name: "create_draft", state: "done" });
@@ -1145,7 +1148,10 @@ describe("the interview (M1.7)", () => {
       index: 0,
       confirm: true,
     });
-    expect(done).toMatchObject({ state: "done", link: `/jobs/${jobId}` });
+    expect(done).toMatchObject({
+      state: "done",
+      link: `/projects/${(await api.jobs.get({ id: jobId })).projectId}/work/${jobId}`,
+    });
     expect((await until(api, jobId, ["completed", "blocked"])).state).toBe("completed");
     await expect(
       api.helper.decide({ messageId: proposal?.id as string, index: 0, confirm: true }),
@@ -1926,6 +1932,7 @@ describe("a message cut off by a crash (Audit 1 → D1-11)", () => {
       .values({
         id: "01J9Z3K8W2Q4V6X8Y0A1B2C3M1",
         jobId: id,
+        projectId: (await api.jobs.get({ id })).projectId,
         author: "owner",
         text: "How many tasks?",
         action: null,

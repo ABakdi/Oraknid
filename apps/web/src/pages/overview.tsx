@@ -1,15 +1,19 @@
-import type { Event } from "@oraknid/contracts";
+import type { Event, JobView } from "@oraknid/contracts";
 import { AlertTriangle, Bot, Cpu, HardDrive, MemoryStick, Network } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "wouter";
 import { Sparkline, TokensChart } from "@/components/charts";
 import { Empty, ErrorNote, Loading, PageHeader, Stat, StateBadge } from "@/components/common";
+import { PauseResume } from "@/components/project-work";
 import { AddLegButtons } from "@/components/setup";
+import { ACTIVE } from "@/components/task-drawer";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { api } from "@/lib/api";
 import { ago, bytes, clock, tokens, until } from "@/lib/format";
 import { t } from "@/lib/i18n";
+import { jobHref, jobIdHref } from "@/lib/links";
 import { useEvents, useLive, useMetrics } from "@/lib/live";
 
 const midnight = () => new Date(new Date().setHours(0, 0, 0, 0)).getTime();
@@ -26,7 +30,11 @@ export function OverviewPage() {
   });
   const jobs = useLive(() => api.jobs.list(), {
     topics: ["overview"],
-    refreshOn: (e) => e.type.startsWith("job."),
+    refreshOn: (e) => e.type.startsWith("job.") || e.type === "task.state",
+  });
+  const projects = useLive(() => api.projects.list(), {
+    topics: ["overview"],
+    refreshOn: (e) => e.type.startsWith("project."),
   });
   const today = useLive(() => api.stats.tokens({ since: midnight(), bucketMs: 3600_000 }), {
     topics: ["overview"],
@@ -60,6 +68,9 @@ export function OverviewPage() {
   }
 
   const tokensToday = (today.data ?? []).reduce((n, b) => n + b.tokens, 0);
+  // A job's id to its project, for links straight to it (ADR-034).
+  const where = new Map((jobs.data ?? []).map((j) => [j.id, j.projectId]));
+  const names = new Map((projects.data ?? []).map((p) => [p.id, p.name]));
   const problems = stream.filter(isProblem).slice(0, 8);
   const last = metrics.at(-1);
 
@@ -68,7 +79,7 @@ export function OverviewPage() {
       <PageHeader title={t("Overview")} sub={t("{n} job(s) active", { n: activeJobs.length })} />
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat label={t("Tokens today")} value={tokens(tokensToday)} />
-        <TileLink href="/jobs">
+        <TileLink href="/" onClick={() => document.getElementById("running-now")?.scrollIntoView()}>
           <Stat
             label={t("Jobs running")}
             value={activeJobs.filter((j) => j.state === "running").length}
@@ -92,6 +103,8 @@ export function OverviewPage() {
           />
         </TileLink>
       </div>
+
+      <RunningNow jobs={activeJobs} names={names} />
 
       <section aria-label={t("Legs now")}>
         <h2 className="mb-2 text-sm font-medium text-muted-foreground">{t("Legs now")}</h2>
@@ -124,7 +137,7 @@ export function OverviewPage() {
                             t("thinking for The Eye")
                           ) : a.task ? (
                             <Link
-                              href={`/jobs/${a.jobId}`}
+                              href={a.jobId ? jobIdHref(a.jobId, where) : "/"}
                               className="hover:underline"
                               title={a.task}
                             >
@@ -210,7 +223,7 @@ export function OverviewPage() {
               {problems.map((e) => (
                 <Link
                   key={e.seq}
-                  href={e.jobId ? `/jobs/${e.jobId}` : "/logs"}
+                  href={e.jobId ? jobIdHref(e.jobId, where) : "/logs"}
                   className="block rounded px-1 hover:bg-accent"
                 >
                   <div className="truncate" title={describe(e)}>
@@ -302,11 +315,84 @@ export function OverviewPage() {
   );
 }
 
+/**
+ * Running now (ADR-034): every job going or waiting, across projects,
+ * queued ones too, each with its project, its progress, and pause or
+ * resume. A job opens in its project.
+ */
+function RunningNow({ jobs, names }: { jobs: JobView[]; names: Map<string, string> }) {
+  const list = [...jobs].sort(
+    (a, b) =>
+      Number(!!a.queuedAt) - Number(!!b.queuedAt) || (b.startedAt ?? 0) - (a.startedAt ?? 0),
+  );
+  return (
+    <section id="running-now" aria-label={t("Running now")} className="scroll-mt-4">
+      <h2 className="mb-2 text-sm font-medium text-muted-foreground">{t("Running now")}</h2>
+      {list.length === 0 ? (
+        <div className="rounded-xl border bg-card/60 px-3 py-3 text-sm text-muted-foreground">
+          {t("Nothing runs now. Ask for work in a project's Eye tab, or with New work.")}
+        </div>
+      ) : (
+        <ol className="divide-y rounded-xl border bg-card">
+          {list.map((j) => {
+            const done = j.tasks.filter((x) => x.state === "done" || x.state === "skipped").length;
+            return (
+              <li
+                key={j.id}
+                className="relative flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 hover:bg-accent/50"
+              >
+                <div className="min-w-0 flex-1 basis-48">
+                  <Link
+                    href={jobHref(j)}
+                    className="block truncate font-medium after:absolute after:inset-0"
+                    title={j.title}
+                  >
+                    {j.title}
+                  </Link>
+                  <div className="truncate text-xs text-muted-foreground">
+                    {names.get(j.projectId) ?? t("a project")}
+                    {j.blockedReason || j.pauseReason
+                      ? ` · ${j.blockedReason ?? j.pauseReason}`
+                      : j.startedAt
+                        ? ` · ${t("started {when}", { when: ago(j.startedAt) })}`
+                        : ""}
+                  </div>
+                </div>
+                <div className="flex w-full items-center gap-2 sm:w-40">
+                  <Progress
+                    value={j.tasks.length ? (done / j.tasks.length) * 100 : 0}
+                    className="h-1.5"
+                  />
+                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                    {done}/{j.tasks.length}
+                  </span>
+                </div>
+                {j.queuedAt ? <Badge variant="outline">{t("queued")}</Badge> : null}
+                <StateBadge state={j.state} />
+                <PauseResume job={j} running={ACTIVE.includes(j.state)} />
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </section>
+  );
+}
+
 /** A tile that opens the page it counts. */
-function TileLink({ href, children }: { href: string; children: ReactNode }) {
+function TileLink({
+  href,
+  children,
+  onClick,
+}: {
+  href: string;
+  children: ReactNode;
+  onClick?: () => void;
+}) {
   return (
     <Link
       href={href}
+      onClick={onClick}
       className="min-w-0 rounded-lg outline-none hover:[&>div]:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
     >
       {children}

@@ -10,6 +10,16 @@ folder Oraknid creates. I create a project once, then run many jobs
 against it over time. Per-project stats (history, tokens, time, tasks,
 failures, breakdown by Leg) roll up from its jobs.
 
+**The project is the place; jobs are its history**
+([[ADR-034-Projects-First]], 2026-10-03). I work in a project: I ask its
+Eye for work, follow The Web across its jobs, and open a job in its
+Work tab. A job stays the unit underneath (one request: its own branch,
+budget, approvals, autonomy and checkpoints, cancelled alone), but it
+has no page of its own and there is no list of jobs apart from their
+projects. A project has one conversation with The Eye ([[The-Eye]] →
+Talking to The Eye), its Silk kept by job ([[Silk]]) and an optional
+budget across its jobs ([[Budgets-and-Quotas]] → A project's budget).
+
 On creation Oraknid:
 
 1. Checks the path exists and is writable. If not, it says so and
@@ -24,6 +34,13 @@ On creation Oraknid:
 
 ## Starting work (the New work page, Phase 8)
 
+In a project I already have, new work starts in its Eye tab: I write
+what I want, and The Eye starts a job for it, adds it to the one
+running, or starts a follow-up ([[The-Eye]] → Talking to The Eye). The
+project's **New work** button opens that tab. The New work page stays
+for a first request, a new project, a draft, or options I want to set
+before the start; once started, it lands in the project's Eye tab.
+
 One page, two sides ([[Phase-8-Daily-Use]]):
 
 **Left, the options:**
@@ -34,7 +51,7 @@ One page, two sides ([[Phase-8-Daily-Use]]):
 | Skills | the project's | The skills The Eye may use; it picks the one that fits ([[Skills]]). |
 | Legs | all healthy Legs | Any subset. |
 | Autonomy | Standard | See [[Approvals-and-Autonomy]]. |
-| Budget | no money; tokens unlimited; time alarm 8 h | See [[Budgets-and-Quotas]]. |
+| Budget | the project's budget, else no money and tokens unlimited; time alarm 8 h | See [[Budgets-and-Quotas]]. |
 | Inputs, verification | none; from the skill and the project | Inputs: a repo, a folder or documents, each can be marked untrusted. Verification: commands that must pass, on top of the skill's and the project's. |
 
 **Right, the prompt and the conversation:** I write what I want; The
@@ -44,7 +61,7 @@ happens here, round by round, with my answers kept in Silk verbatim
 context. I can go on talking until I'm happy.
 
 **The draft:** the job exists as a `draft` from my first word, saved as
-I go. I can leave and come back to it from Jobs, **Start** it (then it
+I go. I can leave and come back to it from New work's list of drafts, **Start** it (then it
 plans, or interviews further if the interview isn't over), or **Delete**
 it. A draft costs nothing until it starts, except The Eye's replies.
 
@@ -72,9 +89,11 @@ meanwhile.
 
 ## Following a job
 
-The job page shows The Web live, the activity stream, Silk, the inbox
-items for this job, budgets and their burn, and every problem. See
-[[Web-UI]].
+A job is followed in its project ([[Web-UI]] → Projects): The Web live
+across the project's jobs, and the job opened in the Work tab with its
+tasks, result, agents' output, activity, Silk, inbox items, budget and
+its burn, settings and every problem. What runs now, across projects,
+is on the Overview. An old `/jobs/<id>` link opens the job there.
 
 ## Controls
 
@@ -109,7 +128,7 @@ fails once merged is redone on top of the newer work.
 
 - **Completed**: job-level verification passed. Oraknid writes a final
   Silk summary, shows the result, notifies me, and offers the work
-  branch for review. The job page shows **the result**: the worktree
+  branch for review. The job, opened in its project's Work tab, shows **the result**: the worktree
   folder, the job branch and its commits, with a button to open the
   folder and one to merge the branch into the work branch. Merging is
   my action, so pressing it is the approval; a conflict is reported and
@@ -130,5 +149,8 @@ and budget, its goal my message and the tasks The Eye proposes, its
 branch made from the ended job's branch so it continues from what that
 built. It starts at once; the conversation links to it. While it runs,
 more new work I write to the ended job goes to it, not to a third job.
+Since the project's Eye tab talks to its newest job (ADR-034), "more
+on the piano" from the project goes to the running follow-up on its
+own, and to a new follow-up once that one has ended.
 
 Related: [[Core-Entities]] · [[The-Eye]] · [[Web-UI]] · [[Durability]]

@@ -25,7 +25,7 @@ profile. I can change it any time in Settings, or per job.
   **quick** (command checks, my messages, summaries). Unset, a kind uses
   the Eye Leg, then the pool ([[ADR-022-Eye-Decision-Models]]).
 - A **shadow planner** can also plan every job, in the background,
-  never used: the job page shows its plans beside the ones that ran,
+  never used: a job (in its project's Work tab) shows its plans beside the ones that ran,
   with their measures and how the real ones fared, so I can judge a
   dedicated decision model (Jev, Kev, a local one) on my own jobs.
 
@@ -149,7 +149,23 @@ checks passes; the change of a check is visible, never silent.
 
 ## Talking to The Eye
 
-Each job has a prompt to The Eye. I write in my words: an instruction,
+Each project has one conversation with The Eye, in its Eye tab
+([[ADR-034-Projects-First]], 2026-10-03). Its messages carry the
+project, and the conversation is the project's messages from every job
+that has started, in order; each reply links the job it touched. My
+message goes to a job:
+
+1. the newest job of the project still going (running, waiting, paused,
+   blocked, queued), as below;
+2. else the newest job that has ended, where new work starts a
+   follow-up job;
+3. else, with no job yet, a new job is made from my message (its goal),
+   with the project's skills and budget, and started. If it can't start
+   (a tool not set up, no Leg), the reply says why and it waits as a
+   draft in New work.
+
+A draft's own conversation (on New work) joins the project's once it
+starts. I write in my words: an instruction,
 a task to add, context, "stop that", "keep this for later". The Eye
 decides what it is (one short reasoning call) and acts, then answers
 me in a line:
@@ -169,8 +185,10 @@ while that follow-up runs, more new work goes to it
 ([[Jobs-and-Projects]] → Follow-up jobs). If the follow-up can't start,
 the message is kept for later and the reply says why. If no Leg
 can think (none healthy, or the call fails), my message is kept as my
-decision and passed on anyway: my words are never lost. The
-conversation is kept with the job and shown on its page.
+decision and passed on anyway: my words are never lost. Each message
+is kept with its job and its project; the project's Eye tab shows them
+all. A message an ended job passed to its follow-up is shown there
+once, where the follow-up answered it.
 
 ## Evaluation
 

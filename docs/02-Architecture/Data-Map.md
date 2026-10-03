@@ -28,6 +28,8 @@ Where each piece of data lives, and who can read it.
 | The Nest | SQLite, setting `nest.config` (address, daemon id); its secret in the keychain (`nest-secret`); the daemon's static key pair in its data folder (0600) | Daemon | The secret to The Nest, which keeps only its hash on a public Nest. |
 | Chats and the helper (Phase 8) | SQLite: `chats`, `chat_messages`, `helper_messages` | Daemon, paired devices | What I write goes to the chosen Leg's provider (the helper: The Eye's). |
 | Plans and their shadows (Phase 7) | SQLite: `eye_plans` | Daemon, paired devices | The plan input goes to both models' providers. |
+| The Eye's conversations | SQLite: `eye_messages`, each with its job and its project (migration 0029 filled the project from the job, [[ADR-034-Projects-First]]) | Daemon, paired devices | What I write goes to the Eye's model for triage. |
+| Earlier jobs' Silk in a pack (2026-10-03) | Read from SQLite when a session's context pack is built | The receiving Leg | As part of the pack, to a remote Leg's provider, like the job's own Silk. |
 
 ## Settings keys
 
@@ -42,6 +44,8 @@ no row.
 | `policy.global`, `policy.project.<project>` | Command rules, globally and per project ([[Security]]). |
 | `project.localPorts.<project>` | The ports on this computer a project's jobs may reach ([[Sandboxing]]). |
 | `job.startFrom.<job>` | The branch a follow-up job starts from ([[Jobs-and-Projects]] → Follow-up jobs). |
+| `project.budget.<project>` | A project's limits on tokens and money across its jobs, and a new job's default ([[Budgets-and-Quotas]] → A project's budget). |
+| `project.budgetState.<project>` | Where it stands: the warnings already given, the open inbox question and the jobs it paused. |
 | `lock.pin`, `lock.idleMinutes` | The PIN's hash; the idle lock ([[ADR-029-App-Lock]]). |
 | `devices.fullRights` | Devices with full rights ([[ADR-030-Device-Rights]]). |
 | `terminal.enabled` | The terminal's switch ([[ADR-028-Terminal]]). |

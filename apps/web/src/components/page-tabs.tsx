@@ -27,12 +27,15 @@ export function PageTabs({
   tabs,
   header,
   className,
+  keys = true,
 }: {
   base: string;
   tab: string | undefined;
   tabs: PageTab[];
   header?: ReactNode;
   className?: string;
+  /** `1`…`9` switch these tabs; off for tabs inside another page's tab. */
+  keys?: boolean;
 }) {
   const [, go] = useLocation();
   const current = tabs.find((x) => x.id === tab) ?? tabs[0];
@@ -49,6 +52,7 @@ export function PageTabs({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the tabs' ids are what matter
   useEffect(() => {
+    if (!keys) return;
     const on = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || typing(e)) return;
       const n = Number(e.key);
@@ -57,7 +61,7 @@ export function PageTabs({
     };
     window.addEventListener("keydown", on);
     return () => window.removeEventListener("keydown", on);
-  }, [base, tabs.map((x) => x.id).join()]);
+  }, [base, keys, tabs.map((x) => x.id).join()]);
 
   return (
     <div
