@@ -615,13 +615,19 @@ export function createTaskWorktree(
       git(g, ["worktree", "prune"]);
     }
   }
-  if (ok(g, ["rev-parse", "--verify", `refs/heads/${branch}`])) git(g, ["branch", "-D", branch]);
-  git(g, ["worktree", "add", "-q", "-b", branch, path, jobBranch]);
+  addTaskWorktree(repoPath, path, branch, jobBranch);
   // A fresh tree from the job's newer tip: the task's scope is measured from here, not from an
   // earlier attempt's tree (that made other tasks' merged files look like its own edits).
   const base = `refs/oraknid/${jobId}/${taskId}/base`;
   if (ok(g, ["rev-parse", "--verify", "--quiet", base])) git(g, ["update-ref", "-d", base]);
   return { path, branch };
+}
+
+/** A task's worktree at `path` on a new `branch` from `from` (a stale branch of that name goes first). */
+export function addTaskWorktree(repoPath: string, path: string, branch: string, from: string) {
+  const g = { cwd: repoPath, base: [] };
+  if (ok(g, ["rev-parse", "--verify", `refs/heads/${branch}`])) git(g, ["branch", "-D", branch]);
+  git(g, ["worktree", "add", "-q", "-b", branch, path, from]);
 }
 
 /** Removes a task's worktree and branch once its work is merged, or to start it again. */
@@ -635,7 +641,8 @@ export function removeTaskWorktree(repoPath: string, path: string, branch: strin
       git(g, ["worktree", "prune"]);
     }
   }
-  if (ok(g, ["rev-parse", "--verify", `refs/heads/${branch}`])) git(g, ["branch", "-D", branch]);
+  if (branch && ok(g, ["rev-parse", "--verify", `refs/heads/${branch}`]))
+    git(g, ["branch", "-D", branch]);
 }
 
 /**
