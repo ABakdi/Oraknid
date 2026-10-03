@@ -12,6 +12,8 @@ Add one or more GitHub accounts in **Settings → Connections → GitHub**, each
 
 A project has its own **GitHub repo**, in its Settings next to its servers. When work needs GitHub and none is set, The Eye asks you once in the project's conversation (which account, a new repo or one of yours, public or private) and saves your answer. From then on Oraknid creates the repo, pushes and opens pull requests there itself, without asking; a force-push or a push anywhere else still asks.
 
+**Repos** (`g r`) shows your repositories from every account: browse their code at any branch, read the commit history with each change, branches and pull requests, and link one to a project or start new work on it.
+
 ## Network
 
 Agents reach the internet, but none of the services running on your computer. If a project needs one (a local Postgres on 5432, say), list its port in the project's **Network** tab. A Leg that uses a local model can always reach that model.

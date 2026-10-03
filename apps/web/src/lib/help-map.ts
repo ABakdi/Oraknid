@@ -203,6 +203,36 @@ export const PAGES: HelpPage[] = [
     ],
   },
   {
+    id: "repos",
+    path: "/repos/{item}/{tab}",
+    item: "a repository as owner/name",
+    name: "Repos",
+    does: "My GitHub repositories from every account: a list with a search, and one repository's code, history and pull requests; the GitHub accounts and their allowance beside the list.",
+    tabs: [
+      {
+        id: "code",
+        name: "Code",
+        does: "Browse the files at a branch, read one with colours and line numbers; the README on the root.",
+      },
+      {
+        id: "commits",
+        name: "Commits",
+        does: "A branch's history; a commit with its changes file by file.",
+      },
+      { id: "branches", name: "Branches", does: "The repository's branches." },
+      {
+        id: "pulls",
+        name: "Pull requests",
+        does: "Open and closed pull requests; one with its description, commits and changes.",
+      },
+      {
+        id: "project",
+        name: "Project",
+        does: "Link the repository to a project, open the project that links it, or start new work on it.",
+      },
+    ],
+  },
+  {
     id: "docs",
     path: "/docs/{item}",
     item: "a guide page's slug",
