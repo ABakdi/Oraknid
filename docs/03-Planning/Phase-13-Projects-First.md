@@ -253,6 +253,12 @@ invoice from the mail and answers; no page errors, nothing past the
 right edge. The site still builds, its page list now read from
 `apps/site/docs/guide.json`.
 
+### M13.11 — Several repos and servers, each with its role ([[ADR-042-Several-Repos-And-Servers]])
+- [ ] A project of several repos: found in its folder, each with its name, branches and GitHub link
+- [ ] Jobs across them: a worktree and branch per repo touched, checkpoints, commits, checks, merges and pushes per repo
+- [ ] Servers with a role in each project
+- [ ] The Eye picks the server I name and asks to confirm; otherwise asks with my servers and Add a new server; production always confirmed
+
 ## Exit criterion
 
 I ask for new work on the piano project from its Eye tab and follow it

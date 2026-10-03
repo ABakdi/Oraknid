@@ -87,6 +87,7 @@ note and in the [[Roadmap]]. Next: those runs, then Later.
 - [[ADR-032-Email]] — Phase 12: an email client, mail for agents through the broker
 - [[ADR-034-Projects-First]] · [[ADR-035-Nest-Pages-By-Mode]] — Phase 13: the project is the place, jobs its history; what a public and a private Nest show
 - [[ADR-036-One-Script-Install]] · [[ADR-037-Questions-With-Options]] · [[ADR-038-Project-Accounts]] — Phase 13: one install script with services for systemd, OpenRC and runit; questions with options; a project's GitHub repo and servers, chosen once
+- [[ADR-042-Several-Repos-And-Servers]] — Phase 13: a project of several repos, each committed and pushed on its own; servers with roles, picked by name and confirmed
 - [[ADR-041-Docs-And-A-Guiding-Helper]] — Phase 13: the guide inside Oraknid, and a helper that knows it, my data and the screens, and shows me where things are
 - [[ADR-039-Plan-Usage-In-View]] · [[ADR-040-Repos-Page]] — Phase 13: a Leg's plan usage on the Overview and its details; my GitHub repositories inside Oraknid
 

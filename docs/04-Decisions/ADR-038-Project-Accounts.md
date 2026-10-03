@@ -51,6 +51,8 @@ the check repair didn't know the project's repo and kept them.
   remote become the two above. Once per task.
 - **The check repair knows the repo** and replaces such checks itself.
 
+*Extended 2026-10-03:* several repos per project, and servers with roles ([[ADR-042-Several-Repos-And-Servers]]).
+
 ## Changed (2026-10-03): the project's Repo tab
 The link was in the project's Settings and went unseen. A **Repo** tab,
 after Work, shows the linked repo (which one, through which account),
