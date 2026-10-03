@@ -71,4 +71,66 @@ rights, through the tunnel ([[ADR-030-Device-Rights]]). The Terminal
 page is a workspace: terminals in tabs, side by side or in a grid
 ([[Web-UI]] → Terminal).
 
-Related: [[ADR-026-Servers]] · [[ADR-027-Oraknid-Monitor]] · [[ADR-028-Terminal]] · [[Security]] · [[Web-UI]]
+## Backups (2026-10-03, [[ADR-044-Backups]])
+
+A **backup plan** is one database on one of my servers, or all of a
+server's: PostgreSQL, MySQL/MariaDB, MongoDB, Redis or SQLite, on the
+host (host and port, or the local socket) or in a Docker (or Podman)
+container by its name; a login, whose password is in the keychain
+(`backup.plan.<id>.password`). It has a **schedule** in this
+computer's time (every hour at a minute, every day at a time, every
+week on a day, or a five-field cron line), a **destination** (a folder
+on this computer, `~` my home; or a folder on another of my servers,
+from its login's home), a **retention** (the last N and none older
+than D days; the newest good backup always stays) and an optional
+**age key**.
+
+**A run**, over the server's SSH connection: the native dump
+(`pg_dump --clean --if-exists --no-owner --no-privileges` or
+`pg_dumpall`; `mariadb-dump`/`mysqldump --single-transaction`;
+`mongodump --archive`; Redis `BGSAVE`, waited for, then its RDB file;
+SQLite `.backup` to a temporary file), inside its container with
+`docker exec -i` when it has one. The password goes to the tool as the
+first line of the command's stdin, read by the shell into the variable
+the tool reads (`PGPASSWORD`, `MYSQL_PWD`, `REDISCLI_AUTH`) and handed
+on by name (`docker exec -e NAME`); MongoDB's tools read it from a
+config file made for the run (mode 600) and removed when it ends. It
+is never in a command line, a log or an event. The dump streams to
+Oraknid, is compressed (zstd), encrypted to the key's public half (age)
+when the plan has one, hashed (SHA-256), and written as `<file>.part`,
+renamed once the dump has said it ended well: on this computer
+(folder and file mine only) or on the other server through its own SSH
+connection (`umask 077`, `cat`, then `mv`). A file is
+`<plan>-<id>/<YYYYMMDD-HHMMSS>-<database>.<sql|archive|rdb|sqlite>.zst[.age]`.
+
+Each run is recorded: when, why (its schedule, a **missed** time run
+when Oraknid came back, or Run now), its state, size, duration,
+checksum, where, its key, and the error in plain words (no such
+container, the login refused, nothing answering on the port, the tool
+not installed, Docker not reachable by the SSH user). A failed run is
+the `backup.failed` notification ([[Notifications]]). A time missed
+while Oraknid was off runs once when it starts, said so; a run cut by
+a stop is failed and its partial file removed. After a good run,
+retention removes what it lets go (the file, there; the record stays,
+marked).
+
+**Keys** are age X25519 keys made by Oraknid (or imported): the public
+half in SQLite, the private half in the keychain
+(`backup.key.<id>`), which I can take away **once** (shown and
+downloaded); it is used only for Verify and Restore. A key a plan uses,
+or that kept backups were made with, can't be removed.
+
+**Verify** reads a backup back (from this computer, or with `cat` over
+the other server's SSH), checks its checksum, decrypts and decompresses
+it, and checks it is a whole dump of its kind (the header and the
+ending of a PostgreSQL or MySQL dump, mongodump's archive magic number
+and terminator, the RDB header and EOF byte, the SQLite header and
+size). **Restore** puts it back into the plan's database or another
+(another container, server, database name; its password for that
+restore only), in two steps: what it will replace, then the database's
+name (a SQLite file's name, a server's for all) typed back within five
+minutes. A Redis restore puts the file in place and stops Redis without
+saving; a container is started again. Restoring is never an agent's
+([[Security]] → Backups).
+
+Related: [[ADR-026-Servers]] · [[ADR-027-Oraknid-Monitor]] · [[ADR-028-Terminal]] · [[ADR-044-Backups]] · [[Security]] · [[Web-UI]]

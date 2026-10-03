@@ -297,7 +297,10 @@ My chats with any Leg and model, like a chat app ([[Chats-and-Helper]]).
 My servers ([[Servers]]): each with its state, its state document,
 oraknid-monitor's readings live and over 24 hours, services and ports;
 add, discover again, edit the document, edit its name and description,
-open a terminal, remove.
+open a terminal, remove. A server's **Backups** tab
+(`ServerBackupsTab`, [[ADR-044-Backups]]): its backup plans and those
+keeping their backups on it, each with its backups, and New backup plan
+with the databases found on it to pick from (or one described).
 
 ### Terminal
 
@@ -482,6 +485,12 @@ that opened Settings:
   accounts by name, the first the default, each token checked, with
   why GitHub refuses one; add one, remove one after a second step;
   [[ADR-038-Project-Accounts]]), tools for skills.
+- **Backups** ([[ADR-044-Backups]]): every backup plan (what, when,
+  where to, how many kept, its key, its last run and error; Run now, a
+  switch to pause, edit, remove), the latest backups (size, duration,
+  checksum, where; Verify; Restore in two steps, the database's name
+  typed back), and the encryption keys (public halves; Make a key shows
+  the private one once to download or copy; Import a key).
 
 ### The lock
 

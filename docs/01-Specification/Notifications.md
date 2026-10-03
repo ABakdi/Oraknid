@@ -29,6 +29,7 @@ Settings → Notifications.
 | Recovered after crash or reboot | ✓ | ✓ | — |
 | Leg unavailable / rate-limited | — | — | — |
 | Security: the 5th wrong PIN on a device, a device unpaired by ten ([[ADR-029-App-Lock]]) | ✓ | ✓ | ✓ |
+| A backup failed, with its error in words ([[ADR-044-Backups]]) | ✓ | ✓ | ✓ |
 
 I can change every cell. **Quiet hours** hold everything except
 approvals for running jobs and security alerts. Repeated events are grouped
