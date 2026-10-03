@@ -104,7 +104,16 @@ I name, asking only to confirm.
   (the `server.added` event).
 - **Not built**: tasks side by side in a job across several repos (it
   needs a worktree per task per repo and an all-or-nothing merge of
-  them); renaming a repo or changing its branches in the UI (a repo
-  taken out and added again takes the branches it has).
+  them).
+- **Done (2026-10-03)**: renaming a repo and changing its release and
+  work branches, `projects.updateRepo({id, name, rename?, releaseBranch?,
+  workBranch?})`: a name already taken is refused, a branch must be a name
+  git accepts (`check-ref-format --branch`; it needn't exist yet), and
+  the two must differ; not while a job of the project runs, home only. A
+  project of one repo's branches are the project's too. The Repo tab's
+  repos card has a pencil per repo opening a dialog (its name, both
+  branches; only what changed is sent). The servers card on a phone: the
+  role field is as wide as its word, the name keeps 11 rem and the role
+  and Production go under it at 390 px, the name no longer cut.
 
 Related: [[ADR-038-Project-Accounts]] · [[ADR-026-Servers]] · [[Jobs-and-Projects]] · [[ADR-016-Parallel-Work]] · [[ADR-037-Questions-With-Options]]

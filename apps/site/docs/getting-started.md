@@ -92,4 +92,4 @@ Next: [Jobs and The Eye](jobs.html).
 
 ## Help inside Oraknid
 
-This guide is in Oraknid too, under **Docs** (`g d`). The helper, the round button at the bottom left, knows it, your screens and your data: ask it how something works or where an option is, and it opens the page and points at the control, or does it for you, asking first before anything big.
+This guide is in Oraknid too, under **Docs** (`g d`). The helper, the round button at the bottom left, knows it, your screens and your data: ask it how something works or where an option is, and it opens the page and points at the control, or does it for you, asking first before anything big. When the control is in a dialog, the helper steps aside until you close it, then comes back; when it can't point at something, it hears so and tells you where to look instead.

@@ -299,6 +299,34 @@ the job's Result per repo, The Eye's server question with options, Add
 a new server's link and waiting question, `/servers?add=1` opening the
 dialog; nothing wider than the screen.
 
+Open items closed (2026-10-03): the servers card at 390 px (the name no
+longer cut, the role field as wide as its word), renaming a repo and
+changing its branches (`projects.updateRepo`, the Repo tab's pencil),
+New work's GitHub account picker for a new repo, `g` swallowing the
+next key (`g r` on Mail no longer replies), the helper hearing when a
+highlight fails (`helper.shown`) and stepping aside for a dialog, the
+code colours checked at AA in both themes, and a sweep at 390 px
+(ADR-038, ADR-040, ADR-041, ADR-042 → As built). Tested: `pnpm check`
+green; daemon (`several-repos.test.ts`: rename, branches, refusals, a
+one-repo project's branches; `lock.test.ts`: home only;
+`helper.test.ts`: a failed highlight in the next round's prompt); web
+(`go-prefix.test.ts`, `project-repo.test.tsx`, `work.test.tsx`,
+`helper.test.tsx`, `code-colours.test.ts`, `help-map.test.ts`). By hand
+in headless Chromium on a sample daemon (fake OS, a scripted Leg, the
+stand-in GitHub with two accounts, a stand-in mail server, its own data
+folder, port 7587, stopped after) at 1440 and 390 px, dark and light:
+43 pages and tabs (Overview, every project tab, Repos with a file, a
+commit list, branches and pulls, every server tab, Mail, every Settings
+tab, New work, Inbox, Legs, Chats, Skills, Logs, Docs) with nothing past
+the right edge and no page errors; `g r` and `g c` on Mail; the servers
+card; a repo renamed and its work branch changed, a bad branch refused
+in the dialog; the account picker choosing `work`; a highlight that
+failed shown failed with why; a highlight into a mail account's settings
+dialog, the panel aside and back once the dialog closed; the code's
+rendered colours (lowest 6.09:1 on the well). Found by hand and fixed:
+the repos card cut a repo's GitHub column to "not on…", and the ring's
+note ran its two sentences together.
+
 ### M13.12 — What runs on a server ([[ADR-043-Server-Insight]])
 - [x] Docker containers, images, volumes and compose projects; databases; the reverse proxy and its sites; traffic; logs live
 - [x] A server's page in tabs; restart a container or a service, asked first; the helper reads it all

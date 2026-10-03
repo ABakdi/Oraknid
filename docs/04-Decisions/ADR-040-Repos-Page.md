@@ -71,6 +71,15 @@ pull requests, and which project uses which.
   tokens. Diffs in `components/diff-view.tsx`.
 - Found by hand: New work's repo picker failed on an empty repository
   (no last push); it takes one now.
+- **Checked (2026-10-03)**: `g r` on Mail also replied, `g c` also opened
+  a new message (both listened on window). The `g` prefix now listens in
+  the capture phase and swallows the key after `g`, known or not, before
+  any page's own shortcut sees it (`lib/go-prefix.ts`). The code colours
+  in the light theme, never checked by hand, measured against the well, a
+  card, muted, the canvas and a diff's added, removed and hunk rows: all
+  at AA in both themes (lowest 4.99:1 light, 5.05:1 dark), unchanged;
+  `lib/code-colours.test.ts` reads them from `index.css` so a later change
+  can't drop below AA unseen.
 
 Tested: `apps/daemon/src/workspace/github-repos.test.ts` against a
 stand-in GitHub (`apps/daemon/src/testing/fake-github.ts`: two accounts,

@@ -45,4 +45,22 @@ me to a page or point at the control I'm looking for.
   a test checks every id in the map exists in the screens.
 - The guide is written once, for the site and the app.
 
+## As built (2026-10-03)
+- **A highlight that fails is reported back.** It was a toast only, and
+  the helper's record still said done, so its next reply thought I had
+  seen it. The browser now calls `helper.shown({messageId, index, ok,
+  why})`: the action becomes failed with "It couldn't be shown in the
+  browser: <why>", which the next round reads in the conversation; Show
+  me again that works sets it back to done. A failed one shows its
+  reason, and Show me again, under it.
+- **A control inside a modal dialog.** The panel sat under the dialog,
+  unclickable, the dialog holding the focus. I chose not to lift the
+  panel above dialogs: every Radix dialog traps focus, hides the rest
+  from screen readers and closes on a click outside, so the panel would
+  have to fight each of them. Instead the panel steps aside (its button
+  ringed), the ring's note adds "Close this dialog to get back to the
+  helper.", and the panel comes back by itself once no modal dialog or
+  drawer is open. On a phone it steps aside anyway and comes back with a
+  tap, as before.
+
 Related: [[ADR-024-Oraknid-Helper]] · [[Chats-and-Helper]] · [[Web-UI]] · [[ADR-033-Product-Site]]

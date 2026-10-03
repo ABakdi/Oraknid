@@ -87,7 +87,9 @@ Eye's conversation sit beside them ([[Chats-and-Helper]]).
   Chats, Servers, Terminal, Mail, Skills, Docs, Settings (`g j` went with the
   Jobs page, 2026-10-03); `1`…`9` goes to that tab on a page with tabs
   (a job's own tabs inside Work don't take them); `[` folds the sidebar; `n` new work; Ctrl+K
-  the command palette. Single keys stay out of the way while I type.
+  the command palette. Single keys stay out of the way while I type. The
+  key after `g` is `g`'s alone: no page's own shortcut sees it (`g r` on
+  Mail goes to Repos without replying).
 - **On mobile:** the sidebar becomes a bottom tab bar (Overview,
   Projects, Inbox, Legs, More). Every control is reachable within two taps, and
   touch targets are at least 44 px (buttons, fields, tabs and the close
@@ -221,14 +223,16 @@ the address (`/projects/<id>/<tab>`):
   branches, **Add a repo** and **Find repos in its folder**. A project of
   several repos ([[ADR-042-Several-Repos-And-Servers]]) shows **Its
   repos** first (each repo's name, folder, release / work branches and
-  GitHub repo or "not on GitHub yet", and an ✕ to take it out, with a
-  confirmation), then a section per repo with what's on its GitHub repo
+  GitHub repo or "not on GitHub yet", a pencil to rename it or change
+  its release and work branches in a dialog, and an ✕ to take it out,
+  with a confirmation), then a section per repo with what's on its GitHub repo
   and its own link card ("GitHub repo of api"). Add a repo is a dialog:
   where from (a folder of the project that is a repo, a new empty repo,
   a clone of my GitHub repo or of a git URL), the folder, its name.
 - **Settings**: its **servers**, each ticked one with its role (a word,
   suggestions testing, staging, production, saved when I leave the
-  field) and a **Production** mark, "live" beside a production server;
+  field, as wide as its word; on a phone under the name) and a
+  **Production** mark, "live" beside a production server;
   then its repos (the same card), the folder and branches (each repo's
   for several), archive or delete, and the project's command rules.
 - In the projects list, a project of several repos says how many; New
@@ -249,7 +253,8 @@ below 1280 px.
 Options on the left, my prompt and the conversation with The Eye on
 the right ([[Jobs-and-Projects]] → Starting work). It is for a first
 request, a new project or a draft; more work in a project is asked in
-its Eye tab. The drafts are listed above the form. The draft is saved as
+its Eye tab. A new project from a new GitHub repo is made on the GitHub
+account I pick (the default first). The drafts are listed above the form. The draft is saved as
 I go; **Start** and **Delete**. **Start** stays disabled until there is
 a goal and a project, and says why; what it waits for that can be set
 up (a Leg, a tool) is offered beside it. Its budget starts as the
@@ -429,7 +434,11 @@ with a short note (opening the menu, dialog or drawer that holds it),
 or fills a field for me to check ([[ADR-041-Docs-And-A-Guiding-Helper]]).
 The controls it can point at carry a `data-help` id from the map
 (`src/lib/help-map.ts`). On a phone its panel steps aside while it
-shows me something and comes back with a tap on its button.
+shows me something and comes back with a tap on its button. A control in
+a dialog: the panel steps aside on any screen, the ring's note says to
+close the dialog, and the panel comes back once it is closed. What it
+couldn't show is said to me and told to the helper, whose next reply
+knows.
 
 ### Docs
 
