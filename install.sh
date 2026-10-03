@@ -116,9 +116,9 @@ pkg() {
 	*:cc) echo gcc-c++ make ;;
 	apt-get:curl) echo curl ca-certificates ;;
 	*:curl) echo curl ;;
-	zypper:node) echo nodejs22 ;;
+	zypper:node) echo nodejs24 nodejs22 ;;
 	*:node) echo nodejs ;;
-	zypper:npm) echo npm22 ;;
+	zypper:npm) if [ -n "$NODE_PKG" ]; then echo "npm${NODE_PKG#nodejs}"; else echo npm-default; fi ;;
 	*:npm) echo npm ;;
 	esac
 }
@@ -141,18 +141,19 @@ install_pkgs() {
 	esac
 }
 
-# The Node version the distribution would install, or nothing.
-distro_node_version() {
+# The version of a package the distribution would install, or nothing.
+distro_version() {
 	case "$PM" in
-	apt-get) apt-cache policy nodejs 2>/dev/null | awk '/Candidate:/ { print $2 }' ;;
-	dnf) dnf -q repoquery --latest-limit 1 --qf '%{version}\n' nodejs 2>/dev/null | head -n 1 ;;
-	pacman) pacman -Si nodejs 2>/dev/null | awk -F': *' '/^Version/ { print $2; exit }' ;;
-	zypper) zypper --non-interactive -q info nodejs22 2>/dev/null | awk -F': *' '/^Version/ { print $2; exit }' ;;
-	apk) apk policy nodejs 2>/dev/null | awk 'NR == 2 { sub(":$", "", $1); print $1 }' ;;
+	apt-get) apt-cache policy "$1" 2>/dev/null | awk '/Candidate:/ { print $2 }' ;;
+	dnf) dnf -q repoquery --latest-limit 1 --qf '%{version}\n' "$1" 2>/dev/null | head -n 1 ;;
+	pacman) pacman -Si "$1" 2>/dev/null | awk -F': *' '/^Version/ { print $2; exit }' ;;
+	zypper) zypper --non-interactive -q info "$1" 2>/dev/null | awk -F': *' '/^Version/ { print $2; exit }' ;;
+	apk) apk policy "$1" 2>/dev/null | awk 'NR == 2 { sub(":$", "", $1); print $1 }' ;;
 	esac | sed 's/^[0-9]*://; s/[-+~].*//' | grep -E '^[0-9]+\.[0-9]+' || true
 }
 
 NODE_LOCAL=0
+NODE_PKG=""
 
 ensure_packages() {
 	title "Checking what this computer has"
@@ -182,9 +183,16 @@ ensure_packages() {
 	pkgs=""
 	for need in $needs; do
 		if [ "$need" = node ]; then
-			candidate="$(distro_node_version)"
-			if [ -n "$candidate" ] && version_ge "$candidate" "$NODE_MIN"; then
-				pkgs="$pkgs $(pkg node)"
+			candidate=""
+			for p in $(pkg node); do
+				candidate="$(distro_version "$p")"
+				if [ -n "$candidate" ] && version_ge "$candidate" "$NODE_MIN"; then
+					NODE_PKG="$p"
+					break
+				fi
+			done
+			if [ -n "$NODE_PKG" ]; then
+				pkgs="$pkgs $NODE_PKG"
 			else
 				say "The distribution's Node is ${candidate:-not available}; I'll put Node 22 in $DIR/.tools/node."
 				NODE_LOCAL=1
