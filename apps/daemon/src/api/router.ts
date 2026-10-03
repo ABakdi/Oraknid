@@ -13,6 +13,7 @@ import {
   EyeModels,
   FoundAgent,
   HelperAction,
+  HelperContext,
   HelperMessage,
   InboxFilter,
   InboxItem,
@@ -621,8 +622,11 @@ export const router = {
       .handler(({ context: c }) => c.helper.conversation()),
     thinking: base.output(z.boolean()).handler(({ context: c }) => c.helper.thinking()),
     send: base
-      .input(z.object({ text: z.string().min(1).max(8000) }))
-      .handler(({ context: c, input }) => guard(() => c.helper.send(input.text))),
+      // With what the web app knows: where I am, the guide, the screens (ADR-041).
+      .input(z.object({ text: z.string().min(1).max(8000), context: HelperContext.optional() }))
+      .handler(({ context: c, input }) =>
+        guard(() => c.helper.send(input.text, input.context ?? {})),
+      ),
     decide: base
       .input(
         z.object({ messageId: z.string(), index: z.number().int().min(0), confirm: z.boolean() }),
