@@ -60,7 +60,7 @@ export function HelpRing() {
     <div aria-live="polite" className="pointer-events-none fixed inset-0 z-[60]">
       <div
         data-help-ring
-        className="absolute rounded-lg ring-[3px] ring-eye shadow-[0_0_0_9999px_color-mix(in_srgb,black_22%,transparent)] motion-safe:animate-[help-pulse_1.4s_ease-in-out_infinite]"
+        className="absolute rounded-lg outline-[3px] outline-eye outline-solid shadow-[0_0_0_9999px_color-mix(in_srgb,black_22%,transparent)] motion-safe:animate-[help-pulse_1.4s_ease-in-out_infinite]"
         style={{
           left: box.left - pad,
           top: box.top - pad,
