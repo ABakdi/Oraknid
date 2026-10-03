@@ -49,7 +49,30 @@ their questions and redirecting The Eye.
   Servers, Terminal, Mail; `[` folds the sidebar; `n` new work.
 - **On mobile:** the sidebar becomes a bottom tab bar (Overview, Jobs,
   Inbox, Legs, More). Every control is reachable within two taps, and
-  touch targets are at least 44 px.
+  touch targets are at least 44 px (buttons, fields, tabs and the close
+  of every dialog, on any touch screen). More closes on a tap outside,
+  on Esc and when I pick a page; nothing on a phone traps me.
+- **Going back** (2026-10-03): everything I drill into has a back
+  control before its title: a job, a draft, a Leg opened from elsewhere,
+  a skill, an inbox item, and on a phone a project, a server and a chat.
+  It goes back where I came from when that was in Oraknid, else to the
+  page above (Jobs, Projects…). Settings opened from a "Settings" link
+  next to a control has one too. A job's task drawer is a step of its
+  own: the phone's back, Esc or ✕ close it. Every dialog closes with Esc
+  and has a visible ✕; buttons sit with the main one on the right.
+- **Set up in place** (2026-10-03): a page that needs something set up
+  elsewhere offers it right there, in a dialog holding the same card as
+  Settings, with "Open in Settings" as a link: a Leg (find agents, or
+  add one) where none is healthy (Overview, New work, a new chat), the
+  tools a skill needs (New work, a job, a skill, a project's skills),
+  GitHub (New work), a server (a project's servers, with Set it up for
+  one not set up yet), the terminal (turned on from the Terminal page,
+  with the same confirmation), a skill from a .md file (New work).
+- **A second step** for what can't be taken back, naming what happens:
+  cancelling a job, removing a task, rolling a task back, deleting a
+  draft, a project, a skill or a chat, removing a Leg, a server or a
+  tool, accepting a changed host key, revoking a device, unpairing this
+  one, disconnecting GitHub, pruning logs, clearing the helper.
 
 ## Screens
 
@@ -104,14 +127,18 @@ task), budget burn against limits.
 
 A list with totals. Each project page: history of jobs, tokens and time
 spent, tasks completed, failures, breakdown by Leg, and a link to the
-workspace and its Silk mirror.
+workspace and its Silk mirror. **New work** in its header starts a job
+there; its Servers tab adds a server or sets one up in place, its Skills
+tab shows which tools a skill still needs.
 
 ### New work
 
 Options on the left, my prompt and the conversation with The Eye on
 the right ([[Jobs-and-Projects]] → Starting work). The draft is saved as
 I go; **Start**, **Delete** and the drafts list in Jobs. **Start** stays
-disabled until there is a goal and a project, and says why.
+disabled until there is a goal and a project, and says why; what it
+waits for that can be set up (a Leg, a tool) is offered beside it. New
+work from a project's page starts with that project chosen.
 
 ### Chats
 
@@ -121,12 +148,13 @@ My chats with any Leg and model, like a chat app ([[Chats-and-Helper]]).
 
 My servers ([[Servers]]): each with its state, its state document,
 oraknid-monitor's readings live and over 24 hours, services and ports;
-add, discover again, edit the document, open a terminal, remove.
+add, discover again, edit the document, edit its name and description,
+open a terminal, remove.
 
 ### Terminal
 
-A terminal workspace (xterm.js), when turned on in Settings
-([[ADR-028-Terminal]]): terminals in tabs, and side by side or in a grid
+A terminal workspace (xterm.js), when turned on in Settings → Security
+or on this page itself while it is off ([[ADR-028-Terminal]]): terminals in tabs, and side by side or in a grid
 (one, two columns, two by two). A new terminal is picked from cards:
 this computer, each server. Shortcuts (the browser keeps `Ctrl+Shift+T`
 and `W` for itself, and `Ctrl+Shift+Q` quits Chrome on Linux):
@@ -198,7 +226,8 @@ the text.
 
 The registry: health, kind, model, quota, observed performance. Each
 Leg is a card collapsed to one line (name, health, kind, quota), opened
-to see its models and configure it; a Leg named on the Overview links
+to see its models and configure it: test, log in, pause, enable,
+sessions at once, rename, remove; a Leg named on the Overview links
 here, opened. **Add Leg** with a live test, and **Find agents on this
 machine**. The capability profile editor shows learned
 values next to my overrides.
@@ -206,16 +235,23 @@ values next to my overrides.
 ### Skills
 
 The library: view (rendered markdown), upload, edit with preview,
-versions.
+versions. The open skill is in the address (`/skills/<id>`); on a phone
+the list and the skill take turns, with a way back. An uploaded skill's
+earlier versions are a choice away; a built-in is read-only, and "Make a
+copy to change" opens it as a new skill of mine. Editing keeps every
+front-matter field (its tools and checks too).
 
 ### Logs
 
-The audit trail and the daemon's logs: search, filters, export.
+The audit trail and the daemon's logs, in tabs in the address
+(`/logs/<tab>`): search, filters, export; "Older" pages back and "Back
+to the newest" returns.
 
 ### Settings
 
 In tabs, each one concern in sections; the tab is in the address
-(`/settings/<tab>`):
+(`/settings/<tab>`), and changing tabs keeps the way back to the page
+that opened Settings:
 - **General**: this computer (keychain, sandbox, sleep inhibition),
   storage use and pruning, notifications, theme.
 - **Eye & jobs**: The Eye's models, jobs at once, same-provider fallback.
@@ -235,7 +271,10 @@ many tries are left before the device is unpaired.
 ## Empty, loading and error states
 
 - No Legs yet → the Overview shows a single "Add your first Leg" card
-  that explains what a Leg is.
+  that explains what a Leg is, with Find agents and Add a Leg on it.
+- Every empty list says what would be there and offers the action that
+  fills it (New work, New chat, New project, Add a server, Clear the
+  filters…).
 - No jobs → "Start a job". If no Leg is healthy, it says why the button
   is disabled.
 - Every error says what happened and what I can do. No error is shown
