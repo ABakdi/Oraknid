@@ -78,6 +78,18 @@ systemd path from the script (no systemd in the containers; the unit
 is unchanged and was tested in Phase 1), a real boot under OpenRC or
 runit, and the `curl | sh` form before it reaches `main`.
 
+Later (2026-10-03): `oraknid doctor` asks for `oraknid install` only
+when no service is installed: each service manager says what its own
+state needs (nothing for an autostart entry that is there; linger,
+`rc-update` or a link otherwise), and installing with one manager
+removes another's service first (an autostart entry, then runit);
+`oraknid uninstall` removes every kind found. Tested in
+`services.test.ts` and `systemd.test.ts` with stand-in commands. The
+systemd path of `install.sh` is still not tested in a container: a
+container booting systemd needs host access that is not allowed on this
+machine without the owner's yes (`CLAUDE.md`); the unit is unchanged
+since Phase 1.
+
 ### M13.4 — Questions with options ([[ADR-037-Questions-With-Options]])
 - [x] Questions shaped single, multi, text, confirm, with a recommended option and "Other"
 - [x] The interview and The Eye's conversation answer them in tabs, by keyboard and touch

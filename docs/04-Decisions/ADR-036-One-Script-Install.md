@@ -66,5 +66,14 @@ services.
 - `oraknid` in `~/.local/bin` is a two-line script running the build
   with the Node it was built with; `--uninstall` removes only one it
   wrote, and keeps the program folder and the data.
+- **Doctor and switching managers** (2026-10-03): each service manager
+  says what its state needs (`fix`), so an installed autostart entry is
+  no longer told to run `oraknid install`; `oraknid install` removes any
+  other manager's service it finds before installing (two would fight
+  over the port), and `oraknid uninstall` removes every one it finds.
+- **Not tested**: the script's systemd path in a container. Booting
+  systemd in a container needs host access this machine does not allow
+  without my yes; the unit is unchanged since Phase 1, where it was
+  tested on this computer.
 
 Related: [[OS-Integration]] · [[ADR-012-Sleep-Inhibition]] · [[ADR-033-Product-Site]]
