@@ -389,7 +389,11 @@ shown once and never again; Restore in two steps. Help map: every new
 id in the screens. By hand on a sample daemon (temp data dir, free
 port, stand-in keychain and SSH, a throwaway Postgres): Settings →
 Backups at desktop width and at 390 px (no sideways scroll), the plan
-form, a failed plan's error, Verify's result, the restore's second step.
+form, a failed plan's error, Verify's result, the restore's second step;
+after merging ADR-042 and ADR-043, a server's Backups tab on a set-up
+server offering the databases `servers.databases` found (a Postgres
+container picked fills its kind and name) at desktop and 390 px; a web
+test covers that mapping.
 
 ## Exit criterion
 
