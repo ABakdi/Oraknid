@@ -535,6 +535,121 @@ describe("a project of several repos (ADR-042)", () => {
   }, 90_000);
 });
 
+describe("tasks side by side across several repos (ADR-042, ADR-016)", () => {
+  const WEB = "Write the page";
+  const API = "Write the API entry";
+  const BOTH = "Wire the page to the API";
+
+  it("runs tasks of different repos together, each in its own folder of worktrees, and merges each repo", async () => {
+    const folder = twoRepos();
+    let bothTurns = 0;
+    const { d, api, project, starts } = await harness(
+      folder,
+      (t) => {
+        if (t.system.includes(`# Your task: ${WEB}`))
+          return [
+            { run: "sleep 1" },
+            { write: "web/index.html", content: "<h1>site</h1>\n" },
+            { say: "DONE" },
+          ];
+        if (t.system.includes(`# Your task: ${API}`))
+          return [
+            { run: "sleep 1" },
+            { write: "api/server.js", content: "export const port = 8080;\n" },
+            { say: "DONE" },
+          ];
+        if (t.system.includes(`# Your task: ${BOTH}`)) {
+          bothTurns++;
+          // The first time slow, so the page is merged first and its check then fails;
+          // the redo adds what the check needs once the page is there.
+          return bothTurns === 1
+            ? [
+                { run: "sleep 3" },
+                { write: "web/wire.js", content: "fetch('/api');\n" },
+                { write: "api/cors.js", content: "export const cors = true;\n" },
+                { say: "DONE" },
+              ]
+            : [
+                { write: "web/wire.js", content: "fetch('/api');\n" },
+                { write: "web/wired.ok", content: "ok\n" },
+                { write: "api/cors.js", content: "export const cors = true;\n" },
+                { say: "DONE" },
+              ];
+        }
+        return [{ say: "DONE" }];
+      },
+      () => ({
+        summary: "The page and the API side by side, and the wiring across both.",
+        tasks: [
+          task("w", WEB, ["web/index.html"], ["test -f web/index.html"]),
+          task("a", API, ["api/server.js"], ["test -f api/server.js"]),
+          task(
+            "b",
+            BOTH,
+            ["web/wire.js", "web/wired.ok", "api/cors.js"],
+            // Passes alone; once the page is merged, it also needs wired.ok.
+            [
+              "test -f web/wire.js && test -f api/cors.js && { test ! -f web/index.html || test -f web/wired.ok; }",
+            ],
+          ),
+        ],
+        jobVerify: ["test -f web/index.html && test -f api/server.js && test -f web/wired.ok"],
+      }),
+    );
+    await api.settings.setMaxTasksPerJob({ max: 3 });
+    for (const leg of await api.legs.list()) await api.legs.update({ id: leg.id, maxSessions: 3 });
+    const id = await newJob(api, project.id, "A page, an API, and the wiring");
+    const done = await until(api, id, ["completed", "blocked", "paused", "waiting"], 60_000);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+
+    // Side by side: the page's and the API's sessions overlapped, each in its own folder.
+    const { sessions } = await import("../db/schema.ts");
+    const { eq } = await import("drizzle-orm");
+    const s = d.db.select().from(sessions).where(eq(sessions.jobId, id)).all();
+    const of = (title: string) =>
+      s.find((x) => x.taskId === done.tasks.find((t) => t.title === title)?.id);
+    const w = of(WEB);
+    const a = of(API);
+    expect((w?.startedAt ?? 0) < (a?.endedAt ?? 0) && (a?.startedAt ?? 0) < (w?.endedAt ?? 0)).toBe(
+      true,
+    );
+    const root = done.worktree as string;
+    const cwds = starts.map((x) => x.cwd);
+    expect(cwds.every((c) => c.startsWith(`${root}-t-`))).toBe(true);
+    expect(new Set(cwds).size).toBeGreaterThanOrEqual(3);
+
+    // Each repo's job branch has each task's work, merged one task at a time.
+    const branch = done.branch as string;
+    expect(out(join(folder, "web"), "show", `${branch}:index.html`)).toBe("<h1>site</h1>");
+    expect(out(join(folder, "web"), "show", `${branch}:wired.ok`)).toBe("ok");
+    expect(out(join(folder, "api"), "show", `${branch}:server.js`)).toBe(
+      "export const port = 8080;",
+    );
+    expect(out(join(folder, "api"), "show", `${branch}:cors.js`)).toBe("export const cors = true;");
+    // The wiring was taken back from both repos when its check failed once merged, and merged
+    // once in each when redone: all or nothing.
+    const issue = (await api.silk.list({ jobId: id })).find(
+      (e) => e.title === `Not merged: ${BOTH}`,
+    );
+    expect(issue?.body).toContain("failed once merged");
+    expect(bothTurns).toBeGreaterThanOrEqual(2);
+    for (const r of ["web", "api"]) {
+      const merges = out(join(folder, r), "log", "--merges", "--format=%s", `dev..${branch}`)
+        .split("\n")
+        .filter((m) => m === `merge: ${BOTH}`);
+      expect(merges).toHaveLength(1);
+    }
+    // Every task's folder and branch is gone once merged.
+    for (const r of ["web", "api"]) {
+      expect(out(join(folder, r), "worktree", "list")).not.toMatch(/-t-/);
+      expect(out(join(folder, r), "branch", "--list", "*--t-*")).toBe("");
+    }
+    expect(
+      readdirSync(join(folder, ".oraknid", "worktrees")).filter((n) => n.includes("-t-")),
+    ).toEqual([]);
+  }, 120_000);
+});
+
 describe("several repos, small pieces", () => {
   it("finds repos two folders down, never inside each other or a submodule's", () => {
     const dir = twoRepos();

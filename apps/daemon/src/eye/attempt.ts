@@ -68,6 +68,7 @@ import type { WorkTree } from "../workspace/tree.ts";
 import { waitForAnswer } from "./approvals.ts";
 import type { CheckRepair, EyeBrain } from "./brain.ts";
 import { runBuiltinCheck } from "./builtin-checks.ts";
+import { LegStop, legLimits, stopWaiting, trackAttempt } from "./leg-work.ts";
 
 /** The providers (Leg kinds) for which I allowed same-provider fallback (ADR-009). */
 export const SAME_PROVIDER_FALLBACK = "fallback.sameProvider";
@@ -148,7 +149,9 @@ export type AttemptOutcome =
   | { kind: "blocked"; reason: string; until: number | null }
   | { kind: "skipped" }
   | { kind: "owner-held" }
-  | { kind: "cancel-job"; reason: string };
+  | { kind: "cancel-job"; reason: string }
+  /** Its Leg was paused, or its work in the job cancelled: stopped at a safe point, the job goes on. */
+  | { kind: "leg-stopped"; how: "pause" | "cancel"; reason: string };
 
 /** Ladder steps that end the attempt, and why. */
 class EndAttempt extends Error {
@@ -182,10 +185,36 @@ export async function runAttempt(
   taskId: string,
   ws: { cwd: string; tree: WorkTree; tmpDir: string; trash: string },
   attemptNo: number,
-  signal: AbortSignal,
+  jobSignal: AbortSignal,
 ): Promise<AttemptOutcome> {
   const task = d.db.select().from(tasks).where(eq(tasks.id, taskId)).get() as TaskRow;
   const now = d.now;
+  // Stopped by its job (a pause, a cancel, a shutdown), or by its Leg alone (Jobs-and-Projects → Controls).
+  const legStop = new AbortController();
+  const signal = AbortSignal.any([jobSignal, legStop.signal]);
+
+  // ── A paused Leg's task waits for it (unless I reassign it) ─────
+  let waitedFor = legLimits(d.db, job.id, taskId).waitFor;
+  let saidWaitingFor = false;
+  for (;;) {
+    waitedFor = legLimits(d.db, job.id, taskId).waitFor;
+    const leg = waitedFor ? d.registry.get(waitedFor) : null;
+    if (!leg?.paused) break;
+    if (!saidWaitingFor) {
+      saidWaitingFor = true;
+      d.bus.publish({
+        type: "task.waiting-for-leg",
+        topic: `job:${job.id}`,
+        jobId: job.id,
+        payload: {
+          taskId,
+          legId: leg.id,
+          reason: `It waits for ${leg.name}, paused; it goes on when the Leg is resumed, or on another Leg if I reassign it.`,
+        },
+      });
+    }
+    await pause(1000, signal);
+  }
 
   // ── Route ───────────────────────────────────────────────────────
   // ADR-009: after a usage limit, another account of the same provider is not a fallback unless I allowed it.
@@ -196,7 +225,14 @@ export async function runAttempt(
     .filter(([k]) => !sameProvider.has(k));
   const blockedKinds = new Set(limited.map(([k]) => k));
   const limitedLegs = new Set(limited.map(([, id]) => id));
-  const all = candidatesFor(d.registry, job.allowedLegIds);
+  // Legs whose work in this job (or on this task) I cancelled are not used again; a task that
+  // waited for a Leg now resumed goes back to it.
+  const { avoid: avoidLegs } = legLimits(d.db, job.id, taskId);
+  const allowed = candidatesFor(d.registry, job.allowedLegIds).filter(
+    (c) => !avoidLegs.has(c.legId),
+  );
+  const back = waitedFor ? allowed.filter((c) => c.legId === waitedFor) : [];
+  const all = back.length ? back : allowed;
   const candidates = all.filter(
     (c) => !blockedKinds.has(d.registry.require(c.legId).kind) || limitedLegs.has(c.legId),
   );
@@ -274,8 +310,24 @@ export async function runAttempt(
     };
   }
   const leg = pick.candidate;
-  // Held from now until the attempt ends, whichever way.
-  const release = d.supervisor.hold(leg.legId);
+  if (waitedFor) stopWaiting(d.db, job.id, taskId);
+  // Held from now until the attempt ends, whichever way; reachable by its Leg's pause or cancel.
+  let ended: () => void = () => {};
+  const untrack = trackAttempt({
+    jobId: job.id,
+    taskId,
+    legId: leg.legId,
+    stop: (why) => legStop.abort(why),
+    ended: new Promise<void>((r) => {
+      ended = r;
+    }),
+  });
+  const hold = d.supervisor.hold(leg.legId);
+  const release = () => {
+    hold();
+    untrack();
+    ended();
+  };
   const routing = {
     leg: leg.legName,
     model: leg.model,
@@ -1179,8 +1231,33 @@ export async function runAttempt(
         await handOff(false);
       } catch {}
     }
+    // Its Leg alone was stopped (paused, or its work here cancelled): the work so far is kept
+    // on a checkpoint beside the handoff (BR-7), and the job goes on.
+    const byLeg =
+      !jobSignal.aborted && legStop.signal.aborted && legStop.signal.reason instanceof LegStop
+        ? (legStop.signal.reason as LegStop)
+        : null;
+    if (byLeg) {
+      try {
+        await ws.tree.checkpoint(
+          `refs/oraknid/${job.id}/${taskId}/${attemptNo}-stopped`,
+          `oraknid: ${task.title} stopped (${byLeg.how} of ${byLeg.legName})`,
+        );
+      } catch {}
+    }
     finish("abandoned", false);
-    // Nothing runs it any more: shown as ready at once, not "running" until the job resumes.
+    if (byLeg) {
+      setReady(byLeg.message);
+      return { kind: "leg-stopped", how: byLeg.how, reason: byLeg.message };
+    }
+    setReady("Stopped at a safe point; it starts again on resume.");
+    throw error;
+  } finally {
+    toolsOpen?.close();
+  }
+
+  /** Nothing runs it any more: shown as ready at once, not "running" until it starts again. */
+  function setReady(reason: string) {
     d.bus.atomically(() => {
       d.db
         .update(tasks)
@@ -1193,16 +1270,9 @@ export async function runAttempt(
         type: "task.state",
         topic: `job:${job.id}`,
         jobId: job.id,
-        payload: {
-          taskId,
-          to: "ready",
-          reason: "Stopped at a safe point; it starts again on resume.",
-        },
+        payload: { taskId, to: "ready", reason },
       });
     });
-    throw error;
-  } finally {
-    toolsOpen?.close();
   }
 }
 

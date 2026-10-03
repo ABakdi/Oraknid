@@ -113,8 +113,8 @@ Found when the canon was checked against the brief (2026-10-03); the
 spec says them, they aren't built:
 - [ ] The Web: a Leg's avatar on its task, and a handoff animation along the edge when a task moves to another Leg ([[Web-UI]] → Job; the name shows as text)
 - [ ] Charts beyond tokens over time, success by Leg model and sparklines: cost, task throughput, success and failure by task kind, tokens per verified task, time per task, budget burn against limits ([[Web-UI]] → Charts)
-- [ ] Pausing a Leg pauses its running session in place (now: no new sessions, the running one goes to its end)
-- [ ] Cancelling one Leg's work in a job (now: cancel the job, or take over a task)
+- [x] Pausing a Leg pauses its running session in place: a safe point, a checkpoint and a handoff; the task waits for the Leg, or is reassigned (2026-10-03)
+- [x] Cancelling one Leg's work in a job, or on one task: its sessions end at a safe point, the tasks go on without it (`jobs.cancelLegWork`, 2026-10-03)
 
 ## Exit criterion
 

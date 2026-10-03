@@ -47,9 +47,12 @@ import type { SkillStore } from "../skills/store.ts";
 import type { McpBroker } from "../tools/broker.ts";
 import type { ToolRegistry } from "../tools/registry.ts";
 import {
+  commitsAhead,
   createTaskWorktree,
   createWorktree,
   type Git,
+  git,
+  mergeConflicts,
   mergeTaskBranch,
   removeTaskWorktree,
   shadowRepo,
@@ -59,7 +62,7 @@ import {
 import type { GitHub } from "../workspace/github.ts";
 import { type Projects, viewOf } from "../workspace/projects.ts";
 import { isSeveral } from "../workspace/repos.ts";
-import { multiTreeOf, singleTree, type WorkTree } from "../workspace/tree.ts";
+import { MultiTree, multiTreeOf, singleTree, type WorkTree } from "../workspace/tree.ts";
 import { type AttemptJob, runAttempt } from "./attempt.ts";
 import type { EyeBrain } from "./brain.ts";
 import { readInside, renderInputs } from "./inputs.ts";
@@ -283,8 +286,8 @@ export function eyeProgram(d: EyeDeps): JobProgram {
     for (;;) {
       // Asked every time, before any work: approved passes through, denied stops (never skipped on a resume).
       await approvePlanIfSupervised(d, ctx);
-      // Tasks side by side need a worktree each; a job across several repos runs them one at a time.
-      await runTasks(d, ctx, where, !ws.shadow && !several);
+      // Tasks side by side need a worktree each (a folder of worktrees across several repos).
+      await runTasks(d, ctx, where, !ws.shadow);
       if (ctx.state() === "cancelled") return;
 
       // ── Job-level verification (BR-1): only this completes a job.
@@ -447,6 +450,90 @@ function oneMergeAtATime<T>(jobId: string, fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
+/** A task's branch beside others: the job branch's name, then the task's. */
+const taskBranchOf = (jobBranch: string, taskId: string) =>
+  `${jobBranch}--t-${taskId.slice(-6).toLowerCase()}`;
+
+/**
+ * A task's own tree in a job across several repos (ADR-042 with ADR-016):
+ * its folder mirrors the job's, each repo it touches a worktree on the
+ * task's branch from the job branch's tip in that repo, opened there first.
+ */
+function taskTreeOf(
+  d: EyeDeps,
+  job: typeof jobs.$inferSelect & { branch: string },
+  taskId: string,
+  where: Where,
+): MultiTree {
+  const jobTree = where.tree as MultiTree;
+  const end = taskId.slice(-6).toLowerCase();
+  return new MultiTree({
+    projectPath: where.projectPath,
+    jobId: job.id,
+    slug: "",
+    root: join(where.projectPath, ".oraknid", "worktrees", `${job.id}-t-${end}`),
+    repos: projectReposOf(d.db, job.projectId),
+    tmpDir: d.tmpDir,
+    opened: [],
+    save: () => {},
+    startId: `${job.id}/t-${end}`,
+    task: {
+      branch: taskBranchOf(job.branch, taskId),
+      base: (r) => {
+        jobTree.open(r.name);
+        return job.branch;
+      },
+      fresh: [`refs/oraknid/${job.id}/${taskId}/base`],
+    },
+  });
+}
+
+/**
+ * Merges a verified task's branch into the job's tree. In a project of
+ * several repos every repo it changed is computed first (`git merge-tree`)
+ * and merged only when none conflicts; `undo` takes every one back.
+ */
+async function mergeTask(
+  where: Where,
+  own: { branch: string; tree: MultiTree | null },
+  jobBranch: string,
+  message: string,
+): Promise<{ ok: true; undo: () => void } | { ok: false; conflicts: string[] }> {
+  if (!own.tree) {
+    const g = where.tree.single as Git;
+    const m = await mergeTaskBranch(g, own.branch, message);
+    return m.ok ? { ok: true, undo: () => undoMerge(g) } : m;
+  }
+  const jobTree = where.tree as MultiTree;
+  const changed = own.tree
+    .all()
+    .filter((x) => commitsAhead(x.repoPath, jobBranch, own.branch).length > 0);
+  const conflicts = changed.flatMap((x) =>
+    mergeConflicts(x.repoPath, jobBranch, own.branch).map((f) =>
+      x.repo.folder ? `${x.repo.folder}/${f}` : f,
+    ),
+  );
+  if (conflicts.length) return { ok: false, conflicts };
+  const merged: { g: Git; before: string }[] = [];
+  const undo = () => {
+    for (const m of merged.reverse()) git(m.g, ["reset", "-q", "--hard", m.before]);
+  };
+  for (const x of changed) {
+    const { g } = jobTree.open(x.repo.name);
+    const before = git(g, ["rev-parse", "HEAD"]).trim();
+    const m = await mergeTaskBranch(g, own.branch, message);
+    if (!m.ok) {
+      undo();
+      return {
+        ok: false,
+        conflicts: m.conflicts.map((f) => (x.repo.folder ? `${x.repo.folder}/${f}` : f)),
+      };
+    }
+    merged.push({ g, before });
+  }
+  return { ok: true, undo };
+}
+
 /** How many tasks of one job run at once (ADR-016); one by default. */
 function tasksAtOnce(d: EyeDeps): number {
   return readSetting(d.db, MAX_TASKS_PER_JOB, z.number().int().min(1), 1);
@@ -546,17 +633,24 @@ async function runTask(
       .map((x) => ({ name: x.name, body: x.body })),
     inputs: renderInputs(job.inputs as JobInput[], where.projectPath),
   };
-  // Beside other tasks, it works in a worktree of its own, branched from the job branch (ADR-016).
+  // Beside other tasks, it works in a worktree of its own, branched from the job branch (ADR-016);
+  // in a project of several repos, a folder of its own with a worktree per repo it touches.
   let taskWhere = where;
-  let own: { path: string; branch: string } | null = null;
-  if (parallel && job.branch) {
-    own = createTaskWorktree(where.projectPath, job.id, task.id, job.branch);
-    d.db.update(tasks).set({ worktree: own.path }).where(eq(tasks.id, task.id)).run();
+  let own: { path: string; branch: string; tree: MultiTree | null } | null = null;
+  if (parallel && job.branch && where.tree instanceof MultiTree) {
+    const tt = taskTreeOf(d, job as typeof job & { branch: string }, task.id, where);
+    own = { path: tt.cwd, branch: taskBranchOf(job.branch, task.id), tree: tt };
+  } else if (parallel && job.branch) {
+    own = { ...createTaskWorktree(where.projectPath, job.id, task.id, job.branch), tree: null };
     taskWhere = {
       ...where,
       cwd: own.path,
       tree: singleTree(worktreeGit(where.projectPath, own.path), d.tmpDir),
     };
+  }
+  if (own) {
+    d.db.update(tasks).set({ worktree: own.path }).where(eq(tasks.id, task.id)).run();
+    if (own.tree) taskWhere = { ...where, cwd: own.path, tree: own.tree };
   }
   // In a project of several repos, the repos its scope names are worktrees before it starts (ADR-042).
   taskWhere.tree.prepare(task.scope);
@@ -601,10 +695,10 @@ async function runTask(
   // Merged into the job branch, one task at a time, and checked again there; a conflict or a
   // failing check merges nothing and the task is redone on top of the newer work (ADR-016).
   if (own && outcome.kind === "done") {
-    const branch = own.branch;
+    const mine = own;
     const merged = await ctx.step(`task:${task.id}:merge:${attemptNo}`, { attemptNo }, () =>
       oneMergeAtATime(job.id, async () => {
-        const m = await mergeTaskBranch(where.tree.single as Git, branch, `merge: ${task.title}`);
+        const m = await mergeTask(where, mine, job.branch as string, `merge: ${task.title}`);
         if (!m.ok)
           return {
             ok: false,
@@ -623,13 +717,14 @@ async function runTask(
         );
         const failed = results.find((r) => !r.ok);
         if (failed) {
-          undoMerge(where.tree.single as Git);
+          m.undo();
           return { ok: false, why: `\`${failed.command}\` failed once merged with the other work` };
         }
         return { ok: true, why: "" };
       }),
     );
-    removeTaskWorktree(where.projectPath, own.path, own.branch);
+    if (own.tree) own.tree.remove();
+    else removeTaskWorktree(where.projectPath, own.path, own.branch);
     d.db.update(tasks).set({ worktree: null }).where(eq(tasks.id, task.id)).run();
     if (!merged.ok) {
       d.silk.add({
@@ -682,6 +777,10 @@ async function runTask(
       ctx.setState("cancelled", outcome.reason);
       settle();
       return;
+    case "leg-stopped":
+      // Paused: it waits for its Leg; cancelled: it goes on without it (Jobs-and-Projects → Controls).
+      setTask(d, job.id, task.id, "ready", outcome.reason);
+      break;
   }
   settle();
 }

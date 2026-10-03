@@ -255,7 +255,7 @@ right edge. The site still builds, its page list now read from
 
 ### M13.11 — Several repos and servers, each with its role ([[ADR-042-Several-Repos-And-Servers]])
 - [x] A project of several repos: found in its folder, each with its name, branches and GitHub link (migration 0031 moved the single link into a one-repo project's repo)
-- [~] Jobs across them: a worktree and branch per repo touched, checkpoints, commits, checks, merges and pushes per repo; tasks of such a job run one at a time, side by side not built (ADR-042 → As built)
+- [x] Jobs across them: a worktree and branch per repo touched, checkpoints, commits, checks, merges and pushes per repo; tasks side by side with a folder of worktrees each and an all-or-nothing merge across repos, redone on conflict (2026-10-03, ADR-042 → As built)
 - [x] Servers with a role in each project
 - [x] The Eye picks the server I name and asks to confirm; otherwise asks with my servers and Add a new server; production always confirmed
 

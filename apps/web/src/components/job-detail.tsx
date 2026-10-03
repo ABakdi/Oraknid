@@ -189,6 +189,47 @@ export function JobDetail({ id, sub }: { id: string; sub?: string }) {
               {t("Pause")}
             </Button>
           ) : null}
+          {running
+            ? [
+                ...new Set(
+                  j.tasks
+                    .filter((x) => ["assigned", "running", "verifying"].includes(x.state))
+                    .map((x) => x.assignedLegId)
+                    .filter((x): x is string => !!x),
+                ),
+              ].map((legId) => {
+                const name = legs.find((l) => l.id === legId)?.name ?? t("a Leg");
+                return (
+                  <Button
+                    key={legId}
+                    variant="ghost"
+                    className="gap-1"
+                    title={t(
+                      "Its sessions in this job end at a safe point; its tasks go on without it.",
+                    )}
+                    onClick={async () => {
+                      if (
+                        await confirm(
+                          t("Stop {leg}'s work in this job?", { leg: name }),
+                          t(
+                            "Its sessions here end at a safe point and its tasks go back to ready, on other Legs. Other jobs keep it.",
+                          ),
+                          t("Stop its work"),
+                          { keep: t("Keep it") },
+                        )
+                      )
+                        void act(
+                          () => api.jobs.cancelLegWork({ id, legId }),
+                          t("{leg}'s work here stopped.", { leg: name }),
+                        );
+                    }}
+                  >
+                    <Ban className="size-4" />
+                    {t("Stop {leg} here", { leg: name })}
+                  </Button>
+                );
+              })
+            : null}
           {j.state === "paused" || j.state === "blocked" ? (
             <Button
               className="gap-1"

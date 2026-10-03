@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
 import { type JobRepo, jobs } from "../db/schema.ts";
 import {
+  addTaskWorktree,
   changedSince,
   checkpoint,
   commitAll,
@@ -15,6 +16,7 @@ import {
   type Git,
   git,
   hasRef,
+  removeTaskWorktree,
   restorePaths,
   rollback,
   stageAll,
@@ -153,6 +155,15 @@ export class MultiTree implements WorkTree {
       /** The repos opened so far, as recorded on the job. */
       opened: JobRepo[];
       save: (opened: JobRepo[]) => void;
+      /** What "where its worktree started" is named by; the job's id by default. */
+      startId?: string;
+      /**
+       * A task's own tree beside others (ADR-016 across several repos): each
+       * repo a worktree on the task's branch, made from the job branch's tip
+       * in that repo (`base` opens the repo in the job's tree first). `fresh`
+       * names refs measured on an earlier tree, dropped when one is made.
+       */
+      task?: { branch: string; base: (r: ProjectRepo) => string; fresh: string[] };
     },
   ) {
     const top = o.repos.find((r) => r.folder === "");
@@ -198,21 +209,29 @@ export class MultiTree implements WorkTree {
         renameSync(path, aside);
       }
       mkdirSync(dirname(path), { recursive: true });
-      createWorktree(
-        repoPath,
-        this.o.jobId,
-        this.o.slug,
-        { release: r.releaseBranch, work: r.workBranch },
-        this.o.from ?? null,
-        path,
-      );
-      g = worktreeGit(repoPath, path);
+      if (this.o.task) {
+        addTaskWorktree(repoPath, path, this.o.task.branch, this.o.task.base(r));
+        g = worktreeGit(repoPath, path);
+        // A fresh tree from the job's tip: what was measured on an earlier one is gone.
+        for (const ref of [startRef(this.#startId), ...this.o.task.fresh])
+          if (hasRef(g, ref)) git(g, ["update-ref", "-d", ref]);
+      } else {
+        createWorktree(
+          repoPath,
+          this.o.jobId,
+          this.o.slug,
+          { release: r.releaseBranch, work: r.workBranch },
+          this.o.from ?? null,
+          path,
+        );
+        g = worktreeGit(repoPath, path);
+      }
       if (aside) {
         cpSync(aside, path, { recursive: true, force: true });
         rmSync(aside, { recursive: true, force: true });
       }
     }
-    const start = startRef(this.o.jobId);
+    const start = startRef(this.#startId);
     if (!hasRef(g, start)) git(g, ["update-ref", start, "HEAD"]);
     const open = { repo: r, path, g };
     this.#open.set(r.name, open);
@@ -244,8 +263,38 @@ export class MultiTree implements WorkTree {
         this.#ensure(r);
   }
 
+  get #startId() {
+    return this.o.startId ?? this.o.jobId;
+  }
+
   #ref(o: Open, ref: string) {
-    return hasRef(o.g, ref) ? ref : startRef(this.o.jobId);
+    return hasRef(o.g, ref) ? ref : startRef(this.#startId);
+  }
+
+  /** A repo of the project opened in this tree (made a worktree if it isn't), and where it lives. */
+  open(name: string): { repo: ProjectRepo; repoPath: string; g: Git } {
+    const r = this.o.repos.find((x) => x.name === name);
+    if (!r) throw new Error(`This project has no repo named ${name}.`);
+    const o = this.#ensure(r);
+    return { repo: r, repoPath: this.#repoPath(r), g: this.#g(o) };
+  }
+
+  /** Every repo open now, the ones a Leg wrote in included. */
+  all(): { repo: ProjectRepo; repoPath: string; g: Git }[] {
+    return this.#each().map((o) => ({
+      repo: o.repo,
+      repoPath: this.#repoPath(o.repo),
+      g: this.#g(o),
+    }));
+  }
+
+  /** A task's tree, once merged or to be made again: each worktree and its branch go, then its folder. */
+  remove() {
+    const open = this.#each().sort((a, b) => b.repo.folder.length - a.repo.folder.length);
+    for (const o of open)
+      removeTaskWorktree(this.#repoPath(o.repo), o.path, this.o.task?.branch ?? "");
+    this.#open.clear();
+    rmSync(this.o.root, { recursive: true, force: true });
   }
 
   #each() {

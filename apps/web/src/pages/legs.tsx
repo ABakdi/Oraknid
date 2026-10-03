@@ -208,8 +208,16 @@ export function LegsPage({ focus }: { focus?: string } = {}) {
                   size="sm"
                   variant="secondary"
                   onClick={() =>
-                    act(() =>
-                      leg.paused ? api.legs.resume({ id: leg.id }) : api.legs.pause({ id: leg.id }),
+                    act(
+                      () =>
+                        leg.paused
+                          ? api.legs.resume({ id: leg.id })
+                          : api.legs.pause({ id: leg.id }),
+                      leg.paused
+                        ? t("Resumed.")
+                        : t(
+                            "Paused: its running sessions stopped at a safe point; their tasks wait for it.",
+                          ),
                     )
                   }
                 >

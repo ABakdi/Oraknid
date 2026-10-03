@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { Router } from "../api/router.ts";
 import { type Daemon, startDaemon } from "../daemon.ts";
 import {
+  attempts,
   eyeMessages,
   jobs,
   legs,
@@ -2300,4 +2301,132 @@ describe("tasks side by side (ADR-016, M3.1–M3.2)", () => {
     expect(issue?.body).toContain("failed once merged");
     expect(byeTurns).toBeGreaterThanOrEqual(2);
   }, 60_000);
+});
+
+describe("a Leg's work, stopped while its job goes on (Jobs-and-Projects → Controls)", () => {
+  const running = async (api: Awaited<ReturnType<typeof eye>>["api"], id: string) => {
+    const end = Date.now() + 8000;
+    for (;;) {
+      const t = (await api.jobs.get({ id })).tasks.find((x) => x.state === "running");
+      // Its session open, working.
+      const open = (await api.sessions.list({ jobId: id })).some(
+        (s) => s.taskId === t?.id && !s.endReason,
+      );
+      if (t?.assignedLegId && open) return t;
+      if (Date.now() > end) throw new Error("no task ran");
+      await new Promise((r) => setTimeout(r, 20));
+    }
+  };
+
+  it("pausing a Leg pauses its running session in place; the task waits for it and goes on when it is resumed", async () => {
+    let first = true;
+    const { api, id, d } = await eye(
+      (t) => {
+        if (task(t) === "Write hello.sh" && first) {
+          first = false;
+          // Half the work, then a session that would run on.
+          return [{ write: "hello.sh", content: "echo hi\n" }, { hang: true }];
+        }
+        return good(t);
+      },
+      { legs: ["Claude A", "Claude B"] },
+    );
+    const t = await running(api, id);
+    const legId = t.assignedLegId as string;
+    expect(await api.legs.pause({ id: legId })).toEqual({ stopped: 1 });
+
+    // Stopped at a safe point, with a handoff; the job still runs and the task waits for its Leg.
+    let job = await api.jobs.get({ id });
+    expect(job.state).toBe("running");
+    const waiting = job.tasks.find((x) => x.id === t.id);
+    expect(waiting?.state).toBe("ready");
+    expect(waiting?.waitingForLegId).toBe(legId);
+    const s = await api.sessions.list({ jobId: id });
+    expect(s.map((x) => x.endReason)).toContain("stopped");
+    expect(
+      (await api.silk.list({ jobId: id })).some((e) => e.kind === "handoff" && e.taskId === t.id),
+    ).toBe(true);
+    // It doesn't go to the other Leg meanwhile.
+    await new Promise((r) => setTimeout(r, 1500));
+    job = await api.jobs.get({ id });
+    expect(job.tasks.find((x) => x.id === t.id)?.state).toBe("ready");
+    expect((await api.sessions.list({ jobId: id })).length).toBe(s.length);
+    // A paused session isn't a failed attempt.
+    const rows = d.db.select().from(attempts).where(eq(attempts.taskId, t.id)).all();
+    expect(rows.map((a) => a.outcome)).toEqual(["abandoned"]);
+
+    // Resumed: the task goes on on the same Leg, from where it stopped.
+    await api.legs.resume({ id: legId });
+    const done = await until(api, id, ["completed", "blocked"], 15_000);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+    const legs = d.db
+      .select()
+      .from(sessions)
+      .where(and(eq(sessions.jobId, id), eq(sessions.taskId, t.id)))
+      .all()
+      .map((x) => x.legId);
+    expect(new Set(legs)).toEqual(new Set([legId]));
+    expect(done.tasks.find((x) => x.id === t.id)?.waitingForLegId).toBeNull();
+  }, 40_000);
+
+  it("a task waiting for a paused Leg is reassigned when I cancel that Leg's work on it", async () => {
+    let first = true;
+    const { api, id, d } = await eye(
+      (t) => {
+        if (task(t) === "Write hello.sh" && first) {
+          first = false;
+          return [{ hang: true }];
+        }
+        return good(t);
+      },
+      { legs: ["Claude A", "Claude B"] },
+    );
+    const t = await running(api, id);
+    const legId = t.assignedLegId as string;
+    await api.legs.pause({ id: legId });
+    expect((await api.jobs.get({ id })).tasks.find((x) => x.id === t.id)?.waitingForLegId).toBe(
+      legId,
+    );
+    // Nothing of it runs any more: nothing to stop, and the task goes to the other Leg.
+    expect(await api.jobs.cancelLegWork({ id, legId, taskId: t.id })).toEqual({ stopped: 0 });
+    const done = await until(api, id, ["completed", "blocked"], 15_000);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+    const mine = done.tasks.find((x) => x.id === t.id);
+    expect(mine?.assignedLegId).not.toBe(legId);
+    expect(mine?.avoidLegIds).toEqual([legId]);
+    // The other task may still use it: the cancel was for that task alone.
+    expect(done.tasks.find((x) => x.id !== t.id)?.avoidLegIds).toEqual([]);
+    expect(d.registry.require(legId).paused).toBe(true);
+  }, 40_000);
+
+  it("cancelling a Leg's work in a job ends its session there, and the job's tasks go on without it", async () => {
+    let first = true;
+    const { api, id, d } = await eye(
+      (t) => {
+        if (task(t) === "Write hello.sh" && first) {
+          first = false;
+          return [{ hang: true }];
+        }
+        return good(t);
+      },
+      { legs: ["Claude A", "Claude B"] },
+    );
+    const t = await running(api, id);
+    const legId = t.assignedLegId as string;
+    expect(await api.jobs.cancelLegWork({ id, legId })).toEqual({ stopped: 1 });
+    expect((await api.jobs.get({ id })).state).toBe("running");
+    const done = await until(api, id, ["completed", "blocked"], 15_000);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+    // Only the stopped session ran on it; every later one on the other Leg.
+    const s = d.db.select().from(sessions).where(eq(sessions.jobId, id)).all();
+    expect(s.filter((x) => x.legId === legId)).toHaveLength(1);
+    expect(s.filter((x) => x.legId !== legId).length).toBeGreaterThanOrEqual(2);
+    expect(done.tasks.every((x) => x.avoidLegIds.includes(legId))).toBe(true);
+    // The Leg itself isn't paused: only its work in this job ended.
+    expect(d.registry.require(legId).paused).toBe(false);
+    // And a wrong task is refused.
+    await expect(api.jobs.cancelLegWork({ id, legId, taskId: "nope" })).rejects.toThrow(
+      /not in this job/,
+    );
+  }, 40_000);
 });
