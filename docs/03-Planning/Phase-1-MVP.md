@@ -107,6 +107,15 @@ crashes and reboots.
 - [x] Audit before `v0.1.0` ([[Audit-1]]): 61 findings, 56 fixed, 5 documented; closed 2026-10-01
 - Moved to Phase 2 by Audit 1: git off the event loop (D1-05), attempt step keys (D1-12), the job settings tab, diff, checkpoint list, log export and drag-to-reorder (Q1-20), a per-job network allow list (S1-10)
 
+## Left from the brief
+
+Found when the canon was checked against the brief (2026-10-03); the
+spec says them, they aren't built:
+- [ ] The Web: a Leg's avatar on its task, and a handoff animation along the edge when a task moves to another Leg ([[Web-UI]] → Job; the name shows as text)
+- [ ] Charts beyond tokens over time, success by Leg model and sparklines: cost, task throughput, success and failure by task kind, tokens per verified task, time per task, budget burn against limits ([[Web-UI]] → Charts)
+- [ ] Pausing a Leg pauses its running session in place (now: no new sessions, the running one goes to its end)
+- [ ] Cancelling one Leg's work in a job (now: cancel the job, or take over a task)
+
 ## Exit criterion
 
 I run a real job on a real project with the canon-driven skill, from

@@ -63,10 +63,9 @@ point is a step boundary; the step in flight sees its abort signal:
 3. Record a checkpoint and a handoff for each task.
 4. The job becomes `paused`. The UI said "Pausing…" until this point.
 
-**Resume** restarts each task from its handoff and checkpoint. Where the
-Leg's native session can still be resumed and is under the context
-threshold, it's resumed. Otherwise a fresh session starts from a context
-pack.
+**Resume** restarts each task from its handoff and checkpoint, in a
+fresh session from a context pack (BR-2): a Leg's native session is
+never resumed for a job's work.
 
 Pausing never runs verification, never replans, and never touches
 side effects.

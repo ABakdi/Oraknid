@@ -5,7 +5,7 @@ the canon. Code identifiers are shown in `code`.
 
 | Term | Code | Meaning |
 | :-- | :-- | :-- |
-| **Oraknid** | `oraknid` | The whole product: the daemon, the web UI, the CLI and The Nest. Domain: oraknid.com. |
+| **Oraknid** | `oraknid` | The whole product: the daemon, the web UI, the CLI and The Nest. Domain: oraknid.com, the name's own, not set up yet; the site and the Nests live at `oraknid.abakdi.com` for now ([[ADR-033-Product-Site]]). |
 | **The Eye** | `eye` | The supervisor inside the daemon. It plans, routes, monitors, verifies, evaluates and self-prompts. Deterministic code that borrows a Leg when it needs reasoning. |
 | **Eye Leg** | `eyeLeg` | The Leg The Eye borrows for its reasoning steps. Chosen at first-run setup and changeable at any time. |
 | **Leg** | `leg` | One configured agent account or local model server plugged into Oraknid, e.g. "Claude Code, account work@" or "Ollama on localhost". It offers one or more Leg models. |

@@ -10,7 +10,7 @@ I add as many Legs as I want, all optional (BR-4):
 
 - several Claude Code accounts, each with its own config directory
 - several local models on one or more OpenAI-compatible servers
-- later: OpenCode, Antigravity, and anything else with an adapter
+- OpenCode and Antigravity accounts, and anything else with an adapter
 
 A Leg is one account (or one local server). Each Leg has a name I choose.
 
@@ -142,6 +142,6 @@ Oraknid changes.
 | `claude-code` | MVP | Subscription accounts. |
 | `openai-compatible` | MVP | Ollama, LM Studio, llama.cpp, vLLM. Tested on Ollama + NVIDIA. |
 | `opencode` | Phase 2 | |
-| `antigravity` | Phase 5 | Depends on whether it can run unattended (see [[Leg-Adapters]]). |
+| `antigravity` | Phase 5 | Runs unattended; a real job passed on 2026-10-02 ([[Leg-Adapters]]). |
 
 Related: [[The-Eye]] · [[Leg-Adapters]] · [[Budgets-and-Quotas]] · [[ADR-009-Multiple-Accounts-Per-Provider]]

@@ -35,7 +35,7 @@ One page, two sides ([[Phase-8-Daily-Use]]):
 | Legs | all healthy Legs | Any subset. |
 | Autonomy | Standard | See [[Approvals-and-Autonomy]]. |
 | Budget | no money; tokens unlimited; time alarm 8 h | See [[Budgets-and-Quotas]]. |
-| Inputs, verification | none; from the skill and the project | As before. |
+| Inputs, verification | none; from the skill and the project | Inputs: a repo, a folder or documents, each can be marked untrusted. Verification: commands that must pass, on top of the skill's and the project's. |
 
 **Right, the prompt and the conversation:** I write what I want; The
 Eye answers in the same place. When the skill interviews, the interview
@@ -81,9 +81,9 @@ items for this job, budgets and their burn, and every problem. See
 | Control | Effect |
 | :-- | :-- |
 | Pause job | Every running task reaches a safe point (BR-7), then the job is `paused`. The UI shows "Pausing…" until then, and names any Leg it is waiting for. |
-| Resume job | Continues from the recorded point. Sessions restart from a Silk context pack, using the Leg's native resume when it is still valid. |
+| Resume job | Continues from the recorded point. Sessions restart from a Silk context pack, never from a Leg's native session (BR-2). |
 | Cancel job | Pauses first, then marks the job `cancelled`. The worktree and checkpoints are kept until I delete them. |
-| Pause/resume a Leg | Stops new assignments to that Leg and pauses its running task. Other Legs continue. |
+| Pause/resume a Leg | Stops new assignments to that Leg; a session it is running goes on to its end (pausing it in place is not built yet, [[Phase-1-MVP]] → Left from the brief). Other Legs continue. |
 | Redirect | A new instruction for The Eye. It is written to Silk as an `owner` decision, and The Eye replans. |
 | Edit the plan | Add, remove, reorder or rewrite tasks in The Web. Running tasks I change are paused first. |
 | Take over a task | The task becomes `owner`-held. Oraknid stops touching its scope until I mark it done or hand it back; handed back, it starts with its escalation reset ([[Drift-Control]]). |

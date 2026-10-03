@@ -54,7 +54,7 @@ sends back what fails, like a failed check.
 
 ## Library
 
-- **Built-in:** the canon-driven skill (`docs/skill.md`), shipped as
+- **Built-in:** the canon-driven skill (`docs/skill.md`, shipped as `skills/canon-driven-development.md` with front matter), as
   the first built-in and the default; `email-triage` (Phase 6): read,
   sort, draft, send what I approve, log, with the email tool.
 - **Uploaded:** mine, pasted or from a `.md` file. I can view, edit (in

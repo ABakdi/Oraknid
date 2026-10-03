@@ -22,6 +22,9 @@ already serves The Nest's loader at `/`, which paired phones open.
 - The loader's fingerprint is still shown at home and on the loader
   page ([[ADR-019-Nest-UI-Serving]]).
 
+- **Where**: `oraknid.abakdi.com` (and my private Nest beside it) for
+  now; `oraknid.com`, the name's own domain, isn't set up yet.
+
 ## Consequences
 - Every Nest built from this repository serves the product site; a
   self-hosted private Nest shows it too.
