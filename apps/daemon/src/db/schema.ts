@@ -788,3 +788,29 @@ export const backupRuns = sqliteTable(
   },
   (t) => [index("backup_runs_plan").on(t.planId, t.startedAt)],
 );
+
+/**
+ * My cloud storage providers (ADR-046): what the pages show and how to
+ * reach each one; its credentials are in Oraknid's encrypted rclone
+ * config, under `remote`, never here.
+ */
+export const cloudProviders = sqliteTable("cloud_providers", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  kind: text("kind", { enum: ["s3", "drive", "dropbox", "mega"] }).notNull(),
+  /** Its section in the rclone config. */
+  remote: text("remote").notNull().unique(),
+  /** The bucket and folder, or the folder in the account; "" for the whole account. */
+  root: text("root").notNull(),
+  /** What the pages say about it (preset, endpoint, region, e-mail): nothing secret. */
+  info: json<Record<string, string | null>>("info").notNull(),
+  limitBytes: integer("limit_bytes"),
+  unlimited: integer("unlimited", { mode: "boolean" }).notNull().default(false),
+  priority: integer("priority").notNull().default(0),
+  usedBytes: integer("used_bytes"),
+  freeBytes: integer("free_bytes"),
+  totalBytes: integer("total_bytes"),
+  checkedAt: integer("checked_at"),
+  error: text("error"),
+  createdAt: integer("created_at").notNull(),
+});

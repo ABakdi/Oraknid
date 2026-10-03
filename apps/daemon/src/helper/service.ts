@@ -13,6 +13,7 @@ import { wrapUntrusted } from "@oraknid/core";
 import { asc, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { Backups } from "../backups/service.ts";
+import type { Cloud } from "../cloud/service.ts";
 import type { Db } from "../db/open.ts";
 import { helperMessages, inboxItems, jobs } from "../db/schema.ts";
 import type { JobRunner } from "../engine/runner.ts";
@@ -34,6 +35,7 @@ import type { GitHub } from "../workspace/github.ts";
 import type { Projects } from "../workspace/projects.ts";
 import { projectFrom } from "../workspace/sources.ts";
 import { BACKUP_ACTIONS } from "./backups-actions.ts";
+import { CLOUD_ACTIONS } from "./cloud-actions.ts";
 
 // The Oraknid helper (ADR-024): I say what I want in words; one reasoning
 // call answers and names actions from a fixed catalogue, which run through
@@ -68,6 +70,22 @@ export interface HelperDeps {
     | "createKey"
     | "describe"
   >;
+  /** Cloud storage (ADR-046): read, upload what I name, move, download; deletes asked. */
+  cloud?: Pick<
+    Cloud,
+    | "providers"
+    | "placement"
+    | "list"
+    | "search"
+    | "putFile"
+    | "move"
+    | "stat"
+    | "getFile"
+    | "deleteFile"
+    | "label"
+  >;
+  /** Oraknid's data folder: nothing in it is sent anywhere by the helper. */
+  dataDir?: string;
   inbox: Pick<InboxStore, "list">;
   decisions: Pick<EyeDecisions, "models">;
   logsDir: string;
@@ -605,6 +623,7 @@ const ACTIONS: Record<string, ActionDef> = {
     run: async () => ({ result: "Filled in on your screen, not saved.", link: null }),
   },
   ...BACKUP_ACTIONS,
+  ...CLOUD_ACTIONS,
 };
 
 for (const name of HELPER_CLIENT_ACTIONS)

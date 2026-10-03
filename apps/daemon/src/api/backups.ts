@@ -11,13 +11,15 @@ import {
 import { ORPCError, os } from "@orpc/server";
 import { z } from "zod";
 import type { Backups } from "../backups/service.ts";
+import type { Downloads } from "../cloud/routes.ts";
+import { notAway } from "./cloud.ts";
 
 // Backups (ADR-044, API-Contract → backups). Away from home, changing a
 // plan or a key and restoring are for a device with full rights
 // (auth/lock.ts → HOME_ONLY); a restore always takes two steps, and no
 // agent has a way to it.
 
-const base = os.$context<{ backups: Backups }>();
+const base = os.$context<{ backups: Backups; downloads: Downloads; remote: boolean }>();
 
 async function guard<T>(fn: () => Promise<T> | T): Promise<T> {
   try {
@@ -78,6 +80,24 @@ export const backupsRouter = {
     .input(z.object({ runId: Id }))
     .output(BackupRunView)
     .handler(({ context: c, input }) => guard(() => c.backups.verify(input.runId))),
+  /**
+   * A link to download a kept backup (ADR-046), good once and for two
+   * minutes: as stored, or `decrypt`ed with its key (still compressed).
+   */
+  downloadLink: base
+    .input(z.object({ runId: Id, decrypt: z.boolean().default(false) }))
+    .output(z.object({ url: z.string(), expiresAt: z.number() }))
+    .handler(({ context: c, input }) =>
+      guard(async () => {
+        notAway(c.remote);
+        // Refused now, in words, rather than when the link is opened.
+        const run = c.backups.run(input.runId);
+        if (run.state !== "ok" || run.prunedAt || !run.path)
+          throw new Error("That backup isn't kept any more.");
+        if (input.decrypt && !run.keyId) throw new Error("That backup isn't encrypted.");
+        return c.downloads.mint(() => c.backups.openStored(input.runId, input.decrypt));
+      }),
+    ),
   /** A restore's first step: what it replaces, and the word to type back. */
   prepareRestore: base
     .input(

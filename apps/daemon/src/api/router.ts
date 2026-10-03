@@ -109,6 +109,8 @@ import type { Devices } from "../auth/devices.ts";
 import { type AppLock, IDLE_CHOICES, Pin } from "../auth/lock.ts";
 import type { Backups } from "../backups/service.ts";
 import type { Chats } from "../chats/service.ts";
+import type { Downloads } from "../cloud/routes.ts";
+import type { Cloud } from "../cloud/service.ts";
 import {
   attempts as attemptsTable,
   events as eventsTable,
@@ -187,6 +189,7 @@ import type { Projects } from "../workspace/projects.ts";
 import { jobResult, mergeJob, taskDiff } from "../workspace/result.ts";
 import { projectFrom } from "../workspace/sources.ts";
 import { backupsRouter } from "./backups.ts";
+import { cloudRouter } from "./cloud.ts";
 import {
   Activity,
   activity,
@@ -248,6 +251,9 @@ export interface ApiContext {
   servers: Servers;
   /** Scheduled, encrypted database backups (ADR-044). */
   backups: Backups;
+  /** Cloud storage, and one-time download links (ADR-046). */
+  cloud: Cloud;
+  downloads: Downloads;
   /** My mail (ADR-032). */
   mail: MailService;
   devices: Devices;
@@ -947,6 +953,8 @@ export const router = {
   },
   /** Database backups: plans, runs, keys, Verify, Restore (ADR-044). */
   backups: backupsRouter,
+  /** Cloud storage: providers and the pool (ADR-046). */
+  cloud: cloudRouter,
   /** The Oraknid helper: what I ask in words, done through this API (ADR-024). */
   helper: {
     conversation: base

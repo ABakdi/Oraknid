@@ -29,6 +29,8 @@ import { Devices, tokenOf } from "./auth/devices.ts";
 import { AppLock, LOCK_FREE, remoteAllowed, unlockOf } from "./auth/lock.ts";
 import { Backups } from "./backups/service.ts";
 import { Chats } from "./chats/service.ts";
+import { attachCloudRoutes, Downloads } from "./cloud/routes.ts";
+import { Cloud } from "./cloud/service.ts";
 import { closeDatabase, openDatabase } from "./db/open.ts";
 import { jobs as jobsTable } from "./db/schema.ts";
 import { SideEffects } from "./engine/effects.ts";
@@ -98,6 +100,8 @@ export interface DaemonOptions {
   serverSampleSec?: number;
   /** How often backup plans are looked at (ms; tests). */
   backupTickMs?: number;
+  /** rclone's binary (tests); found on the PATH otherwise (ADR-046). */
+  rclone?: () => string | null;
   /** GitHub's addresses, for tests against a stand-in. */
   github?: { api?: string; web?: string };
   /** What runs a job: The Eye, unless a test replaces it. */
@@ -279,12 +283,25 @@ export async function startDaemon(options: DaemonOptions) {
     ...(options.serverSampleSec ? { sampleEverySec: options.serverSampleSec } : {}),
   });
   serverService.start();
+  // Cloud storage through rclone, my providers as one pool (ADR-046).
+  const cloud = new Cloud({
+    db,
+    bus,
+    secrets,
+    dataDir: paths.dataDir,
+    now,
+    ...(options.rclone ? { rclone: options.rclone } : {}),
+    // A provider a backup plan or a kept backup needs stays.
+    usedBy: (id) => backupPlans.cloudUse(id),
+  });
+  const downloads = new Downloads(now);
   // Scheduled, encrypted database backups (ADR-044); the schedule starts once notifications do.
   const backupPlans = new Backups({
     db,
     bus,
     secrets,
     servers: serverService,
+    cloud,
     now,
     ...(options.backupTickMs ? { tickMs: options.backupTickMs } : {}),
   });
@@ -341,6 +358,8 @@ export async function startDaemon(options: DaemonOptions) {
     mail,
     servers: serverService,
     backups: backupPlans,
+    cloud,
+    dataDir: paths.dataDir,
     inbox,
     decisions,
     logsDir: paths.logs,
@@ -607,6 +626,10 @@ export async function startDaemon(options: DaemonOptions) {
     now,
   });
 
+  // Files in and out of the pool, and one-time downloads (ADR-046): before the procedures.
+  attachCloudRoutes(app, cloud, downloads);
+  cloud.onTransfer((t) => live.broadcastTransfer(t));
+
   const rpc = new RPCHandler(router);
   app.use("/api", async (req, res, next) => {
     const { matched } = await rpc.handle(req, res, {
@@ -645,6 +668,8 @@ export async function startDaemon(options: DaemonOptions) {
         helper,
         servers: serverService,
         backups: backupPlans,
+        cloud,
+        downloads,
         mail,
         devices,
         brain,
@@ -727,6 +752,7 @@ export async function startDaemon(options: DaemonOptions) {
       chats.stopAll();
       serverService.stop();
       backupPlans.stop();
+      cloud.stop();
       await mail.stop();
       nest.stop();
       await supervisor.killAll();
@@ -767,6 +793,7 @@ export async function startDaemon(options: DaemonOptions) {
     projects: projectsService,
     servers: serverService,
     backups: backupPlans,
+    cloud,
     mail,
     devices,
     cliToken: devices.cliToken,

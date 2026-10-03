@@ -319,6 +319,11 @@ export const HOME_ONLY = [
   "/backups/importKey",
   "/backups/exportKey",
   "/backups/removeKey",
+  // Cloud storage (ADR-046): a provider's credentials, and the sign-in (a browser here anyway).
+  "/cloud/addProvider",
+  "/cloud/updateProvider",
+  "/cloud/removeProvider",
+  "/cloud/authorizeStart",
   // Restarting a container or a service on a server (ADR-043); reading stays open.
   "/servers/restart",
   // GitHub's accounts, a new repository and a project's link (ADR-038, ADR-040); reading stays open.
