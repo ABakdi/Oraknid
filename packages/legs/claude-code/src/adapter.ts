@@ -136,9 +136,11 @@ function baseOptions(
   cwd: string,
   onSpawn: (p: SpawnedProcess & { pid?: number }) => void,
 ): Options {
+  // A job's session has a config folder of its own, with the Leg's login linked in (S2-08).
+  const configDir = plan?.configDir ?? cfg.configDir;
   const env: Record<string, string> = {
     ...(plan?.env ?? { PATH: process.env.PATH ?? "/usr/bin", HOME: process.env.HOME ?? "/" }),
-    CLAUDE_CONFIG_DIR: cfg.configDir,
+    CLAUDE_CONFIG_DIR: configDir,
   };
   const options: Options = {
     cwd,
@@ -160,7 +162,7 @@ function baseOptions(
         command: o.command,
         args: o.args,
         cwd: o.cwd ?? cwd,
-        writable: [...new Set([cwd, plan.home, cfg.configDir, ...plan.writable])],
+        writable: [...new Set([cwd, plan.home, configDir, ...plan.writable])],
         readonly: plan.readonly,
         home: plan.home,
         env: childEnv,

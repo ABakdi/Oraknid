@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import type { SandboxPlan } from "@oraknid/leg-sdk";
 import { type Sandbox, withLocalPorts } from "@oraknid/os";
+import { prepareJobHome } from "./job-home.ts";
 import type { LegRow } from "./registry.ts";
 
 /**
@@ -48,12 +49,24 @@ export function sandboxPlan(
   legsDir: string,
   /** The project's ports on this computer its jobs may reach. */
   localPorts: number[] = [],
+  /** A job's session: the job's own home on this Leg, the Leg's login linked in (Audit 2, S2-08). */
+  jobId: string | null = null,
 ): SandboxPlan {
-  const home = join(legsDir, leg.id, "home");
-  mkdirSync(home, { recursive: true, mode: 0o700 });
+  const legHome = join(legsDir, leg.id, "home");
+  mkdirSync(legHome, { recursive: true, mode: 0o700 });
   const config = leg.config as Record<string, unknown>;
   const readonly = toolchainDirs();
   const writable: string[] = [];
+  let home = legHome;
+  let configDir: string | undefined;
+  if (jobId) {
+    const legConfigDir =
+      leg.kind === "claude-code" && typeof config.configDir === "string" ? config.configDir : null;
+    const own = prepareJobHome({ legsDir, legId: leg.id, jobId, legHome, legConfigDir });
+    home = own.home;
+    if (own.configDir) configDir = own.configDir;
+    writable.push(...own.shared);
+  }
   if (leg.kind === "opencode" || leg.kind === "antigravity") {
     const dir = binaryDir(String(config.binary ?? (leg.kind === "opencode" ? "opencode" : "agy")));
     if (dir) readonly.push(dir);
@@ -61,11 +74,13 @@ export function sandboxPlan(
   if (leg.kind === "claude-code") {
     const dir = binaryDir(String(config.binary ?? "claude"));
     if (dir) readonly.push(dir);
-    if (typeof config.configDir === "string") writable.push(config.configDir);
+    // A job's session has its own config folder; another's is never bound.
+    if (typeof config.configDir === "string" && !configDir) writable.push(config.configDir);
   }
   return {
     sandbox: withLocalPorts(sandbox, [...legLocalPorts(config), ...localPorts]),
     home,
+    ...(configDir ? { configDir } : {}),
     writable,
     readonly: [...new Set(readonly)],
     env: {

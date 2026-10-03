@@ -83,8 +83,13 @@ export type LegEvent =
 
 export interface SandboxPlan {
   sandbox: Sandbox;
-  /** The Leg's own home (its config dir lives here or is listed in `writable`). */
+  /**
+   * HOME for the session: the Leg's own, or for a job's session the job's
+   * home on that Leg, where the Leg's login is linked (Audit 2, S2-08).
+   */
   home: string;
+  /** A Claude config folder of the job's own, in place of the Leg's (S2-08). */
+  configDir?: string;
   writable: string[];
   readonly: string[];
   env: Record<string, string>;

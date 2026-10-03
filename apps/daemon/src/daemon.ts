@@ -48,6 +48,7 @@ import { Helper } from "./helper/service.ts";
 import { isLocalRequest } from "./http/guard.ts";
 import { InboxStore } from "./inbox/store.ts";
 import { startHealthChecks } from "./legs/health.ts";
+import { removeJobHomes } from "./legs/job-home.ts";
 import { LegLogins } from "./legs/login.ts";
 import { PlanUsage } from "./legs/plan-usage.ts";
 import { LegRegistry } from "./legs/registry.ts";
@@ -528,6 +529,10 @@ export async function startDaemon(options: DaemonOptions) {
     inhibitor: os.inhibitor,
     activeJobs: countActiveJobs(db),
   });
+  const legConfigDir = (legId: string) => {
+    const c = registry.get(legId)?.config as { configDir?: unknown } | undefined;
+    return typeof c?.configDir === "string" ? c.configDir : null;
+  };
   // Any job state change may start or end the need to stay awake.
   bus.subscribe((e) => {
     if (e.type === "job.state")
@@ -538,6 +543,8 @@ export async function startDaemon(options: DaemonOptions) {
       for (const item of inbox.list({ jobId: e.jobId, state: "open" })) inbox.withdraw(item.id);
       forgetJob(e.jobId);
       forgetGuidance(e.jobId);
+      // Its homes on the Legs go, keys and files (Audit 2, S2-08).
+      removeJobHomes(paths.legs, e.jobId, legConfigDir);
     }
   });
 

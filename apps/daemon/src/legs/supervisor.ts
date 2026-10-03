@@ -170,7 +170,7 @@ export class LegSupervisor {
         sandbox: req.unsandboxed
           ? null
           : withTools(
-              sandboxPlan(leg, this.o.sandbox, this.o.legsDir, req.localPorts ?? []),
+              sandboxPlan(leg, this.o.sandbox, this.o.legsDir, req.localPorts ?? [], req.jobId),
               req.tools,
               req.readonly,
             ),
