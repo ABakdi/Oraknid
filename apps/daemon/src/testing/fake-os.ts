@@ -2,14 +2,38 @@ import type {
   Channel,
   Inhibitor,
   InhibitorState,
+  KeychainStore,
   Notification,
   SecretStoreStatus,
 } from "@oraknid/os";
 import type { OsDeps } from "../os/context.ts";
 
 /** OS stand-ins so daemon tests never touch the real keychain, logind or systemd. */
-export function fakeOs(opts: { keychain?: boolean; memoryUsed?: () => number } = {}) {
-  const store = new Map<string, string>();
+export function fakeOs(
+  opts: {
+    keychain?: boolean;
+    memoryUsed?: () => number;
+    /** One keychain for several daemons, as a desktop has (Audit 2, S2-23). */
+    keychainServices?: Map<string, Map<string, string>>;
+  } = {},
+) {
+  // Entries by service, then by name, like the Secret Service's attributes.
+  const services = opts.keychainServices ?? new Map<string, Map<string, string>>();
+  const entries = (service: string) => {
+    const m = services.get(service) ?? new Map<string, string>();
+    services.set(service, m);
+    return m;
+  };
+  // The service the daemon keeps its entries under: the last one it named.
+  let inUse = "oraknid";
+  /** The daemon's own entries, whichever service they are kept under. */
+  const store = new Proxy(new Map<string, string>(), {
+    get(_, prop) {
+      const m = entries(inUse);
+      const v = Reflect.get(m, prop, m);
+      return typeof v === "function" ? v.bind(m) : v;
+    },
+  });
   const keychainUp = opts.keychain ?? false;
   const sent: { channel: string; n: Notification }[] = [];
 
@@ -83,15 +107,7 @@ export function fakeOs(opts: { keychain?: boolean; memoryUsed?: () => number } =
         };
       },
     },
-    keychain: {
-      probe: async () => keychainStatus,
-      status: () => keychainStatus,
-      get: async (k) => store.get(k),
-      set: async (k, v) => {
-        store.set(k, v);
-      },
-      delete: async (k) => store.delete(k),
-    },
+    keychain: fakeKeychain("oraknid"),
     service: {
       install: () => [],
       uninstall: () => [],
@@ -106,5 +122,22 @@ export function fakeOs(opts: { keychain?: boolean; memoryUsed?: () => number } =
     serviceNotifier: { ready() {}, stopping() {}, startWatchdog: () => () => {} },
     channels: { desktop: channel("desktop"), email: channel("email") },
   };
-  return { os, inhibitor, sent, store };
+  function fakeKeychain(service: string): KeychainStore {
+    return {
+      service,
+      probe: async () => keychainStatus,
+      status: () => keychainStatus,
+      names: async () => [...entries(service).keys()],
+      scoped(other) {
+        inUse = other;
+        return fakeKeychain(other);
+      },
+      get: async (k) => entries(service).get(k),
+      set: async (k, v) => {
+        entries(service).set(k, v);
+      },
+      delete: async (k) => entries(service).delete(k),
+    };
+  }
+  return { os, inhibitor, sent, store, keychainServices: services };
 }

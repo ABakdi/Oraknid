@@ -4,7 +4,12 @@ export * from "./inhibitor.ts";
 export { autostartEntry, createAutostartService } from "./linux/autostart.ts";
 export { bwrapArgs, createBwrapSandbox } from "./linux/bwrap.ts";
 export { createDesktopChannel } from "./linux/desktop.ts";
-export { createKeychainStore } from "./linux/keychain.ts";
+export {
+  createKeychainStore,
+  KEYCHAIN_SERVICE,
+  type KeychainStore,
+  keychainService,
+} from "./linux/keychain.ts";
 export { createLinuxMetrics } from "./linux/metrics.ts";
 export { readNvidia } from "./linux/nvidia.ts";
 export { createOpenrcService, openrcScript } from "./linux/openrc.ts";

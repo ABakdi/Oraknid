@@ -62,7 +62,7 @@ import { linuxOs, type OsDeps } from "./os/context.ts";
 import { countActiveJobs, createInhibitController } from "./os/inhibit-controller.ts";
 import { startMetricsLoop } from "./os/metrics-loop.ts";
 import { Secrets } from "./os/secrets.ts";
-import { DEFAULT_HOST, DEFAULT_PORT, type Paths } from "./paths.ts";
+import { DEFAULT_HOST, DEFAULT_PORT, isDefaultDataDir, type Paths } from "./paths.ts";
 import { Servers } from "./servers/service.ts";
 import { MAX_RUNNING_JOBS, readSetting } from "./settings.ts";
 import { SilkStore } from "./silk/store.ts";
@@ -138,7 +138,11 @@ export async function startDaemon(options: DaemonOptions) {
   chmodSync(paths.dataDir, 0o700);
   setShadowRoot(join(paths.dataDir, "shadow"));
   const db = await openDatabase({ file: options.dbFile ?? paths.db, backupsDir: paths.backups });
-  const secrets = new Secrets(paths.dataDir, os.keychain);
+  // The keychain entries of before belong to the default data folder alone (Audit 2, S2-23).
+  const secrets = new Secrets(paths.dataDir, os.keychain, {
+    ownsLegacy: isDefaultDataDir(paths.dataDir),
+    log: (m) => console.log(m),
+  });
   const bus = new EventBus(db, now);
   // Secrets never reach the event log (BR-13).
   bus.scrub = (text) => scrubSecrets(text, secrets.known());

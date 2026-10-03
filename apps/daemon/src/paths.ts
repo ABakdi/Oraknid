@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 export interface Paths {
   dataDir: string;
@@ -34,3 +34,13 @@ export function resolvePaths(env: NodeJS.ProcessEnv = process.env): Paths {
 
 export const DEFAULT_HOST = "127.0.0.1";
 export const DEFAULT_PORT = 7417;
+
+/**
+ * Whether `dataDir` is the data folder Oraknid uses when none is chosen
+ * (XDG_DATA_HOME/oraknid): the one the keychain entries of before belong
+ * to (Audit 2, S2-23).
+ */
+export function isDefaultDataDir(dataDir: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  const { ORAKNID_DATA_DIR: _, ...rest } = env;
+  return resolve(dataDir) === resolve(resolvePaths(rest).dataDir);
+}
