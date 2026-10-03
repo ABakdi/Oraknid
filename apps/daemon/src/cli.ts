@@ -15,7 +15,7 @@ import { format } from "node:util";
 import {
   createBwrapSandbox,
   createKeychainStore,
-  createSystemdService,
+  createServiceManager,
   type InstallStep,
 } from "@oraknid/os";
 import { createORPCClient } from "@orpc/client";
@@ -177,7 +177,7 @@ program
       : runDoctor(paths, {
           sandbox: createBwrapSandbox().status(),
           secrets: await createKeychainStore().probe(),
-          service: createSystemdService().status(),
+          service: createServiceManager().manager.status(),
         });
     for (const c of checks) {
       console.log(`${c.ok ? "✓" : "✗"} ${c.name}: ${c.detail}`);
@@ -188,7 +188,9 @@ program
 
 program
   .command("install")
-  .description("run Oraknid as a background service that starts at boot")
+  .description(
+    "run Oraknid as a background service with what this system uses (systemd, OpenRC, runit)",
+  )
   .action(async () => {
     const entry = process.argv[1] ?? "";
     if (!entry.endsWith(".mjs") && !entry.endsWith(".js")) {
@@ -207,18 +209,33 @@ program
       const v = process.env[k];
       if (v) env[k] = v;
     }
-    const steps = createSystemdService().install({
+    const service = createServiceManager();
+    console.log(`Installing Oraknid as ${service.label}.`);
+    const steps = service.manager.install({
       execPath: process.execPath,
       args: [resolve(entry), "run"],
       env,
     });
     report(steps);
+    const c = service.commands;
+    console.log(`
+Start:    ${c.start}
+Stop:     ${c.stop}
+Disable:  ${c.disable}
+Logs:     ${c.logs}
+Remove:   oraknid uninstall (your data is kept)`);
   });
 
 program
   .command("uninstall")
   .description("stop and remove the background service (data is kept)")
-  .action(() => report(createSystemdService().uninstall()));
+  .action(() => {
+    const service = createServiceManager();
+    console.log(
+      `Removing ${service.kind === "autostart" ? "the autostart entry" : `the ${service.kind} service`}.`,
+    );
+    report(service.manager.uninstall());
+  });
 
 await program.parseAsync();
 
