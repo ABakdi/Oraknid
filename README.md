@@ -26,6 +26,25 @@ docs/                 the canon
 
 More packages arrive milestone by milestone ([ADR-001](docs/04-Decisions/ADR-001-Monorepo.md)).
 
+## Install
+
+On Linux, as yourself (it asks for `sudo` only to install missing packages):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/main/install.sh | sh
+# until dev is merged into main:
+curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/main/install.sh | sh -s -- --ref dev
+```
+
+It installs what is missing (git, Node 22.12+, pnpm through corepack,
+bubblewrap, passt, Python 3, a C++ compiler), builds into
+`~/.local/share/oraknid/app`, links `oraknid` into `~/.local/bin`, runs
+`oraknid doctor`, and runs Oraknid in the background with systemd, OpenRC
+or runit (an autostart entry otherwise). It ends with the address and a
+pairing code. Options: `--ref`, `--dir`, `--no-service`, `--uninstall`
+([ADR-036](docs/04-Decisions/ADR-036-One-Script-Install.md)). Running it
+again updates.
+
 ## Development
 
 Needs Linux, Node 22.12+ and pnpm 9.
