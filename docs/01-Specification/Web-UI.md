@@ -9,7 +9,26 @@ their questions and redirecting The Eye.
 ## Look
 
 - A dense "mission control" style: dark first, with a light theme and
-  a system-follow option. Built with shadcn/ui and Tailwind.
+  a system-follow option. Built with shadcn/ui and Tailwind, restyled
+  into Oraknid's own system (tokens in `apps/web/src/index.css`).
+- **It follows the mark** (`public/logo.svg`): ink surfaces, **violet**
+  (#8F7CFF) for what I act on (buttons, focus, the page I'm on, the
+  running state), and **amber** from The Eye's iris, sparingly: what
+  wants my eye (the Inbox count, the PIN dots, an interview, a
+  terminal's cursor). State colours (green, gold, red, teal) carry a
+  word or an icon too, never colour alone, and pass WCAG AA in both
+  themes.
+- **Surfaces in layers**: the frame (header and sidebar) is recessed,
+  the canvas above it, cards above that, menus and dialogs highest.
+  Fields are wells a step below what holds them. Height reads as a
+  hairline border and an edge of light on ink; as a soft shadow on
+  paper. Corners are small (8px cards, 6px controls); tags are
+  squared, not pills.
+- **Type**: IBM Plex Sans for the interface, JetBrains Mono for code,
+  terminals, figures and small uppercase labels (table heads, groups,
+  stats). Both self-hosted (the policy allows fonts from Oraknid only),
+  Latin only.
+- Touch targets are at least 44px on a touch screen.
 - English only for now. Every string goes through an i18n layer so other
   languages can be added later.
 - Updates in real time, with no refresh button anywhere. A connection
