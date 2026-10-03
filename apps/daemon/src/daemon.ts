@@ -46,6 +46,7 @@ import { eyeProgram } from "./eye/program.ts";
 import { forgetGuidance, recordAnswer, resumeConversations } from "./eye/talk.ts";
 import { Helper } from "./helper/service.ts";
 import { isLocalRequest } from "./http/guard.ts";
+import { requestIds, tagConsoleWithRequestIds } from "./http/request-id.ts";
 import { InboxStore } from "./inbox/store.ts";
 import { startHealthChecks } from "./legs/health.ts";
 import { removeJobHomes } from "./legs/job-home.ts";
@@ -433,6 +434,10 @@ export async function startDaemon(options: DaemonOptions) {
     next();
   });
 
+  // An id for every API call: in its response, its errors and its log lines (API-Contract).
+  tagConsoleWithRequestIds();
+  app.use("/api", requestIds);
+
   // Every client is a paired device, or the CLI (Security → The daemon's own surface).
   app.use("/api", (req, res, next) => {
     if (req.path === "/devices/pairComplete") return next();
@@ -801,7 +806,10 @@ function webRemote(): string | null {
 
 /** An error the API's clients read like any other (oRPC's shape). */
 function rpcError(res: express.Response, status: number, code: string, message: string) {
-  res.status(status).json({ json: { defined: false, code, status, message } });
+  const requestId = res.locals.requestId as string | undefined;
+  res.status(status).json({
+    json: { defined: false, code, status, message, ...(requestId ? { data: { requestId } } : {}) },
+  });
 }
 
 /**
