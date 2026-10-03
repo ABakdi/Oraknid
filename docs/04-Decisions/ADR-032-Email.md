@@ -108,6 +108,25 @@ Decided while building Phase 12, in the spirit of the above:
   each account's menu in the folder list; and the folders in a drawer
   on a phone.
 
+### Fixed after a failed Namecheap POP account (2026-10-03)
+Namecheap's Private Email (Dovecot) answers POP3 on 995 (TLS) and 110
+(STARTTLS), and Oraknid's POP3 client reaches its login with either. A
+failed add was hard to diagnose: a port and security that don't match
+gave OpenSSL's raw "wrong version number", a refused login said only
+what the server said, and nothing was logged. Now:
+- **Presets found from the address**: the domain's MX records name the
+  provider (Google, Microsoft, Namecheap Private Email, Zoho, Fastmail,
+  iCloud, Yahoo, and others known), and the servers, ports and
+  security are filled in; I can still change them.
+- **Port and security move together**: 995, 993 and 465 are TLS; 110,
+  143 and 587 are STARTTLS.
+- **Errors in plain words**, each naming what to check: a TLS mismatch,
+  a name that doesn't resolve, a port closed or timing out, a refused
+  login (the full address as login, the mailbox's own password or an
+  app password), and which side failed (incoming or SMTP).
+- **"Test" before adding**, checking incoming and SMTP separately, and
+  every failed add written to the daemon's log without the password.
+
 ## Acceptance
 The source spec's list (pasted 2026-10-03), where each stands:
 - Gmail and a generic IMAP account end to end: Gmail **with an app

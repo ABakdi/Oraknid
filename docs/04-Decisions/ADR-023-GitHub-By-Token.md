@@ -29,6 +29,6 @@ copy, but an app to register once) or a token. My choice: a token.
 ## Consequences
 - No app to register; the token's expiry is mine to manage, and Settings
   says when GitHub refuses it.
-- One account at a time.
+- One account at a time. *Changed 2026-10-03:* several accounts, and a project's own GitHub link used by Oraknid's `github` tool ([[ADR-038-Project-Accounts]]).
 
 Related: [[Security]] · [[Jobs-and-Projects]] · [[Phase-8-Daily-Use]]

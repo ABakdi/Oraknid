@@ -56,6 +56,18 @@ the project's history, never as a place of their own.
   starts with. A job that would go past the project's limit pauses and
   asks, like a job's own limit.
 
+## Changed (2026-10-03): The Web is shown as Workflow
+- The tab is named **Workflow** (the canon's word for a job's task graph
+  stays The Web; the UI says workflow).
+- It is only the diagram, so it fills the whole tab: no header block,
+  no side panels, controls floating over it.
+- **Compact** (the default): one box per job, in order, the running
+  one highlighted. Selecting a job's box goes inside it: that job's
+  own workflow, with a way back to the project's.
+- **Expanded**: every job's own workflow drawn in full, each in a
+  frame named by its job, one after another.
+- The choice is kept per project.
+
 ## Consequences
 - Migration: `eye_messages` gains `project_id`, filled from each
   message's job; the project budget is a setting per project.

@@ -1,6 +1,6 @@
 # Phase 13 — Projects first
 
-Touches [[Web-UI]], [[Jobs-and-Projects]], [[The-Eye]], [[Silk]], [[Budgets-and-Quotas]], [[The-Nest]].
+Touches [[Web-UI]], [[Jobs-and-Projects]], [[The-Eye]], [[Silk]], [[Budgets-and-Quotas]], [[The-Nest]], [[OS-Integration]], [[Approvals-and-Autonomy]].
 Written 2026-10-03.
 
 ## Why
@@ -52,6 +52,28 @@ Tested (M13.2): `apps/nest/src/relay.test.ts` (a public Nest's site
 indexable and its loader not; a private Nest's root, site pages and
 unknown paths a bare 404, its loader served, robots.txt); both kinds
 run locally and the public site checked at 1440 and 390 px.
+
+### M13.3 — Install with one script ([[ADR-036-One-Script-Install]])
+- [ ] `install.sh` at the root: missing packages, clone, build, `oraknid` on my PATH, the service, a pairing code
+- [ ] Services for systemd, OpenRC and runit; an autostart entry otherwise; `oraknid install`/`uninstall` the same
+- [ ] The guide and the site's install block say the one command
+
+### M13.4 — Questions with options ([[ADR-037-Questions-With-Options]])
+- [ ] Questions shaped single, multi, text, confirm, with a recommended option and "Other"
+- [ ] The interview and The Eye's conversation answer them in tabs, by keyboard and touch
+
+### M13.5 — Workflow ([[ADR-034-Projects-First]] → Changed)
+- [ ] The tab named Workflow, the diagram filling it, compact and expanded, a job's box opening its own workflow
+
+### M13.6 — A project's GitHub repo and servers ([[ADR-038-Project-Accounts]])
+- [ ] Several GitHub accounts; a project's GitHub link (account, repo) beside its servers
+- [ ] The Eye asks in its conversation once, with options, and saves the answer to the project
+- [ ] The built-in `github` tool (create the repo, push, pull request) run by Oraknid with the token; Legs told not to use `gh`
+- [ ] Linked work runs without asking; the rest still asks
+- [ ] The piano project's stalled push finished through it
+
+### M13.7 — Mail accounts that explain themselves ([[ADR-032-Email]] → Fixed after a failed Namecheap POP account)
+- [ ] Presets from the domain's MX, port and security together, errors in plain words, Test, failures logged
 
 ## Exit criterion
 
