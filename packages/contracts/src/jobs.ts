@@ -149,6 +149,10 @@ export const TaskView = Task.extend({
     .nullable(),
   pinnedModelId: z.string().nullable(),
   ownerHeld: z.boolean(),
+  /** The paused Leg it waits for (its session was paused in place), if any. */
+  waitingForLegId: z.string().nullable().default(null),
+  /** Legs it doesn't use any more: their work in the job, or on it, was cancelled. */
+  avoidLegIds: z.array(z.string()).default([]),
 });
 export type TaskView = z.infer<typeof TaskView>;
 

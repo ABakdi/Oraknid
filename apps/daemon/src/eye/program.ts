@@ -777,6 +777,10 @@ async function runTask(
       ctx.setState("cancelled", outcome.reason);
       settle();
       return;
+    case "leg-stopped":
+      // Paused: it waits for its Leg; cancelled: it goes on without it (Jobs-and-Projects → Controls).
+      setTask(d, job.id, task.id, "ready", outcome.reason);
+      break;
   }
   settle();
 }

@@ -132,6 +132,7 @@ import {
 } from "../eye/controls.ts";
 import type { EyeDecisions } from "../eye/decisions.ts";
 import { draftAnswer, draftStart, draftTalk, isThinking } from "../eye/draft.ts";
+import { cancelLegWork, pauseLegSessions, readLegWork } from "../eye/leg-work.ts";
 import {
   GlobalPolicy,
   readGlobalPolicy,
@@ -394,6 +395,7 @@ function jobView(c: ApiContext, id: string): JobView {
     .innerJoin(tasksTable, eq(tasksTable.id, taskEdges.taskId))
     .where(eq(tasksTable.jobId, id))
     .all();
+  const legWork = readLegWork(c.jobs.db, id);
   const tasks = c.jobs.db
     .select()
     .from(tasksTable)
@@ -420,6 +422,8 @@ function jobView(c: ApiContext, id: string): JobView {
       routing: (t.routing as TaskView["routing"]) ?? null,
       pinnedModelId: t.pinnedModelId,
       ownerHeld: t.ownerHeld,
+      waitingForLegId: legWork.waitFor[t.id] ?? null,
+      avoidLegIds: [...new Set([...legWork.avoid, ...(legWork.taskAvoid[t.id] ?? [])])],
     }));
   return JobView.parse({
     ...job,
@@ -1799,6 +1803,38 @@ export const router = {
       .handler(({ context: c, input }) =>
         guard(() => c.runner.cancel(input.id, input.reason ?? "Cancelled by me.")),
       ),
+    /**
+     * Cancels what one Leg does in this job (or on one of its tasks): its
+     * sessions there end at a safe point, their tasks go back to ready and
+     * don't use that Leg again here. Also how a task waiting for a paused
+     * Leg is reassigned. Answers once they have stopped.
+     */
+    cancelLegWork: base
+      .input(z.object({ id: z.string(), legId: z.string(), taskId: z.string().optional() }))
+      .output(z.object({ stopped: z.number().int() }))
+      .handler(({ context: c, input }) =>
+        guard(async () => {
+          const job = c.jobs.require(input.id);
+          const leg = c.registry.require(input.legId);
+          if (input.taskId) {
+            const t = c.jobs.db
+              .select({ jobId: tasksTable.jobId })
+              .from(tasksTable)
+              .where(eq(tasksTable.id, input.taskId))
+              .get();
+            if (t?.jobId !== job.id) throw new Error("That task is not in this job.");
+          }
+          const stopped = await cancelLegWork(c.jobs.db, job.id, leg.id, leg.name, input.taskId);
+          c.bus.publish({
+            type: "job.leg-cancelled",
+            topic: `job:${job.id}`,
+            jobId: job.id,
+            payload: { legId: leg.id, taskId: input.taskId ?? null, stopped },
+            actor: "owner",
+          });
+          return { stopped };
+        }),
+      ),
   },
   legs: {
     /** Agents and model servers found on this machine, ready to add (Legs → Finding agents). */
@@ -1870,10 +1906,19 @@ export const router = {
           await c.health.check(id);
         }),
       ),
+    /**
+     * No new sessions on it, and the ones it runs pause in place at a safe
+     * point (BR-7); their tasks wait for it. Answers once they have stopped.
+     */
     pause: base
       .input(z.object({ id: z.string() }))
+      .output(z.object({ stopped: z.number().int() }))
       .handler(({ context: c, input }) =>
-        guard(() => c.registry.update(input.id, { paused: true })),
+        guard(async () => {
+          const leg = c.registry.require(input.id);
+          c.registry.update(input.id, { paused: true });
+          return { stopped: await pauseLegSessions(c.jobs.db, leg.id, leg.name) };
+        }),
       ),
     resume: base
       .input(z.object({ id: z.string() }))
