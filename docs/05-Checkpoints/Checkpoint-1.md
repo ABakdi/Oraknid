@@ -43,6 +43,32 @@ daemon; but the cut-short attempt had no end and no outcome.
 **Fix:** recovery closes them as `abandoned`. **Test:** recovery of
 orphans.
 
+### B1-04 — `oraknid status` timed out in the daemon's first minute
+
+**Seen:** 2026-10-03, right after a start: `oraknid status` gave up on
+its 1 s `/health` probe while mail accounts synced and plan usage was
+read.
+**Why:** measured with a sample daemon (a file database, the stand-in
+mail server with 6,000 messages, `monitorEventLoopDelay`): the event
+loop stalled **1,040–1,125 ms** during a first sync, the new messages
+of a folder stored in one transaction (about 0.23 ms a row: 4,800 rows
+held it 1.1 s; the 10,000 a first sync may take, over 2 s). After a
+restart, the flags of what is held were read in one `for await` over a
+buffered FETCH whose items arrive as microtasks, never letting a timer
+or a request in: **559 ms** at 12,000 messages. Migrations and recovery
+run before the daemon listens, so they delay the first answer rather
+than stall one; plan usage and the health checks spawn their programs
+and wait without blocking.
+**Fix:** new messages and flag changes are stored 200 rows a
+transaction, the loop let go between them, and the IMAP fetch loops let
+it go every 20 ms. Now the worst stall is **100–166 ms** during a
+first sync of 6,000 (259 ms at 12,000) and **44–174 ms** after a
+restart; `/health` answered within 140 ms throughout.
+**Tests:** `startup.test.ts` syncs 6,000 messages, restarts with 500
+more, probes `/health` throughout and checks the worst stall stays
+under 500 ms and every probe under 1 s (`STARTUP_MESSAGES` sets the
+count).
+
 ## Features
 
 | # | What | Where |
@@ -71,5 +97,6 @@ Audit 1 before `v0.1.0`.
 
 - [x] B1-02 — paused task state
 - [x] B1-03 — attempts left open by a crash
+- [x] B1-04 — the daemon's first-minute stall (2026-10-03), measured before and after
 
 Related: [[Checkpoints-Home]] · [[Phase-1-MVP]] · [[ADR-014-Auto-Approval]]
