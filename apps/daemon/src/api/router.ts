@@ -837,6 +837,20 @@ export const router = {
           ),
         ),
       ),
+    /** What became of an action shown in my browser: not shown, and why (ADR-041). */
+    shown: base
+      .input(
+        z.object({
+          messageId: z.string(),
+          index: z.number().int().min(0),
+          ok: z.boolean(),
+          why: z.string().max(500).optional(),
+        }),
+      )
+      .output(HelperAction)
+      .handler(({ context: c, input }) =>
+        guard(() => c.helper.shown(input.messageId, input.index, input.ok, input.why)),
+      ),
     clear: base.handler(({ context: c }) => guard(() => c.helper.clear())),
   },
   /** GitHub through a token I paste (ADR-023). */

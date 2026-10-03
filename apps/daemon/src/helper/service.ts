@@ -840,6 +840,40 @@ ${history}${
     return settled;
   }
 
+  /**
+   * What became of an action shown in my browser (ADR-041): one that
+   * couldn't be shown is failed, with why, so the helper's next round knows;
+   * shown after all (Show me again), it is done again.
+   */
+  shown(messageId: string, index: number, ok: boolean, why?: string): HelperAction {
+    const row = this.d.db
+      .select()
+      .from(helperMessages)
+      .where(eq(helperMessages.id, messageId))
+      .get();
+    const action = (row?.actions as HelperAction[] | undefined)?.[index];
+    if (!row || !action) throw new Error("No such action.");
+    if (ACTIONS[action.name]?.kind !== "client" || action.state === "proposed")
+      throw new Error("That action isn't one shown in the browser.");
+    const settled: HelperAction = ok
+      ? { ...action, state: "done", result: "Shown on your screen." }
+      : {
+          ...action,
+          state: "failed",
+          result: `It couldn't be shown in the browser: ${why?.trim() || "no reason given"}`,
+        };
+    const actions = [...(row.actions as HelperAction[])];
+    actions[index] = settled;
+    this.d.db.update(helperMessages).set({ actions }).where(eq(helperMessages.id, messageId)).run();
+    this.d.bus.publish({
+      type: "helper.message",
+      topic: "overview",
+      jobId: null,
+      payload: { id: messageId },
+    });
+    return settled;
+  }
+
   clear() {
     this.d.db.delete(helperMessages).run();
     this.d.bus.publish({ type: "helper.message", topic: "overview", jobId: null, payload: {} });

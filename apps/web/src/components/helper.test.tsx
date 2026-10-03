@@ -1,5 +1,6 @@
 import type { HelperMessage } from "@oraknid/contracts";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Route, Router, Switch } from "wouter";
 
@@ -8,6 +9,7 @@ import { Route, Router, Switch } from "wouter";
 let talk: HelperMessage[] = [];
 const sent: { text: string; context?: Record<string, unknown> }[] = [];
 let reply: HelperMessage | null = null;
+const reported: Record<string, unknown>[] = [];
 vi.mock("@/lib/api", () => ({
   api: {
     helper: {
@@ -22,6 +24,10 @@ vi.mock("@/lib/api", () => ({
         ];
       },
       decide: async () => ({}),
+      shown: async (x: Record<string, unknown>) => {
+        reported.push(x);
+        return {};
+      },
       clear: async () => {},
     },
   },
@@ -48,12 +54,28 @@ const highlight = (id: string, note: string): HelperMessage => ({
   at: 2,
 });
 
+/** A modal dialog as ours are (the same slot as components/ui/dialog.tsx), with a close. */
+function Modal() {
+  const [open, setOpen] = useState(true);
+  return open ? (
+    <div role="dialog" data-slot="dialog-content">
+      <p data-help="settings.terminal-switch">Terminal</p>
+      <button type="button" onClick={() => setOpen(false)}>
+        Close the dialog
+      </button>
+    </div>
+  ) : null;
+}
+
 function App() {
   return (
     <Router>
       <Switch>
         <Route path="/settings/security">
           <p data-help="settings.terminal-switch">Terminal</p>
+        </Route>
+        <Route path="/settings/dialog">
+          <Modal />
         </Route>
         <Route>
           <p>elsewhere</p>
@@ -70,6 +92,7 @@ beforeEach(() => {
   talk = [];
   sent.length = 0;
   reply = null;
+  reported.length = 0;
   narrow = false;
   rings.set(null);
   HTMLElement.prototype.scrollIntoView = () => {};
@@ -134,5 +157,49 @@ describe("the helper panel (ADR-041)", () => {
     expect(screen.queryByRole("region", { name: "Oraknid helper" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Back to the helper" }));
     expect(screen.getByRole("region", { name: "Oraknid helper" })).toBeTruthy();
+  });
+
+  it("tells the helper when a highlight can't be shown, and says why under it", async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Ask the Oraknid helper" }));
+    reply = { ...highlight("nowhere.at-all", "Here"), id: "h3" };
+    await ask("Where is it?");
+    await waitFor(() =>
+      expect(reported).toEqual([
+        {
+          messageId: "h3",
+          index: 0,
+          ok: false,
+          why: 'Nothing on the screens is called "nowhere.at-all".',
+        },
+      ]),
+    );
+    expect(rings.get()).toBeNull();
+    // A highlight shown fine tells nothing.
+    reported.length = 0;
+    reply = { ...highlight("settings.terminal-switch", "There"), id: "h4" };
+    await ask("And the terminal?");
+    await waitFor(() => expect(rings.get()?.note).toBe("There"));
+    expect(reported).toEqual([]);
+  });
+
+  it("steps aside for a control in a dialog, says so on the ring, and comes back when it closes", async () => {
+    history.replaceState(null, "", "/settings/dialog");
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Ask the Oraknid helper" }));
+    reply = highlight("settings.terminal-switch", "Turn it on");
+    await ask("Where is the terminal switch?");
+    await waitFor(() =>
+      expect(rings.get()?.note).toBe("Turn it on Close this dialog to get back to the helper."),
+    );
+    // The panel can't be used while the dialog holds the page: it waits.
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Oraknid helper" })).toBeNull(),
+    );
+    expect(screen.getByRole("button", { name: "Back to the helper" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close the dialog" }));
+    expect(
+      await screen.findByRole("region", { name: "Oraknid helper" }, { timeout: 2000 }),
+    ).toBeTruthy();
   });
 });
