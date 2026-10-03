@@ -12,6 +12,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import ELK from "elkjs/lib/elk-api.js";
 import elkWorkerSource from "elkjs/lib/elk-worker.min.js?raw";
+import { ChevronRight } from "lucide-react";
 import { memo, useEffect, useMemo, useState } from "react";
 import { StateBadge } from "@/components/common";
 import { t } from "@/lib/i18n";
@@ -20,17 +21,29 @@ import { cn } from "@/lib/utils";
 type Task = JobView["tasks"][number];
 type TaskNode = Node<{ task: Task; leg: string | null; onOpen: (id: string) => void }, "task">;
 
-/** An earlier job of a project, folded to one node (ADR-034). */
-export interface FoldedJob {
+/** A job drawn as one box (a project's compact Workflow, ADR-034 → Changed). */
+export interface FlowJob {
   id: string;
   title: string;
   state: string;
   done: number;
   total: number;
+  /** The job the project is about now: highlighted. */
+  current?: boolean;
   /** The nodes it comes after: the job before it. */
   dependsOn: string[];
 }
-type JobNode = Node<{ job: FoldedJob; onOpen: (id: string) => void }, "job">;
+type JobNode = Node<{ job: FlowJob; onOpen: (id: string) => void }, "job">;
+
+/** A job's own workflow drawn in full inside a frame named by the job (expanded). */
+export interface FlowGroup {
+  job: FlowJob;
+  tasks: Task[];
+}
+type FrameNode = Node<
+  { job: FlowJob; width: number; height: number; onOpen: (id: string) => void },
+  "frame"
+>;
 
 // In a Web Worker, so a large Web never freezes the UI (ADR-005).
 // Away from home the UI is one self-contained page: its worker comes from a Blob instead.
@@ -42,10 +55,18 @@ const worker = () =>
     : new Worker(new URL("elkjs/lib/elk-worker.min.js", import.meta.url));
 const W = 220;
 const H = 76;
+/** A frame's padding around its tasks, and the strip naming its job. */
+const PAD = 16;
+const HEAD = 40;
+/** Between one frame and the next. */
+const GAP = 72;
+
+type Place = { x: number; y: number };
 
 /** ELK lays The Web out in layers (ADR-005); only a change of structure moves nodes. */
 async function layout(tasks: { id: string; dependsOn: string[] }[], vertical: boolean) {
   elk ??= new ELK({ workerFactory: worker });
+  const ids = new Set(tasks.map((x) => x.id));
   const g = await elk.layout({
     id: "web",
     layoutOptions: {
@@ -55,18 +76,52 @@ async function layout(tasks: { id: string; dependsOn: string[] }[], vertical: bo
       "elk.layered.spacing.nodeNodeBetweenLayers": "56",
       "elk.edgeRouting": "ORTHOGONAL",
     },
-    children: tasks.map((t) => ({ id: t.id, width: W, height: H })),
-    edges: tasks.flatMap((t) =>
-      t.dependsOn.map((d) => ({ id: `${d}-${t.id}`, sources: [d], targets: [t.id] })),
+    children: tasks.map((x) => ({ id: x.id, width: W, height: H })),
+    edges: tasks.flatMap((x) =>
+      x.dependsOn
+        .filter((d) => ids.has(d))
+        .map((d) => ({ id: `${d}-${x.id}`, sources: [d], targets: [x.id] })),
     ),
   });
   return new Map((g.children ?? []).map((c) => [c.id, { x: c.x ?? 0, y: c.y ?? 0 }]));
 }
 
+/**
+ * Frames one after another (expanded Workflow): left to right on a wide
+ * screen, top to bottom on a phone, each starting where the last ended.
+ */
+export function stackFrames(sizes: { width: number; height: number }[], vertical: boolean) {
+  let at = 0;
+  return sizes.map((s) => {
+    const p = vertical ? { x: 0, y: at } : { x: at, y: 0 };
+    at += (vertical ? s.height : s.width) + GAP;
+    return p;
+  });
+}
+
+/** Each job's tasks laid out on their own, framed, and the frames stacked. */
+async function layoutGroups(groups: FlowGroup[], vertical: boolean) {
+  const inner = await Promise.all(groups.map((g) => layout(g.tasks, vertical)));
+  const sizes = inner.map((p) => {
+    const xs = [...p.values()];
+    const w = xs.length ? Math.max(...xs.map((q) => q.x)) + W : W;
+    const h = xs.length ? Math.max(...xs.map((q) => q.y)) + H : H / 2;
+    return { width: w + PAD * 2, height: h + PAD * 2 + HEAD };
+  });
+  const frames = stackFrames(sizes, vertical);
+  const out = new Map<string, Place & { width?: number; height?: number }>();
+  groups.forEach((g, i) => {
+    out.set(g.job.id, { ...(frames[i] as Place), ...(sizes[i] as { width: number }) });
+    for (const [id, q] of inner[i] ?? []) out.set(id, { x: q.x + PAD, y: q.y + PAD + HEAD });
+  });
+  return out;
+}
+
+const RUNNING_TASK = ["running", "verifying", "assigned"];
+
 const TaskCard = memo(({ data }: NodeProps<TaskNode>) => {
   const { task, leg } = data;
-  const running =
-    task.state === "running" || task.state === "verifying" || task.state === "assigned";
+  const running = RUNNING_TASK.includes(task.state);
   return (
     <button
       type="button"
@@ -99,11 +154,21 @@ const JobCard = memo(({ data }: NodeProps<JobNode>) => {
     <button
       type="button"
       onClick={() => data.onOpen(job.id)}
-      title={t("Open “{title}” here", { title: job.title })}
-      className="flex h-[76px] w-[220px] flex-col justify-between rounded-lg border border-dashed bg-muted/40 px-2.5 py-2 text-left shadow-sm transition-shadow hover:shadow-md"
+      title={t("Open “{title}”", { title: job.title })}
+      aria-current={job.current ? "true" : undefined}
+      className={cn(
+        "flex h-[76px] w-[220px] flex-col justify-between rounded-lg border bg-card px-2.5 py-2 text-left shadow-sm transition-shadow hover:shadow-md",
+        job.current &&
+          "border-primary shadow-[0_0_0_3px_color-mix(in_oklch,var(--primary)_25%,transparent)]",
+      )}
     >
       <Handle type="target" position={Position.Left} className="!opacity-0" />
-      <div className="line-clamp-2 text-xs font-medium leading-snug">{job.title}</div>
+      <div className="flex items-start gap-1">
+        <div className="line-clamp-2 min-w-0 flex-1 text-xs font-medium leading-snug">
+          {job.title}
+        </div>
+        <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+      </div>
       <div className="flex items-center gap-1.5">
         <StateBadge state={job.state} className="h-4 px-1 text-[10px]" />
         <span className="truncate text-[10px] text-muted-foreground">
@@ -115,97 +180,175 @@ const JobCard = memo(({ data }: NodeProps<JobNode>) => {
   );
 });
 
-const nodeTypes = { task: TaskCard, job: JobCard };
+const FrameCard = memo(({ data }: NodeProps<FrameNode>) => {
+  const { job } = data;
+  return (
+    <div
+      style={{ width: data.width, height: data.height }}
+      className={cn(
+        "rounded-xl border border-dashed bg-muted/30",
+        job.current && "border-primary/70 bg-primary/5",
+      )}
+    >
+      <Handle type="target" position={Position.Left} className="!opacity-0" />
+      <button
+        type="button"
+        onClick={() => data.onOpen(job.id)}
+        title={t("Open “{title}”", { title: job.title })}
+        className="flex h-10 w-full items-center gap-2 rounded-t-xl px-4 text-left hover:bg-accent/60"
+      >
+        <span className="min-w-0 truncate text-sm font-medium">{job.title}</span>
+        <StateBadge state={job.state} className="h-4 shrink-0 px-1 text-[10px]" />
+        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+          {t("{done}/{total} tasks done", { done: job.done, total: job.total })}
+        </span>
+      </button>
+      {job.total === 0 ? (
+        <div className="px-4 text-xs text-muted-foreground">{t("No tasks yet.")}</div>
+      ) : null}
+      <Handle type="source" position={Position.Right} className="!opacity-0" />
+    </div>
+  );
+});
+
+const nodeTypes = { task: TaskCard, job: JobCard, frame: FrameCard };
 
 /**
  * The Web, live (Web-UI → Job): tasks coloured by state, the Leg on each
  * running task, a pulse while it works, animated edges into running work,
- * and nodes that glide to their new place when the plan changes.
+ * and nodes that glide to their new place when the plan changes. It draws
+ * a job's tasks, a project's jobs as boxes (`jobs`), or every job's tasks
+ * framed by job (`groups`).
  */
 export function WebGraph({
   tasks,
   legName,
   onOpen,
-  folded = [],
+  jobs = [],
+  groups,
   onOpenJob,
+  className,
 }: {
   tasks: Task[];
   legName: (task: Task) => string | null;
   onOpen: (id: string) => void;
-  /** A project's earlier jobs, one node each, before the tasks shown in full. */
-  folded?: FoldedJob[];
+  /** Jobs drawn as one box each, before the tasks. */
+  jobs?: FlowJob[];
+  /** Every job's tasks in a frame of its own; replaces `tasks` and `jobs`. */
+  groups?: FlowGroup[];
   onOpenJob?: (id: string) => void;
+  /** The frame around the canvas (its height). */
+  className?: string;
 }) {
   const vertical = typeof window !== "undefined" && window.innerWidth < 768;
-  const all = [...folded, ...tasks];
-  const shape = all.map((t) => `${t.id}:${t.dependsOn.join(",")}`).join("|");
-  const [positions, setPositions] = useState<Map<string, { x: number; y: number }>>(new Map());
+  const framed = groups !== undefined;
+  const flat = framed ? [] : [...jobs, ...tasks];
+  const inGroups = (groups ?? []).flatMap((g) => g.tasks);
+  const shape = framed
+    ? `g|${(groups ?? [])
+        .map((g) => `${g.job.id}[${g.tasks.map((x) => `${x.id}:${x.dependsOn.join(",")}`)}]`)
+        .join("|")}`
+    : flat.map((x) => `${x.id}:${x.dependsOn.join(",")}`).join("|");
+  const [positions, setPositions] = useState<
+    Map<string, Place & { width?: number; height?: number }>
+  >(new Map());
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: only the structure moves nodes
   useEffect(() => {
     let cancelled = false;
-    layout(all, vertical).then((p) => !cancelled && setPositions(p));
+    (framed ? layoutGroups(groups ?? [], vertical) : layout(flat, vertical)).then(
+      (p) => !cancelled && setPositions(p),
+    );
     return () => {
       cancelled = true;
     };
   }, [shape, vertical]);
 
-  const nodes: (TaskNode | JobNode)[] = useMemo(
-    () => [
-      ...folded.map(
+  const nodes: (TaskNode | JobNode | FrameNode)[] = useMemo(() => {
+    const side = {
+      targetPosition: vertical ? Position.Top : Position.Left,
+      sourcePosition: vertical ? Position.Bottom : Position.Right,
+    };
+    const openJob = (id: string) => onOpenJob?.(id);
+    const taskNode = (task: Task, parentId?: string): TaskNode => ({
+      id: task.id,
+      type: "task",
+      position: positions.get(task.id) ?? { x: 0, y: 0 },
+      data: { task, leg: legName(task), onOpen },
+      draggable: false,
+      ...(parentId ? { parentId } : {}),
+      ...side,
+    });
+    if (framed)
+      // A frame comes before the tasks inside it (React Flow's order for parents).
+      return (groups ?? []).flatMap((g) => {
+        const p = positions.get(g.job.id);
+        const frame: FrameNode = {
+          id: g.job.id,
+          type: "frame",
+          position: { x: p?.x ?? 0, y: p?.y ?? 0 },
+          data: { job: g.job, width: p?.width ?? W, height: p?.height ?? H, onOpen: openJob },
+          draggable: false,
+          selectable: false,
+          zIndex: 0,
+          ...side,
+        };
+        return [frame, ...g.tasks.map((x) => taskNode(x, g.job.id))];
+      });
+    return [
+      ...jobs.map(
         (job): JobNode => ({
           id: job.id,
           type: "job",
           position: positions.get(job.id) ?? { x: 0, y: 0 },
-          data: { job, onOpen: (id) => onOpenJob?.(id) },
+          data: { job, onOpen: openJob },
           draggable: false,
-          targetPosition: vertical ? Position.Top : Position.Left,
-          sourcePosition: vertical ? Position.Bottom : Position.Right,
+          ...side,
         }),
       ),
-      ...tasks.map(
-        (task): TaskNode => ({
-          id: task.id,
-          type: "task",
-          position: positions.get(task.id) ?? { x: 0, y: 0 },
-          data: { task, leg: legName(task), onOpen },
-          draggable: false,
-          targetPosition: vertical ? Position.Top : Position.Left,
-          sourcePosition: vertical ? Position.Bottom : Position.Right,
-        }),
-      ),
-    ],
-    [folded, tasks, positions, legName, onOpen, onOpenJob, vertical],
-  );
-  const byId = new Map<string, { state: string }>(all.map((t) => [t.id, t]));
+      ...tasks.map((x) => taskNode(x)),
+    ];
+  }, [framed, groups, jobs, tasks, positions, legName, onOpen, onOpenJob, vertical]);
+
+  const all: { id: string; state: string; dependsOn: string[] }[] = framed
+    ? [...(groups ?? []).map((g) => g.job), ...inGroups]
+    : flat;
+  const byId = new Map<string, { state: string }>(all.map((x) => [x.id, x]));
   const done = (id: string) => {
     const s = byId.get(id)?.state;
     return s === "done" || s === "completed";
   };
-  const edges: Edge[] = all.flatMap((t) =>
-    t.dependsOn.map((d) => ({
-      id: `${d}-${t.id}`,
-      source: d,
-      target: t.id,
-      type: "smoothstep",
-      animated: t.state === "running" || t.state === "assigned",
-      style: {
-        stroke: done(d) ? "var(--success)" : "var(--border)",
-        strokeWidth: 1.5,
-      },
-    })),
+  const edges: Edge[] = all.flatMap((x) =>
+    x.dependsOn
+      .filter((d) => byId.has(d))
+      .map((d) => ({
+        id: `${d}-${x.id}`,
+        source: d,
+        target: x.id,
+        type: "smoothstep",
+        animated: x.state === "running" || x.state === "assigned",
+        // Inside a frame, above it.
+        zIndex: 1,
+        style: {
+          stroke: done(d) ? "var(--success)" : "var(--border)",
+          strokeWidth: 1.5,
+        },
+      })),
   );
 
+  const frame =
+    className ??
+    "h-[420px] w-full overflow-hidden rounded-xl border bg-card/40 md:h-[480px] [&_.react-flow__node]:transition-transform [&_.react-flow__node]:duration-500";
   if (all.length === 0)
     return (
-      <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
-        {t("No plan yet.")}
+      <div className={cn(frame, "relative flex items-center justify-center")}>
+        <span className="text-sm text-muted-foreground">{t("No plan yet.")}</span>
       </div>
     );
   // Fit only once ELK has placed every node; a new structure remounts and fits again.
   const laidOut = all.every((node) => positions.has(node.id));
   return (
-    <div className="h-[420px] w-full overflow-hidden rounded-xl border bg-card/40 md:h-[480px] [&_.react-flow__node]:transition-transform [&_.react-flow__node]:duration-500">
+    <div className={frame}>
       {laidOut ? (
         <ReactFlow
           key={shape}
@@ -216,10 +359,14 @@ export function WebGraph({
           fitViewOptions={{ padding: 0.15, maxZoom: 1 }}
           nodesConnectable={false}
           proOptions={{ hideAttribution: true }}
-          minZoom={0.2}
+          minZoom={0.1}
         >
           <Background gap={20} size={1} />
-          <Controls showInteractive={false} />
+          <Controls
+            showInteractive={false}
+            position="bottom-right"
+            className="pointer-coarse:[&_button]:!size-11"
+          />
         </ReactFlow>
       ) : null}
     </div>
