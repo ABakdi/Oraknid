@@ -11,7 +11,15 @@ const { Server, utils } = ssh2;
  * throwaway home; it takes a password, or a key listed in that home's
  * authorized_keys, as a real sshd would.
  */
-export async function fakeSsh(o: { password?: string; hostKey?: string } = {}) {
+export async function fakeSsh(
+  o: {
+    password?: string;
+    hostKey?: string;
+    /** Stand-in tools put before the PATH (docker, systemctl…), and their environment. */
+    path?: string;
+    env?: Record<string, string>;
+  } = {},
+) {
   const home = mkdtempSync(join(tmpdir(), "oraknid-fake-ssh-home-"));
   const hostKey = o.hostKey ?? utils.generateKeyPairSync("ed25519").private;
   const commands: string[] = [];
@@ -45,7 +53,11 @@ export async function fakeSsh(o: { password?: string; hostKey?: string } = {}) {
           commands.push(info.command);
           const child = spawn("sh", ["-c", info.command], {
             cwd: home,
-            env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: home },
+            env: {
+              PATH: `${o.path ? `${o.path}:` : ""}${process.env.PATH ?? "/usr/bin:/bin"}`,
+              HOME: home,
+              ...o.env,
+            },
           });
           ch.on("data", (d: Buffer) => child.stdin.write(d));
           ch.on("end", () => child.stdin.end());

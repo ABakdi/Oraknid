@@ -51,7 +51,7 @@ export interface HelperDeps {
   drafts: DraftDeps;
   tools: ToolRegistry;
   mail: Pick<MailService, "accounts" | "folders" | "threads" | "thread">;
-  servers: Pick<Servers, "list">;
+  servers: Pick<Servers, "list" | "insight">;
   inbox: Pick<InboxStore, "list">;
   decisions: Pick<EyeDecisions, "models">;
   logsDir: string;
@@ -84,6 +84,159 @@ const when = (ms: number | null) => (ms ? new Date(ms).toISOString().slice(0, 16
 /** What my mail says: a stranger wrote it, so it is data (BR-15). */
 const fromMail = (text: string) =>
   wrapUntrusted("the owner's mail (written by other people)", text);
+
+/**
+ * What runs on a server (ADR-043), read as the Servers page reads it. What
+ * a server prints (logs, names) is data, never instructions.
+ */
+const onServer = (what: string, text: string) =>
+  wrapUntrusted(`what the owner's server reports: ${what}`, text);
+const ServerPartInput = z.object({ serverId: z.string() });
+const SERVER_INSIGHT_ACTIONS: Record<string, ActionDef> = {
+  server_docker: {
+    kind: "read",
+    description:
+      "Read a server's Docker (or Podman): containers (state, health, uptime, ports, CPU, memory, compose project), images (size, in use), volumes, networks. Input: the server's id.",
+    input: ServerPartInput,
+    confirm: () => false,
+    run: async (d, i: { serverId: string }) => {
+      const x = (await d.servers.insight.part(i.serverId, "docker")).data;
+      const lines = x.error
+        ? [`Not read: ${x.error}`]
+        : !x.engine
+          ? ["Neither Docker nor Podman is on this server."]
+          : [
+              `${x.engine} ${x.version ?? ""}`,
+              ...x.containers.map(
+                (c) =>
+                  `- ${c.name}: ${c.image}, ${c.state}${c.health ? ` (${c.health})` : ""}${c.uptime ? `, up ${c.uptime}` : ""}${c.ports ? `, ports ${c.ports}` : ""}${c.project ? `, compose ${c.project}` : ""}${c.cpuPercent !== null ? `, CPU ${c.cpuPercent}%` : ""}${c.memBytes !== null ? `, memory ${Math.round(c.memBytes / 1048576)} MiB` : ""}`,
+              ),
+              `Images: ${x.images.map((m) => `${m.repository}:${m.tag} ${Math.round(m.sizeBytes / 1e6)} MB${m.inUse ? "" : " (unused)"}`).join("; ")}`,
+              `Volumes: ${x.volumes.map((v) => `${v.name}${v.inUse ? "" : " (unused)"}`).join(", ")}`,
+              `Networks: ${x.networks.map((n) => n.name).join(", ")}`,
+            ];
+      return {
+        result: x.error ? "Docker not read." : `${x.containers.length} containers.`,
+        link: `/servers/${i.serverId}/docker`,
+        data: onServer("Docker", clip(lines.join("\n"), 12_000)),
+      };
+    },
+  },
+  server_databases: {
+    kind: "read",
+    description:
+      "Read the databases on a server (PostgreSQL, MySQL/MariaDB, MongoDB, Redis; services, processes or containers): kind, version, state, port, size when readable. Input: the server's id.",
+    input: ServerPartInput,
+    confirm: () => false,
+    run: async (d, i: { serverId: string }) => {
+      const x = (await d.servers.insight.part(i.serverId, "databases")).data;
+      const lines = [
+        ...x.databases.map(
+          (b) =>
+            `- ${b.kind} ${b.version ?? ""} (${b.source} ${b.name}): ${b.state}${b.port ? `, port ${b.port}` : ""}${b.sizeBytes !== null ? `, ${Math.round(b.sizeBytes / 1e6)} MB` : ""}${b.note ? `. ${b.note}` : ""}`,
+        ),
+        ...x.notes,
+      ];
+      return {
+        result: `${x.databases.length} database${x.databases.length === 1 ? "" : "s"}.`,
+        link: `/servers/${i.serverId}/databases`,
+        data: onServer("databases", lines.join("\n") || "No database found."),
+      };
+    },
+  },
+  server_proxy: {
+    kind: "read",
+    description:
+      "Read a server's reverse proxy (nginx, Caddy, Traefik, HAProxy): its state, config check, sites (names, upstreams, TLS), certificates and when they end. Input: the server's id.",
+    input: ServerPartInput,
+    confirm: () => false,
+    run: async (d, i: { serverId: string }) => {
+      const x = (await d.servers.insight.part(i.serverId, "proxy")).data;
+      const lines = x.proxies.flatMap((p) => [
+        `${p.kind} (${p.source} ${p.name}): ${p.state}${p.version ? `, ${p.version}` : ""}${p.check ? `, config check ${p.check.ok === null ? "not run" : p.check.ok ? "ok" : "FAILED"}: ${p.check.output}` : ""}${p.note ? `. ${p.note}` : ""}`,
+        ...p.sites.map(
+          (s) =>
+            `- ${s.names.join(" ") || "(default)"} → ${s.upstreams.join(", ") || s.root || s.redirect || "?"}${s.certificate ? " (TLS)" : ""}`,
+        ),
+        ...p.certificates.map(
+          (c) =>
+            `- certificate ${c.path}: ${c.expiresAt ? `ends ${new Date(c.expiresAt).toISOString().slice(0, 10)}` : c.error}`,
+        ),
+      ]);
+      return {
+        result: `${x.proxies.length} proxy${x.proxies.length === 1 ? "" : "s"}.`,
+        link: `/servers/${i.serverId}/proxy`,
+        data: onServer(
+          "its reverse proxy",
+          clip([...lines, ...x.notes].join("\n") || "No reverse proxy found.", 12_000),
+        ),
+      };
+    },
+  },
+  server_traffic: {
+    kind: "read",
+    description:
+      "Read a server's traffic over the last minutes from its proxy's access logs (requests per minute, status codes, top paths and clients, bytes) and its connections per port. Input: the server's id.",
+    input: ServerPartInput,
+    confirm: () => false,
+    run: async (d, i: { serverId: string }) => {
+      const x = (await d.servers.insight.part(i.serverId, "traffic")).data;
+      const text = [
+        `Last ${x.windowMinutes} minutes: ${x.requests} requests, ${Math.round(x.bytes / 1024)} KiB; per minute ${x.perMinute.join(" ")}`,
+        `Statuses: ${Object.entries(x.statuses)
+          .map(([k, v]) => `${k} ${v}`)
+          .join(", ")}`,
+        `Top paths: ${x.paths.map((p) => `${p.path} ${p.count}`).join(", ")}`,
+        `Top clients: ${x.clients.map((c) => `${c.client} ${c.count}`).join(", ")}`,
+        `Connections per port: ${x.connections.map((c) => `${c.port}: ${c.count}`).join(", ")}`,
+        ...x.logs.filter((l) => l.error).map((l) => `${l.path}: ${l.error}`),
+      ].join("\n");
+      return {
+        result: `${x.requests} requests in ${x.windowMinutes} minutes.`,
+        link: `/servers/${i.serverId}/proxy`,
+        data: onServer("traffic", text),
+      };
+    },
+  },
+  server_logs: {
+    kind: "read",
+    description:
+      'Read a log on a server: its last lines, or those with a search text. source is "unit:<service>", "container:<name>" or "file:<path>" (server_log_sources lists them). Input: serverId, source, optional search and lines (at most 300).',
+    input: z.object({
+      serverId: z.string(),
+      source: z.string(),
+      search: z.string().max(200).optional(),
+      lines: z.number().int().min(1).max(300).optional(),
+    }),
+    confirm: () => false,
+    run: async (d, i: { serverId: string; source: string; search?: string; lines?: number }) => {
+      const x = await d.servers.insight.logs(i.serverId, i.source, {
+        lines: i.lines ?? 100,
+        ...(i.search ? { search: i.search } : {}),
+      });
+      return {
+        result: `${x.lines.length} lines of ${i.source}.`,
+        link: `/servers/${i.serverId}/logs`,
+        data: onServer(`the log ${i.source}`, clip([...x.notes, ...x.lines].join("\n"), 16_000)),
+      };
+    },
+  },
+  server_log_sources: {
+    kind: "read",
+    description:
+      "List the logs that can be read on a server: its services, its containers, its proxy's log files. Input: the server's id.",
+    input: ServerPartInput,
+    confirm: () => false,
+    run: async (d, i: { serverId: string }) => {
+      const x = await d.servers.insight.logSources(i.serverId);
+      return {
+        result: `${x.length} logs.`,
+        link: `/servers/${i.serverId}/logs`,
+        data: onServer("its logs", x.map((s) => `- ${s.id} (${s.kind})`).join("\n") || "None."),
+      };
+    },
+  },
+};
 
 /** Actions only confirmed at home (ADR-029). */
 const HOME_ONLY_ACTIONS = new Set(["create_project", "add_leg"]);
@@ -317,6 +470,7 @@ const ACTIONS: Record<string, ActionDef> = {
       };
     },
   },
+  ...SERVER_INSIGHT_ACTIONS,
   legs_usage: {
     kind: "read",
     description:

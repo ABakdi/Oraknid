@@ -304,6 +304,8 @@ const HOME_ONLY = [
   "/servers/acceptHostKey",
   "/servers/editState",
   "/servers/remove",
+  // Restarting a container or a service on a server (ADR-043); reading stays open.
+  "/servers/restart",
   // GitHub's accounts, a new repository and a project's link (ADR-038, ADR-040); reading stays open.
   "/github/addAccount",
   "/github/removeAccount",

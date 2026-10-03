@@ -13,6 +13,7 @@ export * from "./notifications.ts";
 export * from "./plan.ts";
 export * from "./profiles.ts";
 export * from "./questions.ts";
+export * from "./server-insight.ts";
 export * from "./servers.ts";
 export * from "./system.ts";
 export * from "./tools.ts";

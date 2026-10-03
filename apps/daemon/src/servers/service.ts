@@ -9,6 +9,7 @@ import type { EyeBrain } from "../eye/brain.ts";
 import { newId } from "../ids.ts";
 import type { Secrets } from "../os/secrets.ts";
 import { discover } from "./discovery.ts";
+import { insightSummary, ServerInsight } from "./insight.ts";
 import { MONITOR_HASH, MONITOR_PATH, MONITOR_SCRIPT } from "./monitor.ts";
 import { connect, exec, isHostKeyChanged, newKeyPair, q } from "./ssh.ts";
 
@@ -28,6 +29,8 @@ export class Servers {
   readonly #clients = new Map<string, Client>();
   readonly #latest = new Map<string, ServerSample>();
   #timer: NodeJS.Timeout | undefined;
+  /** What runs on each server, read while a screen asks (ADR-043). */
+  readonly insight: ServerInsight;
 
   constructor(
     private readonly o: {
@@ -41,7 +44,13 @@ export class Servers {
       /** Seconds between oraknid-monitor readings. */
       sampleEverySec?: number;
     },
-  ) {}
+  ) {
+    this.insight = new ServerInsight({
+      servers: this,
+      bus: o.bus,
+      ...(o.now ? { now: o.now } : {}),
+    });
+  }
 
   #now() {
     return this.o.now?.() ?? Date.now();
@@ -180,6 +189,22 @@ export class Servers {
     }
   }
 
+  /** A ready server's connection, with oraknid-monitor up to date (ADR-043 reads through it). */
+  async monitor(id: string): Promise<Client> {
+    const r = this.row(id);
+    if (r.setup !== "ready") throw new Error(`${r.name} isn't set up yet.`);
+    if (r.hostKeyOffered)
+      throw new Error("The server's host key changed: accept it on the Servers page first.");
+    const client = await this.#connect(r);
+    if (r.monitorHash !== MONITOR_HASH) await this.#installMonitor(id);
+    return client;
+  }
+
+  /** oraknid-monitor's last reading of a server. */
+  latest(id: string): ServerSample | null {
+    return this.#latest.get(id) ?? null;
+  }
+
   /** The key a server now presents is mine to accept (ADR-026). */
   acceptHostKey(id: string) {
     const r = this.row(id);
@@ -267,7 +292,11 @@ export class Servers {
   async #document(id: string, since?: string): Promise<ServerState> {
     const r = this.row(id);
     const client = await this.#connect(r);
-    const found = await discover(client);
+    // What runs there too (ADR-043): containers, databases, the proxy's sites.
+    if (this.row(id).monitorHash !== MONITOR_HASH) await this.#installMonitor(id);
+    const found = [await discover(client), await insightSummary(client)]
+      .filter(Boolean)
+      .join("\n\n");
     const previous = this.state(id)?.body ?? "";
     mkdirSync(this.o.workDir, { recursive: true, mode: 0o700 });
     let body: string;
@@ -410,6 +439,7 @@ export class Servers {
     this.o.db.delete(serverStates).where(eq(serverStates.serverId, id)).run();
     this.o.db.delete(servers).where(eq(servers.id, id)).run();
     this.#latest.delete(id);
+    this.insight.forget(id);
     this.o.bus.publish({
       type: "server.removed",
       topic: "overview",
