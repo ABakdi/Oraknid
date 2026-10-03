@@ -95,6 +95,20 @@ export const NewProjectRepo = z.object({
 });
 export type NewProjectRepo = z.infer<typeof NewProjectRepo>;
 
+/**
+ * A repo of a project changed (ADR-042): its name in the project, its
+ * release and work branches. What is left out stays.
+ */
+export const ProjectRepoPatch = z.object({
+  id: Id,
+  /** The repo, by its name now. */
+  name: RepoName,
+  rename: RepoName.optional(),
+  releaseBranch: z.string().trim().min(1).max(200).optional(),
+  workBranch: z.string().trim().min(1).max(200).optional(),
+});
+export type ProjectRepoPatch = z.infer<typeof ProjectRepoPatch>;
+
 export const DEFAULT_BUDGET: Budget = {
   tokens: null,
   quotaShare: null,

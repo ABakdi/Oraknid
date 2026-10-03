@@ -399,6 +399,35 @@ describe("a project of several repos (ADR-042)", () => {
     const removed = await api.projects.removeRepo({ id: project.id, name: "docs-site" });
     expect(removed.repos.map((r) => r.name)).toEqual(["api", "web", "admin"]);
 
+    // Renamed, its branches changed; a name taken, a bad branch, the same branch twice refused.
+    const renamed = await api.projects.updateRepo({
+      id: project.id,
+      name: "admin",
+      rename: "back-office",
+      releaseBranch: "trunk",
+      workBranch: "next",
+    });
+    expect(renamed.repos.at(-1)).toMatchObject({
+      name: "back-office",
+      folder: "apps/admin",
+      releaseBranch: "trunk",
+      workBranch: "next",
+    });
+    await expect(
+      api.projects.updateRepo({ id: project.id, name: "back-office", rename: "web" }),
+    ).rejects.toThrow(/named web already/);
+    await expect(
+      api.projects.updateRepo({ id: project.id, name: "web", workBranch: "bad..name" }),
+    ).rejects.toThrow(/isn't a branch name/);
+    await expect(
+      api.projects.updateRepo({ id: project.id, name: "web", workBranch: "main" }),
+    ).rejects.toThrow(/must be different/);
+    await expect(
+      api.projects.updateRepo({ id: project.id, name: "nope", rename: "x" }),
+    ).rejects.toThrow(/No repo nope/);
+    const listed = (await api.projects.list()).find((x) => x.id === project.id);
+    expect(listed?.repos.map((r) => r.name)).toEqual(["api", "web", "back-office"]);
+
     // A folder that is a repo is one repo, as before: folder "", its link the project's.
     const one = mkdtempSync(join(tmpdir(), "oraknid-one-"));
     repoAt(one, "one");
@@ -413,6 +442,14 @@ describe("a project of several repos (ADR-042)", () => {
         github: null,
       },
     ]);
+    // A project of one repo: its repo's branches changed are the project's too.
+    await api.projects.updateRepo({
+      id: p1.id,
+      name: one.split("/").at(-1) as string,
+      workBranch: "develop",
+    });
+    const p1b = (await api.projects.list()).find((x) => x.id === p1.id);
+    expect([p1b?.releaseBranch, p1b?.workBranch]).toEqual(["main", "develop"]);
     // Adding the repo inside makes it a project of several, its own folder's repo first.
     const p2 = await api.projects.addRepo({
       id: p1.id,

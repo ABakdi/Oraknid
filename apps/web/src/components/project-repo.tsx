@@ -5,6 +5,7 @@ import {
   GitBranch,
   GitCommitHorizontal,
   GitPullRequest,
+  Pencil,
   Plus,
   RefreshCw,
   X,
@@ -106,6 +107,7 @@ export function ProjectReposCard({ project }: { project: ProjectView }) {
   const repos = project.repos ?? [];
   const several = isSeveral(repos);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<ProjectRepo | null>(null);
   const [busy, setBusy] = useState(false);
   const { confirm, dialog } = useConfirm();
   const detect = async () => {
@@ -188,6 +190,17 @@ export function ProjectReposCard({ project }: { project: ProjectView }) {
                     <span className="text-muted-foreground">{t("not on GitHub yet")}</span>
                   )}
                 </span>
+                <Button
+                  data-help="project.repo-edit"
+                  size="icon"
+                  variant="ghost"
+                  className="size-8"
+                  aria-label={t("Change {name}", { name: r.name })}
+                  title={t("Rename it, or change its branches")}
+                  onClick={() => setEditing(r)}
+                >
+                  <Pencil className="size-4" />
+                </Button>
                 {several ? (
                   <Button
                     size="icon"
@@ -227,9 +240,118 @@ export function ProjectReposCard({ project }: { project: ProjectView }) {
           </Button>
         </div>
         <AddRepo project={project} open={adding} onOpenChange={setAdding} />
+        <EditRepo
+          key={editing?.name ?? ""}
+          project={project}
+          repo={editing}
+          onClose={() => setEditing(null)}
+        />
         {dialog}
       </CardContent>
     </Card>
+  );
+}
+
+/** A repo renamed, or its release and work branches changed (ADR-042). */
+function EditRepo({
+  project,
+  repo,
+  onClose,
+}: {
+  project: ProjectView;
+  repo: ProjectRepo | null;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(repo?.name ?? "");
+  const [release, setRelease] = useState(repo?.releaseBranch ?? "");
+  const [work, setWork] = useState(repo?.workBranch ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>();
+  if (!repo) return null;
+  const next = { name: name.trim(), release: release.trim(), work: work.trim() };
+  const changed =
+    next.name !== repo.name || next.release !== repo.releaseBranch || next.work !== repo.workBranch;
+  const save = async () => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await api.projects.updateRepo({
+        id: project.id,
+        name: repo.name,
+        ...(next.name !== repo.name ? { rename: next.name } : {}),
+        ...(next.release !== repo.releaseBranch ? { releaseBranch: next.release } : {}),
+        ...(next.work !== repo.workBranch ? { workBranch: next.work } : {}),
+      });
+      toast.success(t("{name} is saved.", { name: next.name }));
+      onClose();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog open onOpenChange={(o) => (o ? null : onClose())}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t("Change {name}", { name: repo.name })}</DialogTitle>
+          <DialogDescription>
+            {t(
+              "Its name in the project, and the branches Oraknid uses in it: jobs start from the release branch and merge into the work branch. A branch that doesn't exist yet is made when a job needs it.",
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="grid gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (changed && !busy) void save();
+          }}
+        >
+          <div className="space-y-1">
+            <Label htmlFor="repo-edit-name">{t("Its name in the project")}</Label>
+            <Input
+              id="repo-edit-name"
+              value={name}
+              maxLength={100}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor="repo-edit-release">{t("Release branch")}</Label>
+              <Input
+                id="repo-edit-release"
+                className="font-mono"
+                value={release}
+                onChange={(e) => setRelease(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="repo-edit-work">{t("Work branch")}</Label>
+              <Input
+                id="repo-edit-work"
+                className="font-mono"
+                value={work}
+                onChange={(e) => setWork(e.target.value)}
+              />
+            </div>
+          </div>
+          <ErrorNote error={error} />
+          <DialogFooter>
+            <Button type="button" variant="secondary" onClick={onClose}>
+              {t("Cancel")}
+            </Button>
+            <Button
+              type="submit"
+              disabled={busy || !changed || !next.name || !next.release || !next.work}
+            >
+              {t("Save")}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

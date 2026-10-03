@@ -65,6 +65,7 @@ import {
   ProjectBudget,
   ProjectBudgetView,
   ProjectRepo,
+  ProjectRepoPatch,
   ProjectView,
   PruneRequest,
   PushSubscriptionInput,
@@ -709,6 +710,16 @@ export const router = {
             (url, dest, login) => c.github.clone(url, dest, login),
             (fullName) => c.github.cloneUrl(fullName),
           );
+          return { ...p, jobCount: c.projects.list().find((x) => x.id === p.id)?.jobCount ?? 0 };
+        }),
+      ),
+    /** A repo renamed, or its release and work branches changed (ADR-042). */
+    updateRepo: base
+      .input(ProjectRepoPatch)
+      .output(ProjectView)
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          const p = c.projects.updateRepo(input);
           return { ...p, jobCount: c.projects.list().find((x) => x.id === p.id)?.jobCount ?? 0 };
         }),
       ),

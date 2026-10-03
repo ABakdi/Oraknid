@@ -17,6 +17,7 @@ import {
   type NewProject,
   type NewProjectRepo,
   type ProjectRepo,
+  type ProjectRepoPatch,
   ServerRole,
 } from "@oraknid/contracts";
 import { count, eq, inArray } from "drizzle-orm";
@@ -305,6 +306,37 @@ export class Projects {
       p.repos.filter((r) => r.name !== name),
     );
     return this.require(id);
+  }
+
+  /**
+   * A repo renamed in the project, or its release and work branches changed
+   * (ADR-042). A branch must be a valid branch name; it needn't exist yet
+   * (the work branch is made from the release branch when a job needs it).
+   */
+  updateRepo(input: ProjectRepoPatch) {
+    const p = this.require(input.id);
+    if (this.#busy(input.id))
+      throw new Error("A job of this project is running: wait for it to end.");
+    const repo = p.repos.find((r) => r.name === input.name);
+    if (!repo) throw new Error(`No repo ${input.name} in this project.`);
+    const name = input.rename ?? repo.name;
+    if (name !== repo.name && p.repos.some((r) => r.name === name))
+      throw new Error(`This project has a repo named ${name} already: give it another name.`);
+    const releaseBranch = input.releaseBranch?.trim() || repo.releaseBranch;
+    const workBranch = input.workBranch?.trim() || repo.workBranch;
+    for (const b of [releaseBranch, workBranch])
+      try {
+        git({ cwd: p.workspacePath, base: [] }, ["check-ref-format", "--branch", b]);
+      } catch {
+        throw new Error(`${b} isn't a branch name git accepts.`);
+      }
+    if (releaseBranch === workBranch)
+      throw new Error("The release branch and the work branch must be different.");
+    this.#saveRepos(
+      input.id,
+      p.repos.map((r) => (r === repo ? { ...r, name, releaseBranch, workBranch } : r)),
+    );
+    return this.require(input.id);
   }
 
   /** One of its jobs is going: its repos stay as they are until it ends. */

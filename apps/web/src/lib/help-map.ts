@@ -487,6 +487,15 @@ export const CONTROLS: HelpControl[] = [
     where: "The project's repos card, on the Repo tab",
   },
   {
+    id: "project.repo-edit",
+    page: "projects",
+    tab: "repo",
+    needsItem: true,
+    name: "Change a repo",
+    does: "Renames one of the project's repos, or changes its release branch (jobs start from it) and work branch (jobs merge into it). Not while one of its jobs runs.",
+    where: "The pencil on a repo's row in the project's repos card, on the Repo tab",
+  },
+  {
     id: "project.repo-each",
     page: "projects",
     tab: "repo",

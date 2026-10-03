@@ -119,6 +119,10 @@ describe("the lock (ADR-029)", () => {
       /not away/,
     );
     await expect(away.lock.setPin({ current: PIN, pin: "123456789" })).rejects.toThrow(/not away/);
+    // A project's repos change at home only (ADR-042).
+    await expect(
+      away.projects.updateRepo({ id: "01J00000000000000000000000", name: "web", rename: "site" }),
+    ).rejects.toThrow(/not away/);
   });
 
   it("gives full rights only at home with the PIN, and then opens what away from home was closed (ADR-030)", async () => {
