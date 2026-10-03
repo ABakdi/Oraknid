@@ -1,7 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <title>Oraknid</title>
-  <rect width="64" height="64" rx="14" fill="#14121F"/>
-  <g transform="translate(6.4 6.4) scale(0.8)">
   <defs>
     <radialGradient id="oraknid-iris" cx="0.4" cy="0.36" r="0.72">
       <stop offset="0" stop-color="#FFD98A"/>
@@ -25,5 +23,4 @@
   <circle cx="32" cy="31" r="12.6" fill="url(#oraknid-iris)"/>
   <rect x="21.8" y="27.9" width="20.4" height="6.2" rx="3.1" fill="#120F1F"/>
   <circle cx="26.8" cy="25.4" r="2" fill="#FFF6E0" opacity="0.9"/>
-  </g>
 </svg>
