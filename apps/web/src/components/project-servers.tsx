@@ -44,7 +44,8 @@ function ServerRoleFields({
         list="server-roles"
         aria-label={t("Role of {name} in this project", { name })}
         placeholder={t("role")}
-        className="h-8 w-28"
+        // As wide as the word in it (a role is a word or two), never the whole row.
+        className="h-8 w-auto max-w-40 min-w-24 field-sizing-content"
         value={word}
         maxLength={40}
         onChange={(e) => setWord(e.target.value)}
@@ -113,7 +114,8 @@ export function ProjectServersCard({ projectId }: { projectId: string }) {
         ) : null}
         {servers.data.map((s) => (
           <div key={s.id} className="flex min-h-11 flex-wrap items-center gap-2">
-            <label className="flex min-w-0 flex-1 items-center gap-2">
+            {/* The name keeps room to be read: on a phone the role goes to the next line. */}
+            <label className="flex min-w-[min(100%,11rem)] flex-1 items-center gap-2">
               <input
                 type="checkbox"
                 className="size-4 shrink-0"
