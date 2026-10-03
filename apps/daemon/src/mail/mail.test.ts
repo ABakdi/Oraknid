@@ -11,6 +11,8 @@ import type { RouterClient } from "@orpc/server";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Router } from "../api/router.ts";
 import { type Daemon, startDaemon } from "../daemon.ts";
+import { mailAccounts, mailFolders, mailMessages } from "../db/schema.ts";
+import { newId } from "../ids.ts";
 import { resolvePaths } from "../paths.ts";
 import { fakeMail } from "../testing/fake-mail.ts";
 import { fakeOs } from "../testing/fake-os.ts";
@@ -107,6 +109,74 @@ async function addAccount(
 }
 
 describe("mail (ADR-032)", () => {
+  it("pages a folder of 10,000 conversations quickly, for the virtual list", async () => {
+    const { d, api } = await boot();
+    const accountId = newId(Date.now());
+    const folderId = newId(Date.now());
+    // Stopped, so nothing tries to connect.
+    d.db
+      .insert(mailAccounts)
+      .values({
+        id: accountId,
+        name: "Big",
+        email: "big@example.com",
+        provider: "imap",
+        auth: "password",
+        login: "big@example.com",
+        imapHost: "127.0.0.1",
+        imapPort: 1,
+        imapSecurity: "plain",
+        smtpHost: "127.0.0.1",
+        smtpPort: 1,
+        smtpSecurity: "plain",
+        appendSent: true,
+        state: "reconnect",
+        createdAt: 0,
+      })
+      .run();
+    d.db
+      .insert(mailFolders)
+      .values({ id: folderId, accountId, path: "INBOX", name: "INBOX", specialUse: "\\Inbox" })
+      .run();
+    d.db.transaction((tx) => {
+      for (let i = 0; i < 10_000; i++)
+        tx.insert(mailMessages)
+          .values({
+            id: newId(i),
+            accountId,
+            folderId,
+            uid: i + 1,
+            messageId: `<${i}@x>`,
+            inReplyTo: null,
+            references: [],
+            threadId: `<${i}@x>`,
+            subject: `Message ${i}`,
+            fromName: "Bob",
+            fromAddress: "bob@example.com",
+            to: [],
+            cc: [],
+            replyTo: [],
+            date: 1_700_000_000_000 + i * 1000,
+            flags: i % 2 ? ["\\Seen"] : [],
+            size: 100,
+            hasAttachments: false,
+            snippet: "Hello",
+          })
+          .run();
+    });
+    const start = Date.now();
+    const first = await api.mail.threads({ accountId, folderId, offset: 0, limit: 100 });
+    const deep = await api.mail.threads({ accountId, folderId, offset: 9_900, limit: 100 });
+    expect(Date.now() - start).toBeLessThan(2000);
+    expect(first.total).toBe(10_000);
+    expect(first.threads[0]?.subject).toBe("Message 9999");
+    expect(deep.threads.at(-1)?.subject).toBe("Message 0");
+    expect((await api.mail.folders({ accountId }))[0]).toMatchObject({
+      total: 10_000,
+      unread: 5_000,
+    });
+  }, 30_000);
+
   it("connects, keeps the password in the keychain only, syncs folders and threads conversations", async () => {
     const { mail, d, api, store } = await connected();
     // A reply arriving before the message it answers still lands in its conversation.

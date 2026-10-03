@@ -135,9 +135,44 @@ next, `Ctrl+Shift+1…9` go to, `Ctrl+Shift+D` split, `Ctrl+Shift+G` grid,
 
 ### Mail
 
-An email client ([[ADR-032-Email]]): accounts and folders on the left,
-the thread list, the open thread; compose, reply, forward; agents'
-drafts marked and waiting for my approval.
+An email client ([[ADR-032-Email]]) at `/mail`, in the sidebar. Three
+panes on a wide screen: accounts and their folders, the conversations
+of a folder, the open conversation; on a phone one pane at a time, with
+a way back.
+
+- **The list** is virtual: only the rows on screen are drawn, and pages
+  of a hundred conversations are fetched as they scroll into view, so a
+  folder of ten thousand scrolls smoothly. Each row: who wrote, how
+  many messages, the subject, a snippet, unread, starred, attachments,
+  an agent's draft waiting. A search box searches the folder, here and
+  on the server. New mail appears on its own (IDLE); a button checks
+  every folder now.
+- **The conversation**: each message once, the last and the unread
+  ones open; opening it marks it read on the server. Archive, delete,
+  mark unread, star, move to a folder, reply, reply all, forward.
+  Attachments download. HTML is cleaned and shown in a sandboxed frame;
+  remote images are hidden, with "Show images" and "Always from this
+  sender".
+- **Writing**: a dialog with From (when there are several accounts),
+  To, Cc/Bcc, Subject, a rich text editor (bold, italic, lists, quote),
+  attachments up to 25 MB; Send (Ctrl+Enter) or Save draft. A reply is
+  addressed and quoted for me.
+- **Agents' drafts** are marked "Written by an agent" in their
+  conversation, with Approve and send, Edit, Discard; those waiting for
+  me are also in a "Waiting for you" folder, and in the inbox when a
+  job wrote them.
+- **Reconnect**: an account whose login stopped working says so above
+  the list, with a Reconnect button (a new password, or signing in with
+  Google or Microsoft again).
+- **Keys**: c write, / search, j and k next and previous conversation,
+  e archive, # delete, r reply, a reply all, f forward, s star, u
+  unread, Esc back.
+
+Settings → Connections has **Email accounts**: add Gmail, Outlook or
+any IMAP account (an app password, or IMAP and SMTP servers), remove
+one, auto-send per account (off by default), file sent mail in Sent;
+and Google's and Microsoft's app ids, which turn on "Connect with
+Google" and "Connect with Microsoft". Not from away.
 
 ### The helper
 
@@ -187,7 +222,7 @@ In tabs, each one concern in sections; the tab is in the address
 - **Devices & phone**: pairing my phone in one step (a QR code to scan;
   it needs the PIN and The Nest, and the code expires unused after ten
   minutes), the paired devices, The Nest's connection.
-- **Connections**: GitHub, tools for skills.
+- **Connections**: email accounts ([[ADR-032-Email]]), GitHub, tools for skills.
 
 ### The lock
 

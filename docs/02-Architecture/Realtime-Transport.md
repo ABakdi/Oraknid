@@ -8,6 +8,7 @@
 | `job:<id>` | Web changes, task states, activity, Silk changes, budgets. | On change. |
 | `leg:<id>` | Condensed output stream of the Leg's current session. | Coalesced 4/s. |
 | `inbox` | Items opened, answered, withdrawn. | On change. |
+| `mail` | Accounts' state, `mail.new` (from IDLE on INBOX), `mail.synced`, `mail.changed`, drafts and sends, `mail.agent.*` (Phase 12). | On change; a sync pass is one event, not one per message. |
 | `metrics` | CPU/RAM/GPU/VRAM/disk/net per Leg and process. Sent as `metrics` frames, **not events**: never stored in the event log or replayed. The last hour is in memory (`metrics.recent`). | 1/s. |
 
 Server frames: `hello { version, seq }`, `event { event }`, `metrics { sample }`,

@@ -142,6 +142,7 @@ function AuditLog() {
             <SelectItem value="any">{t("Anyone")}</SelectItem>
             <SelectItem value="owner">{t("Me")}</SelectItem>
             <SelectItem value="eye">{t("The Eye")}</SelectItem>
+            <SelectItem value="agent">{t("An agent, on mail")}</SelectItem>
             <SelectItem value="oraknid">{t("Oraknid")}</SelectItem>
           </SelectContent>
         </Select>

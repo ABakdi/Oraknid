@@ -89,6 +89,30 @@ sandbox limits damage, but it doesn't make that safe.
 - The terminal is off until I turn it on, needs a paired device, and is
   audited; it is a full shell as me ([[ADR-028-Terminal]]).
 
+## Mail
+- Mail passwords (app passwords) and OAuth refresh tokens are in the
+  keychain, never in SQLite; access tokens live in memory. An account is
+  saved only once its IMAP and SMTP servers accept the login, over TLS
+  or STARTTLS; a connection without TLS is refused unless the server is
+  this machine ([[ADR-032-Email]]).
+- OAuth uses the code flow with PKCE, back to the daemon on
+  `127.0.0.1`; the callback takes only a sign-in it started in the last
+  ten minutes. The apps' client secrets are in the keychain too.
+- A login refused, or a token revoked, stops that account and shows
+  "Reconnect"; nothing retries a refused password.
+- Mail's HTML is cleaned with DOMPurify and shown in a sandboxed frame
+  where no script runs, with its own content policy: nothing loads from
+  outside until I allow remote images for that message or its sender.
+- Agents reach mail only through the email tool in the broker: reads
+  pass, labels, moves, flags and drafts are external writes, and `send`
+  never sends on its own: an agent's draft waits for my approval (in
+  Mail, and in the inbox when a job wrote it) unless I turn on
+  auto-send for the account. Everything the tool returns is wrapped as
+  untrusted data, and every agent action on mail is in the audit log
+  (`mail.agent.*`, actor `agent`).
+- Away from home, accounts and OAuth settings can't be added, changed
+  or removed.
+
 ## Chats and the helper
 - A chat may read its folder and the projects I attach, and research
   the web; nothing else ([[ADR-025-Chats]]). The helper acts only
@@ -122,9 +146,10 @@ sandbox limits damage, but it doesn't make that safe.
 - Remote access goes only through The Nest ([[The-Nest]]). Away from
   home a device can follow, answer, approve and start jobs; what opens
   a new way in (pairing, the terminal, policies, projects, Legs, tools,
-  servers, the PIN, a job outside the sandbox) is done at home only.
+  servers, mail accounts, the PIN, a job outside the sandbox) is done at home only.
 - Every response carries a content policy: no framing by another site,
-  scripts and images only from Oraknid itself; a request another site
+  scripts only from Oraknid itself, images from Oraknid or, for mail I
+  allowed them in, the web (2026-10-03); a request another site
   made my browser send, other than opening a page, is refused.
 - Oraknid assumes a computer that is mine alone: software running as me
   can read its data, and another user could take its port while it is
@@ -134,7 +159,7 @@ sandbox limits damage, but it doesn't make that safe.
 
 The event stream is the audit log: append-only, also exported to
 `logs/audit/<day>.jsonl` (each event once). Each entry records the time,
-the actor (`owner`, `eye`, `leg:<id>`, `oraknid`), the job, the action
+the actor (`owner`, `eye`, `leg:<id>`, `agent` for an agent's action on mail, `oraknid`), the job, the action
 and its details. Before anything is stored, known secret values and
 secret-shaped strings (API keys, tokens, private keys, bearer tokens)
 are replaced with `[secret]`; Leg session logs are scrubbed the same

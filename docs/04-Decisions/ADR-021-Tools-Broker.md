@@ -53,6 +53,13 @@ server (stdio, JSON-RPC). Three things matter:
   once made, so a resumed Leg can't send a message twice; one caught
   mid-way by a crash is reconciled like any action, which for now means
   I'm asked whether it went out.
+- **Oraknid's own tools** (added 2026-10-03, [[ADR-032-Email]]): the
+  email tool is part of the daemon. The broker answers it in the
+  daemon, with no process and no secret to hand over, behind the same
+  socket, gate, audit and wrapping. Only such a tool may declare a call
+  **held**: Oraknid itself holds it for my approval (an agent's `send`
+  only marks its draft waiting), so the policy lets it through rather
+  than asking twice.
 - **Adapters** pass the bridge as an MCP server: Claude Code through
   the SDK's `mcpServers`, OpenCode through its config's `mcp`,
   Antigravity through `mcp_config.json` in the Leg's home (unverified,
