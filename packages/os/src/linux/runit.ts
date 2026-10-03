@@ -87,13 +87,19 @@ export function createRunitService(options: RunitOptions = {}): ServiceManager {
       // `sv status` needs to read runsv's supervise folder, which is root's: unknown counts as not running.
       const active = enabled && run("sv", ["status", link]).stdout.startsWith("run:");
       const detail = !installed
-        ? "Not installed as a service. Run: oraknid install"
+        ? "Not installed as a service."
         : !enabled
-          ? `Installed but not enabled. Run: sudo ln -s ${service} ${link}`
+          ? "Installed but not enabled."
           : active
             ? "Running as a runit service; starts at boot."
             : "Enabled as a runit service; starts at boot.";
-      return { installed, enabled, active, startsAtBoot: enabled, detail };
+      // Not running can't be told from "can't read runsv's folder": enabled is enough.
+      const fix = !installed
+        ? "Run: oraknid install"
+        : !enabled
+          ? `Run: sudo ln -s ${service} ${link}`
+          : null;
+      return { installed, enabled, active, startsAtBoot: enabled, detail, fix };
     },
   };
 }

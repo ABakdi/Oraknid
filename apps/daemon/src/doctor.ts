@@ -43,7 +43,7 @@ export function runDoctor(paths: Paths, inputs: DoctorInputs): DoctorCheck[] {
       name: "Background service",
       ok: true,
       detail: inputs.service.detail,
-      fix: inputs.service.startsAtBoot ? null : "Run: oraknid install",
+      fix: inputs.service.fix,
     },
     checkCommand(
       "notify-send",

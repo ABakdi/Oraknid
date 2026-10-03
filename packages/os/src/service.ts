@@ -5,6 +5,8 @@ export interface ServiceStatus {
   /** Starts at boot, before login (linger on Linux). */
   startsAtBoot: boolean;
   detail: string;
+  /** What to run to put it right, for `oraknid doctor`; null when nothing is wrong. */
+  fix: string | null;
 }
 
 export interface InstallStep {

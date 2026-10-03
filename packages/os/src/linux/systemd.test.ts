@@ -56,7 +56,39 @@ describe("service manager", () => {
       run: () => ({ status: 0, stdout: "no\n", stderr: "" }),
     });
     expect(svc.status()).toMatchObject({ installed: false, startsAtBoot: false });
-    expect(svc.status().detail).toMatch(/oraknid install/);
+    expect(svc.status().fix).toBe("Run: oraknid install");
+  });
+});
+
+describe("systemd: what doctor says to run", () => {
+  function svc(answers: Record<string, string>) {
+    const unitDir = mkdtempSync(join(tmpdir(), "oraknid-unit-"));
+    writeFileSync(join(unitDir, "oraknid.service"), "");
+    return createSystemdService({
+      unitDir,
+      user: "me",
+      run: (cmd, args) => ({
+        status: 0,
+        stdout: `${answers[`${cmd} ${args.join(" ")}`] ?? ""}\n`,
+        stderr: "",
+      }),
+    });
+  }
+  const enabled = { "systemctl --user is-enabled oraknid.service": "enabled" };
+  const active = { "systemctl --user is-active oraknid.service": "active" };
+  const linger = { "loginctl show-user me -p Linger --value": "yes" };
+
+  it("nothing when enabled, lingering and running", () => {
+    expect(svc({ ...enabled, ...active, ...linger }).status().fix).toBeNull();
+  });
+  it("linger when it would start only at login", () => {
+    expect(svc({ ...enabled, ...active }).status().fix).toBe("Run: loginctl enable-linger me");
+  });
+  it("enable when installed but not enabled; start when stopped", () => {
+    expect(svc({}).status().fix).toBe("Run: systemctl --user enable --now oraknid.service");
+    expect(svc({ ...enabled, ...linger }).status().fix).toBe(
+      "Run: systemctl --user start oraknid.service",
+    );
   });
 });
 

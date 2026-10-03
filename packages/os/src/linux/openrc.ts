@@ -93,13 +93,20 @@ export function createOpenrcService(options: OpenrcOptions = {}): ServiceManager
       const enabled = existsSync(join(runlevelDir, "oraknid"));
       const active = installed && run("rc-service", ["oraknid", "status"]).status === 0;
       const detail = !installed
-        ? "Not installed as a service. Run: oraknid install"
+        ? "Not installed as a service."
         : !enabled
-          ? "Installed but not started at boot. Run: sudo rc-update add oraknid default"
+          ? "Installed but not started at boot."
           : active
             ? "Running as an OpenRC service; starts at boot."
-            : "Starts at boot, but not running right now. Run: sudo rc-service oraknid start";
-      return { installed, enabled, active, startsAtBoot: enabled, detail };
+            : "Starts at boot, but not running right now.";
+      const fix = !installed
+        ? "Run: oraknid install"
+        : !enabled
+          ? "Run: sudo rc-update add oraknid default"
+          : active
+            ? null
+            : "Run: sudo rc-service oraknid start";
+      return { installed, enabled, active, startsAtBoot: enabled, detail, fix };
     },
   };
 }

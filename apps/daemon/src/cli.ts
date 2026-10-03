@@ -215,7 +215,7 @@ program
     }
     const service = createServiceManager();
     console.log(`Installing Oraknid as ${service.label}.`);
-    const steps = service.manager.install({
+    const steps = service.install({
       execPath: process.execPath,
       args: [resolve(entry), "run"],
       env,
@@ -238,7 +238,7 @@ program
     console.log(
       `Removing ${service.kind === "autostart" ? "the autostart entry" : `the ${service.kind} service`}.`,
     );
-    report(service.manager.uninstall());
+    report(service.uninstall());
   });
 
 await program.parseAsync();

@@ -97,7 +97,7 @@ export function createSystemdService(options: SystemdOptions = {}): ServiceManag
       const linger =
         run("loginctl", ["show-user", user, "-p", "Linger", "--value"]).stdout.trim() === "yes";
       const detail = !installed
-        ? "Not installed as a service. Run: oraknid install"
+        ? "Not installed as a service."
         : !enabled
           ? "Installed but not enabled."
           : !linger
@@ -105,7 +105,16 @@ export function createSystemdService(options: SystemdOptions = {}): ServiceManag
             : active
               ? "Running as a service; starts at boot."
               : "Enabled, but not running right now.";
-      return { installed, enabled, active, startsAtBoot: enabled && linger, detail };
+      const fix = !installed
+        ? "Run: oraknid install"
+        : !enabled
+          ? `Run: systemctl --user enable --now ${UNIT_NAME}`
+          : !linger
+            ? `Run: loginctl enable-linger ${user}`
+            : active
+              ? null
+              : `Run: systemctl --user start ${UNIT_NAME}`;
+      return { installed, enabled, active, startsAtBoot: enabled && linger, detail, fix };
     },
   };
 }
