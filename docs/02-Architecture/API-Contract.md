@@ -9,8 +9,8 @@ table is the summary and is kept in step with the contracts.
 | System | `system.status` · `system.doctor` | Version, uptime, pid, data directory, last event `seq`, inhibitor, secret store, sandbox and service status; the checks. |
 | Devices | `devices.pairStart` / `pairComplete` / `list` / `revoke` · `setRights` (Phase 11, [[ADR-030-Device-Rights]]) | Pairing. Five wrong codes cancel every open one (Audit 1). `list` names each device's rights (`standard` or `full`); `setRights` takes the PIN and is refused away from home. |
 | Lock | `lock.status` / `unlock` / `setPin` / `lock` / `reset` / `setIdle` (Phase 10, [[ADR-029-App-Lock]]) | `status` and `unlock` are the only calls a locked device may make; the first PIN is set without a session on this computer only. `unlock` returns the session sent as `x-oraknid-unlock`. `lock` locks this device or, `everywhere`, every device. `reset` is for `oraknid pin reset` only. A locked call gets 423. |
-| Projects | `projects.createFrom` (Phase 8: a folder, a new empty folder, a new GitHub repo, a cloned one, a git URL) · `projects.setSkills` (Phase 8) · `projects.create` / `list` (M1.6) · `policy` / `setPolicy` (M1.9) · `archive` / `delete` (M2.0) · `localPorts` / `setLocalPorts` (2026-10-03: the ports on this computer its jobs' sandboxes may reach, [[Sandboxing]]) · `conversation` / `talk` · `budget` / `setBudget` (2026-10-03, [[ADR-034-Projects-First]]) · `answer` (2026-10-03, [[ADR-037-Questions-With-Options]]) · `setGitHub` (2026-10-03, [[ADR-038-Project-Accounts]]) · `detectRepos` / `addRepo` / `removeRepo` / `setServerRole` (2026-10-03, [[ADR-042-Several-Repos-And-Servers]]) | Creating a project in a folder that isn't a git repo asks: `initGit: true` or a shadow repo. `conversation` is the project's messages with The Eye from every started job, in order; `talk` returns `{id, jobId}` at once: the job going now, else the newest ended (new work starts a follow-up), else a new job made from the message and started ([[The-Eye]] → Talking to The Eye). `budget` returns the project's limits (tokens, money), what its jobs used, and whether a question waits; `setBudget` changes them. `answer({id, messageId, answers})` answers an Eye message's questions: the inbox item they belong to (the waiting job goes on), else as my next message; my message holds the answers and the short list. `setGitHub({id, link})` sets the project's GitHub link (account, owner, name, visibility, new or existing) or clears it (`null`); an account Oraknid doesn't have is refused; `repo` names the repo of a project of several (required there). A project's view carries its `repos` (each with its link), its `serverRoles`, and `github`, its one repo's link (null for several). `detectRepos({id})` looks again for repos in its folders and returns the list; `addRepo({id, name?, source})` adds one (`folder`, `new`, `github-clone` with `fullName` and `account?`, `git-url` with `url`; each with its `folder` inside the project) and returns the project; `removeRepo({id, name})` takes one out (its folder stays; never the last). These three are refused while one of its jobs runs. `setServerRole({id, serverId, role: {role, production}})` sets a server's role in the project, giving it the server if it hadn't it. `jobs.result` carries `repos` (each repo's name, folder, branch, work branch, commits, merged) for a project of several; `jobs.merge` merges each or none. |
-| Jobs | `jobs.updateDraft` / `remove` / `draftStart` / `draftTalk` / `draftThinking` (Phase 8: the New work page's draft and its conversation; `remove` takes a draft or an ended job) · `draftAnswer` (my answers to a draft round's questions, 2026-10-03) · `jobs.planComparisons` (ADR-022: each plan beside its shadow's, with measures and the job's outcome) · `jobs.create` / `start` / `get` / `list` (optionally one project's, 2026-10-03) / `pause` / `resume` / `cancel` (M1.6) · `setAutonomy` / `setWaivers` / `setRules` / `redirect` (M1.7) · `setBudget` (M1.9) · `setPriority` (M3.3) · `talk` / `conversation` · `result` / `merge` / `openFolder` (Checkpoint 1) | A job's view carries its tasks, worktree, branch and tokens. `talk` returns at once; The Eye's reply arrives as `eye.replied`; new work on an ended job starts a follow-up job and the reply names it ([[Jobs-and-Projects]] → Follow-up jobs). `merge` returns `{ok, commit}` or `{ok: false, reason, conflicts}`. |
+| Projects | `projects.createFrom` (Phase 8: a folder, a new empty folder, a new GitHub repo, a cloned one, a git URL) · `projects.setSkills` (Phase 8) · `projects.create` / `list` (M1.6) · `projects.get` (2026-10-03: one project's view, as `list` gives it; `NOT_FOUND` otherwise) · `policy` / `setPolicy` (M1.9) · `archive` / `delete` (M2.0) · `localPorts` / `setLocalPorts` (2026-10-03: the ports on this computer its jobs' sandboxes may reach, [[Sandboxing]]) · `conversation` / `talk` · `budget` / `setBudget` (2026-10-03, [[ADR-034-Projects-First]]) · `answer` (2026-10-03, [[ADR-037-Questions-With-Options]]) · `setGitHub` (2026-10-03, [[ADR-038-Project-Accounts]]) · `detectRepos` / `addRepo` / `removeRepo` / `setServerRole` (2026-10-03, [[ADR-042-Several-Repos-And-Servers]]) | Creating a project in a folder that isn't a git repo asks: `initGit: true` or a shadow repo. `conversation` is the project's messages with The Eye from every started job, in order; `talk` returns `{id, jobId}` at once: the job going now, else the newest ended (new work starts a follow-up), else a new job made from the message and started ([[The-Eye]] → Talking to The Eye). `budget` returns the project's limits (tokens, money), what its jobs used, and whether a question waits; `setBudget` changes them. `answer({id, messageId, answers})` answers an Eye message's questions: the inbox item they belong to (the waiting job goes on), else as my next message; my message holds the answers and the short list. `setGitHub({id, link})` sets the project's GitHub link (account, owner, name, visibility, new or existing) or clears it (`null`); an account Oraknid doesn't have is refused; `repo` names the repo of a project of several (required there). A project's view carries its `repos` (each with its link), its `serverRoles`, and `github`, its one repo's link (null for several). `detectRepos({id})` looks again for repos in its folders and returns the list; `addRepo({id, name?, source})` adds one (`folder`, `new`, `github-clone` with `fullName` and `account?`, `git-url` with `url`; each with its `folder` inside the project) and returns the project; `removeRepo({id, name})` takes one out (its folder stays; never the last). These three are refused while one of its jobs runs. `setServerRole({id, serverId, role: {role, production}})` sets a server's role in the project, giving it the server if it hadn't it. `jobs.result` carries `repos` (each repo's name, folder, branch, work branch, commits, merged) for a project of several; `jobs.merge` merges each or none. |
+| Jobs | `jobs.updateDraft` / `remove` / `draftStart` / `draftTalk` / `draftThinking` (Phase 8: the New work page's draft and its conversation; `remove` takes a draft or an ended job) · `draftAnswer` (my answers to a draft round's questions, 2026-10-03) · `jobs.planComparisons` (ADR-022: each plan beside its shadow's, with measures and the job's outcome) · `jobs.create` / `start` / `get` / `list` (optionally one project's, 2026-10-03) / `pause` / `resume` / `cancel` (M1.6) · `setAutonomy` / `setWaivers` / `setRules` / `redirect` (M1.7) · `setBudget` (M1.9) · `setPriority` (M3.3) · `talk` / `conversation` · `result` / `merge` / `openFolder` (Checkpoint 1) · `export` (2026-10-03) | A job's view carries its tasks, worktree, branch and tokens. `talk` returns at once; The Eye's reply arrives as `eye.replied`; new work on an ended job starts a follow-up job and the reply names it ([[Jobs-and-Projects]] → Follow-up jobs). `merge` returns `{ok, commit}` or `{ok: false, reason, conflicts}`. `export({id})` is the job's full record as one JSON for a download (`format: "oraknid.job-export"`, `version: 1`): the job's view with its plan (tasks and their edges), every attempt, its sessions (not their logs), its events, its Silk (superseded entries too), the conversation with The Eye and the result; every string is scrubbed of known secret values and secret-shaped text, and no keychain value is read for it. |
 | Web | `web.edit` (add, update, remove tasks) | Plan editing; an edit that breaks The Web's rules is refused and undone. |
 | Tasks | `tasks.pin` / `takeOver` / `handBack` / `rollback` / `attempts` · `diff` (M2.0) | `diff`: the task's commit once done, else its work since before its first attempt. |
 | Sessions | `sessions.list({jobId})` / `sessions.log({id, after})` (Checkpoint 1) | Each Leg session of a job and its log as readable lines, from a byte offset. |
@@ -35,19 +35,53 @@ table is the summary and is kept in step with the contracts.
 | Storage | `storage.usage` / `storage.prune` (M1.9) | |
 | The Nest | `nest.status` / `nest.configure` / `nest.pairAway` (Phase 4) · `nest.register` (Phase 11, [[ADR-031-Public-Nest]]) | Reaching me away from home ([[Nest-Protocol]]). `pairAway` needs the PIN set, returns a link whose keys are in the fragment, and with `full` (and the PIN) gives the device full rights. `register` registers this daemon on a public Nest (with an invite code if it asks one) and connects. All home only. |
 
-**Not built yet** (Audit 1 → Q1-15): `projects.get`, `jobs.export`
-(planned for Phase 2, not done; no phase holds them now); a general
-`settings.get` / `update`: each setting still has its own pair.
+**Not built yet** (Audit 1 → Q1-15): a general `settings.get` /
+`update`: each setting still has its own pair. (`projects.get` and
+`jobs.export` were built on 2026-10-03.)
 
 **Away from home** ([[ADR-029-App-Lock]], [[ADR-030-Device-Rights]]):
-the daemon refuses the calls that open a new way in from a standard
-device, and a few from every device; the lists are in
-`apps/daemon/src/auth/lock.ts` and [[Security]].
+the daemon refuses these calls from a device away from home (through
+The Nest) with 403 `FORBIDDEN`; the lists are `ALWAYS_HOME` and
+`HOME_ONLY` in `apps/daemon/src/auth/lock.ts`, and a test checks this
+section names every entry of both. Everything else is allowed away
+from home once the device is unlocked.
 
-Mutating procedures are not idempotent by a client `requestId`: they
-are safe to repeat by their own state (a second `start`, `pause` or
-`answer` is refused with a sentence). The `requestId` once planned for
-The Nest wasn't built. Errors
+- **Home only, whatever the device's rights**: `secrets.*` ·
+  `nest.configure` / `register` / `pairAway` · `devices.pairStart` /
+  `revoke` / `setRights` · `lock.setPin` / `setIdle`.
+- **Home only for a standard device** (a device with full rights may):
+  `policies.update` · `projects.create` / `createFrom` / `setPolicy` /
+  `setServers` / `setServerRole` / `addRepo` / `detectRepos` /
+  `removeRepo` / `setLocalPorts` / `delete` / `setGitHub` ·
+  `servers.add` / `update` / `setup` / `acceptHostKey` / `editState` /
+  `remove` / `restart` · `backups.createPlan` / `updatePlan` /
+  `removePlan` / `prepareRestore` / `restore` / `importKey` /
+  `exportKey` / `removeKey` · `github.addAccount` / `removeAccount` /
+  `createRepo` · `mail.addAccount` / `testAccount` / `updateAccount` /
+  `removeAccount` / `reconnect` · `tools.create` / `update` / `remove`
+  · `skills.upload` / `edit` / `remove` · `legs.create` / `update` /
+  `remove` / `loginStart` / `loginFinish` / `setProfile` ·
+  `silk.importMirror` · `settings.setTerminal` / `setEyeModels` /
+  `setEyeLeg` · `notifications.update` / `configureEmail` ·
+  `storage.prune` · `jobs.setWaivers` / `setRules`.
+
+The repo routes (`projects.detectRepos`, `addRepo`, `removeRepo`,
+`setServerRole`) are home only because adding a repo may clone or make
+a folder on this computer, and a server's role gives a project's jobs
+that server. `projects.get` and `jobs.export` are reads, allowed away
+from home like `projects.list` and `jobs.get`: the export holds no
+more than the job's screens show, and its secrets are scrubbed.
+
+**Request ids** (2026-10-03): every call under `/api` gets an id made
+by the daemon (`r-` and 12 hex digits; a client's own `x-request-id`
+is not taken, so the log holds only ids the daemon made). It is given
+back in the `x-request-id` response header, in every error's
+`data.requestId` (the oRPC errors, and the 423 and 403 refused before
+them), and at the start of each daemon log line printed while the call
+runs (`[r-…] request failed …`), so an error the UI shows can be found
+in `oraknid logs`. Mutating procedures are not idempotent by a client
+id: they are safe to repeat by their own state (a second `start`,
+`pause` or `answer` is refused with a sentence). Errors
 carry a code (`BAD_REQUEST`, `NOT_FOUND`, `CONFLICT`,
 `INTERNAL_SERVER_ERROR`; `LOCKED` with 423 for a locked device,
 `FORBIDDEN` with 403 for a call refused away from home) **and** a sentence for the UI (BR-17); an

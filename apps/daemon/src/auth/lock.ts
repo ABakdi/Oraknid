@@ -277,7 +277,7 @@ export const LOCK_FREE = new Set(["/lock/status", "/lock/unlock"]);
  * somewhere new. Those are done at home.
  */
 /** Home only whatever the device's rights (ADR-030): a device can't widen itself or mint others. */
-const ALWAYS_HOME = [
+export const ALWAYS_HOME = [
   "/secrets/",
   "/nest/configure",
   "/nest/register",
@@ -289,7 +289,7 @@ const ALWAYS_HOME = [
   "/lock/setIdle",
 ];
 
-const HOME_ONLY = [
+export const HOME_ONLY = [
   ...ALWAYS_HOME,
   "/policies/update",
   "/projects/create",
