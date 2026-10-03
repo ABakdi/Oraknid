@@ -106,12 +106,12 @@
     <div>
       <h2>Install</h2>
       <p>Oraknid runs on Linux. One command installs what is missing (git, Node 22.12 or newer, pnpm, bubblewrap, passt, Python 3), builds it, and starts it in the background with systemd, OpenRC or runit. Run it as yourself: it asks for <code>sudo</code> only for packages.</p>
-      <p class="muted">Until the work on <code>dev</code> is merged into <code>main</code>, add <code>| sh -s -- --ref dev</code> in place of <code>| sh</code>. The steps by hand are in <a href="/docs/getting-started.html">Getting started</a>.</p>
+      <p class="muted">For now the newest Oraknid is on the <code>dev</code> branch, which the command installs; once it is in <code>main</code>, the same script from <code>main</code> installs that. The steps by hand are in <a href="/docs/getting-started.html">Getting started</a>.</p>
     </div>
     <div class="code" data-copy>
       <button class="copy" type="button" aria-label="Copy the commands">{{icon:copy}}<span>Copy</span></button>
 <pre><code><span class="c"># install, build, and run it in the background</span>
-curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/dev/install.sh | sh -s -- --ref dev
 
 <span class="c"># open it in your browser and set your PIN</span>
 oraknid open</code></pre>

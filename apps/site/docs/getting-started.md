@@ -36,7 +36,7 @@ OpenRC and runit services are system services that drop to your user, so writing
 Options go after `sh -s --`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/main/install.sh | sh -s -- --ref dev
+curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/dev/install.sh | sh -s -- --ref dev
 ```
 
 - `--ref <branch>`: what to install (default `main`). Until the work on `dev` is merged, use `--ref dev`.
