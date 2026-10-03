@@ -72,10 +72,28 @@ export type McpDeclaration = "read" | "held" | GatedAction | { linked: GatedActi
 
 export type PolicyVerdict =
   | { verdict: "allow"; reason: string }
-  | { verdict: "deny"; reason: string; drift: "D7" }
+  /**
+   * Refused. `drift` D7 is a forbidden action (it counts against the Leg);
+   * null is a plain answer to the Leg (a check of Oraknid's it can't run).
+   * `message` is what the Leg is told, when it isn't "Not allowed: <reason>".
+   */
+  | { verdict: "deny"; reason: string; drift: "D7" | null; message?: string }
   | { verdict: "ask"; reason: string; gated: GatedAction | null }
   /** Auto approval (ADR-014): a classifier decides between allow and ask. */
   | { verdict: "classify"; reason: string; programs: string[] };
+
+/** A `.git` path as an argument: `.git`, `./.git`, `x/.git/…`, never `.gitignore` or `.github`. */
+const GIT_PATH = String.raw`(^|[\s/'"=])\.git(/|['"]|\s|;|&|\||\)|$)`;
+/** What the job folder's own `.git` rules say when one breaks (after the piano job, 2026-10-03). */
+const KEEP_WORKTREE = "the job's folder must stay a worktree of the project";
+
+/**
+ * Checks Oraknid runs itself after the Leg ends (ADR-038, ADR-042):
+ * `oraknid github-repo`, `oraknid github-branch <branch>`. No Leg can run
+ * them (there is no `oraknid` in its sandbox), so trying is answered, never
+ * asked about (after the piano job, 2026-10-03).
+ */
+export const ORAKNID_CHECK = /(^|[\s;&|(])oraknid\s+github-[\w-]+/;
 
 /** Never, at any level (Security → shipped defaults). */
 export const DEFAULT_DENY: { pattern: RegExp; why: string }[] = [
@@ -94,6 +112,34 @@ export const DEFAULT_DENY: { pattern: RegExp; why: string }[] = [
   {
     pattern: /\bgit\s+push\b.*\s(--force|-f)(\s|$)/,
     why: "force-pushes, rewriting published history (BR-14)",
+  },
+  // A job's folder stays a worktree of its project (Jobs-and-Projects → Ending a job,
+  // after the piano job, 2026-10-03): its `.git` is never re-created, moved or deleted.
+  {
+    pattern: new RegExp(
+      String.raw`(^|[\s;&|(])(rm|rmdir|unlink|mv|cp|rsync|ln|tee|truncate|install|chmod|chown|shred)\b[^;&|\n]*` +
+        GIT_PATH,
+    ),
+    why: `changes a .git: ${KEEP_WORKTREE}`,
+  },
+  {
+    pattern: new RegExp(
+      String.raw`(^|[^<>&0-9])>>?\s*` + GIT_PATH + String.raw`|\bdd\b[^;&|\n]*\bof=` + GIT_PATH,
+    ),
+    why: `writes into a .git: ${KEEP_WORKTREE}`,
+  },
+  {
+    pattern: new RegExp(String.raw`\bsed\s+(-\S+\s+)*-i\S*\s[^;&|\n]*` + GIT_PATH),
+    why: `edits a .git: ${KEEP_WORKTREE}`,
+  },
+  {
+    // `git init` makes the folder a repository of its own; a scratch repo under /tmp is fine.
+    pattern: /\bgit\s+init\b(?!(\s+-\S+)*\s+\/tmp\/)/,
+    why: `makes a separate repository: ${KEEP_WORKTREE}`,
+  },
+  {
+    pattern: /\bgit\s+worktree\s+(add|remove|move|prune|repair)\b|\.git\/worktrees\b/,
+    why: "changes the project's worktrees, which Oraknid manages",
   },
 ];
 
@@ -250,6 +296,16 @@ export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
   const command = raw ? `${raw}\n${withoutGlobalOptions(raw)}` : "";
   const own = raw ? mine(raw, ctx.rules ?? []) : null;
 
+  // Oraknid's own checks: answered to the Leg, never asked about, not a drift.
+  if (raw && ORAKNID_CHECK.test(raw))
+    return {
+      verdict: "deny",
+      reason: "it is a check Oraknid runs itself when the Leg finishes",
+      drift: null,
+      message:
+        "Oraknid runs this check itself when you finish (it reads GitHub with the project's account); there is no `oraknid` command for you. Don't run it: do the task (GitHub work through the github tool), then say DONE.",
+    };
+
   if (command) {
     for (const d of DEFAULT_DENY) {
       if (d.pattern.test(command))
@@ -279,6 +335,12 @@ export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
   if (READ_ONLY_TOOLS.has(r.tool)) return { verdict: "allow", reason: "reads only" };
 
   if (FILE_TOOLS.has(r.tool)) {
+    if (r.path && /(^|\/)\.git(\/|$)/.test(r.path))
+      return {
+        verdict: "deny",
+        reason: `never allowed: it writes into a .git: ${KEEP_WORKTREE}`,
+        drift: "D7",
+      };
     if (r.path && insideTree(ctx.worktree, r.path))
       return { verdict: "allow", reason: "edits inside the worktree" };
     return {
