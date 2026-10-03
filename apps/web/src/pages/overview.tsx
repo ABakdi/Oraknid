@@ -1,9 +1,10 @@
 import type { Event, JobView } from "@oraknid/contracts";
-import { AlertTriangle, Bot, Cpu, HardDrive, MemoryStick, Network } from "lucide-react";
+import { AlertTriangle, Cpu, HardDrive, MemoryStick, Network } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "wouter";
 import { Sparkline, TokensChart } from "@/components/charts";
 import { Empty, ErrorNote, Loading, PageHeader, Stat, StateBadge } from "@/components/common";
+import { LegAvatar } from "@/components/leg-avatar";
 import { PlanUsageCard } from "@/components/plan-usage";
 import { PauseResume } from "@/components/project-work";
 import { AddLegButtons } from "@/components/setup";
@@ -118,7 +119,7 @@ export function OverviewPage() {
               <Card key={leg.id} className="min-w-0 gap-2 py-3">
                 <CardHeader className="px-3">
                   <CardTitle className="flex items-center gap-2 text-sm">
-                    <Bot className="size-4 shrink-0" />
+                    <LegAvatar leg={leg} />
                     <Link
                       href={`/legs/${leg.id}`}
                       className="truncate hover:underline"

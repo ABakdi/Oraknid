@@ -240,6 +240,24 @@
   }
 }
 
+/* A task handed to another Leg (Web-UI → Job): a dot from one avatar to the next. Only with motion allowed. */
+@keyframes leg-handoff {
+  0% {
+    left: 0;
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    left: calc(100% - 0.375rem);
+    opacity: 0;
+  }
+}
+
 /* Code in Repos (ADR-040): highlight.js's classes in Oraknid's colours, both
    themes, each readable (AA) on a well. */
 :root {
