@@ -8,6 +8,7 @@ import { LegAvatar } from "@/components/leg-avatar";
 import { PlanUsageCard } from "@/components/plan-usage";
 import { PauseResume } from "@/components/project-work";
 import { AddLegButtons } from "@/components/setup";
+import { StatsCharts } from "@/components/stats-charts";
 import { ACTIVE } from "@/components/task-drawer";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -298,6 +299,17 @@ export function OverviewPage() {
           )}
         </CardContent>
       </Card>
+
+      <section aria-label={t("The last two weeks")}>
+        <h2 className="mb-2 text-sm font-medium text-muted-foreground">
+          {t("The last two weeks")}
+        </h2>
+        <StatsCharts
+          since={Date.now() - 14 * 86400_000}
+          bucketMs={86400_000}
+          topics={["overview"]}
+        />
+      </section>
     </div>
   );
 }
