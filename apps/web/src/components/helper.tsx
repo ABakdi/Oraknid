@@ -127,7 +127,8 @@ export function HelperButton() {
         className={cn(
           "fixed bottom-20 left-3 z-40 size-11 rounded-full shadow-lg md:bottom-4 md:left-4",
           // Aside, it waits on the other edge, off what it points at (most controls start on the left).
-          aside && "ring-2 ring-eye ring-offset-2 ring-offset-background max-md:right-3 max-md:left-auto",
+          aside &&
+            "ring-2 ring-eye ring-offset-2 ring-offset-background max-md:right-3 max-md:left-auto",
         )}
         aria-label={
           aside

@@ -65,6 +65,7 @@ Eye's conversation sit beside them ([[Chats-and-Helper]]).
 │ Terminal │                                                    │
 │ Skills   │                                                    │
 │ Logs     │                                                    │
+│ Docs     │                                                    │
 │ Settings │                                                    │
 └──────────┴────────────────────────────────────────────────────┘
 ```
@@ -81,8 +82,8 @@ Eye's conversation sit beside them ([[Chats-and-Helper]]).
   tabs never jumps the page. Nothing runs off the right edge on a phone:
   long names are cut with their full text on hover, and wrap in legends.
 - **Keyboard**: `?` lists every shortcut; `g` then `o`/`p`/`i`/`l`/
-  `c`/`s`/`t`/`m`/`k`/`,` goes to Overview, Projects, Inbox, Legs,
-  Chats, Servers, Terminal, Mail, Skills, Settings (`g j` went with the
+  `c`/`s`/`t`/`m`/`k`/`d`/`,` goes to Overview, Projects, Inbox, Legs,
+  Chats, Servers, Terminal, Mail, Skills, Docs, Settings (`g j` went with the
   Jobs page, 2026-10-03); `1`…`9` goes to that tab on a page with tabs
   (a job's own tabs inside Work don't take them); `[` folds the sidebar; `n` new work; Ctrl+K
   the command palette. Single keys stay out of the way while I type.
@@ -301,7 +302,26 @@ and SMTP each on its own; a refusal says in plain words what to check
 ### The helper
 
 A floating button at the bottom left of every screen opens the Oraknid
-helper ([[Chats-and-Helper]]).
+helper ([[Chats-and-Helper]]). It knows the guide and a map of the
+screens, and shows me things here: it opens a page, rings a control
+with a short note (opening the menu, dialog or drawer that holds it),
+or fills a field for me to check ([[ADR-041-Docs-And-A-Guiding-Helper]]).
+The controls it can point at carry a `data-help` id from the map
+(`src/lib/help-map.ts`). On a phone its panel steps aside while it
+shows me something and comes back with a tap on its button.
+
+### Docs
+
+The guide (`/docs`, `/docs/<page>`, `/docs/<page>/<heading>`, `g d`), in
+the sidebar and in More on a phone ([[ADR-041-Docs-And-A-Guiding-Helper]]):
+the site's own pages (`apps/site/docs/*.md`, their order in
+`guide.json`), put in the app when it is built so they read the same
+offline and through The Nest. The pages are listed beside the one open
+(on a phone the list, then the page with a way back); a search over
+headings and text lists the places it found, with a snippet; each
+heading has a link to itself; Previous and Next at the end. The site's
+links (`jobs.html`) open the app's pages. Each page has **Ask the helper
+about this**, which opens the helper with that page as its context.
 
 ### Markdown
 

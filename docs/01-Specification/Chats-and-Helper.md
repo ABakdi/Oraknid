@@ -40,7 +40,32 @@ panel. I write what I want in my words; the helper:
 Each reply lists what it did, with links. The conversation is kept
 until I clear it.
 
-Mail: chats and the helper don't take the `email` tool yet; jobs do
-([[ADR-032-Email]]).
+### It knows Oraknid, and shows me ([[ADR-041-Docs-And-A-Guiding-Helper]], 2026-10-03)
+
+- **The guide**: with each message the web app sends the guide's pages
+  most related to it (a search over headings and text; the whole guide
+  when none stands out), and the page I asked from when I pressed **Ask
+  the helper about this** on the Docs page.
+- **The screens**: a map of every page, its tabs and its options (an
+  id, a name, what it does, where), kept in one file in the web app
+  (`src/lib/help-map.ts`); the controls carry the same id as
+  `data-help`, and a test checks every id is in the screens.
+- **My data, through the API**: besides projects, jobs, Legs and skills,
+  it reads my mail (accounts, folders, a search of conversations, one
+  conversation), my servers, the Legs' usage windows, the inbox and the
+  settings. What it reads comes back to it in the next round, wrapped as
+  untrusted data (BR-15); the conversation keeps only a short result.
+- **Showing me**, in my browser: `navigate` (a page, its item, a tab),
+  `highlight` (a control by its id: its page opens, a menu, dialog or
+  drawer holding it opens, the page scrolls to it and a ring pulses
+  around it with a short note until I click, press Esc or move on; still
+  when I prefer less motion), `fill` (a value put in a field for me to
+  check, never saved). Each has **Show me again** under the reply.
+- **On a phone** the panel steps aside while it shows me something; the
+  round button waits on the other edge, ringed, and a tap brings the
+  conversation back.
+
+Mail: chats don't take the `email` tool yet, and the helper only reads
+mail; jobs do the rest ([[ADR-032-Email]]).
 
 Related: [[Web-UI]] · [[Jobs-and-Projects]] · [[The-Eye]]
