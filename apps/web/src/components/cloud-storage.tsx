@@ -674,7 +674,7 @@ export function PlacementCard({ providers }: { providers: CloudProviderView[] })
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3">
           {field(
             "pl-mode",
             t("Uploads go"),
@@ -1132,7 +1132,7 @@ export function PoolBrowser({ path, providers }: { path: string; providers: Clou
                 {e.isDir ? "" : bytes(e.size ?? 0)}
               </span>
               <span className="hidden w-24 text-right text-xs text-muted-foreground md:block">
-                {e.modTime ? new Date(e.modTime).toLocaleDateString() : ""}
+                {!e.isDir && e.modTime ? new Date(e.modTime).toLocaleDateString() : ""}
               </span>
               {fileMenu(e)}
             </li>
