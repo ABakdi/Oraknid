@@ -30,7 +30,7 @@ Then [[ADR-029-App-Lock]]: a PIN on every device, checked by the daemon.
 | S2-05 (R, L) | High | live, terminal | A revoked or locked device kept its open live socket, terminal and tunnel, and its push subscription. | Fixed: sockets are checked at every heartbeat and at once on a lock or a revocation; the tunnel ends; push subscriptions belong to a device and go with it. The terminal never opens away from home. |
 | S2-06 (C) | High | `core/shell.ts` | `bash -c '…'`, `find -exec`, `xargs`, `env`, `timeout`… hid the programs they run from the policy: `bash -c 'curl …'` was allowed. | Fixed: wrappers are read through; tests for each. |
 | S2-07 (W) | High | Markdown | An image in an agent's message made my browser fetch any address: a way out for what an agent read. | Fixed: images show as text. |
-| S2-08 (C) | Medium | `eye/attempt.ts` | Server keys stayed in the Leg's home after a job, for the next job of another project. | Fixed: the Leg's `~/.ssh` is emptied at every attempt. Open: two jobs running at once on one Leg share its home. |
+| S2-08 (C) | Medium | `eye/attempt.ts` | Server keys stayed in the Leg's home after a job, for the next job of another project. | Fixed: the Leg's `~/.ssh` is emptied at every attempt; 2026-10-03, every job has a home of its own on a Leg, with the Leg's login linked in and its keys, caches, histories and transcripts its own, removed when the job ends; a test in bwrap shows job A can't read job B's files, keys or transcripts ([[Sandboxing]]). |
 | S2-09 (W, L) | Medium | daemon, Nest | No security headers: any site could frame the UI (clickjacking an Approve). | Fixed: CSP, `frame-ancestors 'none'`, `X-Frame-Options`, no-sniff, no referrer, `no-store` on the API; cross-site requests other than a page load are refused; HSTS on The Nest. |
 | S2-10 (W) | Medium | terminal | A link printed in the terminal could be `javascript:`. | Fixed: only http(s) links open. |
 | S2-11 (W) | Medium | helper | The Confirm card showed only the model's summary. | Fixed: the action and its exact input show. |
@@ -45,16 +45,16 @@ Then [[ADR-029-App-Lock]]: a PIN on every device, checked by the daemon.
 | S2-20 (R) | Low | relay | A daemon secret could be empty; the 502 said too much; push could post to any address. | Fixed: 32 characters at least; a plain message; push only to the browsers' push services. |
 | S2-21 (C) | Medium | sandbox | TCP on the host's loopback is reachable from a job (the API needs a token; other local services may not). | Fixed 2026-10-03: every sandbox has a network namespace of its own through pasta; this computer's services are reachable only on the ports a project lists or a Leg's own local model; a test checks both. |
 | S2-22 (L) | Low | port | On a machine with other users, another user could take the port while the daemon is down. | Open: Oraknid assumes a computer that is mine alone; documented in [[Security]]. |
-| S2-23 | Low | secrets | Two Oraknid daemons of one user (a second data folder, for a test) share the keychain's entries: configuring one's Nest replaced the other's secret (seen while testing this audit; put back). | Open: name keychain entries per data folder. |
+| S2-23 | Low | secrets | Two Oraknid daemons of one user (a second data folder, for a test) share the keychain's entries: configuring one's Nest replaced the other's secret (seen while testing this audit; put back). | Fixed 2026-10-03: each data folder's entries are under a service of its own, `oraknid:<id>`, the id kept in the folder; the default folder's daemon moves the entries of before under its own at start, without logging a value; tests on a fake keychain and on a real Secret Service in a throwaway D-Bus session (`apps/daemon/scripts/secret-service-test.sh`) show two folders don't see each other's secrets ([[Security]]). |
 
 ## Where it stands (2026-10-03)
 
-23 findings: 17 fixed, 4 fixed in part (S2-02, S2-08, S2-13, S2-15),
-2 open (S2-22, S2-23). Every critical and high finding is fixed except S2-02 (critical, fixed in part);
+23 findings: 19 fixed, 3 fixed in part (S2-02, S2-13, S2-15),
+1 open (S2-22). Every critical and high finding is fixed except S2-02 (critical, fixed in part);
 S2-21 closed on 2026-10-03 with a network of its own for every sandbox
-([[Sandboxing]]). Still to come: the loader's code pinned or a native
-app (S2-02), a home per job on a shared Leg (S2-08), keychain entries
-named per data folder (S2-23). [[ADR-030-Device-Rights]] later let a
+([[Sandboxing]]); S2-08 (a home per job on a shared Leg) and S2-23
+(keychain entries per data folder) closed the same day. Still to come:
+the loader's code pinned or a native app (S2-02). [[ADR-030-Device-Rights]] later let a
 device I choose do away from home what S2-04 kept at home; what stays
 home only is listed there.
 

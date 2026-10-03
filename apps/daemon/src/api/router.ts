@@ -33,6 +33,7 @@ import {
   InboxFilter,
   InboxItem,
   Insight,
+  JobExport,
   JobResult,
   JobView,
   LegPlanUsage,
@@ -92,6 +93,7 @@ import {
   ToolView,
   UpdateTool,
 } from "@oraknid/contracts";
+import { scrubDeep, scrubSecrets } from "@oraknid/core";
 import {
   type InhibitorState,
   type SandboxStatus,
@@ -108,6 +110,7 @@ import type { Backups } from "../backups/service.ts";
 import type { Chats } from "../chats/service.ts";
 import {
   attempts as attemptsTable,
+  events as eventsTable,
   jobs as jobsTable,
   legModels,
   legs as legsTable,
@@ -149,6 +152,7 @@ import {
   talkInProject,
 } from "../eye/talk.ts";
 import type { Helper } from "../helper/service.ts";
+import { currentRequestId } from "../http/request-id.ts";
 import type { InboxStore } from "../inbox/store.ts";
 import { discoverAgents } from "../legs/discover.ts";
 import type { LegLogins } from "../legs/login.ts";
@@ -249,7 +253,35 @@ export interface ApiContext {
   tmpDir: string;
 }
 
-const base = os.$context<ApiContext>();
+/**
+ * Every call's error carries its request id (`data.requestId`), the one in
+ * the response's `x-request-id` header and the daemon's log lines for it.
+ */
+const base = os.$context<ApiContext>().use(async ({ next }) => {
+  try {
+    return await next();
+  } catch (error) {
+    const requestId = currentRequestId();
+    if (!requestId) throw error;
+    if (error instanceof ORPCError) {
+      const data =
+        error.data && typeof error.data === "object" && !Array.isArray(error.data)
+          ? error.data
+          : {};
+      throw new ORPCError(error.code, {
+        status: error.status,
+        message: error.message,
+        data: { ...data, requestId },
+        cause: error.cause,
+      });
+    }
+    console.error("request failed", error);
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: "Something went wrong inside Oraknid; the details are in its log (oraknid logs).",
+      data: { requestId },
+    });
+  }
+});
 
 const drafts = (c: ApiContext) => ({
   db: c.jobs.db,
@@ -439,6 +471,87 @@ function jobView(c: ApiContext, id: string): JobView {
   });
 }
 
+/** Each Leg session of a job, newest first (Checkpoint 1). */
+function sessionViews(c: ApiContext, jobId: string): SessionView[] {
+  return c.jobs.db
+    .select({
+      s: sessionsTable,
+      taskTitle: tasksTable.title,
+      legName: legsTable.name,
+      model: legModels.displayName,
+    })
+    .from(sessionsTable)
+    .innerJoin(legsTable, eq(legsTable.id, sessionsTable.legId))
+    .innerJoin(legModels, eq(legModels.id, sessionsTable.legModelId))
+    .leftJoin(tasksTable, eq(tasksTable.id, sessionsTable.taskId))
+    .where(eq(sessionsTable.jobId, jobId))
+    .orderBy(desc(sessionsTable.startedAt), desc(sessionsTable.id))
+    .all()
+    .map(({ s, taskTitle, legName, model }) => ({
+      id: s.id,
+      jobId: s.jobId,
+      taskId: s.taskId,
+      taskTitle,
+      purpose: s.attemptId?.startsWith("eye:") ? s.attemptId.slice(4) : "task",
+      legId: s.legId,
+      legName,
+      model,
+      effort: s.effort,
+      startedAt: s.startedAt,
+      endedAt: s.endedAt,
+      endReason: s.endReason,
+      tokens: s.inputTokens + s.outputTokens + s.cacheWriteTokens,
+    }));
+}
+
+/**
+ * A job's full record (`jobs.export`): everything the job's screens show,
+ * in one JSON. Each string is scrubbed of known secret values and
+ * secret-shaped text (BR-13); keychain values and tokens are never read.
+ */
+function jobExport(c: ApiContext, id: string): JobExport {
+  const job = jobView(c, id);
+  let result: JobResult | null = null;
+  try {
+    result = jobResult(c.jobs.db, id);
+  } catch {}
+  const record: JobExport = {
+    format: "oraknid.job-export",
+    version: 1,
+    exportedAt: c.now(),
+    job,
+    attempts: c.jobs.db
+      .select()
+      .from(attemptsTable)
+      .where(eq(attemptsTable.jobId, id))
+      .orderBy(asc(attemptsTable.startedAt), asc(attemptsTable.id))
+      .all()
+      .map((a) => ({
+        id: a.id,
+        taskId: a.taskId,
+        legId: a.legId,
+        legModelId: a.legModelId,
+        effort: a.effort,
+        startedAt: a.startedAt,
+        endedAt: a.endedAt,
+        outcome: a.outcome,
+        escalations: a.escalations,
+      })),
+    sessions: sessionViews(c, id),
+    events: c.jobs.db
+      .select()
+      .from(eventsTable)
+      .where(eq(eventsTable.jobId, id))
+      .orderBy(asc(eventsTable.seq))
+      .all(),
+    silk: c.silk.all(id),
+    conversation: conversation(c.jobs.db, id),
+    result,
+  };
+  const known = [...c.secrets.known()];
+  return scrubDeep(record, (text) => scrubSecrets(text, known));
+}
+
 /** Turns a refusal (an illegal move, an unknown job) into a sentence for the UI. */
 /**
  * Errors carry a code and a sentence (API-Contract, BR-17; Audit 1 → Q1-14).
@@ -596,6 +709,17 @@ export const router = {
         guard(async () => ({ ...(await projectFrom(c, input)), jobCount: 0 })),
       ),
     list: base.output(z.array(ProjectView)).handler(({ context: c }) => c.projects.list()),
+    /** One project's view, as `list` gives it (Audit 1 → Q1-15). */
+    get: base
+      .input(z.object({ id: z.string() }))
+      .output(ProjectView)
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          const p = c.projects.list().find((x) => x.id === input.id);
+          if (!p) throw new ORPCError("NOT_FOUND", { message: "No such project." });
+          return p;
+        }),
+      ),
     /** Ports on this computer its jobs may reach, like a local database (Sandboxing → network). */
     localPorts: base
       .input(z.object({ id: z.string() }))
@@ -1646,6 +1770,11 @@ export const router = {
       .input(z.object({ id: z.string() }))
       .output(JobResult)
       .handler(({ context: c, input }) => guard(() => jobResult(c.jobs.db, input.id))),
+    /** A job's full record as JSON for a download, secrets scrubbed (Audit 1 → Q1-15). */
+    export: base
+      .input(z.object({ id: z.string() }))
+      .output(JobExport)
+      .handler(({ context: c, input }) => guard(() => jobExport(c, input.id))),
     merge: base
       .input(z.object({ id: z.string() }))
       .output(
@@ -2066,37 +2195,7 @@ export const router = {
     list: base
       .input(z.object({ jobId: z.string() }))
       .output(z.array(SessionView))
-      .handler(({ context: c, input }) =>
-        c.jobs.db
-          .select({
-            s: sessionsTable,
-            taskTitle: tasksTable.title,
-            legName: legsTable.name,
-            model: legModels.displayName,
-          })
-          .from(sessionsTable)
-          .innerJoin(legsTable, eq(legsTable.id, sessionsTable.legId))
-          .innerJoin(legModels, eq(legModels.id, sessionsTable.legModelId))
-          .leftJoin(tasksTable, eq(tasksTable.id, sessionsTable.taskId))
-          .where(eq(sessionsTable.jobId, input.jobId))
-          .orderBy(desc(sessionsTable.startedAt), desc(sessionsTable.id))
-          .all()
-          .map(({ s, taskTitle, legName, model }) => ({
-            id: s.id,
-            jobId: s.jobId,
-            taskId: s.taskId,
-            taskTitle,
-            purpose: s.attemptId?.startsWith("eye:") ? s.attemptId.slice(4) : "task",
-            legId: s.legId,
-            legName,
-            model,
-            effort: s.effort,
-            startedAt: s.startedAt,
-            endedAt: s.endedAt,
-            endReason: s.endReason,
-            tokens: s.inputTokens + s.outputTokens + s.cacheWriteTokens,
-          })),
-      ),
+      .handler(({ context: c, input }) => sessionViews(c, input.jobId)),
     log: base
       .input(z.object({ id: z.string(), after: z.number().int().nonnegative().default(0) }))
       .output(SessionLogPage)

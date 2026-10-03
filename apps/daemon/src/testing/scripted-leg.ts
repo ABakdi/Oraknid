@@ -31,6 +31,8 @@ export interface TurnContext {
   turn: number;
   /** Sessions started on this Leg so far, from 1. */
   session: number;
+  /** The session's HOME (a job's own home on the Leg), when sandboxed. */
+  home: string | null;
 }
 
 /**
@@ -89,6 +91,7 @@ export function scriptedLeg(script: (t: TurnContext) => Action[]) {
           system: s.systemPrompt,
           turn,
           session,
+          home: s.sandbox?.home ?? null,
         };
         log.push(ctx);
         let text = "";

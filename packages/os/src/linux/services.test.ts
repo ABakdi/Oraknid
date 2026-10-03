@@ -3,11 +3,19 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import type { ServiceManager } from "../service.ts";
 import { autostartEntry, createAutostartService } from "./autostart.ts";
 import type { Run } from "./exec.ts";
 import { createOpenrcService, openrcScript } from "./openrc.ts";
 import { createRunitService, runitDirs, runitRun } from "./runit.ts";
-import { detectServiceKind, type ServiceProbe, serviceCommands } from "./services.ts";
+import {
+  createServiceManager,
+  detectServiceKind,
+  type ServiceFactories,
+  type ServiceKind,
+  type ServiceProbe,
+  serviceCommands,
+} from "./services.ts";
 
 const me = { name: "me", home: "/home/me" };
 const command = {
@@ -247,5 +255,105 @@ describe("autostart", () => {
     expect(svc.status()).toMatchObject({ installed: true, startsAtBoot: false });
     svc.uninstall();
     expect(existsSync(join(dir, "oraknid.desktop"))).toBe(false);
+  });
+});
+
+describe("what doctor says to run, per service manager", () => {
+  it("autostart: nothing once the entry is there", () => {
+    const dir = mkdtempSync(join(tmpdir(), "oraknid-autostart-"));
+    const svc = createAutostartService({ dir, run: recorder().run });
+    expect(svc.status().fix).toMatch(/oraknid install/);
+    svc.install(command);
+    expect(svc.status()).toMatchObject({ installed: true, startsAtBoot: false, fix: null });
+  });
+
+  it("OpenRC: install, then rc-update, then start", () => {
+    const init = mkdtempSync(join(tmpdir(), "oraknid-openrc-"));
+    const runlevel = mkdtempSync(join(tmpdir(), "oraknid-runlevel-"));
+    let running = 3;
+    const svc = createOpenrcService({
+      initDir: init,
+      runlevelDir: runlevel,
+      user: me,
+      run: () => ({ status: running, stdout: "", stderr: "" }),
+    });
+    expect(svc.status().fix).toBe("Run: oraknid install");
+    writeFileSync(join(init, "oraknid"), "");
+    expect(svc.status().fix).toBe("Run: sudo rc-update add oraknid default");
+    writeFileSync(join(runlevel, "oraknid"), "");
+    expect(svc.status().fix).toBe("Run: sudo rc-service oraknid start");
+    running = 0;
+    expect(svc.status().fix).toBeNull();
+  });
+
+  it("runit: install, then link", () => {
+    const sv = mkdtempSync(join(tmpdir(), "oraknid-sv-"));
+    const links = mkdtempSync(join(tmpdir(), "oraknid-links-"));
+    const svc = createRunitService({ svDir: sv, linkDir: links, user: me, run: recorder().run });
+    expect(svc.status().fix).toBe("Run: oraknid install");
+    mkdirSync(join(sv, "oraknid"));
+    writeFileSync(join(sv, "oraknid", "run"), "");
+    expect(svc.status().fix).toBe(`Run: sudo ln -s ${sv}/oraknid ${links}/oraknid`);
+    mkdirSync(join(links, "oraknid"));
+    expect(svc.status().fix).toBeNull();
+  });
+});
+
+describe("switching service managers", () => {
+  /** A fake manager per kind: installed or not, and what it was asked to do. */
+  function fakes(installed: ServiceKind[]) {
+    const done: string[] = [];
+    const state = new Set(installed);
+    const make =
+      (kind: ServiceKind): (() => ServiceManager) =>
+      () => ({
+        install: () => {
+          state.add(kind);
+          done.push(`install ${kind}`);
+          return [{ step: `install ${kind}`, ok: true, detail: "done" }];
+        },
+        uninstall: () => {
+          state.delete(kind);
+          done.push(`uninstall ${kind}`);
+          return [{ step: `uninstall ${kind}`, ok: true, detail: "done" }];
+        },
+        status: () => ({
+          installed: state.has(kind),
+          enabled: state.has(kind),
+          active: false,
+          startsAtBoot: false,
+          detail: "",
+          fix: null,
+        }),
+      });
+    const factories: ServiceFactories = {
+      systemd: make("systemd"),
+      openrc: make("openrc"),
+      runit: make("runit"),
+      autostart: make("autostart"),
+    };
+    return { done, state, factories };
+  }
+
+  it("installing removes another kind's service first", () => {
+    const f = fakes(["autostart"]);
+    const svc = createServiceManager(probe("runit"), f.factories);
+    const steps = svc.install(command);
+    expect(f.done).toEqual(["uninstall autostart", "install runit"]);
+    expect(steps[0]?.step).toBe("Found the autostart entry: removing it");
+    expect([...f.state]).toEqual(["runit"]);
+  });
+
+  it("installing the same kind again leaves others alone and removes nothing", () => {
+    const f = fakes(["systemd"]);
+    createServiceManager(probe("systemd"), f.factories).install(command);
+    expect(f.done).toEqual(["install systemd"]);
+  });
+
+  it("uninstalling removes every kind found, not only this system's", () => {
+    const f = fakes(["openrc", "autostart"]);
+    createServiceManager(probe("systemd"), f.factories).uninstall();
+    expect(f.done).toEqual(["uninstall systemd", "uninstall openrc", "uninstall autostart"]);
+    expect(f.state.size).toBe(0);
   });
 });

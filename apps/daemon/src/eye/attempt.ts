@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   type Autonomy,
   type Budget,
@@ -48,6 +48,7 @@ import { SideEffects } from "../engine/effects.ts";
 import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 import type { InboxStore } from "../inbox/store.ts";
+import { jobHomeDir } from "../legs/job-home.ts";
 import { sandboxPlan } from "../legs/plan.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor, Supervised } from "../legs/supervisor.ts";
@@ -712,9 +713,10 @@ export async function runAttempt(
   const prepareServers = async () => {
     if (serversReady) return;
     serversReady = true;
-    // The Leg's home outlives this job: keys another job left there go first,
-    // so a job reaches only its own project's servers (Audit 2).
-    const ssh = join(d.legsDir, leg.legId, "home", ".ssh");
+    // In the job's own home on the Leg (Audit 2, S2-08): another job running
+    // on it never sees these keys. Emptied at every attempt all the same.
+    const ssh = join(jobHomeDir(d.legsDir, leg.legId, job.id), ".ssh");
+    mkdirSync(dirname(ssh), { recursive: true, mode: 0o700 });
     rmSync(ssh, { recursive: true, force: true });
     if (!d.servers || !job.serverIds?.length) return;
     mkdirSync(ssh, { recursive: true, mode: 0o700 });
@@ -1028,7 +1030,13 @@ export async function runAttempt(
         event("task.verifying", {});
         const plan = job.unsandboxed
           ? null
-          : sandboxPlan(d.registry.require(leg.legId), d.sandbox, d.legsDir, job.localPorts ?? []);
+          : sandboxPlan(
+              d.registry.require(leg.legId),
+              d.sandbox,
+              d.legsDir,
+              job.localPorts ?? [],
+              job.id,
+            );
         const check = () =>
           runVerify(task.verify, ws.cwd, plan, {
             signal,

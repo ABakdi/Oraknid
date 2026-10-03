@@ -26,6 +26,8 @@ export const SystemStatus = z.object({
     active: z.boolean(),
     startsAtBoot: z.boolean(),
     detail: z.string(),
+    /** What to run to put it right; null when nothing is wrong. */
+    fix: z.string().nullable(),
   }),
 });
 export type SystemStatus = z.infer<typeof SystemStatus>;

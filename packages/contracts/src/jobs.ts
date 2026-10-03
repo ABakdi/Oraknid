@@ -1,17 +1,20 @@
 import { z } from "zod";
-import { Id } from "./common.ts";
+import { Id, Timestamp } from "./common.ts";
 import {
   Autonomy,
   Budget,
   BudgetLimit,
+  EyeMessage,
   Job,
   JobInput,
   JobState,
   Project,
   RepoName,
+  SessionView,
   SilkEntry,
   Task,
 } from "./entities.ts";
+import { Event } from "./events.ts";
 
 // Creating and following projects and jobs (docs/01-Specification/Jobs-and-Projects.md).
 
@@ -245,3 +248,38 @@ export const SilkByJob = z.object({
   entries: z.array(SilkEntry),
 });
 export type SilkByJob = z.infer<typeof SilkByJob>;
+
+/** One attempt of a task, as an export carries it. */
+export const AttemptRecord = z.object({
+  id: Id,
+  taskId: Id,
+  legId: Id,
+  legModelId: Id,
+  effort: z.string().nullable(),
+  startedAt: Timestamp,
+  endedAt: Timestamp.nullable(),
+  outcome: z.string().nullable(),
+  escalations: z.array(z.string()),
+});
+export type AttemptRecord = z.infer<typeof AttemptRecord>;
+
+/**
+ * A job's full record, for a download (`jobs.export`): the job and its plan
+ * (tasks and their edges), every attempt, session, event and Silk entry,
+ * the conversation with The Eye and the result. Secrets excluded: known
+ * secret values and secret-shaped strings are scrubbed, string by string.
+ */
+export const JobExport = z.object({
+  format: z.literal("oraknid.job-export"),
+  version: z.literal(1),
+  exportedAt: Timestamp,
+  job: JobView,
+  attempts: z.array(AttemptRecord),
+  sessions: z.array(SessionView),
+  events: z.array(Event),
+  silk: z.array(SilkEntry),
+  conversation: z.array(EyeMessage),
+  /** Null until the job has a result (a draft, say). */
+  result: JobResult.nullable(),
+});
+export type JobExport = z.infer<typeof JobExport>;

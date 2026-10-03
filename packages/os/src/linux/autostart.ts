@@ -73,7 +73,10 @@ export function createAutostartService(options: AutostartOptions = {}): ServiceM
         startsAtBoot: false,
         detail: installed
           ? "Starts when I log in to a desktop session (no service manager I know)."
-          : "No service manager I know. Run: oraknid install (an autostart entry for a desktop session)",
+          : "No service manager I know: nothing starts Oraknid at login yet.",
+        fix: installed
+          ? null
+          : "Run: oraknid install (an autostart entry for a desktop session), or add `oraknid run` to your init system",
       };
     },
   };

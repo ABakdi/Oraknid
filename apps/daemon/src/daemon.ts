@@ -46,8 +46,10 @@ import { eyeProgram } from "./eye/program.ts";
 import { forgetGuidance, recordAnswer, resumeConversations } from "./eye/talk.ts";
 import { Helper } from "./helper/service.ts";
 import { isLocalRequest } from "./http/guard.ts";
+import { requestIds, tagConsoleWithRequestIds } from "./http/request-id.ts";
 import { InboxStore } from "./inbox/store.ts";
 import { startHealthChecks } from "./legs/health.ts";
+import { removeJobHomes } from "./legs/job-home.ts";
 import { LegLogins } from "./legs/login.ts";
 import { PlanUsage } from "./legs/plan-usage.ts";
 import { LegRegistry } from "./legs/registry.ts";
@@ -62,7 +64,7 @@ import { linuxOs, type OsDeps } from "./os/context.ts";
 import { countActiveJobs, createInhibitController } from "./os/inhibit-controller.ts";
 import { startMetricsLoop } from "./os/metrics-loop.ts";
 import { Secrets } from "./os/secrets.ts";
-import { DEFAULT_HOST, DEFAULT_PORT, type Paths } from "./paths.ts";
+import { DEFAULT_HOST, DEFAULT_PORT, isDefaultDataDir, type Paths } from "./paths.ts";
 import { Servers } from "./servers/service.ts";
 import { MAX_RUNNING_JOBS, readSetting } from "./settings.ts";
 import { SilkStore } from "./silk/store.ts";
@@ -138,7 +140,11 @@ export async function startDaemon(options: DaemonOptions) {
   chmodSync(paths.dataDir, 0o700);
   setShadowRoot(join(paths.dataDir, "shadow"));
   const db = await openDatabase({ file: options.dbFile ?? paths.db, backupsDir: paths.backups });
-  const secrets = new Secrets(paths.dataDir, os.keychain);
+  // The keychain entries of before belong to the default data folder alone (Audit 2, S2-23).
+  const secrets = new Secrets(paths.dataDir, os.keychain, {
+    ownsLegacy: isDefaultDataDir(paths.dataDir),
+    log: (m) => console.log(m),
+  });
   const bus = new EventBus(db, now);
   // Secrets never reach the event log (BR-13).
   bus.scrub = (text) => scrubSecrets(text, secrets.known());
@@ -428,6 +434,10 @@ export async function startDaemon(options: DaemonOptions) {
     next();
   });
 
+  // An id for every API call: in its response, its errors and its log lines (API-Contract).
+  tagConsoleWithRequestIds();
+  app.use("/api", requestIds);
+
   // Every client is a paired device, or the CLI (Security → The daemon's own surface).
   app.use("/api", (req, res, next) => {
     if (req.path === "/devices/pairComplete") return next();
@@ -524,6 +534,10 @@ export async function startDaemon(options: DaemonOptions) {
     inhibitor: os.inhibitor,
     activeJobs: countActiveJobs(db),
   });
+  const legConfigDir = (legId: string) => {
+    const c = registry.get(legId)?.config as { configDir?: unknown } | undefined;
+    return typeof c?.configDir === "string" ? c.configDir : null;
+  };
   // Any job state change may start or end the need to stay awake.
   bus.subscribe((e) => {
     if (e.type === "job.state")
@@ -534,6 +548,8 @@ export async function startDaemon(options: DaemonOptions) {
       for (const item of inbox.list({ jobId: e.jobId, state: "open" })) inbox.withdraw(item.id);
       forgetJob(e.jobId);
       forgetGuidance(e.jobId);
+      // Its homes on the Legs go, keys and files (Audit 2, S2-08).
+      removeJobHomes(paths.legs, e.jobId, legConfigDir);
     }
   });
 
@@ -790,7 +806,10 @@ function webRemote(): string | null {
 
 /** An error the API's clients read like any other (oRPC's shape). */
 function rpcError(res: express.Response, status: number, code: string, message: string) {
-  res.status(status).json({ json: { defined: false, code, status, message } });
+  const requestId = res.locals.requestId as string | undefined;
+  res.status(status).json({
+    json: { defined: false, code, status, message, ...(requestId ? { data: { requestId } } : {}) },
+  });
 }
 
 /**

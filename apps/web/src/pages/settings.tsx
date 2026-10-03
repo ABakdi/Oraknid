@@ -227,7 +227,11 @@ function SystemCard() {
         {d.inhibitor.problem ? row(t("Sleep problem"), false, d.inhibitor.problem) : null}
         {row(t("Sandbox"), d.sandbox.available, d.sandbox.detail)}
         {row(t("Secrets"), d.secrets.available, d.secrets.detail)}
-        {row(t("Service"), d.service.startsAtBoot, d.service.detail)}
+        {row(
+          t("Service"),
+          !d.service.fix,
+          d.service.fix ? `${d.service.detail} ${d.service.fix}` : d.service.detail,
+        )}
         {!d.secrets.available ? (
           <div className="flex flex-wrap gap-2 pt-1">
             <Input

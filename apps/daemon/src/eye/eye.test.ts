@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1248,7 +1248,18 @@ describe("the interview (M1.7)", () => {
 
   it("gives a project's server to its jobs: the document, an alias and key in the Leg's home (ADR-026)", async () => {
     const ssh = await fakeSsh({ password: "pw" });
-    const { api, id, leg, dataDir } = await eye(good, {
+    // What the session's ~/.ssh held while it ran: the job's home goes when it ends.
+    const seen = new Map<string, string>();
+    let home: string | null = null;
+    const looking = (t: TurnContext) => {
+      if (t.home && !home) {
+        home = t.home;
+        const dir = join(t.home, ".ssh");
+        for (const f of readdirSync(dir)) seen.set(f, readFileSync(join(dir, f), "utf8"));
+      }
+      return good(t);
+    };
+    const { api, id, leg, dataDir } = await eye(looking, {
       draft: true,
       plan: { ...HELLO, tasks: [HELLO.tasks[0] as WebPlan["tasks"][number]], jobVerify: [] },
     });
@@ -1270,14 +1281,15 @@ describe("the interview (M1.7)", () => {
       const turn = leg.log.find((t) => t.system.includes("# Servers this job may use"));
       expect(turn?.system).toContain("## VPS One — `ssh oraknid-vps-one`");
       const legRow = (await api.legs.list())[0];
-      const sshDir = join(dataDir, "legs", legRow?.id as string, "home", ".ssh");
-      const configs = readFileSync(join(sshDir, "config"), "utf8");
+      const jobHome = join(dataDir, "legs", legRow?.id as string, "jobs", id, "home");
+      expect(home).toBe(jobHome);
+      const configs = seen.get("config") ?? "";
       expect(configs).toContain("Host oraknid-vps-one");
       expect(configs).toContain("StrictHostKeyChecking yes");
-      expect(readFileSync(join(sshDir, "oraknid_known_hosts"), "utf8")).toMatch(
-        /^\[127\.0\.0\.1\]:\d+ ssh-ed25519 /,
-      );
-      expect(readFileSync(join(sshDir, "oraknid-vps-one"), "utf8")).toContain("PRIVATE KEY");
+      expect(seen.get("oraknid_known_hosts")).toMatch(/^\[127\.0\.0\.1\]:\d+ ssh-ed25519 /);
+      expect(seen.get("oraknid-vps-one")).toContain("PRIVATE KEY");
+      // The job's home on the Leg, keys and all, went with the job (Audit 2, S2-08).
+      expect(existsSync(jobHome)).toBe(false);
       // Refreshed after the job: version 2.
       expect((await api.servers.state({ id: server.id }))?.version).toBe(2);
     } finally {

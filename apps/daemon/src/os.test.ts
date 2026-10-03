@@ -161,7 +161,7 @@ describe("system status", () => {
     expect(s.inhibitor.held).toBe(false);
     expect(s.secrets.kind).toBe("none");
     expect(s.sandbox.available).toBe(true);
-    expect(s.service.detail).toMatch(/oraknid install/);
+    expect(s.service.fix).toMatch(/oraknid install/);
   });
 });
 
