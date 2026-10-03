@@ -311,6 +311,11 @@ export async function startDaemon(options: DaemonOptions) {
     runner,
     tools: toolRegistry,
     drafts: { db, bus, silk, skills, brain, now },
+    // What it reads of mine, as the pages do (ADR-041).
+    mail,
+    servers: serverService,
+    inbox,
+    decisions,
     logsDir: paths.logs,
     workDir: join(paths.dataDir, "helper"),
     now,

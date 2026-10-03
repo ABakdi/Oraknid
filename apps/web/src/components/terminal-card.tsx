@@ -27,7 +27,11 @@ export function TerminalCard({ onChange }: { onChange?: (on: boolean) => void } 
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <label htmlFor="term-on" className="flex items-center gap-2 text-sm">
+        <label
+          htmlFor="term-on"
+          data-help="settings.terminal-switch"
+          className="flex items-center gap-2 text-sm"
+        >
           <Switch
             id="term-on"
             checked={on.data}

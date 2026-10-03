@@ -1,0 +1,10 @@
+[
+  ["getting-started", "Getting started", "Install it, open it, set your PIN, add a Leg."],
+  ["jobs", "Jobs and The Eye", "Starting work, following it, talking to The Eye."],
+  ["legs", "Legs", "The agents and models Oraknid hands work to."],
+  ["projects", "Projects, repos and servers", "Where work happens, and what it may reach."],
+  ["phone", "Your phone, from anywhere", "Pairing, the PIN, and The Nest."],
+  ["mail", "Mail", "Your accounts, and agents that draft for you."],
+  ["security", "Security", "What keeps your computer yours."],
+  ["nest", "Hosting a Nest", "Your own relay, private or public, in one script."]
+]

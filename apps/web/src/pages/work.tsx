@@ -391,7 +391,7 @@ export function WorkPage({ draftId }: { draftId?: string }) {
             <CardTitle className="text-sm">{t("Options")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
-            <div className="space-y-1.5">
+            <div data-help="work.project" className="space-y-1.5">
               <Label>{t("Project")}</Label>
               {draftId ? (
                 <div className="font-medium">{shownProject?.name ?? "…"}</div>
@@ -505,7 +505,7 @@ export function WorkPage({ draftId }: { draftId?: string }) {
               </div>
             ) : null}
 
-            <div className="space-y-1.5">
+            <div data-help="work.skill" className="space-y-1.5">
               <Label>{t("Method (skill)")}</Label>
               <Select value={skill} onValueChange={setSkill}>
                 <SelectTrigger className="w-full">
@@ -539,7 +539,7 @@ export function WorkPage({ draftId }: { draftId?: string }) {
               />
             </div>
 
-            <fieldset className="min-w-0 space-y-1">
+            <fieldset data-help="work.legs" className="min-w-0 space-y-1">
               <legend className="font-medium">{t("Legs")}</legend>
               <div className="text-xs text-muted-foreground">
                 {t("None ticked: any healthy Leg.")}
@@ -570,7 +570,7 @@ export function WorkPage({ draftId }: { draftId?: string }) {
             </fieldset>
 
             <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2 space-y-1.5">
+              <div data-help="work.autonomy" className="col-span-2 space-y-1.5">
                 <Label>{t("Autonomy")}</Label>
                 <Select value={autonomy} onValueChange={(v) => setAutonomy(v as Autonomy)}>
                   <SelectTrigger className="w-full">
@@ -583,7 +583,7 @@ export function WorkPage({ draftId }: { draftId?: string }) {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
+              <div data-help="work.tokens" className="space-y-1.5">
                 <Label htmlFor="w-tok">{t("Token limit")}</Label>
                 <Input
                   id="w-tok"
@@ -593,7 +593,7 @@ export function WorkPage({ draftId }: { draftId?: string }) {
                   onChange={(e) => setTokensLimit(e.target.value.replace(/\D/g, ""))}
                 />
               </div>
-              <div className="space-y-1.5">
+              <div data-help="work.alarm" className="space-y-1.5">
                 <Label htmlFor="w-hours">{t("Alarm (hours)")}</Label>
                 <Input
                   id="w-hours"
@@ -602,7 +602,7 @@ export function WorkPage({ draftId }: { draftId?: string }) {
                   onChange={(e) => setHours(e.target.value.replace(/\D/g, ""))}
                 />
               </div>
-              <div className="col-span-2 space-y-1.5">
+              <div data-help="work.quota-share" className="col-span-2 space-y-1.5">
                 <Label htmlFor="w-share">{t("Most of a Leg's quota window to use (%)")}</Label>
                 <Input
                   id="w-share"
@@ -619,7 +619,7 @@ export function WorkPage({ draftId }: { draftId?: string }) {
                 {t("Checks and inputs")}
               </summary>
               <div className="mt-2 space-y-3">
-                <div className="space-y-1.5">
+                <div data-help="work.checks" className="space-y-1.5">
                   <Label htmlFor="w-verify">{t("Job-level checks (one per line)")}</Label>
                   <Textarea
                     id="w-verify"
@@ -630,7 +630,7 @@ export function WorkPage({ draftId }: { draftId?: string }) {
                     placeholder="pnpm test"
                   />
                 </div>
-                <div className="space-y-1.5">
+                <div data-help="work.inputs" className="space-y-1.5">
                   <Label htmlFor="w-inputs">{t("Inputs (files in the project, or links)")}</Label>
                   <Textarea
                     id="w-inputs"
@@ -665,7 +665,12 @@ export function WorkPage({ draftId }: { draftId?: string }) {
                     <Trash2 className="size-4" />
                     {t("Delete")}
                   </Button>
-                  <Button className="gap-1" disabled={!!why || busy} onClick={start}>
+                  <Button
+                    data-help="work.start"
+                    className="gap-1"
+                    disabled={!!why || busy}
+                    onClick={start}
+                  >
                     <Play className="size-4" />
                     {busy ? t("Starting…") : (why ?? t("Start"))}
                   </Button>
@@ -679,6 +684,7 @@ export function WorkPage({ draftId }: { draftId?: string }) {
               </Label>
               <Textarea
                 id="w-goal"
+                data-help="work.goal"
                 className="min-h-48 flex-1"
                 value={goal}
                 onChange={(e) => setGoal(e.target.value)}
@@ -687,7 +693,7 @@ export function WorkPage({ draftId }: { draftId?: string }) {
               <ErrorNote error={error} />
               <div className="flex flex-wrap items-center justify-end gap-2">
                 {fixes}
-                <Button disabled={!!why || busy} onClick={begin}>
+                <Button data-help="work.continue" disabled={!!why || busy} onClick={begin}>
                   {busy ? t("Saving…") : (why ?? t("Continue"))}
                 </Button>
               </div>
@@ -711,7 +717,7 @@ function Drafts() {
   if (!drafts.length) return null;
   const names = new Map((projects.data ?? []).map((p) => [p.id, p.name]));
   return (
-    <section aria-label={t("Drafts")} className="space-y-1.5">
+    <section data-help="work.drafts" aria-label={t("Drafts")} className="space-y-1.5">
       <h2 className="font-mono text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         {t("Drafts")}
       </h2>

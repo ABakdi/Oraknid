@@ -62,7 +62,7 @@ export function StorageCard() {
     }
   };
   return (
-    <Card>
+    <Card data-help="settings.storage">
       <CardHeader>
         <CardTitle>{t("Storage")}</CardTitle>
         <CardDescription>

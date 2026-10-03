@@ -319,6 +319,7 @@ export function MailPage({
               variant="ghost"
               size="icon"
               className="shrink-0 lg:hidden"
+              data-help="mail.folders"
               aria-label={t("Folders and accounts")}
               onClick={() => setDrawer(true)}
             >
@@ -328,6 +329,7 @@ export function MailPage({
               <Search className="pointer-events-none absolute top-2 left-2 size-4 text-muted-foreground" />
               <Input
                 ref={search}
+                data-help="mail.search"
                 className="h-8 pl-8"
                 placeholder={t("Search this folder  /")}
                 value={query}
@@ -342,6 +344,7 @@ export function MailPage({
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
+                  data-help="mail.check"
                   variant="ghost"
                   size="icon"
                   className="shrink-0"
@@ -486,7 +489,7 @@ function MailSidebar({
 }) {
   return (
     <>
-      <Button className="w-full gap-1" onClick={onWrite}>
+      <Button data-help="mail.write" className="w-full gap-1" onClick={onWrite}>
         <PenSquare className="size-4" />
         {t("Write")}
         <kbd className="ml-auto hidden rounded border border-primary-foreground/40 px-1 text-[10px] lg:inline">
@@ -521,7 +524,13 @@ function MailSidebar({
         />
       ))}
       {away ? null : (
-        <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={onAdd}>
+        <Button
+          data-help="mail.add-account"
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start gap-2"
+          onClick={onAdd}
+        >
           <Plus className="size-4" />
           {t("Add an account")}
         </Button>
@@ -572,6 +581,7 @@ function AccountFolders({
               variant="ghost"
               size="icon"
               className="size-7 shrink-0"
+              data-help="mail.account-menu"
               aria-label={t("{name}: account menu", { name: account.name })}
             >
               <MoreHorizontal className="size-4" />
@@ -586,11 +596,17 @@ function AccountFolders({
             </DropdownMenuItem>
             {away ? null : (
               <>
-                <DropdownMenuItem onSelect={() => onManage({ kind: "reconnect", account })}>
+                <DropdownMenuItem
+                  data-help="mail.reconnect"
+                  onSelect={() => onManage({ kind: "reconnect", account })}
+                >
                   <Plug className="size-4" />
                   {t("Reconnect…")}
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => onManage({ kind: "settings", account })}>
+                <DropdownMenuItem
+                  data-help="mail.account-settings"
+                  onSelect={() => onManage({ kind: "settings", account })}
+                >
                   <Settings2 className="size-4" />
                   {t("Account settings…")}
                 </DropdownMenuItem>

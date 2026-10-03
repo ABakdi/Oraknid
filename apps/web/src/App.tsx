@@ -11,6 +11,7 @@ import { unlock } from "@/lib/lock";
 import { remote } from "@/lib/remote";
 import { ThemeProvider } from "@/lib/theme";
 import { ChatsPage } from "@/pages/chats";
+import { DocsPage } from "@/pages/docs";
 import { InboxPage } from "@/pages/inbox";
 import { JobRedirect } from "@/pages/job-redirect";
 import { LegsPage } from "@/pages/legs";
@@ -143,6 +144,10 @@ export function App() {
                 <Route path="/terminal/:target">{(p) => <TerminalPage target={p.target} />}</Route>
                 <Route path="/chats/:id">{(p) => <ChatsPage id={p.id} />}</Route>
                 <Route path="/logs/:tab?">{(p) => <LogsPage tab={p.tab} />}</Route>
+                {/* The guide (ADR-041): a page, and a heading in it. */}
+                <Route path="/docs/:page?/:section?">
+                  {(p) => <DocsPage page={p.page} section={p.section} />}
+                </Route>
                 <Route path="/settings/:tab?">{(p) => <SettingsPage tab={p.tab} />}</Route>
                 <Route>
                   <OverviewPage />

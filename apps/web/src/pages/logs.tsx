@@ -103,6 +103,7 @@ function AuditLog() {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <Input
+          data-help="logs.search"
           className="w-full sm:w-48"
           placeholder={t("Text…")}
           aria-label={t("Search the text")}

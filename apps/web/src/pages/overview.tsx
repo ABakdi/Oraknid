@@ -109,7 +109,7 @@ export function OverviewPage() {
 
       <PlanUsageCard />
 
-      <section aria-label={t("Legs now")}>
+      <section aria-label={t("Legs now")} data-help="overview.legs">
         <h2 className="mb-2 text-sm font-medium text-muted-foreground">{t("Legs now")}</h2>
         <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
           {(legs.data ?? []).map((leg) => {
@@ -195,7 +195,7 @@ export function OverviewPage() {
           </CardContent>
         </Card>
         <div className="min-w-0 space-y-4">
-          <Card>
+          <Card data-help="overview.problems">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-sm">
                 <AlertTriangle className="size-4" />
@@ -312,7 +312,12 @@ function RunningNow({ jobs, names }: { jobs: JobView[]; names: Map<string, strin
       Number(!!a.queuedAt) - Number(!!b.queuedAt) || (b.startedAt ?? 0) - (a.startedAt ?? 0),
   );
   return (
-    <section id="running-now" aria-label={t("Running now")} className="scroll-mt-4">
+    <section
+      id="running-now"
+      aria-label={t("Running now")}
+      className="scroll-mt-4"
+      data-help="overview.running"
+    >
       <h2 className="mb-2 text-sm font-medium text-muted-foreground">{t("Running now")}</h2>
       {list.length === 0 ? (
         <div className="rounded-xl border bg-card/60 px-3 py-3 text-sm text-muted-foreground">

@@ -1,4 +1,5 @@
 import {
+  BookOpen,
   Bot,
   Coffee,
   Cog,
@@ -23,6 +24,7 @@ import {
 import { type ReactNode, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Link, useLocation } from "wouter";
+import { HelpRing } from "@/components/help-ring";
 import { HelperButton } from "@/components/helper";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -61,6 +63,7 @@ const NAV = [
   { href: "/terminal", label: "Terminal", icon: SquareTerminal },
   { href: "/skills", label: "Skills", icon: Sparkles },
   { href: "/logs", label: "Logs", icon: ScrollText },
+  { href: "/docs", label: "Docs", icon: BookOpen },
   { href: "/settings", label: "Settings", icon: Cog },
 ];
 /** On a phone: four tabs and "More" (Web-UI → Layout). */
@@ -83,6 +86,7 @@ const GO: Record<string, string> = {
   t: "/terminal",
   m: "/mail",
   k: "/skills",
+  d: "/docs",
   ",": "/settings",
 };
 
@@ -101,6 +105,7 @@ export const SHORTCUTS: { keys: string; does: string; where?: string }[] = [
   { keys: "g t", does: "Terminal" },
   { keys: "g m", does: "Mail" },
   { keys: "g k", does: "Skills" },
+  { keys: "g d", does: "Docs" },
   { keys: "g ,", does: "Settings" },
   { keys: "1 … 9", does: "Go to that tab", where: "Pages with tabs" },
   { keys: "Ctrl Shift Enter", does: "New terminal", where: "Terminal" },
@@ -240,6 +245,7 @@ export function Shell({ children }: { children: ReactNode }) {
           variant="outline"
           size="sm"
           className="hidden w-60 justify-start gap-2 bg-field font-normal text-muted-foreground shadow-none hover:text-foreground sm:flex lg:w-72"
+          data-help="nav.search"
           onClick={() => setPalette(true)}
         >
           <Search className="size-4" />
@@ -251,6 +257,7 @@ export function Shell({ children }: { children: ReactNode }) {
           size="icon"
           className="sm:hidden"
           aria-label={t("Search or run")}
+          data-help="nav.search"
           onClick={() => setPalette(true)}
         >
           <Search className="size-4" />
@@ -268,12 +275,13 @@ export function Shell({ children }: { children: ReactNode }) {
         <Button
           variant="ghost"
           size="icon"
+          data-help="nav.theme"
           aria-label={t("Switch theme")}
           onClick={() => set(resolved === "dark" ? "light" : "dark")}
         >
           {resolved === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
         </Button>
-        <Button asChild size="sm" className="hidden gap-1 sm:flex">
+        <Button data-help="nav.new-work" asChild size="sm" className="hidden gap-1 sm:flex">
           <Link href="/new">
             <Plus className="size-4" />
             {t("New work")}
@@ -294,6 +302,7 @@ export function Shell({ children }: { children: ReactNode }) {
               <Link
                 key={href}
                 href={href}
+                data-help={`nav.${label.toLowerCase()}`}
                 aria-label={folded ? t(label) : undefined}
                 className={cn(
                   // The page I'm on: lit, with a violet edge, like the palette's chosen row.
@@ -331,6 +340,7 @@ export function Shell({ children }: { children: ReactNode }) {
             variant="ghost"
             size="sm"
             className={cn("justify-start gap-2 text-muted-foreground", folded && "justify-center")}
+            data-help="nav.fold"
             onClick={toggle}
             aria-label={folded ? t("Unfold the sidebar") : t("Fold the sidebar")}
             title={folded ? t("Unfold the sidebar ( [ )") : t("Fold the sidebar ( [ )")}
@@ -342,6 +352,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <main className="min-w-0 flex-1 overflow-y-auto px-3 pb-24 pt-4 md:px-6 md:pb-8">
           {children}
           <HelperButton />
+          <HelpRing />
         </main>
       </div>
 
@@ -371,6 +382,7 @@ export function Shell({ children }: { children: ReactNode }) {
         ))}
         <button
           type="button"
+          data-help="nav.more"
           aria-expanded={more}
           onClick={() => setMore((m) => !m)}
           className={cn(
@@ -401,6 +413,7 @@ export function Shell({ children }: { children: ReactNode }) {
             <Link
               key={href}
               href={href}
+              data-help={`nav.${label.toLowerCase().replace(/ /g, "-")}`}
               onClick={() => setMore(false)}
               className={cn(
                 "flex min-h-11 items-center gap-2.5 rounded-md px-3 text-sm hover:bg-accent",

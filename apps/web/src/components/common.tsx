@@ -1,8 +1,9 @@
 import { ChevronLeft } from "lucide-react";
 import type { ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
+import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -184,7 +185,16 @@ const keyed = <T,>(xs: T[], prefix: string) =>
  * rendered, links open in a new tab, and long lines wrap or scroll inside
  * their block, never past it.
  */
-export function Markdown({ text, className }: { text: string; className?: string }) {
+export function Markdown({
+  text,
+  className,
+  components,
+}: {
+  text: string;
+  className?: string;
+  /** Elements drawn differently (the guide's headings, with their anchors). */
+  components?: Components;
+}) {
   return (
     <div
       className={cn(
@@ -204,7 +214,13 @@ export function Markdown({ text, className }: { text: string; className?: string
         // A line break is kept: Oraknid and the Legs write line by line.
         remarkPlugins={[remarkGfm, remarkBreaks]}
         components={{
-          a: ({ node: _n, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+          // A page of Oraknid's own (the helper's links to the guide) opens here, not in a new tab.
+          a: ({ node: _n, href, ...props }) =>
+            href && /^\/(?!\/)/.test(href) ? (
+              <Link href={href} {...props} />
+            ) : (
+              <a href={href} {...props} target="_blank" rel="noreferrer" />
+            ),
           // An image would be fetched by my browser as soon as I look: a way
           // out for anything an agent read (Audit 2). Shown as text instead.
           img: ({ alt, src }) => (
@@ -212,6 +228,7 @@ export function Markdown({ text, className }: { text: string; className?: string
               [{t("image")}: {alt || "—"} {typeof src === "string" ? src : ""}]
             </span>
           ),
+          ...components,
         }}
       >
         {text}

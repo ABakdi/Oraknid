@@ -184,9 +184,37 @@ Not run against a real account (only `claude --help`).
 - [ ] A Repos page: accounts, repositories, and in one: code, commits with diffs, branches, pull requests, its project
 
 ### M13.10 — The guide inside, and a helper that shows me ([[ADR-041-Docs-And-A-Guiding-Helper]])
-- [ ] Docs in the sidebar: the guide's pages, a search, Ask the helper about this
-- [ ] The helper knows the guide, a map of the screens, and my data (mail included) through the API
-- [ ] The helper navigates, highlights a control, and fills a field for me to check
+- [x] Docs in the sidebar: the guide's pages, a search, Ask the helper about this
+- [x] The helper knows the guide, a map of the screens, and my data (mail included) through the API
+- [x] The helper navigates, highlights a control, and fills a field for me to check
+
+Tested (M13.10, 2026-10-03): `pnpm check` green. Daemon
+(`apps/daemon/src/helper/helper.test.ts`): the helper reads my mail
+through the mail service (accounts, a search, a thread from a stand-in
+IMAP server), the next round gets it wrapped as untrusted data with the
+injected "ignore all previous instructions" inside the wrapper, and the
+conversation keeps only a short result; servers, Legs' usage, inbox and
+settings read; navigate, highlight and fill end the turn in one round,
+a wrong input fails; the route, the guide pages and the screens sent by
+the web app reach the prompt; a context too large is refused. Web: every
+id of the help map (82 controls, 103 with the tabs) is a `data-help` in the screens
+(`help-map.test.ts`); the guide is the site's, its search puts headings
+first, its links map to the app (`guide.test.ts`); navigate, highlight
+(page and tab, a menu and a dialog opened on the way, a folded
+`<details>`, scroll still under reduced motion, the ring gone on a click
+or a new page) and fill as typed (`helper-show.test.tsx`); the panel
+sends route, guide and screens, shows a reply's actions once, and steps
+aside on a phone (`helper.test.tsx`). By hand in headless Chromium on a
+sample daemon (fake OS, scripted Leg, stand-in brain, its own data
+folder, port 7533) at 1440 and 390 px: Docs, a search ("pair phone",
+11 places), a heading's address, Ask the helper about this, a reply that
+rings the terminal switch in Settings → Security, one that opens a
+mail account's menu and settings dialog (on a phone through the
+folders drawer) to ring Auto-send, one that opens the piano project's
+Work tab, one that fills New work's goal, and one that reads the
+invoice from the mail and answers; no page errors, nothing past the
+right edge. The site still builds, its page list now read from
+`apps/site/docs/guide.json`.
 
 ## Exit criterion
 

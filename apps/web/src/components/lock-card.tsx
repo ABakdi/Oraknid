@@ -72,7 +72,7 @@ export function LockCard() {
             }
             disabled={s.data.remote}
           >
-            <SelectTrigger id="idle" className="w-36">
+            <SelectTrigger id="idle" data-help="settings.idle-lock" className="w-36">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -101,6 +101,7 @@ export function LockCard() {
           </p>
         ) : (
           <form
+            data-help="settings.pin"
             className="space-y-3 border-t pt-4"
             onSubmit={(e) => {
               e.preventDefault();

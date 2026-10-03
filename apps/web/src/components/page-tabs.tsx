@@ -28,6 +28,7 @@ export function PageTabs({
   header,
   className,
   keys = true,
+  help,
 }: {
   base: string;
   tab: string | undefined;
@@ -36,7 +37,13 @@ export function PageTabs({
   className?: string;
   /** `1`…`9` switch these tabs; off for tabs inside another page's tab. */
   keys?: boolean;
+  /**
+   * Each tab carries `data-help="<help>.tab.<id>"` for the helper to point
+   * at (ADR-041): by default the page's first segment, "job" for a job's tabs.
+   */
+  help?: string;
 }) {
+  const helpKey = help ?? (/\/work\/[^/]+$/.test(base) ? "job" : base.split("/")[1]);
   const [, go] = useLocation();
   const current = tabs.find((x) => x.id === tab) ?? tabs[0];
   const [seen, setSeen] = useState<Set<string>>(() => new Set(current ? [current.id] : []));
@@ -82,6 +89,7 @@ export function PageTabs({
             key={x.id}
             type="button"
             role="tab"
+            data-help={`${helpKey}.tab.${x.id}`}
             aria-selected={x.id === current?.id}
             title={i < 9 ? `${x.label} (${i + 1})` : x.label}
             // The entry keeps what it was opened with (where I came from), only the tab changes.
