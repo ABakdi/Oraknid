@@ -20,7 +20,7 @@ lost at its bottom.
 
 ### M10.2 — Audit 2
 - [x] Four hostile reviews (remote, local, containment, web): [[Audit-2]]
-- [x] Every critical and high finding fixed, tested where it can be
+- [x] Every critical and high finding fixed, tested where it can be, except S2-02 (fixed in part, below)
 - [x] Its own network namespace for every sandbox (`pasta`, package `passt`), S2-21, done 2026-10-03: the internet, none of this computer's services except the ports a project lists (Projects → Network) and a Leg's own local model; OpenCode's server port forwarded in; a Leg's sign-in keeps the host network while it lasts ([[Sandboxing]]). Without `passt`, the host network is shared and `oraknid doctor` says so
 - [ ] The loader's code pinned on the phone, or a native app (S2-02)
 

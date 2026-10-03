@@ -14,6 +14,13 @@ I add as many Legs as I want, all optional (BR-4):
 
 A Leg is one account (or one local server). Each Leg has a name I choose.
 
+Legs are my data, not built in: what is in the code is the **kinds**
+(an adapter and its capability profile each), and I add, rename or
+remove Legs of those kinds at any time. On another computer, a fresh
+Oraknid starts with no Legs and nothing is copied over, logins
+included: I add them there with **Find agents** and log each one in
+from its card.
+
 ### Models within a Leg
 
 Most agents offer several models, often with effort or thinking levels.
@@ -64,7 +71,8 @@ installs nothing.
    model). Secrets go to the keychain (BR-13). For Claude Code, an empty
    config directory is created under Oraknid's data, and I log it in from
    its card: **Log in** opens Claude's own sign-in page, and I paste the
-   code it shows back into the page. Oraknid runs the official
+   code it shows back into the page (Claude may first email me a
+   link to sign in; the code to paste appears after I follow it). Oraknid runs the official
    `claude auth login` for that folder and never sees the password. A Leg is one
    account: one login covers all its models, and it lasts. My own
    `~/.claude` is never a Leg's config directory: the sandbox can write

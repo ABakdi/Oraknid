@@ -3,8 +3,8 @@
 **Is:** the one place I watch and steer everything. It's simple to use
 and packed with features, with nothing hidden in deep menus. Live
 everywhere, usable on a phone.
-**Is not:** a chat app. Conversation with Legs is limited to answering
-their questions and redirecting The Eye.
+**Is not:** only a chat app. Work goes through jobs; Chats and The
+Eye's conversation sit beside them ([[Chats-and-Helper]]).
 
 ## Look
 
@@ -41,6 +41,12 @@ their questions and redirecting The Eye.
   lock screen and pairing; PNG icons (192, 512, maskable) and an
   `apple-touch-icon` for a phone's home screen; `logo.svg` is the mark
   alone. The Nest's loader uses the same.
+
+- **A new mark is being chosen** ([[Phase-11-Workspace]] → M11.6): a
+  big octopus eye with spider legs from its edges, all pointing down,
+  two at the top meeting in a V. Three concepts are in
+  `docs/assets/logo-concepts/`; the chosen one replaces the current
+  mark in the app, the loader and the site.
 
 ## Layout
 
@@ -139,8 +145,8 @@ their questions and redirecting The Eye.
   log: text, tool calls with their commands and results, permission
   decisions, usage. It follows along while a session runs. The task
   drawer shows the task's own sessions the same way.
-- **The Eye**: the prompt to The Eye and the conversation so far, above
-  The Web. Each reply says what The Eye made of my message and what it
+- **The Eye**: its own tab, the conversation with The Eye filling it
+  like a chat, the prompt at the bottom. Each reply says what The Eye made of my message and what it
   did.
 - **Result**: once the job is completed, where the work is (folder,
   branch, commits), Open (on this computer) and Merge into the work

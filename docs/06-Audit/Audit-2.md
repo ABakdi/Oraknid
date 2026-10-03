@@ -50,7 +50,7 @@ Then [[ADR-029-App-Lock]]: a PIN on every device, checked by the daemon.
 ## Where it stands (2026-10-03)
 
 23 findings: 17 fixed, 4 fixed in part (S2-02, S2-08, S2-13, S2-15),
-2 open (S2-22, S2-23). Every critical and high finding is fixed;
+2 open (S2-22, S2-23). Every critical and high finding is fixed except S2-02 (critical, fixed in part);
 S2-21 closed on 2026-10-03 with a network of its own for every sandbox
 ([[Sandboxing]]). Still to come: the loader's code pinned or a native
 app (S2-02), a home per job on a shared Leg (S2-08), keychain entries

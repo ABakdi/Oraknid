@@ -23,7 +23,7 @@ A job can be any goal a skill describes, not just software. Email first.
 - [x] Every send is an approval (tested end to end with a stand-in mail server)
 - [x] Every send goes through the outbox (BR-6): the same message is never sent twice in a job, and one caught mid-way by a crash is asked of me ("did it go out?") before anything else
 - [ ] An automatic Sent-folder check for that question (a tool-declared confirming read)
-- [ ] On my real inbox: set up an email MCP server in Settings → Tools and run the skill
+- [ ] On my real inbox: run the skill (set aside on 2026-10-02, "leave the email tools for later"; since Phase 12 the built-in `email` tool on a Mail account takes the place of an email MCP server, [[ADR-032-Email]])
 
 ## Exit criterion
 

@@ -36,13 +36,15 @@ can't use what I use at home; and The Nest should serve other people.
 - [x] Set up in place: a Leg, a skill's tools, GitHub, a server, the terminal, a skill file, each in a dialog with the Settings card
 - [x] A second step, naming what happens, before what can't be taken back
 - [x] Missing options: rename and remove a Leg, edit a server, a skill's earlier versions, a copy of a built-in, New work from a project, older log pages
+- [x] Controls that did nothing taken out (a made-up money tile showing $0.00 among them)
+- [x] New work on an ended job: talking to The Eye on a finished job (my piano project) did nothing; it now starts a follow-up job in the same project, from where the last one ended ([[Jobs-and-Projects]] → Follow-up jobs)
 - [x] The mark: an octopus eye on eight spider legs, violet and amber, with icons for a phone's home screen ([[Web-UI]] → Look)
 
 ### M11.6 — A look of its own, and a site (2026-10-03)
 - [x] The app's own look, following the mark, in place of the stock component look: ink surfaces, violet, IBM Plex Sans and JetBrains Mono ([[Web-UI]] → Look)
 - [x] A product site at The Nest's root: what Oraknid is and how it works, install, a guide, the sources, my contact; real screenshots of the app; the loader moved to `/app/` ([[ADR-033-Product-Site]]); deployed on both Nests 2026-10-03
 - [x] A command in an inbox title shows as code, not between backticks
-- [ ] A new mark: a big octopus eye, spider legs from its edges all pointing down, two at the top meeting in a V; three concepts drawn, mine to choose; then its kit (sizes, lockups with the name) in the app, the loader and the site
+- [ ] A new mark: a big octopus eye, spider legs from its edges all pointing down, two at the top meeting in a V; three concepts drawn (`docs/assets/logo-concepts/`), mine to choose; then its kit (sizes, lockups with the name) in the app, the loader and the site
 
 Tested: the back navigation's history counting (`apps/web/src/lib/nav.test.tsx`). The rest has no automated test.
 

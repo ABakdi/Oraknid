@@ -39,8 +39,9 @@ own (`private.oraknid.abakdi.com`).
 - `install.sh <domain> [--public | --private] [--invite CODE | --no-invite]`
   runs one Nest per domain and moves an older single install over.
   Mine: `oraknid.abakdi.com` public and `private.oraknid.abakdi.com`
-  private, on the same server; not deployed that way yet
-  ([[Phase-11-Workspace]] → M11.4).
+  private, on the same server; both deployed 2026-10-03
+  ([[Phase-11-Workspace]] → M11.4), my daemon still on the public one
+  until I re-pair my phone.
 
 ## Consequences
 - A public Nest sees who connects and how much, never what.

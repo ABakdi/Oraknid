@@ -54,7 +54,7 @@ Full data model: [[Core-Entities]].
 | Daily use | The New work page and drafts, skills per project, GitHub repos, Chats, the helper. | [[Jobs-and-Projects]] · [[Chats-and-Helper]] | 8 |
 | Servers | State documents, oraknid-monitor, a terminal. | [[Servers]] | 9 |
 | Lockdown | A PIN on every device, Audit 2's fixes. | [[Security]] | 10 |
-| Workspace | Pages in tabs, shortcuts, a terminal workspace, device rights, a public Nest. | [[Web-UI]] · [[The-Nest]] | 11 |
+| Workspace | Pages in tabs, shortcuts, a terminal workspace, device rights, a public Nest, the app's own look, the product site. | [[Web-UI]] · [[The-Nest]] | 11 |
 | Email | A mail client, agents that read, sort and draft. | [[Web-UI]] → Mail | 12 |
 
 ## Business rules in one paragraph

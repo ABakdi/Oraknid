@@ -35,6 +35,10 @@ terminal, and a real Debian server: setup, its state document,
 oraknid-monitor readings (after making its numbers plain for mawk) and
 a terminal to it.
 
+Tested on my staging server (2026-10-02): other things run there, so
+Oraknid only reads it, installs oraknid-monitor beside them and never
+stops, restarts or changes what it didn't put there.
+
 ## Exit criterion
 
 I add my VPS, Oraknid discovers it and writes its state document,

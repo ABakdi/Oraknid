@@ -6,8 +6,10 @@
 Antigravity is the fourth kind of Leg (Phase 5). Re-checked on
 2026-10-02 against Antigravity's own headless docs
 (antigravity.google/docs/cli/headless) and its CLI's issue tracker.
-`agy` is **not installed on this machine**; nothing below was run
-against the real binary yet.
+When this was written `agy` was not installed and nothing was run
+against the real binary; it was installed and run the same day, and
+what that showed is under "Checked with the real agy" below, which
+wins where the two differ.
 
 - `agy --input-format stream-json --output-format stream-json` reads
   one `{"event":"user","message":{"content":…}}` per line on stdin and
@@ -63,7 +65,11 @@ against the real binary yet.
   starts `agy` under a pseudo-terminal with the SSH variables set, shows
   the link it prints, and passes back the code I paste.
 - **Usage** from each run's `result.usage` (thinking tokens count as
-  output). **Quota**: a `result` with status ERROR whose error mentions
+  output). *Changed after the real run (2026-10-02):* `agy` reports
+  each step's re-read of the whole conversation as new input and no
+  cache, so only the conversation's growth counts as new input and the
+  rest as cache reads; a few quick steps had looked like 150k tokens
+  without progress and stopped a working Leg. **Quota**: a `result` with status ERROR whose error mentions
   quota, rate limit, `RESOURCE_EXHAUSTED` or 429 becomes a `rate_limit`
   event (rejected; a reset is read from the text when it says one) and
   the turn ends `rate-limited`.
@@ -114,9 +120,9 @@ against the real binary yet.
 - A turn costs one `agy` start. A command allowed once is allowed for
   the rest of the session, by its exact text only.
 - The adapter is tested against a stand-in `agy` that follows the docs;
-  where the docs are silent (the four unknowns above) the stand-in
-  follows the adapter's guess, and the first real run on my machine is
-  the check. Phase 5's exit criterion needs that run.
+  where the docs were silent the stand-in followed the adapter's guess;
+  the real run of 2026-10-02 settled those (Checked with the real agy),
+  and Phase 5's exit criterion passed with it.
 - Several Antigravity accounts depend on the file-token behaviour; if
   `agy` only keeps the keyring, one Antigravity Leg per machine account
   remains, and this ADR is revised.

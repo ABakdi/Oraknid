@@ -30,7 +30,7 @@ One page, two sides ([[Phase-8-Daily-Use]]):
 
 | Option | Default | Notes |
 | :-- | :-- | :-- |
-| Project | last used | An existing project, or a **new** one: an existing folder (a repo or not), a new empty folder (with a new git repo), a **new GitHub repo** (created, then cloned), or an **existing GitHub repo** (cloned) — [[ADR-023-GitHub-By-Token]]. |
+| Project | last used | An existing project, or a **new** one: an existing folder (a repo or not), a new empty folder (with a new git repo), a **new GitHub repo** (created, then cloned), an **existing GitHub repo** (cloned), or any public **git URL** (cloned) — [[ADR-023-GitHub-By-Token]]. |
 | Skills | the project's | The skills The Eye may use; it picks the one that fits ([[Skills]]). |
 | Legs | all healthy Legs | Any subset. |
 | Autonomy | Standard | See [[Approvals-and-Autonomy]]. |
@@ -86,7 +86,7 @@ items for this job, budgets and their burn, and every problem. See
 | Pause/resume a Leg | Stops new assignments to that Leg and pauses its running task. Other Legs continue. |
 | Redirect | A new instruction for The Eye. It is written to Silk as an `owner` decision, and The Eye replans. |
 | Edit the plan | Add, remove, reorder or rewrite tasks in The Web. Running tasks I change are paused first. |
-| Take over a task | The task becomes `owner`-held. Oraknid stops touching its scope until I mark it done or hand it back. |
+| Take over a task | The task becomes `owner`-held. Oraknid stops touching its scope until I mark it done or hand it back; handed back, it starts with its escalation reset ([[Drift-Control]]). |
 | Answer | Inline in the inbox or on the task. |
 
 ## Several jobs (Phase 3)

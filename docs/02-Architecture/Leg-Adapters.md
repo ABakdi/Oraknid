@@ -56,7 +56,7 @@ See [[ADR-011-Claude-Code-Adapter]].
 | Permissions | `canUseTool` → The Eye's policy. Mode `default`. Never `bypassPermissions`. |
 | Usage | `result.modelUsage[model]` (input, output, cache, contextWindow; running totals); `getContextUsage()`. |
 | Quota | `rate_limit_event.rate_limit_info`: `status`, `rateLimitType` (`five_hour`, `seven_day`, `seven_day_opus`, `seven_day_sonnet`…), `utilization`, `resetsAt` (**epoch seconds**). Seen live: while a window is `allowed`, `utilization` is absent, so Oraknid estimates it. A 429 shows up as `system/api_retry` or an assistant `error: "rate_limit"`. |
-| Accounts | One `CLAUDE_CONFIG_DIR` per Leg. I log into it with the official binary. Oraknid never reads tokens ([[ADR-009-Multiple-Accounts-Per-Provider]]). |
+| Accounts | One `CLAUDE_CONFIG_DIR` per Leg. I log into it from the Leg's card in the web UI; Oraknid runs the official `claude auth login` for that folder underneath. Oraknid never reads tokens ([[ADR-009-Multiple-Accounts-Per-Provider]]). |
 | Host isolation | `settingSources: []`, explicit `mcpServers`. Not `--bare` (it skips subscription credentials). |
 | MCP | `mcpServers` option. |
 
@@ -107,12 +107,13 @@ Leg has its own `HOME`, `TMPDIR` and XDG dirs, project config is
 ignored, and every action is asked for. There's no subscription-window
 API.
 **OpenCode may not use a Claude subscription** under Anthropic's terms.
-OpenCode Legs use other providers' API keys or local models.
+By default an OpenCode Leg uses OpenCode's own free models (Zen), with no account and no key; it can also use other providers' API keys or local models.
 
 ## Antigravity — Phase 5
 
-**Built against the docs, not yet run for real** (re-checked
-2026-10-02, [[ADR-020-Antigravity-Adapter]]). The official `agy` CLI
+**Built, and run for real** with `agy` 1.2.14 on 2026-10-02: a job
+on an Antigravity Leg completed verified ([[ADR-020-Antigravity-Adapter]],
+[[Phase-5-Antigravity]]). The official `agy` CLI
 runs headless: `--input-format stream-json --output-format
 stream-json`, one user message per line on stdin; events `init`,
 `step_update` (`text_delta`, `tool_info`, `usage`) and `result`
@@ -130,9 +131,12 @@ supported; using its OAuth from other tools isn't.
 - **Its own world**: HOME and XDG dirs in the Leg's home, no D-Bus, so
   my desktop keyring is out of reach; sign-in runs from the Leg's card
   under a pseudo-terminal in `agy`'s SSH mode (link, then code).
-- **Still to confirm on a real run**: the soft-deny notice's wording,
-  a quota error's wording, `tool_info`'s fields, and whether the
-  sign-in stays in the Leg's home without a keyring (several accounts
-  depend on it). `agy` is not installed on this machine yet.
+- **Confirmed on the real run** ([[ADR-020-Antigravity-Adapter]] →
+  Checked with the real agy): a refusal is read from the events, not
+  stderr; `tool_info` carries the command or file; the sign-in stays
+  in the Leg's home without a keyring, so several accounts work; writes
+  in a task's worktree are allowed in the Leg's settings, and a refusal
+  Oraknid can't identify goes back to the Leg, never to my inbox. A quota
+  error's wording is still unseen.
 
 Related: [[Legs-and-Capability-Profiles]] · [[ADR-011-Claude-Code-Adapter]] · [[ADR-009-Multiple-Accounts-Per-Provider]] · [[Sandboxing]]

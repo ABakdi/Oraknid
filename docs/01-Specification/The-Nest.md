@@ -53,11 +53,12 @@ flowchart LR
   registrations, daemons, devices and bytes per day, and forgets a
   daemon unseen for 30 days. Its page says it is public and can't read
   what it carries. `install.sh` runs one Nest per domain, two on one
-  server if I want ([[ADR-031-Public-Nest]]). Mine are to be
+  server if I want ([[ADR-031-Public-Nest]]). Mine are
   `oraknid.abakdi.com`, public, and `private.oraknid.abakdi.com`, my
-  own, on the same server; `oraknid.abakdi.com` is the address
-  Settings offers by default. Not deployed that way yet
-  ([[Phase-11-Workspace]]).
+  own, on the same server, both deployed 2026-10-03;
+  `oraknid.abakdi.com` is the address Settings offers by default. My
+  daemon stays on the public one until I re-pair my phone with the
+  private one ([[Phase-11-Workspace]]).
 
 ## Still open
 - Web push away from home is built (the loader holds the subscription;

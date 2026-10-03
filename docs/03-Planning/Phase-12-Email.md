@@ -40,12 +40,14 @@ the kept copy, deleting on the server only with the option on, the
 two-minute check and Reconnect. The add-account form is tested in the
 web app, and the Mail page was checked by hand at 390 px against a
 test daemon. OAuth was taken out the same day (back after a few
-releases). Not yet tried with a real Gmail, IMAP or POP account; see
-[[ADR-032-Email]] → As built.
+releases). With a real account (2026-10-03): my Gmail added with an
+app password, synced. Still to try: an agent's draft approved and sent
+from it, a generic IMAP account, a POP account; see [[ADR-032-Email]]
+→ Acceptance.
 
 ## Exit criterion
 
-The acceptance list of [[ADR-032-Email]]'s source spec: Gmail and an
+The acceptance list in [[ADR-032-Email]] → Acceptance: Gmail and an
 IMAP account both work end to end; new mail shows within ten seconds;
 an agent finds a thread and drafts a reply that I approve and send.
 

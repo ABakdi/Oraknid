@@ -37,7 +37,13 @@ never sent by an agent without me.
   approve it, unless I turn on auto-send for an account. Every agent
   action on mail is in the audit log.
 - **Chats and the helper** can use the email tool too, with the same
-  gates.
+  gates (not built yet; see As built).
+- **No MCP SDK**: the spec named `@modelcontextprotocol/sdk` for the
+  agents' side; the broker already speaks MCP's JSON-RPC itself
+  ([[ADR-021-Tools-Broker]]), so the email tool is built into the daemon
+  and answered by the broker, with no extra process or package.
+- **Not the shadcn/ui mail example**: the Mail page is Oraknid's own
+  three panes, in the app's look ([[Web-UI]] → Mail and → Look).
 
 ## As built (2026-10-03)
 Decided while building Phase 12, in the spirit of the above:
@@ -101,6 +107,30 @@ Decided while building Phase 12, in the spirit of the above:
   settings (auto-send, Sent, delete from the server) and remove, from
   each account's menu in the folder list; and the folders in a drawer
   on a phone.
+
+## Acceptance
+The source spec's list (pasted 2026-10-03), where each stands:
+- Gmail and a generic IMAP account end to end: Gmail **with an app
+  password** (OAuth later), synced for real; a generic IMAP account
+  tested against the stand-in server only.
+- New mail in the UI within 10 seconds: built (IDLE), tested.
+- Threads by reply headers and by Gmail's thread id: built, tested.
+- Sent mail in the provider's Sent folder: built (filed unless the
+  provider does it), tested.
+- Read, star, move, delete seen in the provider's own client: done on
+  the server first, tested against the stand-in.
+- An agent finds a thread, drafts a reply marked as an agent's, I
+  approve and send: built, tested; on my real account, to try.
+- No agent sends without approval unless auto-send is on: built, tested.
+- Every agent action logged: built (`mail.agent.*`, one user).
+- Credentials encrypted at rest: passwords only in the keychain; the
+  mail cached in Oraknid's database is not encrypted, like the rest of
+  its data on my disk.
+- No script in mail HTML, remote images blocked until allowed: built,
+  tested.
+- An expired or revoked account says "Reconnect": built, tested.
+- 10,000+ messages scroll smoothly: virtual list, paging tested with
+  10,000 conversations.
 
 ## Consequences
 - Gmail and Outlook need an app password (and two-step verification)

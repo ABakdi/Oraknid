@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -12 256 256">
+  <title>Oraknid</title>
+  <g fill="none" stroke="#8F7CFF" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M108.8 52.5 L91.8 23.1 L78.0 15.1"/>
+    <path d="M147.2 52.5 L164.2 23.1 L178.0 15.1"/>
+    <path d="M58.5 98.7 L37.2 77.5 L26.4 118.0"/>
+    <path d="M197.5 98.7 L218.8 77.5 L229.6 118.0"/>
+    <path d="M54.3 130.4 L23.4 122.2 L9.9 172.4"/>
+    <path d="M201.7 130.4 L232.6 122.2 L246.1 172.4"/>
+    <path d="M63.9 161.0 L36.9 168.2 L25.0 212.7"/>
+    <path d="M192.1 161.0 L219.1 168.2 L231.0 212.7"/>
+  </g>
+  <circle cx="128" cy="124" r="68.0" fill="#14121F" stroke="#8F7CFF" stroke-width="12"/>
+  <circle cx="128" cy="124" r="56" fill="#F4A73A"/>
+  <rect x="90.0" y="112.0" width="76" height="24" rx="12.0" fill="#14121F"/>
+</svg>

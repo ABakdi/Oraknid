@@ -40,4 +40,7 @@ panel. I write what I want in my words; the helper:
 Each reply lists what it did, with links. The conversation is kept
 until I clear it.
 
+Mail: chats and the helper don't take the `email` tool yet; jobs do
+([[ADR-032-Email]]).
+
 Related: [[Web-UI]] · [[Jobs-and-Projects]] · [[The-Eye]]

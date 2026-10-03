@@ -18,7 +18,7 @@ I want to approve and answer from anywhere, without opening ports at home.
 - [x] `apps/nest`: Express + WebSocket relay, the daemon's outbound connection with reconnects, limits per address and per daemon
 - [x] Device ↔ daemon E2E (`packages/tunnel`, libsodium); The Nest sees only ciphertext; tested end to end through a real Nest and in Chrome with the loader
 - [x] Deploy files in `deploy/nest/` (Dockerfile, Compose, Caddy for TLS, a guide); the image built and ran 2026-10-02
-- [x] `install.sh`, one script on a server that already has nginx: deployed 2026-10-02 at https://oraknid.abakdi.com on my test server (beside its other sites, untouched), the daemon at home connected to it
+- [x] `install.sh`, one script that installs what is missing (Docker, nginx, certbot), configures nginx and HTTPS, and leaves a server's other sites alone: deployed 2026-10-02 at https://oraknid.abakdi.com on my test server (beside its other sites, untouched), the daemon at home connected to it
 - [x] Pairing a device for away from Settings, by a QR code or link whose keys stay in the fragment; the loader's fingerprint shown at home
 
 ### M4.3 — Remote use

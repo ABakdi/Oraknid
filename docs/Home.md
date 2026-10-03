@@ -54,8 +54,8 @@ note and in the [[Roadmap]]. Next: those runs, then Later.
 - [[Phase-8-Daily-Use]] — built
 - [[Phase-9-Servers]] — built
 - [[Phase-10-Lockdown]] — built: the PIN, Audit 2's fixes, settings in tabs
-- [[Phase-11-Workspace]] — built: pages in tabs, terminal workspace, device rights, a public Nest; the two Nests to deploy
-- [[Phase-12-Email]] — built: the Mail page, IMAP and POP3, agents' drafts; real accounts to try
+- [[Phase-11-Workspace]] — built: pages in tabs, terminal workspace, device rights, a public Nest, the app's own look and the product site; both Nests deployed; the new mark mine to choose
+- [[Phase-12-Email]] — built: the Mail page, IMAP and POP3, agents' drafts; my Gmail syncs; an approved agent draft and an IMAP account to try
 - Later ← **next**: containers per job, teams
 
 ## 04 — Decisions

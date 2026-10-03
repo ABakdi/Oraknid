@@ -27,7 +27,8 @@ claim?"). The thresholds and the final decision stay deterministic.
 ## The escalation ladder
 
 Each drift event raises the task's escalation level by one step. A
-step that works (verified progress follows) resets the counter.
+step that works (verified progress follows) resets the counter, and so
+does a task I took over and hand back: it starts fresh.
 
 | Step | Action |
 | :-- | :-- |
