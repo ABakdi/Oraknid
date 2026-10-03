@@ -35,18 +35,17 @@ Eye's conversation sit beside them ([[Chats-and-Helper]]).
   indicator shows live / reconnecting / offline. When offline, the last
   known state stays on screen, clearly marked stale.
 - A PWA, installable on desktop and phone.
-- **The mark** (2026-10-03): an octopus's eye, round with a horizontal
-  pupil and an amber iris, on eight jointed spider legs in violet, on a
+- **The mark** (2026-10-03): a big round eye with an amber iris and a
+  tall slit pupil with a gentle wave along it (changed from a horizontal
+  pupil the same day: I kept this mark over the concepts), on eight jointed spider legs in violet, on a
   dark tile. `icon.svg` is the favicon and the mark in the sidebar, the
   lock screen and pairing; PNG icons (192, 512, maskable) and an
   `apple-touch-icon` for a phone's home screen; `logo.svg` is the mark
   alone. The Nest's loader uses the same.
 
-- **A new mark is being chosen** ([[Phase-11-Workspace]] → M11.6): a
-  big octopus eye with spider legs from its edges, all pointing down,
-  two at the top meeting in a V. Three concepts are in
-  `docs/assets/logo-concepts/`; the chosen one replaces the current
-  mark in the app, the loader and the site.
+- The three concepts drawn for a new mark stay in
+  `docs/assets/logo-concepts/`; I kept the current mark, with its pupil
+  made vertical and gently wavy ([[Phase-11-Workspace]] → M11.6).
 
 ## Layout
 

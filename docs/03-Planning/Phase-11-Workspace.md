@@ -44,7 +44,7 @@ can't use what I use at home; and The Nest should serve other people.
 - [x] The app's own look, following the mark, in place of the stock component look: ink surfaces, violet, IBM Plex Sans and JetBrains Mono ([[Web-UI]] → Look)
 - [x] A product site at The Nest's root: what Oraknid is and how it works, install, a guide, the sources, my contact; real screenshots of the app; the loader moved to `/app/` ([[ADR-033-Product-Site]]); deployed on both Nests 2026-10-03
 - [x] A command in an inbox title shows as code, not between backticks
-- [ ] A new mark: a big octopus eye, spider legs from its edges all pointing down, two at the top meeting in a V; three concepts drawn (`docs/assets/logo-concepts/`), mine to choose; then its kit (sizes, lockups with the name) in the app, the loader and the site
+- [x] The mark (2026-10-03): three concepts drawn (`docs/assets/logo-concepts/`); I kept the current one with its pupil made vertical and gently wavy, in the app, the loader and the site (SVGs, the PNG icons, the link preview)
 
 Tested: the back navigation's history counting (`apps/web/src/lib/nav.test.tsx`). The rest has no automated test.
 
