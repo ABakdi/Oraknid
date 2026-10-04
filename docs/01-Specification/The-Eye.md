@@ -89,7 +89,8 @@ mechanical work.
 | :-- | :-- |
 | Difficulty fit | The task's estimated difficulty (from planning: `low` · `medium` · `high`) vs the model's strength for that capability. A model far above what the task needs is penalised, not just one below it. |
 | Capability match | Task `requiredCapabilities` vs the profile's strengths. |
-| Past success | Observed success rate on this task kind (per Leg, per project). |
+| Past success | Trust: the model's prior (a known family, or an unproven free or unknown model) moved by its observed successes on this task kind ([[Legs-and-Capability-Profiles]] → Known and unproven models). |
+| Provider failures | A model resting after its provider failed is out; a Leg whose provider just failed gives way ([[Legs-and-Capability-Profiles]] → Provider failures). |
 | Remaining quota | For every window that applies (account-wide and per-model): share left, time to reset, and the expected cost of this task in that window (`quotaWeight` × estimated tokens). A scarce window is saved for tasks that need it: when it runs low, its model is reserved for `high` difficulty tasks. |
 | Context fit | The task's estimated context vs the Leg's window. |
 | Cost | Prefer free or local Legs for `mechanical` tasks. Never pay without a money budget (BR-10). |
@@ -111,7 +112,9 @@ and classifying get a cheap one.
 **Fallback.** When a Leg becomes rate-limited, fails or runs out of
 quota mid-task, The Eye writes a handoff to Silk and reassigns the task
 to the next-best Leg. When none is left, the job goes `blocked` until
-the earliest quota reset, and resumes on its own.
+the earliest quota reset, and resumes on its own. A usage limit or a
+provider's failure is not the task failing: the attempt isn't counted
+against it, and the failing model or Leg rests (M13.22).
 
 ## Self-prompting
 

@@ -12,7 +12,7 @@ and usage samples. Thresholds are defaults, editable in Settings.
 
 | #   | Drift                           | Detected when                                                                                                         | Default threshold                                 |
 | :-- | :------------------------------ | :-------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------ |
-| D1  | **Out-of-scope edit**           | A changed path is outside the task's `scope` globs.                                                                   | Any file.                                         |
+| D1  | **Out-of-scope edit**           | A changed path is outside the task's scope (its `scope` globs and what its checks name, below).                       | Any file.                                         |
 | D2  | **Loop / oscillation**          | The same file region is edited back and forth, or the same command runs with the same result repeatedly.              | 3 repeats in 10 turns.                            |
 | D3  | **Repeated failure**            | Verification fails with the same error signature.                                                                     | 3 times.                                          |
 | D4  | **Fake progress claim**         | The Leg says "done", "tests pass" or similar, but verification fails, or the claimed command never ran in the stream. | 1 time.                                           |
@@ -23,6 +23,26 @@ and usage samples. Thresholds are defaults, editable in Settings.
 
 Cheap Legs can help with classification (e.g. "is this message a done
 claim?"). The thresholds and the final decision stay deterministic.
+
+**A task's scope** (M13.22, 2026-10-04). What D1 measures against, what
+the context pack says the Leg may change, and what a D1 step puts back
+are the task's scope taken whole (`taskScope`):
+
+- its `scope` globs, as the plan gave them;
+- every relative path its own checks name (`test -s docs/x.md`, an awk
+  over a file, `test -f dist/index.js`; quoted patterns, programs,
+  options, URLs and paths that climb out with `..` are not paths), read
+  again when a check is corrected;
+- every file its instructions say it writes ("write the comparison to
+  `docs/audio.md`", "create notes/latency.csv");
+- `docs/**` for a `research` or `plan` task, whose deliverable is a
+  document.
+
+What a check reads is what the task must leave behind. Seen 2026-10-04:
+a research task whose plan gave it the scope `["research",
+"documentation"]` wrote `docs/audio-libraries-recommendation.md`, the
+very file its check tested, and D1 flagged it, put it back, reset the
+session and reassigned the task.
 
 ## The escalation ladder
 

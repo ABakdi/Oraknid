@@ -44,6 +44,17 @@ model and hard tasks fail.
   learned from how windows actually move, and labelled estimated in the
   UI until they settle.
 
+## Changed (M13.22, 2026-10-04)
+"The smallest sufficient model" assumed every model's profile was
+known. Fourteen free models with a default profile of 3 and no cost
+outscored Claude Sonnet on a Claude Max plan and then failed a simple
+research task seven times. A profile now has a `prior`, and an
+unproven model (free, or unknown by name) starts low and earns trust
+from what it gets done; a provider's failure rests the model or its
+Leg instead of counting against the task, and sends the next try
+elsewhere ([[Legs-and-Capability-Profiles]] → Known and unproven
+models, → Provider failures).
+
 ## Why not let the agent pick (e.g. Claude Code's default model or `fallbackModel`)
 The agent doesn't know the job's other tasks, the other Legs, or how
 scarce each window is across the pool. The Eye does.

@@ -105,7 +105,15 @@ API and SSE event stream ([[ADR-015-OpenCode-Adapter]]): `POST
 limit is a `session.retry.scheduled` with `provider.rate-limit`. Each
 Leg has its own `HOME`, `TMPDIR` and XDG dirs, project config is
 ignored, and every action is asked for. There's no subscription-window
-API.
+API. Its asks reach the policy by the names it knows (M13.22):
+`shell` → Bash, `edit`/`write` → Edit/Write, `external_directory` →
+ExternalDirectory (allowed: the read or edit it precedes is asked
+again with its path), `subagent` → Task, `question` →
+AskUserQuestion, its MCP resource reads → Read, `doom_loop` →
+DoomLoop (left to drift control). A turn that ends on
+`session.execution.failed` with a provider's error ("Internal server
+error", "Model is unavailable") is a provider failure, not the task's
+([[Legs-and-Capability-Profiles]] → Provider failures).
 **OpenCode may not use a Claude subscription** under Anthropic's terms.
 By default an OpenCode Leg uses OpenCode's own free models (Zen), with no account and no key; it can also use other providers' API keys or local models.
 

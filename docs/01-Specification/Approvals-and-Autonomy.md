@@ -91,6 +91,19 @@ branches, my home) is refused, never asked, and the Leg is told to work
 in its folder: the project's own branches are Oraknid's to change at the
 end of the job.
 
+Its scratch also counts its Leg's own `tmp` and `.cache`, and its home
+for the job has a `tmp` of its own (M13.22, 2026-10-04): the job's
+`tmp` was a link to the Leg's, so OpenCode's writes to its own temp
+folder (`legs/<leg>/home/tmp/opencode/*`) were refused four times. And
+OpenCode's "external directory" question, asked before it reads or
+writes a folder outside the project, is allowed: the folder alone
+writes nothing, the read or the edit it then asks for is judged with
+its own path, and the sandbox shows only what it was given. Its other
+questions get answers without a classifier too: a sub-agent and a
+question are like Claude Code's, its MCP resources are reads, and "go
+on after the same call failed three times" is left to drift control
+(D2, D3).
+
 ### Reading the project's own repo (2026-10-04)
 A task that read from the web is untrusted, and a gated action asks me
 from then on (BR-15). A page of the project's own linked GitHub repo
