@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { JobView, WebPlan } from "@oraknid/contracts";
 import { createOpenCodeAdapter, startFakeModel } from "@oraknid/leg-opencode";
+import { createBwrapSandbox, type Sandbox } from "@oraknid/os";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { RouterClient } from "@orpc/server";
@@ -64,17 +65,21 @@ afterEach(async () => {
 
 const sh = (cwd: string, ...a: string[]) => spawnSync("git", a, { cwd, encoding: "utf8" });
 
-async function setup(claudeScript: Parameters<typeof scriptedLeg>[0]) {
+async function setup(
+  claudeScript: Parameters<typeof scriptedLeg>[0],
+  o: { command?: string; sandbox?: Sandbox } = {},
+) {
   fake = await startFakeModel();
   fake.setMode("tool");
-  fake.setCommand("printf 'echo hi\\n' > hello.sh");
+  fake.setCommand(o.command ?? "printf 'echo hi\\n' > hello.sh");
   const dir = mkdtempSync(join(tmpdir(), "oraknid-oc-"));
   const claude = scriptedLeg(claudeScript);
+  const os = fakeOs({ keychain: true }).os;
   daemon = await startDaemon({
     paths: resolvePaths({ ORAKNID_DATA_DIR: dir, ORAKNID_CONFIG_DIR: dir }),
     port: 0,
     dbFile: ":memory:",
-    os: fakeOs({ keychain: true }).os,
+    os: o.sandbox ? { ...os, sandbox: o.sandbox } : os,
     adapters: { "claude-code": claude.adapter, opencode: createOpenCodeAdapter() },
     brain,
     stallCheckMs: 200,
@@ -144,6 +149,56 @@ describe.skipIf(!HAVE)("OpenCode Legs in a job (Phase 2)", () => {
       spawnSync("git", ["show", `${r.branch}:hello.sh`], { cwd: ws, encoding: "utf8" }).stdout,
     ).toBe("echo hi\n");
   }, 60_000);
+
+  // M13.22: OpenCode failed simple git commands. In the real sandbox, in the job's worktree
+  // of the project: everyday git runs, and nothing asks me or a classifier.
+  it.runIf(createBwrapSandbox().status().available)(
+    "runs everyday git in the job's worktree inside the sandbox, without asking (M13.22)",
+    async () => {
+      const { api, project, oc, ws } = await setup(() => [{ say: "unused" }], {
+        sandbox: createBwrapSandbox(),
+        command: [
+          "git status --short",
+          "printf 'echo hi\\n' > hello.sh",
+          "git add hello.sh",
+          "git diff --cached --stat",
+          "git commit -q -m 'feat: say hi'",
+          "git log --oneline -n 1",
+        ].join(" && "),
+      });
+      const { id } = await api.jobs.create({
+        projectId: project.id,
+        goal: "Say hi",
+        verify: [],
+        autonomy: "standard",
+        inputs: [],
+        allowedLegIds: [oc.id],
+        unsandboxed: false,
+      });
+      await api.jobs.start({ id });
+      const done = await until(api, id, ["completed", "blocked"], 60_000);
+      expect(done.state, done.blockedReason ?? "").toBe("completed");
+      const events = (await api.jobs.export({ id })).events;
+      // Nothing asked me, a classifier, or was refused.
+      expect(
+        events.filter((e) => ["policy.auto", "task.refused", "task.waiting"].includes(e.type)),
+      ).toEqual([]);
+      // Its commands ran and succeeded inside the sandbox.
+      expect(
+        events.some(
+          (e) =>
+            e.type === "session.tool.result" &&
+            (e.payload as { ok?: boolean }).ok === true &&
+            String((e.payload as { output?: string }).output).includes("feat: say hi"),
+        ),
+      ).toBe(true);
+      const r = await api.jobs.result({ id });
+      // The Leg's own commit, on the job's branch of the project.
+      expect(sh(ws, "log", "--format=%s", r.branch ?? "").stdout).toContain("feat: say hi");
+      expect(sh(ws, "show", `${r.branch}:hello.sh`).stdout).toBe("echo hi\n");
+    },
+    90_000,
+  );
 
   it("hands a task from a Claude Code Leg to an OpenCode Leg through Silk only (M2.2)", async () => {
     const { api, project, oc, d } = await setup(() => [

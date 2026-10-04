@@ -34,6 +34,7 @@ import {
   record,
   route,
   skillExcerpt,
+  taskScope,
 } from "@oraknid/core";
 import type {
   LegEvent,
@@ -50,7 +51,7 @@ import { SideEffects } from "../engine/effects.ts";
 import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 import type { InboxStore } from "../inbox/store.ts";
-import { jobHomeDir } from "../legs/job-home.ts";
+import { jobHomeDir, scratchFor } from "../legs/job-home.ts";
 import { sandboxPlan } from "../legs/plan.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor, Supervised } from "../legs/supervisor.ts";
@@ -510,7 +511,7 @@ export async function runAttempt(
   let usage = null as UsageSnapshot | null;
 
   const observed: Observed = {
-    scope: task.scope,
+    scope: scopeOf(task),
     changedPaths: [],
     commands: [],
     verifyFailures: [],
@@ -538,8 +539,8 @@ export async function runAttempt(
     // The broker judges every call to a job's tool: the Leg's own ask for it passes (ADR-021).
     if (isBrokered(r.tool, brokered)) return { allow: true };
     const policy = policyFor(d.db, job.id, ws.cwd);
-    // Its own /tmp and this job's home are private to its sandbox: its to use.
-    policy.scratch = ["/tmp", jobHomeDir(d.legsDir, leg.legId, job.id)];
+    // Its own /tmp, this job's home and the Leg's tmp and cache are its scratch (M13.22).
+    policy.scratch = scratchFor(d.legsDir, leg.legId, job.id);
     if (readTheWeb) policy.untrusted = true;
     if (toolRows.length) {
       const declared = d.tools?.registry.declarations(toolRows) ?? new Map();
@@ -658,7 +659,7 @@ export async function runAttempt(
         id: task.id,
         title: task.title,
         instructions: task.instructions,
-        scope: task.scope,
+        scope: scopeOf(task),
         verify: task.verify,
       },
       goal: job.goal,
@@ -1032,14 +1033,14 @@ export async function runAttempt(
     // there, the next attempt starts out of scope and trips D1 again.
     if (drift.code === "D1") {
       const outside = (await ws.tree.changedSince(scopeBase)).filter(
-        (p) => !inTaskScope(p, task.scope),
+        (p) => !inTaskScope(p, scopeOf(task)),
       );
       ws.tree.restorePaths(scopeBase, outside, ws.trash);
     }
     switch (next.step) {
       case "correct": {
         await session?.session.send(
-          `${correctivePrompt(drift, task.scope, task.verify)}${failure ? `\n\n${failure}` : ""}`,
+          `${correctivePrompt(drift, scopeOf(task), task.verify)}${failure ? `\n\n${failure}` : ""}`,
         );
         return;
       }
@@ -1208,6 +1209,7 @@ export async function runAttempt(
       }
 
       observed.changedPaths = await ws.tree.changedSince(scopeBase);
+      observed.scope = scopeOf(task);
       let verified = task.verify.length === 0;
       let failure = "";
       if (task.verify.length) {
@@ -1291,6 +1293,8 @@ export async function runAttempt(
           });
           if (!repair.broken) break;
           task.verify = task.verify.map((v) => (v === bad.command ? repair.command : v));
+          // The file a corrected check names is the task's to write (M13.22).
+          observed.scope = scopeOf(task);
           d.db.update(tasks).set({ verify: task.verify }).where(eq(tasks.id, taskId)).run();
           d.silk.add({
             jobId: job.id,
@@ -1639,6 +1643,18 @@ async function nextTurnEnd(
 }
 
 const iterators = new WeakMap<Supervised, AsyncIterator<LegEvent>>();
+
+/**
+ * What a task may change (M13.22): its scope, the files its checks and
+ * instructions name, docs/ for research and planning (taskScope).
+ */
+const scopeOf = (task: TaskRow) =>
+  taskScope({
+    kind: task.kind,
+    scope: task.scope,
+    verify: task.verify,
+    instructions: task.instructions,
+  });
 
 const inTaskScope = (path: string, scope: string[]) =>
   path.startsWith(".oraknid/") || inScope(path, scope);

@@ -101,7 +101,14 @@ const TOOL_NAMES: Record<string, string> = {
   read: "Read",
   glob: "Glob",
   grep: "Grep",
-  external_directory: "Write",
+  // Asked before a tool reaches outside the project, then the tool itself is asked (M13.22).
+  external_directory: "ExternalDirectory",
+  // Its other asks, in the names the policy knows, so none waits for a classifier or for me.
+  subagent: "Task",
+  question: "AskUserQuestion",
+  opencode_list_mcp_resources: "Read",
+  opencode_read_mcp_resource: "Read",
+  doom_loop: "DoomLoop",
 };
 
 /** The config OpenCode gets, whole, from the environment: no file of mine or the repo's counts. */

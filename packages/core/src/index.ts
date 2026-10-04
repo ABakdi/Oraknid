@@ -8,6 +8,7 @@ export * from "./profiles.ts";
 export * from "./rclone.ts";
 export * from "./resources.ts";
 export * from "./routing.ts";
+export * from "./scope.ts";
 export * from "./scrub.ts";
 export * from "./shell.ts";
 export * from "./silk.ts";

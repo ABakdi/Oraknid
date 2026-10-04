@@ -304,6 +304,63 @@ describe("permission policy", () => {
     });
   });
 
+  // M13.22: an agent's everyday git on the job's branch never waits for me, at any
+  // autonomy, and not after the task read the web either (a research task's job).
+  const everydayGit = [
+    "git status",
+    "git status --short && git diff",
+    "git diff --stat HEAD~1",
+    "git log --oneline -n 20",
+    "git --no-pager log -p -1",
+    "git -C . show HEAD",
+    "git add -A",
+    "git add docs/audio.md && git commit -m 'docs: compare the audio libraries'",
+    "git commit --amend --no-edit",
+    "git switch -c oraknid/try-tone",
+    "git checkout -b spike && git checkout -",
+    "git restore --staged notes.md",
+    "git stash && git stash pop",
+    "git branch --show-current",
+    "git rev-parse HEAD",
+    "GIT_PAGER=cat git log | head -5",
+    "git ls-files | wc -l",
+    "git blame src/main.ts",
+  ];
+  for (const autonomy of ["supervised", "standard", "full"] as const) {
+    it.each(everydayGit)(`lets \`%s\` run at ${autonomy} autonomy, untrusted or not`, (command) => {
+      expect(decide(bash(command), ctx({ autonomy })).verdict).toBe("allow");
+      expect(decide(bash(command), ctx({ autonomy, untrusted: true })).verdict).toBe("allow");
+    });
+  }
+
+  it("still asks for what reaches others' branches or outside, more so once untrusted", () => {
+    expect(decide(bash("git push origin dev"), ctx())).toMatchObject({ verdict: "ask" });
+    expect(decide(bash("git merge main"), ctx())).toMatchObject({ verdict: "ask" });
+    expect(decide(bash("git branch -D main"), ctx())).toMatchObject({ verdict: "ask" });
+    expect(decide(bash("git push --force origin main"), ctx())).toMatchObject({
+      verdict: "deny",
+    });
+    expect(decide(bash("git merge main"), ctx({ autonomy: "full" })).verdict).toBe("allow");
+    expect(
+      decide(bash("git merge main"), ctx({ autonomy: "full", untrusted: true })),
+    ).toMatchObject({ verdict: "ask" });
+  });
+
+  it("keeps ordinary work flowing after a task read the web (BR-15 gates only gated actions)", () => {
+    const untrusted = ctx({ untrusted: true, scratch: ["/tmp"] });
+    expect(decide({ tool: "Edit", command: null, path: "/w/docs/a.md" }, untrusted).verdict).toBe(
+      "allow",
+    );
+    expect(
+      decide({ tool: "Write", command: null, path: "/tmp/bench/x.js" }, untrusted).verdict,
+    ).toBe("allow");
+    expect(decide({ tool: "WebFetch", command: null, path: null }, untrusted).verdict).toBe(
+      "allow",
+    );
+    expect(decide(bash("npm test && node bench.js"), untrusted).verdict).toBe("allow");
+    expect(decide(bash("mkdir -p docs && cat > docs/a.md"), untrusted).verdict).toBe("allow");
+  });
+
   it("finds every program in a command line", () => {
     expect(
       programsOf("cd app && FOO=1 ./node_modules/.bin/vitest run | tee out; $(whoami)"),

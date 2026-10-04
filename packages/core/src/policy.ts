@@ -231,6 +231,8 @@ const FILE_TOOLS = new Set([
   "edit_file",
 ]);
 const SHELL_TOOLS = new Set(["Bash", "run_command"]);
+/** An agent asking to reach a folder outside its worktree before it reads or writes there (OpenCode). */
+export const EXTERNAL_DIRECTORY = "ExternalDirectory";
 
 /** The programs a command line runs, read as the shell reads it (B1-01). */
 export function programsOf(command: string): string[] {
@@ -340,6 +342,25 @@ export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
   }
 
   if (READ_ONLY_TOOLS.has(r.tool)) return { verdict: "allow", reason: "reads only" };
+
+  // OpenCode asks whether to go on after the same call failed three times: Oraknid's own
+  // drift control watches for that (D2, D3) and climbs its ladder; a classifier or I need not.
+  if (r.tool === "DoomLoop")
+    return { verdict: "allow", reason: "drift control watches repeated failures (D2, D3)" };
+
+  // OpenCode asks before a tool reaches a folder outside its project, to read or to write, then
+  // asks again for the edit or the command itself, judged with its path below (M13.22). Its
+  // own tmp and caches were refused here as writes: the folder alone writes nothing.
+  if (r.tool === EXTERNAL_DIRECTORY) {
+    const place = r.path?.replace(/\/\*+$/, "");
+    if (place && (ctx.scratch ?? []).some((s) => insideTree(s, place)))
+      return { verdict: "allow", reason: "its own scratch space, private to the sandbox" };
+    return {
+      verdict: "allow",
+      reason:
+        "a folder outside the worktree: each read or write there is judged on its own, and the sandbox shows only what it was given",
+    };
+  }
 
   if (FILE_TOOLS.has(r.tool)) {
     if (r.path && /(^|\/)\.git(\/|$)/.test(r.path))
