@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import ssh2 from "ssh2";
+import { newKeyPair } from "../servers/ssh.ts";
 
 const { Server, utils } = ssh2;
 
@@ -21,7 +22,7 @@ export async function fakeSsh(
   } = {},
 ) {
   const home = mkdtempSync(join(tmpdir(), "oraknid-fake-ssh-home-"));
-  const hostKey = o.hostKey ?? utils.generateKeyPairSync("ed25519").private;
+  const hostKey = o.hostKey ?? newKeyPair().privateKey;
   const commands: string[] = [];
   const clients = new Set<{ end(): void }>();
   const server = new Server({ hostKeys: [hostKey] }, (client) => {

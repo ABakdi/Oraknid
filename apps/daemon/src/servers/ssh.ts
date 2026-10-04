@@ -132,10 +132,24 @@ export function execStream(
   });
 }
 
-/** A key pair Oraknid makes for one server (ADR-026), in OpenSSH format. */
-export function newKeyPair(comment: string): { privateKey: string; publicKey: string } {
-  const k = utils.generateKeyPairSync("ed25519", { comment });
-  return { privateKey: k.private, publicKey: k.public.trim() };
+/**
+ * A key pair Oraknid makes for one server (ADR-026), in OpenSSH format.
+ * ssh2 writes about one ed25519 key in two hundred malformed (a key whose
+ * first byte is zero comes out 31 bytes long; seen 2026-10-04, 27 in 5,000),
+ * and such a key can't be read back to connect: each is read back here, and
+ * one that doesn't parse is made again.
+ */
+export function newKeyPair(comment?: string): { privateKey: string; publicKey: string } {
+  for (let tries = 0; ; tries++) {
+    const k = comment
+      ? utils.generateKeyPairSync("ed25519", { comment })
+      : utils.generateKeyPairSync("ed25519");
+    const priv = utils.parseKey(k.private);
+    const pub = utils.parseKey(k.public);
+    if (!(priv instanceof Error) && !(pub instanceof Error))
+      return { privateKey: k.private, publicKey: k.public.trim() };
+    if (tries >= 20) throw new Error("Couldn't make a readable SSH key.");
+  }
 }
 
 /** A shell-safe single-quoted string. */

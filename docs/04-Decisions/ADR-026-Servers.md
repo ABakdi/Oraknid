@@ -37,6 +37,13 @@ read, so SSH it is.
 - Removing a server removes Oraknid's key from it (when it can reach
   it) and oraknid-monitor, then everything Oraknid kept about it.
 
+### Fixed (2026-10-04): a key that couldn't be read back
+ssh2 writes about one ed25519 key in two hundred malformed (a key whose
+first byte is zero comes out 31 bytes long), and setting up a server with
+such a key failed with "Malformed OpenSSH private key" (found through a
+test failing now and then). Oraknid now reads each key it makes back and
+makes another when it doesn't parse; a test makes 2,000.
+
 ## Consequences
 - A Leg on a job with a server can use that server's key; the
   approvals, the sandbox and the state document are what keep it safe,
