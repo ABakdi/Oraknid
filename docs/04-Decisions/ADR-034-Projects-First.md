@@ -74,6 +74,27 @@ the project's history, never as a place of their own.
   (the browser's storage); `/projects/<id>/web` opens the new tab. The
   row of earlier jobs and the folding of ADR-034's first Web are gone.
 
+## Changed (2026-10-04): A new project says what it does
+If the project is the place, making one must be clear. New project
+asked for "a folder" and a typed path: is it the project, where it
+goes, a clone? Now (M13.19):
+- **The name first, then where it comes from**: **New** (the default:
+  a folder Oraknid makes, named after the project, in a folder I
+  choose, made a git repo, a new GitHub repo too if I ask), **a folder
+  on this computer** (it is the project), or **from GitHub** (one of my
+  repos from a list, or a link; a link without an account only for a
+  public repo). One form, New project's and New work's.
+- **A sentence says what will happen**, with the real paths, before
+  anything does.
+- **Folders are chosen, not typed**: the daemon lists this computer's
+  folders by name (`files.folders`) for a picker that works from a
+  phone too; typing a path stays.
+- As built: `components/new-project.tsx` (the form, `projectSource`,
+  `whatHappens`), `components/folder-picker.tsx`,
+  `workspace/folders.ts`; the API was already `projects.createFrom`.
+  `files.folders` and `files.makeFolder` are home only for a standard
+  device, like `createFrom`.
+
 ## Consequences
 - Migration: `eye_messages` gains `project_id`, filled from each
   message's job; the project budget is a setting per project.

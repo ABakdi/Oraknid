@@ -2,7 +2,17 @@
 
 ## Projects
 
-A **project** is a folder where jobs work: one you have, a new empty one, a new GitHub repo (on the account you pick, when you have more than one), one of your GitHub repos, or any git URL. With git, every job has its own branch and worktree; without git, Oraknid keeps checkpoints in a shadow repository so you can still roll back.
+A **project** is a folder where jobs work. With git, every job has its own branch and worktree; without git, Oraknid keeps checkpoints in a shadow repository so you can still roll back.
+
+**Making one.** In **Projects**, press **New project**. Give it a **name**, then say where it comes from:
+
+- **New** (the default): Oraknid makes the project's folder, named after the project (change the name if you like), inside the folder you choose under **Where it goes**, and makes it a git repo. The folder you used last time is offered again. With GitHub connected, **Also a new GitHub repo** makes one on the account you pick (private unless you switch it off), clones it there and links the project to it.
+- **A folder on this computer**: the folder you choose *is* the project: a repo, or a folder holding several. If it isn't a git repo, you're asked whether to make it one or to leave it alone (checkpoints in a shadow repository).
+- **From GitHub**: with GitHub connected, pick one of your repos from the list (search it, and choose the account when you have several), or paste a link; without an account, paste a link: only a public repo can be cloned that way. Under **Clone it into**, choose where its folder goes.
+
+A line at the bottom says exactly what will happen before it does, for example *Creates /home/me/code/piano and makes it a git repo.* or *Clones ABakdi/piano into /home/me/code/piano and links the project to it.* **New work**'s "A new project…" is the same form.
+
+**Choosing a folder.** Every folder field has **Choose…**, which opens the folder picker: the folders on the computer Oraknid runs on, even when you use it from your phone. Click a folder to open it, use the path at the top or **Up** and **Home** to go back, **New folder** to make one where you are, and **Choose this folder** when you're there. Repos are marked **git**. You can also type a path (`~/code` works). The picker only lists folders, never your files.
 
 **Several repos.** A project can also be a folder holding several git repositories, each in its own folder (a site in `web/`, its API in `api/`): they are found when you add the project, and the **Repo** tab lists them, each with its folder, its branches and its own GitHub repo. **Add a repo** adds one later (a folder of the project that is a repo, a new empty one, or a clone), **Find repos in its folder** looks again. The pencil on a repo's row renames it in the project, or changes its release branch (where jobs start from) and work branch (where they merge), while no job of the project runs. A job works in the repos its tasks touch: each gets the job's branch, each task's work is committed in each repo it changed with its own message, and **Merge** merges every repo's branch into that repo's work branch (or none, when one conflicts).
 
