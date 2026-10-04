@@ -426,7 +426,14 @@ oraknid-monitor's readings live and over 24 hours, services and ports;
 add, discover again, edit the document, edit its name and description,
 open a terminal, remove. A server's page is in tabs
 ([[ADR-043-Server-Insight]]): **Overview** (the readings, then what was
-About), **Docker** (containers by compose project, each with Logs and
+About, with a **Production** switch: every job that reaches it asks
+before any change), **Chat** (2026-10-04, [[ADR-049-Server-Chat-And-Server-Jobs]]:
+The Eye's conversation about the server, the same chat as a project's
+The Eye tab; a question answered without a job, work sent into the
+server as a job, each reply linking the job it started), **Jobs** (the
+jobs that worked on the server as Work rows, newest first, opened in the
+server's project's Work tab, and above them what they wait on from me),
+**Docker** (containers by compose project, each with Logs and
 Restart; images, volumes and networks folded), **Databases**, **Proxy &
 traffic** (sites, certificates, the config check, then the last 15
 minutes of traffic as bars, status tiles and top lists), **Logs** (a log
@@ -436,7 +443,9 @@ by default, a filter while following, a search on the server when not),
 and those keeping their backups on it, each with its backups, and New
 backup plan with the databases found on it to pick from, or one
 described), **Terminal** (one shell, opened with a click) and **State
-document**. Each part shows when it was read and a Refresh; what it
+document** (its versions to pick from, each "after “<job>”" when a job's
+end wrote it). A server marked production, on its page or in a project,
+has a red **production** badge in its header. Each part shows when it was read and a Refresh; what it
 couldn't read is in a yellow box with why. On a phone everything is a
 list that wraps, nothing scrolls sideways.
 

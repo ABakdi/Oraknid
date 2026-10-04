@@ -318,6 +318,39 @@ Triage is told the project's repos when there are several and its
 servers with their roles, so a deploy task names in its title the server
 or role I named.
 
+## A server's conversation (2026-10-04, [[ADR-049-Server-Chat-And-Server-Jobs]])
+
+Each server has a conversation with The Eye, its page's **Chat** tab:
+the conversation of the server's own project, hidden from the Projects
+list. With a job going on the server, my message goes to it as in a
+project (Talking to The Eye). With none, one call on the quick model
+(`serverTalk`) reads my message with the server's state document,
+oraknid-monitor's last reading and what runs there:
+
+- a **question** they answer is answered in the conversation, with no
+  job ("Answered from the state document"); what they don't show is
+  said, never guessed;
+- **work**, or a question that needs looking on the server, starts a
+  **server job** in the server's project: its goal my request made
+  precise, the server already its server (nothing asked), the
+  **server-work** method, no interview. The Eye says so in one line, and
+  that it will say what changes before anything does.
+
+A server job is planned like any job, told that its place is the server
+(`ssh <alias> …`), with the state document; a small job is one task, a
+task that only looks is research. Its checks on the server are written
+`ssh <alias> <command that reads>` and run by Oraknid itself over its
+own connection. Before work starts, a plan that changes the server waits
+for my approval, **"Approve what will change on <server>"**, listing
+each task and what it may change, unless the job is at Full autonomy on
+a server that isn't production; each new version of the plan asks again.
+Production asks before any change it makes on the server, at any
+autonomy ([[Servers]] → A server's chat and its jobs).
+
+When it ends, The Eye's report of the job (The Eye speaks up) says what
+was done, the state document's new version with its diff from the one
+before, and the server's backup plans to look at when its data changed.
+
 ## Evaluation
 
 After each task, The Eye records the outcome in the Leg's observed
