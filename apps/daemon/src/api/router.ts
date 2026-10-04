@@ -11,6 +11,8 @@ import {
   Event,
   EyeMessage,
   EyeModels,
+  FolderList,
+  FolderListInput,
   FoundAgent,
   GitHubAccount,
   GitHubBranch,
@@ -50,6 +52,7 @@ import {
   MailThreadPage,
   MetricsSample,
   NewChat,
+  NewFolderInput,
   NewJob,
   NewLeg,
   NewMailAccount,
@@ -185,6 +188,7 @@ import { pruneLogs, storageUsage } from "../storage/storage.ts";
 import { TERMINAL_SETTING } from "../term/server.ts";
 import type { ToolRegistry } from "../tools/registry.ts";
 import { VERSION } from "../version.ts";
+import { listFolders, makeFolder } from "../workspace/folders.ts";
 import { type GitHub, GitHubError } from "../workspace/github.ts";
 import type { Repos } from "../workspace/github-repos.ts";
 import { NotAGitRepo, type Projects } from "../workspace/projects.ts";
@@ -916,6 +920,33 @@ export const router = {
       .input(z.object({ id: z.string() }))
       .output(z.object({ jobs: z.number(), folder: z.string() }))
       .handler(({ context: c, input }) => guard(() => c.projects.remove(input.id, c.paths.logs))),
+  },
+  /**
+   * The folder picker (Web-UI → The folder picker): this machine's folders by
+   * name, never a file; a folder made in one I chose. Home only for a
+   * standard device, like making a project.
+   */
+  files: {
+    folders: base
+      .input(FolderListInput.default({ showHidden: false }))
+      .output(FolderList)
+      .handler(({ input }) => guard(() => listFolders(input))),
+    makeFolder: base
+      .input(NewFolderInput)
+      .output(z.object({ path: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          const made = makeFolder(input);
+          c.bus.publish({
+            type: "folder.created",
+            topic: "overview",
+            jobId: null,
+            payload: { path: made.path },
+            actor: "owner",
+          });
+          return made;
+        }),
+      ),
   },
   /** My servers: SSH, a state document, oraknid-monitor (ADR-026/027). */
   servers: {

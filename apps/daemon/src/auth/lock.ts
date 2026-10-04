@@ -304,6 +304,9 @@ export const HOME_ONLY = [
   "/projects/updateRepo",
   "/projects/setLocalPorts",
   "/projects/delete",
+  // The folder picker (2026-10-04): this machine's folders, for a project made here.
+  "/files/folders",
+  "/files/makeFolder",
   "/servers/add",
   "/servers/update",
   "/servers/setup",
