@@ -32,6 +32,42 @@ On creation Oraknid:
 4. Adds `.oraknid/` to `.git/info/exclude`, except `.oraknid/silk/`,
    which I may choose to commit.
 
+### Making a project (2026-10-04, M13.19)
+
+**New project** (Projects) asks two things, in this order, and says
+what it will do before it does it:
+
+1. **Its name.**
+2. **Where it comes from**, three choices, **New** the default:
+   - **New**: Oraknid makes the project's folder, named after the
+     project (lower case, dashes; I can change it), **in a folder I
+     choose** (the last one I used is offered), and makes it a git repo.
+     When GitHub is connected, **Also a new GitHub repo** makes one on
+     the account I pick (private unless I say otherwise), clones it
+     there and links the project to it ([[ADR-038-Project-Accounts]]).
+   - **A folder on this computer**: the folder I choose *is* the
+     project, a repo or a folder holding several ([[ADR-042-Several-Repos-And-Servers]]).
+     A folder that isn't a repo is asked about, as above.
+   - **From GitHub**: with GitHub connected, one of my repos from a
+     list I can search (of every account, or one), cloned through the
+     account that lists it and linked to the project; or a link, of any
+     git host, cloned as it is. Without an account only a link works,
+     and only for a public repo: the form says so. The clone goes in a
+     folder named after the repo, in a folder I choose.
+3. **The sentence**: one line under the form says what will happen,
+   with the real paths, before anything does: "Creates
+   /home/me/code/piano and makes it a git repo." · "Uses
+   /home/me/code/app as the project. Nothing in it changes until a job
+   runs, and then only in a worktree." · "Clones ABakdi/piano into
+   /home/me/code/piano and links the project to it." While something is
+   missing it says what, and **Create project** waits.
+
+Every folder is chosen with **the folder picker** ([[Web-UI]] → The
+folder picker), from this computer or from a phone, or typed. The form
+is New work's too (Starting work, below): there a folder I have that
+isn't a repo is made one without asking. All of it is
+`projects.createFrom` ([[API-Contract]]).
+
 ## A job's name and description (2026-10-04)
 
 A job is named by what it is, not by the first words I typed ("now you
@@ -114,7 +150,7 @@ One page, two sides ([[Phase-8-Daily-Use]]):
 
 | Option | Default | Notes |
 | :-- | :-- | :-- |
-| Project | last used | An existing project, or a **new** one: an existing folder (a repo or not), a new empty folder (with a new git repo), a **new GitHub repo** (created, then cloned), an **existing GitHub repo** (cloned), or any public **git URL** (cloned) — [[ADR-023-GitHub-By-Token]]. |
+| Project | last used | An existing project, or a **new** one, with New project's form (Projects → Making a project): its name, then **New** (a new folder made a git repo, and a **new GitHub repo** too if I ask), **a folder on this computer** (a repo or not; one that isn't is made one), or **from GitHub** (one of my repos, or any public **git URL**, cloned) — [[ADR-023-GitHub-By-Token]]. |
 | Skills | the project's | The skills The Eye may use; it picks the one that fits ([[Skills]]). |
 | Legs | all healthy Legs | Any subset. |
 | Autonomy | Standard | See [[Approvals-and-Autonomy]]. |

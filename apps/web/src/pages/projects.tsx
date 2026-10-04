@@ -9,6 +9,7 @@ import { BackButton, Empty, ErrorNote, Loading, PageHeader, Stat } from "@/compo
 import { useConfirm } from "@/components/confirm";
 import { EyeChat } from "@/components/eye-chat";
 import { ProjectBudgetCard } from "@/components/job-budget";
+import { NewProjectDialog } from "@/components/new-project";
 import { type PageTab, PageTabs } from "@/components/page-tabs";
 import { ProjectNetworkCard } from "@/components/project-network";
 import { isSeveral, ProjectReposCard, ProjectRepoTab } from "@/components/project-repo";
@@ -20,16 +21,6 @@ import { ProjectSilk } from "@/components/silk-list";
 import { StatsCharts } from "@/components/stats-charts";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { api, message } from "@/lib/api";
 import { tokens } from "@/lib/format";
 import { t } from "@/lib/i18n";
@@ -77,7 +68,11 @@ export function ProjectsPage({
             "A project is a folder or repo that jobs work in. Oraknid works in its own worktree and never on your branch.",
           )}
         </Empty>
-        <NewProject open={creating} onOpenChange={setCreating} />
+        <NewProjectDialog
+          open={creating}
+          onOpenChange={setCreating}
+          onCreated={(pid) => go(`/projects/${pid}`)}
+        />
       </div>
     );
   const archived = all.filter((p) => p.archivedAt);
@@ -144,7 +139,11 @@ export function ProjectsPage({
           <ProjectDetail key={shown.id} project={shown} tab={tab} job={job} sub={sub} />
         ) : null}
       </section>
-      <NewProject open={creating} onOpenChange={setCreating} />
+      <NewProjectDialog
+        open={creating}
+        onOpenChange={setCreating}
+        onCreated={(pid) => go(`/projects/${pid}`)}
+      />
     </div>
   );
 }
@@ -479,96 +478,6 @@ function ProjectStats({ id }: { id: string }) {
         burnTitle={t("The project's budget burn")}
       />
     </div>
-  );
-}
-
-function NewProject({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const [name, setName] = useState("");
-  const [path, setPath] = useState("");
-  const [askGit, setAskGit] = useState(false);
-  const [error, setError] = useState<unknown>();
-  const create = async (initGit?: boolean) => {
-    setError(undefined);
-    try {
-      const p = await api.projects.create({
-        name: name || path.split("/").filter(Boolean).at(-1) || "project",
-        workspacePath: path,
-        ...(initGit === undefined ? {} : { initGit }),
-      });
-      // A folder holding several repos is a project of several (ADR-042): said, with their names.
-      toast.success(
-        isSeveral(p.repos)
-          ? t("Project created, with {n} repos: {names}.", {
-              n: p.repos.length,
-              names: p.repos.map((r) => r.name).join(", "),
-            })
-          : t("Project created."),
-      );
-      onOpenChange(false);
-      setAskGit(false);
-    } catch (e) {
-      if (message(e).includes("is not a git repo")) setAskGit(true);
-      else setError(e);
-    }
-  };
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{t("New project")}</DialogTitle>
-          <DialogDescription>
-            {t(
-              "A folder on this machine: a repo, or a folder holding several repos (a site and its API), each found. Nothing is changed in it until a job runs, and then only in a worktree.",
-            )}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="pp">{t("Folder")}</Label>
-            <Input
-              id="pp"
-              placeholder="/home/me/code/app"
-              value={path}
-              onChange={(e) => setPath(e.target.value)}
-              className="font-mono"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="pn">{t("Name")}</Label>
-            <Input
-              id="pn"
-              placeholder={path.split("/").filter(Boolean).at(-1) ?? ""}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
-          <ErrorNote error={error} />
-          {askGit ? (
-            <div className="space-y-2 rounded-md border p-3 text-sm">
-              <div>
-                {t("This folder is not a git repo. How should Oraknid keep its checkpoints?")}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button size="sm" onClick={() => create(true)}>
-                  {t("Make it a git repo")}
-                </Button>
-                <Button size="sm" variant="secondary" onClick={() => create(false)}>
-                  {t("Use a shadow repo, leave the folder alone")}
-                </Button>
-              </div>
-            </div>
-          ) : null}
-        </div>
-        <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>
-            {t("Cancel")}
-          </Button>
-          <Button disabled={!path.startsWith("/")} onClick={() => create()}>
-            {path.startsWith("/") ? t("Create") : t("Enter a full path")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 

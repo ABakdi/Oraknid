@@ -1,12 +1,19 @@
-import type { Budget, JobInput, ProjectSource } from "@oraknid/contracts";
+import type { Budget, JobInput } from "@oraknid/contracts";
 import { Play, Send, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Link, useLocation } from "wouter";
 import { ErrorNote, Loading, Markdown, PageHeader } from "@/components/common";
 import { useConfirm } from "@/components/confirm";
+import {
+  missing,
+  NewProjectFields,
+  newDraft,
+  projectSource,
+  rememberParent,
+} from "@/components/new-project";
 import { QuestionsForm } from "@/components/questions";
-import { AddLegButtons, GitHubSetupButton, ToolsSetupButton } from "@/components/setup";
+import { AddLegButtons, ToolsSetupButton } from "@/components/setup";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,17 +33,7 @@ import { t } from "@/lib/i18n";
 import { useLive } from "@/lib/live";
 import { cn } from "@/lib/utils";
 
-type SourceKind = ProjectSource["kind"];
 type Autonomy = "supervised" | "standard" | "full";
-
-const PARENT_KEY = "oraknid.newwork.parent";
-const remembered = () => {
-  try {
-    return localStorage.getItem(PARENT_KEY) ?? "";
-  } catch {
-    return "";
-  }
-};
 
 /**
  * The New work page (Jobs-and-Projects → Starting work): the options on the
@@ -58,10 +55,6 @@ export function WorkPage({ draftId }: { draftId?: string }) {
     topics: ["overview"],
     refreshOn: (e) => e.type.startsWith("tool."),
   });
-  const github = useLive(() => api.github.status(), {
-    topics: ["overview"],
-    refreshOn: (e) => e.type.startsWith("github."),
-  });
   const draftJob = useLive(
     () => (draftId ? api.jobs.get({ id: draftId }) : Promise.resolve(null)),
     {
@@ -82,15 +75,14 @@ export function WorkPage({ draftId }: { draftId?: string }) {
   });
   const [projectId, setProjectId] = useState<string>(arrived.repo ? "new" : arrived.projectId);
   const { confirm, dialog } = useConfirm();
-  const [source, setSource] = useState<SourceKind>(arrived.repo ? "github-clone" : "folder");
-  const [path, setPath] = useState("");
-  const [parent, setParent] = useState(remembered);
-  const [name, setName] = useState("");
-  const [isPrivate, setPrivate] = useState(true);
-  /** The account a new GitHub repo is made on: the first (the default) unless I pick another. */
-  const [account, setAccount] = useState("");
-  const [repo, setRepo] = useState(arrived.repo);
-  const [url, setUrl] = useState("");
+  // A new project: the same form as New project's (M13.19).
+  const [draft, setDraft] = useState(() =>
+    newDraft(
+      arrived.repo
+        ? { origin: "github", via: "mine", repo: arrived.repo, repoAccount: arrived.account }
+        : {},
+    ),
+  );
   const [skill, setSkill] = useState("auto");
   const [legIds, setLegIds] = useState<string[]>([]);
   const [autonomy, setAutonomy] = useState<Autonomy>("standard");
@@ -227,20 +219,12 @@ export function WorkPage({ draftId }: { draftId?: string }) {
   const missingTools = needed.filter((n) => !ready.has(n));
 
   const healthy = (legs.data ?? []).filter((l) => l.health === "healthy" && !l.paused);
-  const sourceReady =
-    !isNew ||
-    (source === "folder"
-      ? !!path.trim()
-      : source === "github-clone"
-        ? !!parent.trim() && !!repo
-        : source === "git-url"
-          ? !!parent.trim() && !!url.trim()
-          : !!parent.trim() && !!name.trim());
+  const sourceReady = !isNew || !missing(draft);
   const why =
     !effectiveProject && !isNew
       ? t("Choose a project.")
       : !sourceReady
-        ? t("Say where the new project goes.")
+        ? missing(draft)
         : !goal.trim()
           ? t("Write what you want done.")
           : healthy.length === 0
@@ -260,21 +244,14 @@ export function WorkPage({ draftId }: { draftId?: string }) {
   /** The project, made now when it is a new one. */
   const projectForJob = async (): Promise<string> => {
     if (!isNew) return effectiveProject as string;
-    try {
-      localStorage.setItem(PARENT_KEY, parent);
-    } catch {}
-    const src = newProjectSource({
-      source,
-      path,
-      parent,
-      name,
-      isPrivate,
-      account,
-      repo,
-      url,
-      repoAccount: arrived.account && repo === arrived.repo ? arrived.account : "",
+    // A folder I have that isn't a repo becomes one here (the dialog asks instead).
+    const src = projectSource(draft, { initGit: true });
+    if (!src) throw new Error(missing(draft) ?? t("Say where the new project goes."));
+    if (draft.origin !== "folder") rememberParent(draft.parent);
+    const p = await api.projects.createFrom({
+      ...(draft.name.trim() ? { name: draft.name.trim() } : {}),
+      source: src,
     });
-    const p = await api.projects.createFrom({ source: src });
     setProjectId(p.id);
     return p.id;
   };
@@ -417,91 +394,8 @@ export function WorkPage({ draftId }: { draftId?: string }) {
               ) : null}
             </div>
             {isNew ? (
-              <div className="space-y-3 rounded-md border p-3">
-                <div className="space-y-1.5">
-                  <Label>{t("From")}</Label>
-                  <Select value={source} onValueChange={(v) => setSource(v as SourceKind)}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="folder">{t("A folder I have")}</SelectItem>
-                      <SelectItem value="new-folder">{t("A new empty folder")}</SelectItem>
-                      <SelectItem value="github-new" disabled={!github.data?.connected}>
-                        {t("A new GitHub repo")}
-                      </SelectItem>
-                      <SelectItem value="github-clone" disabled={!github.data?.connected}>
-                        {t("One of my GitHub repos")}
-                      </SelectItem>
-                      <SelectItem value="git-url">{t("A git URL")}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {!github.data?.connected ? (
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                      <span>{t("For GitHub repos, connect GitHub.")}</span>
-                      <GitHubSetupButton />
-                    </div>
-                  ) : null}
-                </div>
-                {source === "folder" ? (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="w-path">{t("Folder")}</Label>
-                    <Input
-                      id="w-path"
-                      className="font-mono text-xs"
-                      value={path}
-                      onChange={(e) => setPath(e.target.value)}
-                      placeholder="/home/me/Dev/site"
-                    />
-                    <div className="text-xs text-muted-foreground">
-                      {t("A repo or not: a folder that isn't one becomes a git repo.")}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="w-parent">{t("Inside this folder")}</Label>
-                    <Input
-                      id="w-parent"
-                      className="font-mono text-xs"
-                      value={parent}
-                      onChange={(e) => setParent(e.target.value)}
-                      placeholder="/home/me/Dev"
-                    />
-                  </div>
-                )}
-                {source === "new-folder" || source === "github-new" ? (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="w-name">{t("Name")}</Label>
-                    <Input
-                      id="w-name"
-                      value={name}
-                      onChange={(e) => setName(e.target.value.replace(/[^A-Za-z0-9._-]/g, "-"))}
-                      placeholder="my-site"
-                    />
-                  </div>
-                ) : null}
-                {source === "github-new" ? (
-                  <GitHubAccountPicker value={account} onChange={setAccount} />
-                ) : null}
-                {source === "github-new" ? (
-                  <label htmlFor="w-private" className="flex items-center gap-2">
-                    <Switch id="w-private" checked={isPrivate} onCheckedChange={setPrivate} />
-                    {t("Private")}
-                  </label>
-                ) : null}
-                {source === "github-clone" ? <RepoPicker value={repo} onChange={setRepo} /> : null}
-                {source === "git-url" ? (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="w-url">{t("Git URL")}</Label>
-                    <Input
-                      id="w-url"
-                      className="font-mono text-xs"
-                      value={url}
-                      onChange={(e) => setUrl(e.target.value)}
-                      placeholder="https://gitlab.com/me/site.git"
-                    />
-                  </div>
-                ) : null}
+              <div className="rounded-md border p-3">
+                <NewProjectFields draft={draft} onChange={setDraft} plainFolder="init" />
               </div>
             ) : null}
 
@@ -771,115 +665,6 @@ function SkillUpload({ onAdded }: { onAdded: (id: string) => void }) {
         />
       </label>
     </Button>
-  );
-}
-
-/** Where a new project comes from, as the API takes it (Jobs-and-Projects → Starting work). */
-export function newProjectSource(o: {
-  source: SourceKind;
-  path: string;
-  parent: string;
-  name: string;
-  isPrivate: boolean;
-  /** The account a new GitHub repo is made on; "" for the default. */
-  account: string;
-  repo: string;
-  url: string;
-  /** The account that reads the repo to clone, when it came from Repos; "" otherwise. */
-  repoAccount: string;
-}): ProjectSource {
-  const parent = o.parent.trim();
-  switch (o.source) {
-    case "folder":
-      return { kind: "folder", path: o.path.trim(), initGit: true };
-    case "new-folder":
-      return { kind: "new-folder", parent, name: o.name.trim() };
-    case "github-new":
-      return {
-        kind: "github-new",
-        ...(o.account ? { account: o.account } : {}),
-        parent,
-        name: o.name.trim(),
-        private: o.isPrivate,
-        description: "",
-      };
-    case "github-clone":
-      return {
-        kind: "github-clone",
-        parent,
-        fullName: o.repo,
-        ...(o.repoAccount ? { account: o.repoAccount } : {}),
-      };
-    default:
-      return { kind: "git-url", parent, url: o.url.trim() };
-  }
-}
-
-/**
- * The account a new GitHub repo is made on (ADR-038): shown when I have
- * more than one, the first (the default) chosen until I pick another.
- */
-export function GitHubAccountPicker({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  const accounts = useLive(() => api.github.accounts(), {
-    topics: ["overview"],
-    refreshOn: (e) => e.type.startsWith("github."),
-  });
-  const logins = (accounts.data ?? []).map((a) => a.login);
-  if (logins.length < 2) return null;
-  const chosen = logins.includes(value) ? value : (logins[0] as string);
-  return (
-    <div data-help="work.github-account" className="space-y-1.5">
-      <Label>{t("GitHub account")}</Label>
-      <Select value={chosen} onValueChange={onChange}>
-        <SelectTrigger className="w-full" aria-label={t("GitHub account")}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {(accounts.data ?? []).map((a, i) => (
-            <SelectItem key={a.login} value={a.login}>
-              {a.login}
-              {i === 0 ? ` · ${t("default")}` : ""}
-              {a.error ? ` · ${t("can't be used now")}` : ""}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
-
-/** One of my GitHub repos, newest first. */
-function RepoPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const repos = useLive(() => api.github.repos(), { topics: [] });
-  if (repos.error) return <ErrorNote error={repos.error} />;
-  if (!repos.data) return <Loading rows={1} />;
-  return (
-    <div className="space-y-1.5">
-      <Label>{t("Repo")}</Label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="w-full">
-          <SelectValue placeholder={t("Choose a repo")} />
-        </SelectTrigger>
-        <SelectContent>
-          {/* One chosen in Repos may be another account's. */}
-          {value && !repos.data.some((r) => r.fullName === value) ? (
-            <SelectItem value={value}>{value}</SelectItem>
-          ) : null}
-          {repos.data.map((r) => (
-            <SelectItem key={r.fullName} value={r.fullName}>
-              {r.fullName}
-              {r.private ? ` · ${t("private")}` : ""}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
   );
 }
 

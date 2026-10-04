@@ -29,7 +29,8 @@ export const NewProject = z.object({
 });
 export type NewProject = z.infer<typeof NewProject>;
 
-const FolderName = z
+/** A folder's name: one part of a path, nothing that climbs out. */
+export const FolderName = z
   .string()
   .regex(/^[A-Za-z0-9._-]{1,100}$/, "letters, digits, dots, dashes and underscores")
   .refine((n) => n !== "." && n !== "..", "a folder name");

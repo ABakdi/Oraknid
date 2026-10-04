@@ -461,7 +461,7 @@ export const CONTROLS: HelpControl[] = [
     id: "projects.new",
     page: "projects",
     name: "New project",
-    does: "Adds a project: an existing folder, a new one, a GitHub repo, a git URL.",
+    does: "Adds a project: its name, then where it comes from (New: a folder Oraknid makes, a folder on this computer, or GitHub), each folder chosen with the folder picker, and a sentence saying what will happen.",
     where: "Projects, above the list",
   },
   {

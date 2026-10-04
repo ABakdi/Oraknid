@@ -290,7 +290,7 @@ the address (`/projects/<id>/<tab>`):
   then its repos (the same card), the folder and branches (each repo's
   for several), archive or delete, and the project's command rules.
 - In the projects list, a project of several repos says how many; New
-  project says how many repos it found, and their names. A job's Result
+  project (below) says how many repos it found, and their names. A job's Result
   lists each repo's branch, merged or not, and its commits; Merge
   merges each. `/servers?add=1` opens Servers' add dialog (The Eye's link
   when it waits for a new server).
@@ -311,12 +311,58 @@ below 1280 px.
 Options on the left, my prompt and the conversation with The Eye on
 the right ([[Jobs-and-Projects]] → Starting work). It is for a first
 request, a new project or a draft; more work in a project is asked in
-its Eye tab. A new project from a new GitHub repo is made on the GitHub
+its Eye tab. "A new project…" shows New project's form (below), the
+same name, choices and sentence; a folder I have that isn't a repo is
+made one there. A new project from a new GitHub repo is made on the GitHub
 account I pick (the default first). The drafts are listed above the form. The draft is saved as
 I go; **Start** and **Delete**. **Start** stays disabled until there is
 a goal and a project, and says why; what it waits for that can be set
 up (a Leg, a tool) is offered beside it. Its budget starts as the
 chosen project's. Once started, it lands in the project's Eye tab.
+
+### New project (2026-10-04, M13.19)
+
+A dialog from Projects (and the form of New work's "A new project…";
+[[Jobs-and-Projects]] → Making a project). **Name** first; then **Where
+it comes from**, three cards, each with its line: **New** (chosen;
+"A new folder, made a git repo"), **A folder on this computer** ("One
+you have: a repo, or a folder of several"), **From GitHub** ("One of
+your repos, or a link"). Each shows its own fields:
+
+- New: **Where it goes** (a folder, with the picker), **Folder name**
+  (the name slugified until I type one), and with GitHub connected
+  **Also a new GitHub repo** (the account when I have several,
+  **Private** on); without, a line and **Connect GitHub**.
+- A folder on this computer: **The project's folder**, with the picker;
+  a folder that isn't a repo asks how to keep its checkpoints, as
+  before.
+- From GitHub: with an account, **One of my repos** (a searchable list
+  of every account's, or one's, each with the project it already is
+  and a lock when private) or **A link**; without one, only the link,
+  saying only a public repo can be cloned, with **Connect GitHub**.
+  Then **Clone it into**, with the picker.
+
+Under them, the sentence saying what will happen, with the real paths,
+or what is still missing; **Create project** waits for it. The parent
+folder last used is offered again (New work's too). Once made, the
+project opens.
+
+### The folder picker (2026-10-04, M13.19)
+
+Wherever the app asks for a folder on this computer (New project, New
+work's new project, a backup plan kept on this computer), the field has
+**Choose…** beside it. A browser can't give a folder's full path, and
+from a phone the folder is on the computer, so the daemon lists them
+(`files.folders`, [[API-Contract]]): a dialog with breadcrumbs (each a
+way back), **Up**, **Home**, **New folder** (an empty one, made where I
+am, then opened), **Show hidden**, the folders of the one I'm in (a
+repo marked **git**, a link marked, one Oraknid may not open shown with
+a lock and not opened) and **Or type a path** (a full path or `~/…`,
+**Go**). The footer says the folder I'm in, and **Choose this folder**
+picks it. It opens where the field's path is, or at my home, saying
+why, when that isn't there. It lists folders only, never a file. The
+field stays typeable. Away from home it needs full rights, like making
+a project.
 
 ### Repos (2026-10-03, [[ADR-040-Repos-Page]])
 

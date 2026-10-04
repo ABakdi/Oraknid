@@ -1,7 +1,8 @@
 import { accessSync, constants, existsSync, mkdirSync, statSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, join } from "node:path";
 import type { NewProjectFrom } from "@oraknid/contracts";
 import type { EventBus } from "../events/bus.ts";
+import { expandPath } from "./folders.ts";
 import type { GitHub } from "./github.ts";
 import type { Projects } from "./projects.ts";
 
@@ -9,7 +10,7 @@ import type { Projects } from "./projects.ts";
 // a folder I have, a new empty one, a new GitHub repo or a cloned one.
 
 function parentFolder(path: string): string {
-  const parent = resolve(path);
+  const parent = expandPath(path);
   if (!existsSync(parent) || !statSync(parent).isDirectory())
     throw new Error(`${parent} is not a folder: choose where the project goes.`);
   try {
@@ -47,8 +48,8 @@ export async function projectFrom(
   const s = input.source;
   if (s.kind === "folder")
     return d.projects.create({
-      name: input.name ?? basename(resolve(s.path)),
-      workspacePath: s.path,
+      name: input.name ?? basename(expandPath(s.path)),
+      workspacePath: expandPath(s.path),
       ...(s.initGit !== undefined ? { initGit: s.initGit } : {}),
     });
   const parent = parentFolder(s.parent);
