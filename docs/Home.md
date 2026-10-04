@@ -60,7 +60,8 @@ in part). Next: those runs, then Later.
 - [[Phase-11-Workspace]] — built: pages in tabs, terminal workspace, device rights, a public Nest, the app's own look and the product site; both Nests deployed; the mark kept, its pupil made vertical and gently wavy (2026-10-03)
 - [[Phase-12-Email]] — built: the Mail page, IMAP and POP3, agents' drafts; my Gmail syncs; an approved agent draft and an IMAP account to try
 - [[Phase-13-Projects-First]] — built on `dev`: projects first, Nest pages by mode, the one-script install, questions with options, Workflow, GitHub per project, Repos, Docs and the helper, several repos and servers, server insight, backups, The Eye speaks up, cloud storage, job names
-- Later ← **next**: containers per job, teams
+- [[Phase-14-Oraknid-Over-MCP]] — planned: Oraknid as an MCP server, a command center for any agent
+- Later: containers per job, teams
 
 ## 04 — Decisions
 - [[ADR-001-Monorepo]] — one pnpm + Turborepo monorepo with the canon inside
@@ -93,6 +94,7 @@ in part). Next: those runs, then Later.
 - [[ADR-036-One-Script-Install]] · [[ADR-037-Questions-With-Options]] · [[ADR-038-Project-Accounts]] — Phase 13: one install script with services for systemd, OpenRC and runit; questions with options; a project's GitHub repo and servers, chosen once
 - [[ADR-045-The-Eye-Speaks-Up]] · [[ADR-046-Cloud-Storage]] — Phase 13: The Eye reports in the conversation and every answer says what it does; my storage providers as one pool
 - [[ADR-047-Releases]] — v0.1.0: semantic versions, a tag and a GitHub pre-release with a pinned install script; `main` follows the releases
+- [[ADR-051-Oraknid-Over-MCP]] — proposed (Phase 14): Oraknid as an MCP server; connected clients with rights I give; long jobs started, followed and steered from any agent; GitHub, mail and servers without secrets
 - [[ADR-048-Updates]] — updates from inside Oraknid: install.sh records what it installed; Oraknid checks GitHub on its channel (dev: pre-releases and new work on dev; stable: releases) and updates in one click, the database copied first, a failed update rolled back
 - [[ADR-043-Server-Insight]] · [[ADR-044-Backups]] — Phase 13: Docker, databases, the proxy, traffic and logs of a server; scheduled, encrypted database backups
 - [[ADR-042-Several-Repos-And-Servers]] — Phase 13: a project of several repos, each committed and pushed on its own; servers with roles, picked by name and confirmed
