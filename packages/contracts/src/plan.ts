@@ -17,6 +17,11 @@ export const PlannedTask = z.object({
   verify: z.array(z.string().min(1)),
   requiredCapabilities: z.array(Capability).min(1),
   difficulty: Difficulty,
+  /**
+   * The phase it belongs to, when the work comes in phases (1, 2, 3…):
+   * every task of a later phase comes after the earlier phases' work.
+   */
+  phase: z.number().int().min(1).max(20).optional(),
 });
 export type PlannedTask = z.infer<typeof PlannedTask>;
 
@@ -58,6 +63,12 @@ export const InterviewRound = z.object({
   questions: LooseQuestions,
   /** Points still open when done: recorded as open questions. */
   open: z.array(z.string()),
+  /**
+   * What The Eye decided itself rather than ask (a sensible default, a
+   * question I left unanswered): said in the playback, kept in Silk as its
+   * decisions, which I can correct.
+   */
+  assumptions: z.array(z.string()).optional(),
 });
 export type InterviewRound = z.infer<typeof InterviewRound>;
 

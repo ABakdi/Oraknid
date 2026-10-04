@@ -938,7 +938,7 @@ export const CONTROLS: HelpControl[] = [
     page: S,
     tab: "work",
     name: "The Eye's models",
-    does: "Which Leg and models The Eye reasons with, and for quick decisions.",
+    does: "Which Leg and models The Eye reasons with, and for quick decisions; how many rounds its interview may take.",
     where: "Settings → Eye & jobs",
   },
   {

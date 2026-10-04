@@ -774,7 +774,16 @@ export async function startDaemon(options: DaemonOptions) {
   // Recovery may have left jobs active: take the lock straight away if so.
   await inhibit.reconcile();
   void health.checkAll().catch((err) => console.error("health check failed", err));
-  resumeConversations({ db, bus, silk, runner, brain, tmpDir: join(paths.dataDir, "tmp"), now });
+  resumeConversations({
+    db,
+    bus,
+    silk,
+    runner,
+    brain,
+    inbox,
+    tmpDir: join(paths.dataDir, "tmp"),
+    now,
+  });
   os.serviceNotifier.ready();
   const stopWatchdog = os.serviceNotifier.startWatchdog();
 

@@ -27,7 +27,7 @@ import { fakeOs } from "../testing/fake-os.ts";
 import { fakeSsh } from "../testing/fake-ssh.ts";
 import { type Action, scriptedLeg, type TurnContext } from "../testing/scripted-leg.ts";
 import { worktreeProblem } from "../workspace/git.ts";
-import type { EyeBrain, EyeTriage } from "./brain.ts";
+import type { ExtendInput, EyeBrain, EyeTriage, InterviewInput, TriageInput } from "./brain.ts";
 import { policyFor } from "./policy.ts";
 import { resumeConversations } from "./talk.ts";
 
@@ -100,10 +100,14 @@ async function eye(
     autonomy?: "supervised" | "standard" | "full";
     budget?: Budget;
     interview?: (answers: string[]) => import("@oraknid/contracts").InterviewRound;
+    /** Sees what each interview round is given. */
+    interviewInput?: (input: InterviewInput) => void;
+    /** New work I ask for on a running job, planned into its Web. */
+    extend?: (input: ExtendInput) => WebPlan;
     inputs?: { kind: "file" | "folder" | "link"; ref: string; untrusted: boolean }[];
     sameProviderFallback?: boolean;
     classify?: (command: string) => { decision: "allow" | "ask"; reason: string };
-    triage?: (message: string) => EyeTriage | Promise<EyeTriage>;
+    triage?: (message: string, input: TriageInput) => EyeTriage | Promise<EyeTriage>;
     evaluate?: (
       report: string,
       criteria?: string,
@@ -149,13 +153,23 @@ async function eye(
       o.repair?.(command) ?? { broken: false, command, reason: "the work is at fault" },
     evaluate: async ({ report, criteria }) =>
       o.evaluate?.(report, criteria) ?? { accepted: true, reason: "it is there", missing: [] },
-    triage: async ({ message }) => {
+    triage: async (input) => {
       if (!o.triage) throw new Error("no triage scripted");
-      return o.triage(message);
+      return o.triage(input.message, input);
     },
     classifyCommand: async ({ command }) =>
       o.classify?.(command) ?? { decision: "allow", reason: "it only serves the task" },
-    interviewRound: async ({ answers }) => {
+    ...(o.extend
+      ? {
+          extend: async (input: ExtendInput) => {
+            plans.push("extend");
+            return (o.extend as (i: ExtendInput) => WebPlan)(input);
+          },
+        }
+      : {}),
+    interviewRound: async (input) => {
+      const { answers } = input;
+      o.interviewInput?.(input);
       plans.push(`interview:${answers.length + 1}`);
       return (
         o.interview?.(answers) ?? { done: true, playback: "Clear enough.", questions: [], open: [] }
@@ -1041,6 +1055,22 @@ describe("budgets after the start (M1.9)", () => {
   });
 });
 
+/** Answers an interview round in the inbox once it is asked, in words; returns it as asked. */
+async function answerRound(api: Awaited<ReturnType<typeof eye>>["api"], n: number) {
+  const end = Date.now() + 5000;
+  for (;;) {
+    const item = (await api.inbox.list({ state: "open" })).find(
+      (i) => i.title === `Interview, round ${n}`,
+    );
+    if (item) {
+      await api.inbox.answer({ id: item.id, answer: `answer ${n}` });
+      return item;
+    }
+    if (Date.now() > end) throw new Error(`no round ${n}`);
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
 describe("the interview (M1.7)", () => {
   const round = (n: number) => ({
     done: false,
@@ -1353,8 +1383,23 @@ describe("the interview (M1.7)", () => {
     expect(silk.find((e) => e.title === "Open question: Colour output?")?.kind).toBe("issue");
   });
 
-  it("stops when I say 'Enough, start', recording what was left open", async () => {
-    const { api, id } = await eye(good, { interview: (a) => round(a.length + 1) });
+  it("stops when I say 'Enough, start', assuming the recommended answers and recording what was left open", async () => {
+    const { api, id } = await eye(good, {
+      interview: (a) => ({
+        ...round(a.length + 1),
+        questions: [
+          ...round(1).questions,
+          {
+            id: "lang",
+            shape: "text" as const,
+            prompt: "Which language?",
+            options: [],
+            recommended: null,
+            allowOther: true,
+          },
+        ],
+      }),
+    });
     const end = Date.now() + 5000;
     let item: Awaited<ReturnType<typeof api.inbox.list>>[number] | undefined;
     while (!item && Date.now() < end) {
@@ -1363,9 +1408,108 @@ describe("the interview (M1.7)", () => {
     }
     await api.inbox.answer({ id: item?.id as string, answer: "Enough, start" });
     expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
-    const titles = (await api.silk.list({ jobId: id })).map((e) => e.title);
-    expect(titles).toContain("Open question: Who runs this script?");
-    expect(titles).toContain("What I want (interview)");
+    const silk = await api.silk.list({ jobId: id });
+    const titles = silk.map((e) => e.title);
+    // A question with a recommended answer is assumed, as The Eye's decision I can correct.
+    expect(silk.find((e) => e.title === "Assumed: Who runs this script? — Me")).toMatchObject({
+      kind: "decision",
+      authoredBy: "eye",
+    });
+    expect(titles).toContain(
+      "Open question: Which language? (left open when I ended the interview)",
+    );
+    expect(silk.find((e) => e.title === "What I want (interview)")?.body).toContain(
+      "**What I assumed** (tell me if any is wrong)\n- Who runs this script? — Me",
+    );
+  });
+
+  const text = (prompt: string, i: number) => ({
+    id: `q${i + 1}`,
+    shape: "text" as const,
+    prompt,
+    options: [],
+    recommended: null,
+    allowOther: true,
+  });
+
+  it("never asks the same question again, and ends when nothing new is left (after the piano job)", async () => {
+    // A brain that would ask the same things forever, in other words each time.
+    const asks = [
+      "What visual direction should the app have?",
+      "Which visual direction should the app have, again?",
+      "Who is it for?",
+      "Which colours and visual direction should the app have?",
+    ];
+    const seen: string[][] = [];
+    const { api, id, plans } = await eye(good, {
+      interview: (answers) => ({
+        done: false,
+        playback: "A greeting script.",
+        questions: asks.slice(0, 2 + answers.length).map(text),
+        open: [],
+      }),
+      interviewInput: (i) => seen.push((i.asked ?? []).map((q) => `${q.prompt} → ${q.answer}`)),
+    });
+    const r1 = await answerRound(api, 1);
+    // The second question means the same as the first: asked once.
+    expect(r1.questions?.map((q) => q.prompt)).toEqual([
+      "What visual direction should the app have?",
+    ]);
+    const r2 = await answerRound(api, 2);
+    expect(r2.questions?.map((q) => q.prompt)).toEqual(["Who is it for?"]);
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    // The third round had nothing new: the interview closed there, and planning ran once.
+    expect(plans).toEqual(["interview:1", "interview:2", "interview:3", "plan"]);
+    // Each round was told every question asked before, with my answer.
+    expect(seen).toEqual([
+      [],
+      ["What visual direction should the app have? → (the round's answer, in my words) answer 1"],
+      [
+        "What visual direction should the app have? → (the round's answer, in my words) answer 1",
+        "Who is it for? → (the round's answer, in my words) answer 2",
+      ],
+    ]);
+    expect((await api.inbox.list({})).filter((i) => i.title.startsWith("Interview"))).toHaveLength(
+      2,
+    );
+  });
+
+  it("asks at most its rounds, then plays back what it assumed (Skills → The interview)", async () => {
+    const topics = ["Which database?", "Which hosting provider?", "Which licence?", "Which logo?"];
+    const finals: boolean[] = [];
+    const { api, id, plans, d } = await eye(good, {
+      interview: (answers) =>
+        answers.length >= 3
+          ? {
+              done: true,
+              playback: "A greeting script, as answered.",
+              questions: [text("Which font?", 0)],
+              open: [],
+              assumptions: ["The logo is plain text."],
+            }
+          : {
+              done: false,
+              playback: "",
+              questions: [text(topics[answers.length] as string, 0)],
+              open: [],
+            },
+      interviewInput: (i) => finals.push(!!i.final),
+    });
+    for (const n of [1, 2, 3]) await answerRound(api, n);
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    expect(plans).toEqual(["interview:1", "interview:2", "interview:3", "interview:4", "plan"]);
+    // The fourth call was only for the playback: no fourth round was asked.
+    expect(finals).toEqual([false, false, false, true]);
+    expect((await api.inbox.list({})).filter((i) => i.title.startsWith("Interview"))).toHaveLength(
+      3,
+    );
+    const silk = d.silk.current(id);
+    expect(silk.find((e) => e.title === "What I want (interview)")?.body).toBe(
+      "A greeting script, as answered.\n\n**What I assumed** (tell me if any is wrong)\n- The logo is plain text.",
+    );
+    expect(silk.find((e) => e.title === "Assumed: The logo is plain text.")?.authoredBy).toBe(
+      "eye",
+    );
   });
 });
 
@@ -2689,4 +2833,277 @@ describe("The Eye speaks up, and the job's folder stays the project's", () => {
       "Left out: **Write hello.sh** (Left out by me). The tasks that need it are left out too: **Test hello.sh**. The job goes on without them.",
     ]);
   }, 45_000);
+});
+
+describe("the piano job, replayed (after 2026-10-04)", () => {
+  const T = (
+    key: string,
+    title: string,
+    kind: "implement" | "research" | "test" = "implement",
+  ): WebPlan["tasks"][number] => ({
+    key,
+    title,
+    instructions: `Do: ${title}.`,
+    kind,
+    dependsOn: [],
+    scope: ["notes/**"],
+    verify: ["true"],
+    requiredCapabilities: [kind === "research" ? "planning" : "implementation"],
+    difficulty: "low",
+  });
+  // What the planner gave that day, in shape: the same work twice, and no dependency at all.
+  const LIST: WebPlan = {
+    summary: "A piano app, phase 1.",
+    tasks: [
+      T("r1", "Research Web Audio libraries", "research"),
+      T("i1", "Initialize React project with Vite"),
+      T("k1", "Implement piano keyboard component"),
+      T("i2", "Initialize React TypeScript project"),
+      T("o1", "Implement oscilloscope display"),
+      T("e1", "Integrate phase 1 and test end-to-end", "test"),
+    ],
+    jobVerify: [],
+  };
+  const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  /** Each task writes its note; the research takes a while, so the job is running when I talk. */
+  const piano = (t: TurnContext): Action[] => [
+    ...(task(t).startsWith("Research") && t.turn === 1 ? [{ run: "sleep 1.5" }] : []),
+    { write: `notes/${slug(task(t))}.txt`, content: "done\n" },
+    { say: "DONE" },
+  ];
+
+  it("asks once, ends when I say so in chat, plans one graph through the planner, and adds new work into it once", async () => {
+    const triaged: string[] = [];
+    const { api, id, plans, d } = await eye(piano, {
+      plan: LIST,
+      // A brain that would ask the same things again and again, as that day.
+      interview: (answers) => ({
+        done: false,
+        playback: "A piano app.",
+        questions: [
+          {
+            id: "visual",
+            shape: "single" as const,
+            prompt:
+              answers.length === 0
+                ? "What visual direction should the app have?"
+                : "Which visual direction should the app have?",
+            options: [
+              { id: "electro", label: "Modern electro" },
+              { id: "calm", label: "Calm" },
+            ],
+            recommended: "electro",
+            allowOther: true,
+          },
+          {
+            id: answers.length === 0 ? "audience" : "sounds",
+            shape: "text" as const,
+            prompt: answers.length === 0 ? "Who is it for?" : "Which sounds should it ship with?",
+            options: [],
+            recommended: null,
+            allowOther: true,
+          },
+        ],
+        open: [],
+      }),
+      // That day the triage made tasks of "start now"; it must never be what plans.
+      triage: (m) => {
+        triaged.push(m);
+        return m.startsWith("Add a metronome")
+          ? {
+              intent: "task",
+              reply: "I'll add a metronome.",
+              silk: null,
+              tasks: [
+                {
+                  title: "Add a metronome",
+                  instructions: "A metronome beside the keyboard.",
+                  kind: "implement",
+                  scope: ["notes/**"],
+                  verify: ["true"],
+                  dependsOn: [],
+                  difficulty: "low",
+                  requiredCapabilities: ["implementation"],
+                },
+              ],
+            }
+          : {
+              intent: "task",
+              reply: "Starting.",
+              silk: null,
+              tasks: [{ ...T("x", "Initialize React project"), dependsOn: [] }],
+            };
+      },
+      extend: (input) => {
+        const keyboard = input.tasks.find((t) => t.title === "Implement piano keyboard component");
+        return {
+          summary: "A metronome, on the keyboard.",
+          tasks: [{ ...T("m1", "Add a metronome"), dependsOn: [keyboard?.id as string] }],
+          jobVerify: [],
+        };
+      },
+    });
+    // Round 1, answered in the inbox.
+    const r1 = await answerRound(api, 1);
+    expect(r1.questions?.map((q) => q.id)).toEqual(["visual", "audience"]);
+    // Round 2: the visual direction asked again in other words is dropped before it's asked.
+    const end = Date.now() + 5000;
+    let r2: Awaited<ReturnType<typeof api.inbox.list>>[number] | undefined;
+    while (!r2 && Date.now() < end) {
+      r2 = (await api.inbox.list({ state: "open" })).find((i) => i.title === "Interview, round 2");
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(r2?.questions?.map((q) => q.prompt)).toEqual(["Which sounds should it ship with?"]);
+    // While it's open, I say in the chat that the interview is over.
+    const { id: mine } = await api.jobs.talk({ id, text: "start now, interview is over" });
+    const answered = async () => {
+      const stop = Date.now() + 5000;
+      for (;;) {
+        const item = (await api.inbox.list({})).find((i) => i.id === r2?.id);
+        if (item?.state === "answered" || Date.now() > stop) return item;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+    };
+    // The round is closed by my message, word for word; the job goes on.
+    expect((await answered())?.answer).toBe("start now, interview is over");
+    const talk = await api.jobs.conversation({ id });
+    const asked = talk.find((m) => m.itemId === r2?.id);
+    expect(talk.find((m) => m.id === mine)?.replyTo).toBe(asked?.id);
+    expect(talk.filter((m) => m.text === "start now, interview is over")).toHaveLength(1);
+    // No model was asked what "start now" means, and no task came from the conversation.
+    expect(triaged).toEqual([]);
+    const running = await until(api, id, ["running", "completed", "blocked"]);
+    expect(running.state, running.blockedReason ?? "").toBe("running");
+    expect(plans.filter((p) => p === "plan")).toEqual(["plan"]);
+    expect(plans.filter((p) => p.startsWith("interview"))).toEqual(["interview:1", "interview:2"]);
+    const silk = d.silk.current(id);
+    expect(silk.find((e) => e.title === "What I want (interview)")).toBeDefined();
+    expect(silk.find((e) => e.title.startsWith("Open question: Which sounds"))).toBeDefined();
+    // The Web is a graph: the same work once, setup and research first, integration last.
+    const job = await api.jobs.get({ id });
+    const byTitle = new Map(job.tasks.map((t) => [t.title, t]));
+    expect(job.tasks.map((t) => t.title)).toEqual([
+      "Research Web Audio libraries",
+      "Initialize React project with Vite",
+      "Implement piano keyboard component",
+      "Implement oscilloscope display",
+      "Integrate phase 1 and test end-to-end",
+    ]);
+    const after = (title: string) =>
+      (byTitle.get(title)?.dependsOn ?? []).map((x) => job.tasks.find((t) => t.id === x)?.title);
+    expect(after("Implement piano keyboard component")).toEqual([
+      "Research Web Audio libraries",
+      "Initialize React project with Vite",
+    ]);
+    expect(after("Integrate phase 1 and test end-to-end")).toEqual([
+      "Implement piano keyboard component",
+      "Implement oscilloscope display",
+    ]);
+    // New work while it runs: planned into the graph after the keyboard, once, however often I ask.
+    await api.jobs.talk({ id, text: "Add a metronome" });
+    const replies = async (n: number) => {
+      const stop = Date.now() + 5000;
+      for (;;) {
+        const c = (await api.jobs.conversation({ id })).filter(
+          (m) => m.author === "eye" && m.action?.intent === "task",
+        );
+        if (c.length >= n || Date.now() > stop) return c;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+    };
+    expect((await replies(1))[0]?.action?.did).toEqual(["Added a task"]);
+    await api.jobs.talk({ id, text: "Add a metronome, please" });
+    const second = (await replies(2))[1];
+    expect(second?.action?.did).toEqual(["Already in the plan"]);
+    expect(second?.text).toBe("That's in the plan already: “Add a metronome”.");
+    const done = await until(api, id, ["completed", "blocked"], 20_000);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+    const metronome = done.tasks.filter((t) => t.title === "Add a metronome");
+    expect(metronome).toHaveLength(1);
+    expect(metronome[0]?.dependsOn.map((x) => done.tasks.find((t) => t.id === x)?.title)).toEqual([
+      "Implement piano keyboard component",
+    ]);
+    expect(plans.filter((p) => p === "plan" || p === "extend")).toEqual([
+      "plan",
+      "extend",
+      "extend",
+    ]);
+    expect(done.tasks.every((t) => t.state === "done")).toBe(true);
+  }, 60_000);
+
+  it("answers an open question with my chat message, and says it still waits when I talk of something else", async () => {
+    const inputs: TriageInput[] = [];
+    let itemId = "";
+    const { api, id, d } = await eye(good, {
+      interview: (answers) =>
+        answers.length
+          ? { done: true, playback: "A greeting, for children.", questions: [], open: [] }
+          : {
+              done: false,
+              playback: "",
+              questions: [
+                {
+                  id: "audience",
+                  shape: "text" as const,
+                  prompt: "Who is it for?",
+                  options: [],
+                  recommended: null,
+                  allowOther: true,
+                },
+              ],
+              open: [],
+            },
+      triage: (m, input) => {
+        inputs.push(input);
+        itemId = /\[(\w+)\] “Interview, round 1”/.exec(input.open ?? "")?.[1] ?? "";
+        return m === "What's the weather?"
+          ? {
+              intent: "question",
+              reply: "I can't tell from here.",
+              silk: null,
+              tasks: [],
+              item: { id: itemId, does: "unrelated", option: null },
+            }
+          : {
+              intent: "task",
+              reply: "Thanks: for children, then.",
+              silk: null,
+              tasks: [{ ...HELLO.tasks[0], dependsOn: [] } as EyeTriage["tasks"][number]],
+              item: { id: itemId, does: "answers", option: null },
+            };
+      },
+    });
+    const end = Date.now() + 5000;
+    while (!(await api.inbox.list({ state: "open" })).length && Date.now() < end)
+      await new Promise((r) => setTimeout(r, 20));
+    const reply = async (n: number) => {
+      const stop = Date.now() + 5000;
+      for (;;) {
+        const c = (await api.jobs.conversation({ id })).filter(
+          (m) => m.author === "eye" && m.action?.intent !== "report",
+        );
+        if (c.length >= n || Date.now() > stop) return c;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+    };
+    await api.jobs.talk({ id, text: "What's the weather?" });
+    expect((await reply(1))[0]?.text).toBe(
+      "I can't tell from here. I'm still waiting for your answer to “Interview, round 1”.",
+    );
+    // The triage was told what the job waits on, and that there is no plan yet.
+    expect(inputs[0]?.open).toContain("Who is it for?");
+    expect(inputs[0]?.unplanned).toBe(true);
+    expect((await api.inbox.list({ state: "open" })).map((i) => i.id)).toEqual([itemId]);
+    await api.jobs.talk({ id, text: "It's for children" });
+    expect((await reply(2))[1]?.action?.did).toEqual([
+      "Answered “Interview, round 1” with your message",
+    ]);
+    const job = await until(api, id, ["completed", "blocked"]);
+    expect(job.state, job.blockedReason ?? "").toBe("completed");
+    // My message was the round's answer, word for word; its tasks came from the planner alone.
+    expect(d.silk.current(id).find((e) => e.kind === "interview-answer")?.body).toContain(
+      "**My answer:** It's for children",
+    );
+    expect(job.tasks.map((t) => t.title)).toEqual(["Write hello.sh", "Test hello.sh"]);
+  });
 });

@@ -1,4 +1,5 @@
 import type { PlanMeasures, WebPlan } from "@oraknid/contracts";
+import { likeness, meaningWords } from "./likeness.ts";
 
 /** Task kinds that may have no verify command; they get a second reasoning look instead. */
 const UNVERIFIED_OK = new Set(["plan", "research"]);
@@ -163,4 +164,176 @@ export function planMeasures(plan: WebPlan): PlanMeasures {
     depth: Math.max(0, ...tasks.map((t) => depth(t.key))),
     kinds,
   };
+}
+
+// ── The Web as a graph (after the piano job, 2026-10-04): a plan is a graph of
+// dependent tasks, never a list of the same work twice.
+
+type Planned = WebPlan["tasks"][number];
+
+/** Words of a task's title that say nothing of what it is about. */
+const TASK_WORDS =
+  /\b(implement|implementation|add|adding|create|creating|build|building|write|writing|make|making|set|component|components|feature|features|support|task)\b/gi;
+const PHASE = /\(?\bphase\s*\d+\)?:?/gi;
+
+const titleCore = (title: string) => title.replace(PHASE, " ").replace(TASK_WORDS, " ");
+
+/**
+ * The same work planned twice: the same kind, and the same title in other
+ * words ("Initialize React project" and "Initialize React TypeScript
+ * project with Vite"), phase markers and generic verbs aside.
+ */
+export function sameTask(a: { title: string; kind: string }, b: { title: string; kind: string }) {
+  if (a.kind !== b.kind) return false;
+  const plain = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+  if (plain(a.title) === plain(b.title)) return true;
+  const x = meaningWords(titleCore(a.title));
+  const y = meaningWords(titleCore(b.title));
+  if (!x.size || !y.size) return false;
+  if (x.size === y.size && [...x].every((w) => y.has(w))) return true;
+  const [small, big] = x.size <= y.size ? [x, y] : [y, x];
+  if (small.size >= 2 && [...small].every((w) => big.has(w))) return true;
+  return likeness(titleCore(a.title), titleCore(b.title)) >= 0.6;
+}
+
+const FOUNDATION =
+  /\b(scaffold\w*|bootstrap\w*|initiali[sz]\w*|init|set ?up|setup|skeleton|create (?:the |a )?(?:project|app|repo|repository|workspace)|install (?:the )?dependencies)\b/i;
+const FINISHING =
+  /\b(integrat\w*|end[- ]to[- ]end|e2e|wire (?:it |them |everything )?(?:up|together)|assembl\w*|final (?:check|review|polish|test)\w*|smoke test\w*)\b/i;
+
+const edgeCount = (plan: WebPlan) => plan.tasks.reduce((n, t) => n + t.dependsOn.length, 0);
+
+/** A plan of several tasks with no dependency at all, where the order plainly matters. */
+export function orderMatters(plan: WebPlan): boolean {
+  const ts = plan.tasks;
+  if (ts.length < 2 || edgeCount(plan) > 0) return false;
+  const kinds = new Set(ts.map((t) => t.kind));
+  const builds = ts.some((t) => t.kind === "implement" || t.kind === "mechanical");
+  return (
+    ts.some((t) => FOUNDATION.test(t.title) || FINISHING.test(t.title)) ||
+    new Set(ts.map((t) => t.phase).filter((p) => p !== undefined)).size > 1 ||
+    (builds && (kinds.has("research") || kinds.has("plan") || kinds.has("test")))
+  );
+}
+
+/**
+ * What a planner should fix that doesn't make a plan unusable (The-Eye →
+ * Planning): the same work twice, and a plan with no dependency at all
+ * where the order plainly matters. Sent back once; Oraknid mends what
+ * remains itself (`shapeWeb`).
+ */
+export function graphProblems(plan: WebPlan): string[] {
+  const problems: string[] = [];
+  const ts = plan.tasks;
+  for (const [i, a] of ts.entries())
+    for (const b of ts.slice(i + 1))
+      if (sameTask(a, b))
+        problems.push(`"${a.key}" and "${b.key}" are the same work ("${a.title}"): plan it once.`);
+  if (orderMatters(plan))
+    problems.push(
+      `None of the ${ts.length} tasks depends on another, yet their order matters: give each task in "dependsOn" the keys of the tasks whose results it needs (the project's setup before its features, research before the work that uses it, integration and tests after the parts they cover), and keep tasks that don't need each other side by side.`,
+    );
+  return problems;
+}
+
+/**
+ * A plan made into a sound graph before it becomes The Web: the same work
+ * planned twice merged into one task; each phase after the one before; a
+ * dependency on a task that isn't there, on itself or in a circle dropped;
+ * and, as a last resort, a plan with no dependency at all where order
+ * plainly matters put in order (setup and research, then the work, then
+ * integration and tests). `known` are tasks already in The Web that new
+ * tasks may depend on. Returns the plan and what was changed, in words.
+ */
+export function shapeWeb(
+  plan: WebPlan,
+  known: Set<string> = new Set(),
+): { plan: WebPlan; notes: string[] } {
+  const notes: string[] = [];
+  // The same work twice: the later merged into the earlier, references moved with it.
+  const into = new Map<string, string>();
+  const kept: Planned[] = [];
+  for (const t of plan.tasks) {
+    if (kept.some((k) => k.key === t.key)) {
+      notes.push(`Task key "${t.key}" was used twice; the second was left out.`);
+      continue;
+    }
+    const twin = kept.find((k) => sameTask(k, t));
+    if (!twin) {
+      kept.push({ ...t, dependsOn: [...t.dependsOn], scope: [...t.scope], verify: [...t.verify] });
+      continue;
+    }
+    into.set(t.key, twin.key);
+    twin.dependsOn = [...new Set([...twin.dependsOn, ...t.dependsOn])];
+    twin.scope = [...new Set([...twin.scope, ...t.scope])];
+    twin.verify = [...new Set([...twin.verify, ...t.verify])];
+    if (t.instructions.trim() !== twin.instructions.trim())
+      twin.instructions = `${twin.instructions}\n\n${t.instructions}`;
+    notes.push(`"${t.title}" is the same work as "${twin.title}": planned once.`);
+  }
+  const resolve = (k: string) => into.get(k) ?? k;
+  const keys = new Set(kept.map((t) => t.key));
+  for (const t of kept)
+    t.dependsOn = [...new Set(t.dependsOn.map(resolve))].filter((d) => {
+      if (d === t.key) return false;
+      if (keys.has(d) || known.has(d)) return true;
+      notes.push(`"${t.title}" depended on "${d}", which isn't in the plan; dropped.`);
+      return false;
+    });
+
+  // Phases in order: a phase's first tasks come after the previous phase's last ones.
+  const phases = [...new Set(kept.map((t) => t.phase).filter((p): p is number => !!p))].sort(
+    (a, b) => a - b,
+  );
+  for (const [i, p] of phases.entries()) {
+    if (i === 0) continue;
+    const prev = kept.filter((t) => t.phase === phases[i - 1]);
+    const exits = prev.filter((t) => !prev.some((o) => o.dependsOn.includes(t.key)));
+    const here = kept.filter((t) => t.phase === p);
+    for (const t of here.filter((x) => !x.dependsOn.some((d) => here.some((h) => h.key === d))))
+      t.dependsOn = [...new Set([...t.dependsOn, ...exits.map((e) => e.key)])];
+  }
+
+  // The last resort: no dependency at all where order plainly matters.
+  const shaped: WebPlan = { ...plan, tasks: kept };
+  if (orderMatters(shaped)) {
+    const rank = (t: Planned) =>
+      FINISHING.test(t.title) || t.kind === "test" || t.kind === "review"
+        ? 2
+        : FOUNDATION.test(t.title) || t.kind === "research" || t.kind === "plan"
+          ? 0
+          : 1;
+    const ranks = [0, 1, 2].filter((r) => kept.some((t) => rank(t) === r));
+    for (const [i, r] of ranks.entries()) {
+      if (i === 0) continue;
+      const before = kept.filter((t) => rank(t) === ranks[i - 1]).map((t) => t.key);
+      for (const t of kept.filter((x) => rank(x) === r)) t.dependsOn = [...before];
+    }
+    if (edgeCount(shaped) > 0)
+      notes.push(
+        "The plan had no dependencies although its order matters: Oraknid ordered it itself (setup and research first, then the work, then integration and tests).",
+      );
+  }
+
+  // No circle survives: a dependency that would close one is dropped, in plan order.
+  const added = new Map<string, string[]>();
+  const reaches = (from: string, to: string, seen = new Set<string>()): boolean => {
+    if (from === to) return true;
+    if (seen.has(from)) return false;
+    seen.add(from);
+    return (added.get(from) ?? []).some((n) => reaches(n, to, seen));
+  };
+  for (const t of kept) {
+    const ok: string[] = [];
+    for (const d of t.dependsOn) {
+      if (keys.has(d) && reaches(d, t.key)) {
+        notes.push(`"${t.title}" and "${d}" depended on each other in a circle; one link dropped.`);
+        continue;
+      }
+      ok.push(d);
+      added.set(t.key, [...(added.get(t.key) ?? []), d]);
+    }
+    t.dependsOn = ok;
+  }
+  return { plan: shaped, notes };
 }

@@ -1,6 +1,16 @@
 import type { PlannedTask, WebPlan } from "@oraknid/contracts";
 import { describe, expect, it } from "vitest";
-import { inScope, planMeasures, readyTasks, scopesOverlap, validateWeb } from "./web.ts";
+import {
+  graphProblems,
+  inScope,
+  orderMatters,
+  planMeasures,
+  readyTasks,
+  sameTask,
+  scopesOverlap,
+  shapeWeb,
+  validateWeb,
+} from "./web.ts";
 
 const t = (over: Partial<PlannedTask>): PlannedTask => ({
   key: "t1",
@@ -117,5 +127,109 @@ describe("planMeasures", () => {
       depth: 3,
       kinds: { implement: 1, test: 1, research: 1 },
     });
+  });
+});
+
+// After the piano job (2026-10-04): fifteen tasks, the same ones twice, and no dependency at all.
+describe("The Web as a graph", () => {
+  const piano = plan([
+    t({ key: "r1", title: "Research Web Audio libraries", kind: "research", verify: [] }),
+    t({ key: "i1", title: "Initialize React project with Vite" }),
+    t({ key: "k1", title: "Implement piano keyboard component (Phase 1)" }),
+    t({ key: "i2", title: "Initialize React TypeScript project" }),
+    t({ key: "v1", title: "Implement volume control (Phase 1)" }),
+    t({ key: "p1", title: "Implement phase control (Phase 1)" }),
+    t({ key: "k2", title: "Implement keyboard component with classic piano key mapping" }),
+    t({ key: "e1", title: "Integrate Phase 1 components and test end-to-end", kind: "test" }),
+  ]);
+
+  it("knows the same work in other words, and different work with the same verb", () => {
+    expect(
+      sameTask(
+        t({ title: "Initialize React project with Vite" }),
+        t({ title: "Initialize React TypeScript project" }),
+      ),
+    ).toBe(true);
+    expect(
+      sameTask(
+        t({ title: "Implement volume control (Phase 1)" }),
+        t({ title: "Implement phase control (Phase 1)" }),
+      ),
+    ).toBe(false);
+    expect(sameTask(t({ title: "Add a metronome" }), t({ title: "Add a metronome" }))).toBe(true);
+    // The same words, another kind of work: a test of a thing isn't the thing.
+    expect(sameTask(t({ title: "Keyboard" }), t({ title: "Keyboard", kind: "test" }))).toBe(false);
+  });
+
+  it("sends back the same work twice and a plan with no order where order matters", () => {
+    const problems = graphProblems(piano);
+    expect(problems).toContain(
+      '"i1" and "i2" are the same work ("Initialize React project with Vite"): plan it once.',
+    );
+    expect(problems).toContain(
+      '"k1" and "k2" are the same work ("Implement piano keyboard component (Phase 1)"): plan it once.',
+    );
+    expect(problems.at(-1)).toMatch(
+      /^None of the 8 tasks depends on another, yet their order matters/,
+    );
+    // Two independent changes have no order to give.
+    expect(
+      orderMatters(
+        plan([t({ key: "a", title: "Fix the header" }), t({ key: "b", title: "Fix the footer" })]),
+      ),
+    ).toBe(false);
+  });
+
+  it("merges duplicates and, as a last resort, orders setup and research, the work, then integration", () => {
+    const { plan: shaped, notes } = shapeWeb(piano);
+    const deps = Object.fromEntries(shaped.tasks.map((x) => [x.key, x.dependsOn]));
+    expect(Object.keys(deps)).toEqual(["r1", "i1", "k1", "v1", "p1", "e1"]);
+    expect(deps).toEqual({
+      r1: [],
+      i1: [],
+      k1: ["r1", "i1"],
+      v1: ["r1", "i1"],
+      p1: ["r1", "i1"],
+      e1: ["k1", "v1", "p1"],
+    });
+    expect(validateWeb(shaped)).toEqual([]);
+    expect(notes).toContain(
+      '"Initialize React TypeScript project" is the same work as "Initialize React project with Vite": planned once.',
+    );
+    expect(notes.at(-1)).toMatch(/Oraknid ordered it itself/);
+  });
+
+  it("orders phases, keeps the planner's own graph, and drops what can't be", () => {
+    const phased = shapeWeb(
+      plan([
+        t({ key: "a", title: "Keyboard", phase: 1 }),
+        t({ key: "b", title: "Oscilloscope", phase: 1 }),
+        t({ key: "c", title: "Synthesis", phase: 2 }),
+        t({ key: "d", title: "Synthesis presets", phase: 2, dependsOn: ["c"] }),
+        t({ key: "e", title: "Recording", phase: 3, dependsOn: ["ghost"] }),
+      ]),
+    );
+    expect(phased.plan.tasks.map((x) => [x.key, x.dependsOn])).toEqual([
+      ["a", []],
+      ["b", []],
+      ["c", ["a", "b"]],
+      ["d", ["c"]],
+      ["e", ["d"]],
+    ]);
+    expect(phased.notes).toContain(
+      '"Recording" depended on "ghost", which isn\'t in the plan; dropped.',
+    );
+    // A circle loses the link that closes it; a known task of The Web may be depended on.
+    const circle = shapeWeb(
+      plan([
+        t({ key: "a", title: "One", dependsOn: ["b", "01EXISTING"] }),
+        t({ key: "b", title: "Two", dependsOn: ["a"] }),
+      ]),
+      new Set(["01EXISTING"]),
+    );
+    expect(circle.plan.tasks.map((x) => [x.key, x.dependsOn])).toEqual([
+      ["a", ["b", "01EXISTING"]],
+      ["b", []],
+    ]);
   });
 });
