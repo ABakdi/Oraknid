@@ -19,6 +19,23 @@ const say = (s: string) => {
   text.textContent = s;
 };
 
+/** Why nothing opens while my computer is off; the site's links only on a public Nest (a private one has none). */
+let awayShown = false;
+function showAway() {
+  const away = document.getElementById("away");
+  if (!away || awayShown) return;
+  awayShown = true;
+  away.hidden = false;
+  const links = document.getElementById("away-links");
+  if (links) links.hidden = true;
+  fetch("/info")
+    .then((r) => (r.ok ? r.json() : null))
+    .then((i: { mode?: string } | null) => {
+      if (links && i?.mode === "public") links.hidden = false;
+    })
+    .catch(() => {});
+}
+
 /** A pairing link puts the bundle in the fragment, which never reaches The Nest. */
 function bundle(): Bundle | null {
   const m = /#oraknid=([A-Za-z0-9_-]+)/.exec(location.hash);
@@ -140,7 +157,10 @@ function connect(b: Bundle) {
     pending.clear();
     live?.onClose();
     live = null;
-    if (!started) say("Your daemon isn't reachable right now. Retrying…");
+    if (!started) {
+      say("Your daemon isn't reachable right now. Retrying…");
+      showAway();
+    }
     setTimeout(() => {
       if (!started) connect(b);
       else reconnect(b);

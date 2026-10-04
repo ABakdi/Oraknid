@@ -1,17 +1,21 @@
-// The site's few behaviours. A device paired for away opens Oraknid, not
-// the site; a pairing link from before the loader moved to /app/ still works.
+// The site's few behaviours. A pairing link from before the loader moved to
+// /app/ still works. A device already paired stays on the site (it used to be
+// sent on to /app/, so with my computer off the site never showed): its
+// header button says it opens my own Oraknid.
 (() => {
+  let paired = false;
   try {
-    if (
-      location.pathname === "/" &&
-      (location.hash.startsWith("#oraknid=") || localStorage.getItem("oraknid.away"))
-    ) {
+    if (location.pathname === "/" && location.hash.startsWith("#oraknid=")) {
       location.replace(`/app/${location.hash}`);
       return;
     }
+    paired = !!localStorage.getItem("oraknid.away");
   } catch {}
 
   document.addEventListener("DOMContentLoaded", () => {
+    if (paired)
+      for (const label of document.querySelectorAll(".nav-open .wide"))
+        label.textContent = " your Oraknid";
     // Copy the install commands, without the comments.
     for (const block of document.querySelectorAll("[data-copy]")) {
       const button = block.querySelector(".copy");

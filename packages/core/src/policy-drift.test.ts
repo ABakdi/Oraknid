@@ -178,20 +178,31 @@ describe("permission policy", () => {
     expect(new RegExp(rule).test("curl x")).toBe(false);
   });
 
-  it("allows edits inside the worktree and asks about edits outside", () => {
+  it("allows edits inside the worktree and its scratch space, refuses edits elsewhere without asking", () => {
     expect(decide({ tool: "Edit", command: null, path: "/w/src/a.ts" }, ctx()).verdict).toBe(
       "allow",
     );
     expect(decide({ tool: "Write", command: null, path: "/wx/a.ts" }, ctx())).toMatchObject({
-      verdict: "ask",
+      verdict: "deny",
+      reason: expect.stringMatching(/writes outside its folder \(\/wx\/a\.ts\): work inside \/w/),
     });
+    // Its own /tmp and home, private to the sandbox: never asked (OpenCode asked 16 times, 2026-10-03).
+    const scratch = { ...ctx(), scratch: ["/tmp", "/legs/l1/jobs/j1/home"] };
+    expect(decide({ tool: "Write", command: null, path: "/tmp/*" }, scratch).verdict).toBe("allow");
+    expect(
+      decide({ tool: "Write", command: null, path: "/legs/l1/jobs/j1/home/.cache/x" }, scratch)
+        .verdict,
+    ).toBe("allow");
+    expect(
+      decide({ tool: "Write", command: null, path: "/home/me/project/*" }, scratch).verdict,
+    ).toBe("deny");
     expect(decide({ tool: "Read", command: null, path: "/etc/hosts" }, ctx()).verdict).toBe(
       "allow",
     );
     // `..` is resolved first (Audit 1 → S1-05).
     expect(
       decide({ tool: "Write", command: null, path: "/w/../home/me/.claude/settings.json" }, ctx()),
-    ).toMatchObject({ verdict: "ask" });
+    ).toMatchObject({ verdict: "deny" });
     expect(decide({ tool: "Edit", command: null, path: "/w/src/../a.ts" }, ctx()).verdict).toBe(
       "allow",
     );

@@ -140,10 +140,14 @@ describe("the daemon's first minute (a /health probe within 1 s)", () => {
     console.log(
       `startup: machine stall ${Math.max(first.machine, again.machine).toFixed(0)} ms; boot (migrations) ${booting.stall.toFixed(0)} ms; ${N} messages; first sync worst stall ${first.stall.toFixed(0)} ms (worst /health ${probe.toFixed(0)} ms); after a restart ${again.stall.toFixed(0)} ms (worst /health ${probe2.toFixed(0)} ms)`,
     );
-    // Allowed on top: what the machine itself paused this process in the same window.
+    // What this guards against: a first sync that froze the loop 1.1 s on an
+    // idle machine (B1-04). Fixed, it is ~260 ms idle and up to ~700 ms when
+    // every package tests at once (Oraknid's own slices run slower sharing the
+    // CPU, which no idle thread can see). 800 ms, plus what the machine itself
+    // paused this process in the same window, catches the freeze, not the load.
     expect(probe).toBeLessThan(1000 + 2 * first.machine);
     expect(probe2).toBeLessThan(1000 + 2 * again.machine);
-    expect(first.stall).toBeLessThan(500 + 2 * first.machine);
-    expect(again.stall).toBeLessThan(500 + 2 * again.machine);
+    expect(first.stall).toBeLessThan(800 + 2 * first.machine);
+    expect(again.stall).toBeLessThan(800 + 2 * again.machine);
   }, 300_000);
 });

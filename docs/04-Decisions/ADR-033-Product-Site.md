@@ -17,8 +17,14 @@ already serves The Nest's loader at `/`, which paired phones open.
   `og.png` for links shared elsewhere).
 - **The Nest serves it at its root**; the phone loader moves to
   `/app/` (its manifest, service worker and icons with it). Pairing
-  links are `…/app/#oraknid=…`. A device that was paired before, or an
-  old pairing link, is sent on to `/app/` by the site.
+  links are `…/app/#oraknid=…`. An old pairing link is sent on to
+  `/app/` by the site. *Changed 2026-10-04:* a device already paired is no
+  longer sent on (with my computer off, the site never showed and I saw
+  only "daemon isn't reachable"); it stays on the site, whose header
+  button reads "Open your Oraknid". The installed app opens `/app/`
+  itself. The loader, when my daemon can't be reached, says that Oraknid
+  runs on my computer and, on a public Nest, links to the site and the
+  guide.
 - The loader's fingerprint is still shown at home and on the loader
   page ([[ADR-019-Nest-UI-Serving]]).
 

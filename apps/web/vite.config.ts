@@ -34,5 +34,6 @@ export default defineConfig(({ mode }) => ({
             },
           },
         },
-  test: { environment: "jsdom", globalSetup: ["../../vitest.tmp.ts"] },
+  // Rendering whole pages under jsdom takes seconds when every package tests at once.
+  test: { environment: "jsdom", globalSetup: ["../../vitest.tmp.ts"], testTimeout: 20_000 },
 }));

@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -87,5 +88,64 @@ describe("checks Oraknid answers itself about the project's repo (ADR-038)", () 
         .get()
         ?.instructions.match(/Note from Oraknid/g),
     ).toHaveLength(1);
+  });
+
+  it("checks the branches the task names that the repo really has, and repairs a check on a branch it doesn't", async () => {
+    const db = await openDatabase({
+      file: ":memory:",
+      backupsDir: join(mkdtempSync(join(tmpdir(), "oraknid-adapt-")), "b"),
+    });
+    // A real repo with main and dev, as the piano project.
+    const repo = mkdtempSync(join(tmpdir(), "oraknid-branches-"));
+    const git = (...args: string[]) =>
+      spawnSync("git", ["-C", repo, "-c", "user.email=a@b", "-c", "user.name=me", ...args]);
+    git("init", "-q", "-b", "main");
+    git("commit", "-q", "--allow-empty", "-m", "start");
+    git("branch", "dev");
+    const jobId = seedJob(db, "running", repo);
+    const projectId = db.select().from(jobs).where(eq(jobs.id, jobId)).get()?.projectId as string;
+    linkProject(db, projectId, link);
+    const task = (id: string, title: string, verify: string[], instructions = "Do it.") =>
+      db
+        .insert(tasks)
+        .values({
+          id,
+          jobId,
+          title,
+          instructions,
+          kind: "implement",
+          scope: [],
+          verify,
+          requiredCapabilities: ["implementation"],
+          difficulty: "low",
+          state: "ready",
+        })
+        .run();
+    const verify = (id: string) => db.select().from(tasks).where(eq(tasks.id, id)).get()?.verify;
+    // "push dev and main to GitHub" once read as a branch named "to".
+    task(
+      "t1",
+      "GitHub: create public repo ABakdi/oraknid-piano and push dev and main",
+      ["git ls-remote --heads origin dev | grep -q dev"],
+      "Push dev and main to GitHub.",
+    );
+    adaptToGitHub(db, projectId, "t1");
+    expect(verify("t1")).toEqual(["oraknid github-branch dev", "oraknid github-branch main"]);
+    // The task as it was left: already adapted, its check on "to".
+    task(
+      "t2",
+      "GitHub: create public repo ABakdi/oraknid-piano and push dev and main",
+      ["oraknid github-branch to"],
+      "Push dev and main to GitHub.\n\nNote from Oraknid: ... Oraknid's github tool, on that repo.",
+    );
+    adaptToGitHub(db, projectId, "t2");
+    expect(verify("t2")).toEqual(["oraknid github-branch dev", "oraknid github-branch main"]);
+    // Naming no branch: the project's work branch.
+    task("t3", "Publish it on GitHub", ["gh repo view"]);
+    adaptToGitHub(db, projectId, "t3");
+    expect(verify("t3")).toEqual(["oraknid github-repo"]);
+    task("t4", "Publish it on GitHub", ["git ls-remote origin"]);
+    adaptToGitHub(db, projectId, "t4");
+    expect(verify("t4")).toEqual(["oraknid github-branch dev"]);
   });
 });

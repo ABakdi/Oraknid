@@ -81,6 +81,16 @@ project's (on the project page) and the global ones (Settings). The
 most specific level with a matching rule decides; within a level, deny
 beats allow. The never-allowed list stands above them all.
 
+### Writing outside its folder (2026-10-04)
+A Leg writing inside its job's folder is allowed. Its own scratch space,
+private to its sandbox (its `/tmp`, its home for this job), is allowed
+too, without asking: OpenCode asks before writing anywhere outside the
+folder it was started in, and those questions reached me 16 times for
+its own `/tmp` and home. Anywhere else (the project's own folder and
+branches, my home) is refused, never asked, and the Leg is told to work
+in its folder: the project's own branches are Oraknid's to change at the
+end of the job.
+
 ## The inbox
 
 One list for every approval and question across all jobs, newest and

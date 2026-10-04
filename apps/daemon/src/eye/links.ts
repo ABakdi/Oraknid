@@ -24,6 +24,7 @@ import { JobServer, jobServerKey, readSetting, writeSetting } from "../settings.
 import type { GitHub } from "../workspace/github.ts";
 import { type Projects, viewOf } from "../workspace/projects.ts";
 import { isSeveral, reposOfScope } from "../workspace/repos.ts";
+import { parseBuiltinCheck } from "./builtin-checks.ts";
 import { addMessage } from "./talk.ts";
 
 // A project's GitHub repo and servers, chosen once (ADR-038): when a task
@@ -114,10 +115,28 @@ export async function ensureLinks(d: LinkDeps, ctx: JobContext, job: JobLike, ta
 const ADAPTED = "Oraknid's github tool, on";
 
 /** A branch a task's words name: "push the dev branch", "branch dev". */
-const branchIn = (text: string) =>
-  /\bpush(?:es|ing)?\s+(?:the\s+)?[`'"]?([\w./-]+)[`'"]?\s+branch\b/i.exec(text)?.[1] ??
-  /\bbranch\s+[`'"]?([\w./-]+)[`'"]?/i.exec(text)?.[1] ??
-  null;
+/** The repo's own branches, read with git. */
+const localBranches = (folder: string): string[] => {
+  const r = spawnSync(
+    "git",
+    ["-C", folder, "for-each-ref", "--format=%(refname:short)", "refs/heads"],
+    {
+      encoding: "utf8",
+    },
+  );
+  return r.status === 0 ? r.stdout.split("\n").filter(Boolean) : [];
+};
+
+/**
+ * The branches a task's checks should look at on GitHub: those of the
+ * repo's real branches the task names, else the repo's work branch. Never a
+ * word guessed from the text (it once read "push dev and main to GitHub"
+ * as a branch named "to", and the check could never pass, 2026-10-03).
+ */
+const branchesFor = (text: string, folder: string, workBranch: string): string[] => {
+  const named = localBranches(folder).filter((b) => !b.startsWith("oraknid/") && says(text, b));
+  return named.length ? named.slice(0, 3) : [workBranch];
+};
 
 /** A check that reads GitHub with gh, or a git remote: one Oraknid answers itself instead. */
 const remoteCheck = (v: string): "gh" | "remote" | null =>
@@ -136,25 +155,50 @@ export function adaptToGitHub(db: Db, projectId: string, taskId: string) {
   const linked = p.repos.filter((r) => r.github);
   if (!linked.length) return;
   const row = db.select().from(tasks).where(eq(tasks.id, taskId)).get();
-  if (!row || row.instructions.includes(ADAPTED)) return;
-  const branch = branchIn(row.instructions);
+  if (!row) return;
+  const text = `${row.title}\n${row.instructions}`;
+  const repoOf = (name: string | null) =>
+    (name ? p.repos.find((r) => r.name === name) : null) ?? p.repos[0];
+  const branchesOf = (name: string | null) => {
+    const r = repoOf(name);
+    return r ? branchesFor(text, folderOf(p.workspacePath, r), r.workBranch) : ["dev"];
+  };
+  // A branch check naming a branch the repo doesn't have is repaired, even
+  // on a task adapted before (the piano task's `oraknid github-branch to`).
+  const repaired = (row.verify as string[]).flatMap((v) => {
+    const c = parseBuiltinCheck(v);
+    if (c?.kind !== "branch") return [v];
+    const r = repoOf(c.repo);
+    const real = r ? localBranches(folderOf(p.workspacePath, r)) : [];
+    if (c.branch && (real.length === 0 || real.includes(c.branch))) return [v];
+    const tail = c.repo ? ` --repo ${c.repo}` : "";
+    return branchesOf(c.repo).map((b) => `oraknid github-branch ${b}${tail}`);
+  });
+  if (row.instructions.includes(ADAPTED)) {
+    if (repaired.join("\n") !== (row.verify as string[]).join("\n"))
+      db.update(tasks)
+        .set({ verify: [...new Set(repaired)] })
+        .where(eq(tasks.id, taskId))
+        .run();
+    return;
+  }
   const several = isSeveral(p.repos);
-  const own = (kind: "gh" | "remote", repo: string | null) => {
+  const own = (kind: "gh" | "remote", repo: string | null): string[] => {
     const tail = repo ? ` --repo ${repo}` : "";
-    if (kind === "gh") return `oraknid github-repo${tail}`;
-    return branch ? `oraknid github-branch ${branch}${tail}` : `oraknid github-repo${tail}`;
+    if (kind === "gh") return [`oraknid github-repo${tail}`];
+    return branchesOf(repo).map((b) => `oraknid github-branch ${b}${tail}`);
   };
   const scoped = reposForTask(p.repos, row).filter((r) => r.github);
   const verify = [
     ...new Set(
-      (row.verify as string[]).flatMap((v) => {
+      repaired.flatMap((v) => {
         const kind = remoteCheck(v);
         if (!kind) return [v];
-        if (!several) return [own(kind, null)];
+        if (!several) return own(kind, null);
         // The repo the check is about: named in it (`cd api && gh …`), else the task's.
         const named = linked.filter((r) => says(v, r.name) || (r.folder && says(v, r.folder)));
         const targets = named.length ? named : scoped.length ? scoped : linked;
-        return targets.map((r) => own(kind, r.name));
+        return targets.flatMap((r) => own(kind, r.name));
       }),
     ),
   ];

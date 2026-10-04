@@ -41,6 +41,13 @@ export interface RuleLevel {
 
 export interface PolicyContext {
   worktree: string;
+  /**
+   * Places private to the job's sandbox besides the worktree: its own /tmp,
+   * the Leg's home for this job, the job's folder. Writing there is the
+   * Leg's own business; writing anywhere else is refused, never asked
+   * (2026-10-03: OpenCode asked 16 times for its own /tmp and home).
+   */
+  scratch?: string[];
   autonomy: Autonomy;
   /** Gates I waived for this job. */
   waived: ReadonlySet<GatedAction>;
@@ -343,10 +350,13 @@ export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
       };
     if (r.path && insideTree(ctx.worktree, r.path))
       return { verdict: "allow", reason: "edits inside the worktree" };
+    const place = r.path?.replace(/\/\*+$/, "");
+    if (place && (ctx.scratch ?? []).some((s) => insideTree(s, place)))
+      return { verdict: "allow", reason: "its own scratch space, private to the sandbox" };
     return {
-      verdict: "ask",
-      reason: `writes outside the worktree (${r.path ?? "no path"})`,
-      gated: "delete",
+      verdict: "deny",
+      reason: `it writes outside its folder (${r.path ?? "no path"}): work inside ${ctx.worktree}; the project's own branches and folders are Oraknid's to change`,
+      drift: null,
     };
   }
 

@@ -498,6 +498,8 @@ export async function runAttempt(
     // The broker judges every call to a job's tool: the Leg's own ask for it passes (ADR-021).
     if (isBrokered(r.tool, brokered)) return { allow: true };
     const policy = policyFor(d.db, job.id, ws.cwd);
+    // Its own /tmp and this job's home are private to its sandbox: its to use.
+    policy.scratch = ["/tmp", jobHomeDir(d.legsDir, leg.legId, job.id)];
     if (readTheWeb) policy.untrusted = true;
     if (toolRows.length) {
       const declared = d.tools?.registry.declarations(toolRows) ?? new Map();
