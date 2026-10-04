@@ -35,6 +35,18 @@ be able to go there too, and be downloaded to this computer.
   get nothing of it unless a job's skill asks for a storage tool,
   declared and gated like any tool (ADR-021).
 
+## Changed (2026-10-04): every provider rclone supports
+Not a fixed list: the providers are rclone's own (its `config providers`
+schema: some seventy, from OneDrive, pCloud, Box, Backblaze B2, SFTP,
+WebDAV, FTP, Proton Drive, iCloud Drive and the S3 family to the
+storage of each cloud), each added with a form made from rclone's
+description of it: its required options first, the rest under
+Advanced, secrets as password fields kept only in the encrypted
+config. Providers that sign in through a browser use rclone's
+authorization as Drive and Dropbox do. Google Drive, Dropbox, MEGA and
+S3 keep their short forms; the rest come from rclone's schema, searched
+by name.
+
 ## Consequences
 - rclone is a new dependency; without it Cloud storage says how to
   install it.

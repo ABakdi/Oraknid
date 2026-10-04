@@ -42,6 +42,27 @@ set up from the web interface or by asking the helper.
 
 *Extended 2026-10-03:* destinations in cloud storage and a download from the web page ([[ADR-046-Cloud-Storage]]).
 
+## Changed (2026-10-04): the plan form
+- **Test connection** before saving: from the form as it is, it reaches
+  the server, runs the database's own client with the credentials given
+  (a version and a list of databases, read only), and checks the
+  destination can be written; each part says ok or why not. Saving is
+  still possible without it.
+- **Editing keeps everything**: a plan opened again shows every value it
+  was saved with (the password as "kept", changed only if I type a new
+  one); nothing falls back to defaults.
+- **A database picked from the list fills the form**: kind, container or
+  host and port, the database's name, the user when it can be read
+  (from the container's environment, such as `POSTGRES_USER`,
+  `MONGO_INITDB_ROOT_USERNAME`), never a password unless I type it.
+- **Fields of each kind**, under Advanced: PostgreSQL (sslmode, schema,
+  dump format, extra `pg_dump` options), MySQL/MariaDB (TLS, single
+  transaction, routines and events), MongoDB (authentication database,
+  replica set, TLS, read preference, a URI if I'd rather), Redis
+  (database number, username, TLS), SQLite (the file's path). Each is
+  passed to the dump and to the test in the same way, never on a
+  command line when it's a secret.
+
 ## Consequences
 - `age` and `zstd` are used on this computer (Oraknid ships or finds
   them); a dump tool must exist where the database runs (in its

@@ -486,6 +486,10 @@ download). Checked in a browser on a sample daemon (its own data folder
 and port, MinIO in a container, all removed after) at desktop and at
 390 px.
 
+### M13.16 — Every rclone provider, and a backup form that helps (2026-10-04)
+- [ ] Cloud storage: every provider rclone supports, forms made from its schema, search by name ([[ADR-046-Cloud-Storage]] → Changed)
+- [ ] Backups: Test connection, editing keeps every value, a picked database fills the form, each kind's fields under Advanced ([[ADR-044-Backups]] → Changed)
+
 ## Exit criterion
 
 I ask for new work on the piano project from its Eye tab and follow it
