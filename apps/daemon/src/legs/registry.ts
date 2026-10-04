@@ -10,7 +10,13 @@ import {
   type QuotaWindow,
   StoredProfile,
 } from "@oraknid/contracts";
-import { effectiveProfile, emptyStoredProfile, estimateUtilization } from "@oraknid/core";
+import {
+  effectiveProfile,
+  emptyStoredProfile,
+  estimateUtilization,
+  type ProviderFailure,
+  restFor,
+} from "@oraknid/core";
 import type { LegConfig, ModelOffer, PlanUsageReport, QuotaReport } from "@oraknid/leg-sdk";
 import { and, eq, gte, inArray, sum } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
@@ -37,6 +43,13 @@ const secretName = (legId: string) => `leg.${legId}`;
 export class LegRegistry {
   /** VRAM per loaded model, from the last health check (memory only). */
   readonly vram = new Map<string, number>();
+  /**
+   * Provider failures (M13.22), memory only: what rests until when, by model
+   * id or `leg:<id>`, and how many in a row, so the next one rests longer.
+   */
+  readonly #rest = new Map<string, { until: number; reason: string; count: number }>();
+  /** Provider failures in a row on each Leg, none since one of its turns went through. */
+  readonly #streak = new Map<string, number>();
 
   constructor(
     private readonly db: Db,
@@ -240,6 +253,54 @@ export class LegRegistry {
 
   saveProfile(modelId: string, stored: StoredProfile) {
     this.db.update(legModels).set({ profile: stored }).where(eq(legModels.id, modelId)).run();
+  }
+
+  /**
+   * A session ended on its provider's error, not on its task (M13.22): its
+   * model, or the whole Leg for an account's or program's error, rests
+   * (doubled each time in a row), and the Leg's failures in a row are counted.
+   */
+  providerFailed(
+    legId: string,
+    legModelId: string,
+    f: ProviderFailure,
+  ): { until: number; inARow: number } {
+    const key = f.scope === "leg" ? `leg:${legId}` : legModelId;
+    const count = (this.#rest.get(key)?.count ?? 0) + 1;
+    const until = this.now() + restFor(f, count);
+    this.#rest.set(key, { until, reason: f.reason, count });
+    const inARow = (this.#streak.get(legId) ?? 0) + 1;
+    this.#streak.set(legId, inARow);
+    this.#event(legId, "leg.cooldown", {
+      legModelId: f.scope === "leg" ? null : legModelId,
+      scope: f.scope,
+      until,
+      reason: f.reason,
+      inARow,
+    });
+    return { until, inARow };
+  }
+
+  /** One of its turns went through: the provider works again for this Leg and model. */
+  providerWorked(legId: string, legModelId: string) {
+    this.#streak.delete(legId);
+    this.#rest.delete(legModelId);
+    this.#rest.delete(`leg:${legId}`);
+  }
+
+  /** The rest a model is in now, its Leg's or its own, whichever ends later. */
+  cooldownOf(legId: string, legModelId: string): { until: number; reason: string } | null {
+    const at = this.now();
+    const live = [this.#rest.get(`leg:${legId}`), this.#rest.get(legModelId)].filter(
+      (r): r is { until: number; reason: string; count: number } => !!r && r.until > at,
+    );
+    const last = live.sort((a, b) => b.until - a.until)[0];
+    return last ? { until: last.until, reason: last.reason } : null;
+  }
+
+  /** Provider failures in a row on a Leg. */
+  providerStreak(legId: string): number {
+    return this.#streak.get(legId) ?? 0;
   }
 
   setHealth(

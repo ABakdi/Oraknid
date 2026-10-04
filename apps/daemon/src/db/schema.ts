@@ -462,7 +462,10 @@ export const attempts = sqliteTable(
     effort: text("effort"),
     startedAt: integer("started_at").notNull(),
     endedAt: integer("ended_at"),
-    outcome: text("outcome", { enum: ["succeeded", "failed", "reassigned", "abandoned"] }),
+    /** "unavailable": its provider failed, not the task (M13.22); not counted against it. */
+    outcome: text("outcome", {
+      enum: ["succeeded", "failed", "reassigned", "abandoned", "unavailable"],
+    }),
     escalations: json<string[]>("escalations").notNull(),
   },
   (t) => [index("attempts_task").on(t.taskId), index("attempts_job").on(t.jobId)],

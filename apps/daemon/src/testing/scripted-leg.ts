@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import type { LegKind } from "@oraknid/contracts";
 import {
   Channel,
   emptyUsage,
@@ -18,7 +19,11 @@ export type Action =
   /** Keep the turn open until interrupted or killed. */
   | { hang: true }
   /** Calls a job's tool through the bridge it was given (ADR-021), like a real Leg's MCP client. */
-  | { mcp: { server: string; tool: string; args?: Record<string, unknown> } };
+  | { mcp: { server: string; tool: string; args?: Record<string, unknown> } }
+  /** Asks permission as the Leg would (an OpenCode ask for its own tmp), doing nothing else. */
+  | { ask: { tool: string; path?: string; command?: string } }
+  /** The turn ends on an error, as a provider's 500 ends it. */
+  | { fail: string };
 
 export interface TurnContext {
   leg: string;
@@ -40,32 +45,45 @@ export interface TurnContext {
  * writes into the worktree, and asks permission before running commands
  * (which it really runs), like an agent would.
  */
-export function scriptedLeg(script: (t: TurnContext) => Action[]) {
+export function scriptedLeg(
+  script: (t: TurnContext) => Action[],
+  /** Another kind of Leg, with other models (M13.22: a stand-in OpenCode with free models). */
+  o: { kind?: LegKind; models?: string[] } = {},
+) {
   const log: TurnContext[] = [];
+  /** What each `ask` was answered. */
+  const asks: { tool: string; path: string | null; allow: boolean }[] = [];
   /** What each tool call returned, in order: the text, and whether it was an error. */
   const mcpResults: { tool: string; text: string; isError: boolean }[] = [];
   const sessionsPerLeg = new Map<string, number>();
   const adapter: LegAdapter = {
-    kind: "claude-code",
+    kind: o.kind ?? "claude-code",
     async probe() {
       return {
         ok: true,
         detail: "scripted",
-        models: [
-          {
-            model: "opus",
-            displayName: "Opus",
-            effortLevels: ["low", "medium", "high"],
-            contextWindow: null,
-          },
-          {
-            model: "sonnet",
-            displayName: "Sonnet",
-            effortLevels: ["low", "medium", "high"],
-            contextWindow: null,
-          },
-          { model: "haiku", displayName: "Haiku", effortLevels: [], contextWindow: null },
-        ],
+        models: o.models
+          ? o.models.map((m) => ({
+              model: m,
+              displayName: m,
+              effortLevels: [],
+              contextWindow: null,
+            }))
+          : [
+              {
+                model: "opus",
+                displayName: "Opus",
+                effortLevels: ["low", "medium", "high"],
+                contextWindow: null,
+              },
+              {
+                model: "sonnet",
+                displayName: "Sonnet",
+                effortLevels: ["low", "medium", "high"],
+                contextWindow: null,
+              },
+              { model: "haiku", displayName: "Haiku", effortLevels: [], contextWindow: null },
+            ],
         features: { resume: false, tools: true, usage: "reported", quotaWindows: true },
       };
     },
@@ -154,6 +172,17 @@ export function scriptedLeg(script: (t: TurnContext) => Action[]) {
                 : { text: leg.allow ? "no such server" : leg.message, isError: true };
             mcpResults.push({ tool: a.mcp.tool, ...r });
             events.push({ type: "tool.result", id, ok: !r.isError, output: r.text });
+          } else if ("ask" in a) {
+            const d = await s.onPermission({
+              tool: a.ask.tool,
+              input: {},
+              command: a.ask.command ?? null,
+              path: a.ask.path ?? null,
+            });
+            asks.push({ tool: a.ask.tool, path: a.ask.path ?? null, allow: d.allow });
+          } else if ("fail" in a) {
+            events.push({ type: "turn.ended", reason: "error", text, error: a.fail });
+            return;
           } else if ("hang" in a) {
             events.push({ type: "text.delta", text: "working…" });
             await new Promise<void>((r) => {
@@ -207,7 +236,7 @@ export function scriptedLeg(script: (t: TurnContext) => Action[]) {
       };
     },
   };
-  return { adapter, log, mcpResults };
+  return { adapter, log, mcpResults, asks };
 }
 
 /** One MCP call over stdio: initialize, then tools/call, as a Leg's client does. */

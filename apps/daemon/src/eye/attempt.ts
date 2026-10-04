@@ -30,6 +30,7 @@ import {
   type Observed,
   type PolicyVerdict,
   programsOf,
+  providerFailure,
   type RouteCandidate,
   record,
   route,
@@ -336,6 +337,8 @@ export async function runAttempt(
     const share = quotaShare?.hard ? quotaShare.limit : null;
     const until = [
       ...d.registry.all().map((l) => l.limitedUntil),
+      // A model or Leg resting after a provider failure (M13.22).
+      ...candidates.map((c) => c.cooldown?.until),
       ...(share === null
         ? []
         : candidates.flatMap((c) =>
@@ -350,7 +353,7 @@ export async function runAttempt(
       reason: heldBack
         ? `"${task.title}" hit a usage limit on ${[...blockedKinds].join(", ")}; other accounts of the same provider are not used as fallback (ADR-009). It waits${resets}, for another provider, or for my setting.`
         : until
-          ? `All allowed Legs are out of quota${resets}${routed.excluded.length ? `: ${routed.excluded.map((e) => e.why).join(" ")}` : "."}`
+          ? `All allowed Legs are ${candidates.some((c) => c.cooldown) ? "resting after provider failures or " : ""}out of quota${resets}${routed.excluded.length ? `: ${routed.excluded.map((e) => e.why).join(" ")}` : "."}`
           : `No Leg can take "${task.title}": ${routed.excluded.map((e) => e.why).join(" ") || "there are no Legs."}`,
       until: until ?? null,
     };
@@ -1086,7 +1089,7 @@ export async function runAttempt(
   };
 
   const finish = (
-    outcome: "succeeded" | "failed" | "reassigned" | "abandoned",
+    outcome: "succeeded" | "failed" | "reassigned" | "abandoned" | "unavailable",
     success: boolean,
   ) => {
     release();
@@ -1097,7 +1100,8 @@ export async function runAttempt(
       .where(eq(attempts.id, attemptId))
       .run();
     const m = d.registry.model(leg.legModelId);
-    if (m) {
+    // Its provider failing says nothing of what the model can do (M13.22).
+    if (m && outcome !== "unavailable") {
       const stored = record(d.registry.storedProfile(m), task.kind as TaskKind, {
         success,
         tokens: observed.tokensSinceProgress,
@@ -1184,12 +1188,33 @@ export async function runAttempt(
           })
           .where(eq(tasks.id, taskId))
           .run();
-        finish("reassigned", false);
+        // A usage limit is the account's, not the task failing: not counted against it (M13.22).
+        finish("unavailable", false);
         return { kind: "retry", reason: `${leg.legName} hit a usage limit` };
       }
       if (end.reason === "error") {
         await handOff(false);
         await closeSession();
+        // Its provider failed, not the task (M13.22): the model (or the Leg) rests, the
+        // attempt isn't counted against the task, and routing tries elsewhere next.
+        const infra = providerFailure(end.error);
+        if (infra) {
+          const { until, inARow } = d.registry.providerFailed(leg.legId, leg.legModelId, infra);
+          const what = infra.scope === "leg" ? leg.legName : `${leg.legName} · ${leg.model}`;
+          event("task.provider-failed", {
+            legId: leg.legId,
+            legModelId: leg.legModelId,
+            scope: infra.scope,
+            reason: infra.reason,
+            until,
+            inARow,
+          });
+          finish("unavailable", false);
+          return {
+            kind: "retry",
+            reason: `${what} failed at its provider (${infra.reason}); it rests until ${new Date(until).toISOString()}, and the attempt doesn't count against the task`,
+          };
+        }
         d.db
           .update(tasks)
           .set({ avoid: [...new Set([...task.avoid, leg.legModelId])] })
@@ -1198,6 +1223,9 @@ export async function runAttempt(
         finish("failed", false);
         return { kind: "retry", reason: `${leg.legName} failed: ${end.error ?? "unknown error"}` };
       }
+
+      // A turn went through: its provider works (M13.22).
+      d.registry.providerWorked(leg.legId, leg.legModelId);
 
       // My messages to The Eye for the work now (Talking to The Eye) go on before any check.
       const told = takeGuidance(job.id, guidanceSeen);
@@ -1676,6 +1704,8 @@ export function candidatesFor(registry: LegRegistry, allowed: string[]): RouteCa
         effortLevels: m.effortLevels,
         profile: m.profile,
         windows: [...view.quota, ...m.quota],
+        cooldown: registry.cooldownOf(leg.id, m.id),
+        legProviderFailures: registry.providerStreak(leg.id),
       });
     }
   }

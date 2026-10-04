@@ -41,6 +41,12 @@ export const ProfileSettings = z.object({
   knownFailures: z.array(z.string()),
   /** The highest difficulty this model should take on its own. */
   maxDifficulty: Difficulty,
+  /**
+   * "unproven": a model Oraknid knows nothing of (a free model, an unknown
+   * name): routing starts it low and lets it earn trust from what it gets
+   * done (M13.22). Unset: a known model family. My override can vouch for one.
+   */
+  prior: z.enum(["known", "unproven"]).optional(),
 });
 export type ProfileSettings = z.infer<typeof ProfileSettings>;
 
