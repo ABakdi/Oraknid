@@ -127,4 +127,70 @@ set up from the web interface or by asking the helper.
   age with its key (still zstd-compressed). Only to a browser on this
   computer; `backup.downloaded` is in the audit trail.
 
+## As built (2026-10-04, M13.16): the plan form
+- **Test connection** is `backups.testPlan` (the form as it is, nothing
+  saved; `planId` lets an empty password or connection string be the
+  kept one). Three parts, each `ok` (true, false, or null when not
+  tried) and `said` in words: **the server** (its SSH connection, or why
+  not: refused, no such host, no answer, the login refused); **the
+  database**, one command like the dump's (the secret as stdin's first
+  line, handed on by name): the dump tool is there (`command -v`), then
+  `psql -X -A -t -c 'show server_version' -c 'select datname …'`,
+  `mariadb`/`mysql -N -B -e 'select version(); show databases'`,
+  `mongosh` or the legacy `mongo` running a script read from stdin into
+  a 0600 file (the login is in the script, never on a command line;
+  `buildInfo`, `listDatabases nameOnly`), `redis-cli INFO server` and
+  `INFO keyspace` and `CONFIG GET dir` (a backup needs it), `sqlite3
+  -readonly FILE 'select sqlite_version();' '.databases'`; a named
+  database missing from the list is a failure that names those there;
+  **the destination**, a `.oraknid-probe-…` file written and removed
+  (this computer: the folders made for it removed again, only while
+  empty; another server: the same in `sh`; cloud storage: `putFile`
+  then `deleteFile`, so the pool's rule picks the provider as a backup
+  would). Errors go through `plainError`, which also hides a
+  connection string's password; a Redis `AUTH failed` (redis-cli
+  carries on as the default user) is a refused login; each `redis-cli`
+  call ends in 30 s where `timeout` exists, since a Redis without TLS
+  never answers a TLS client.
+- **Each kind's fields** are `target.options.<kind>` in the plan's
+  `target` JSON (no migration: every field has a default, and a plan
+  saved before reads as it ran). PostgreSQL: `sslmode` as `PGSSLMODE`,
+  `schemas` as `-n`, `format: custom` as `-Fc` (named `.dump.zst`,
+  restored with `pg_restore --clean --if-exists --no-owner
+  --no-privileges`, verified by `PGDMP` and its last data block's zero
+  length), `extra` checked against `PG_EXTRA_OPTION` (flags that change
+  what is dumped, never where). MySQL/MariaDB: TLS spelled per client
+  (`--ssl-mode=…` for MySQL's, `--ssl`/`--skip-ssl`/
+  `--ssl-verify-server-cert` for MariaDB's, told apart by `--version`),
+  `--single-transaction`, `--routines`, `--events`, `--skip-triggers`.
+  MongoDB: `--authenticationDatabase` (admin by default), `rs/host:port`,
+  `--ssl` (and the two `--sslAllowInvalid…`), `--readPreference`; a
+  connection string is kept as `backup.plan.<id>.uri` and given to
+  `mongodump`/`mongorestore` in the same 0600 config file as the
+  password (one line of JSON, which is YAML). Redis: `--tls`
+  (`--insecure`), the ACL user as `--user`, the database number for the
+  test only.
+- **Why edited values disappeared**: the plans list draws one
+  `PlanForm` in one place for a new plan and for every plan's Edit, with
+  no key; React kept the open form and its state, so Edit after New
+  backup plan (or another plan's Edit) showed the other form's values,
+  and Save wrote them over the plan. The form is now keyed by the plan's
+  id, starts from every saved value, and doesn't send `enabled`. Also:
+  `BackupPlanPatch.enabled` had the create's default, so any change
+  without it (the helper renaming a plan) switched a paused plan on; it
+  is optional now, and a target given without its kind's fields keeps
+  the plan's own.
+- **The found databases' logins**: `servers.databases` adds `login`
+  to each database container, read with `docker inspect` and filtered
+  by awk on the server: the allowed names' values (`POSTGRES_USER`,
+  `POSTGRES_DB`, `MARIADB_`/`MYSQL_USER` and `_DATABASE`,
+  `MONGO_INITDB_ROOT_USERNAME`, `MONGO_INITDB_DATABASE`,
+  `REDIS_USERNAME`), and of a variable naming a password (or
+  `--requirepass`) only its name, so a value never leaves the server.
+- **Tests**: against throwaway unprivileged containers (postgres:16,
+  mariadb:11, mongo:7 with a user in its own authentication database,
+  redis:7 with an ACL user, MinIO for cloud storage) through the
+  stand-in SSH server, each container labelled with the test process and
+  removed by a watcher outside it should the run be killed.
+
 Related: [[ADR-043-Server-Insight]] · [[ADR-026-Servers]] · [[Security]] · [[Business-Rules]] · [[ADR-041-Docs-And-A-Guiding-Helper]]

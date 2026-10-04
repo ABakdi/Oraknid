@@ -14,6 +14,21 @@ A **plan** is one database (or all of a server's) and what to do with it. Make o
 
 The password is kept in your keychain. On the server it reaches the dump tool through its environment (or, for MongoDB, a file only you can read that is removed as soon as the dump ends): never on a command line, never in a log.
 
+**Picking a database found on the server** fills the form in: its kind, its container (or the port of a service on the host), and, when its container's environment says them (`POSTGRES_USER`, `MARIADB_DATABASE`, `MONGO_INITDB_ROOT_USERNAME`…), its user and database. Never its password: if one is set there, the form says so and you type it.
+
+**Advanced** holds each kind's own fields, used by the backup and by Test connection alike:
+
+- **PostgreSQL**: TLS (`sslmode`), only some schemas, the dump format (plain SQL, or pg_dump's *custom* format, restored with `pg_restore`), and more `pg_dump` options from a fixed list (`--no-comments`, `--exclude-table-data=logs`, …).
+- **MySQL / MariaDB**: TLS (off, required, or required with the certificate checked), one transaction, routines, events, triggers.
+- **MongoDB**: the authentication database (where the user was made, `admin` unless you say otherwise), a replica set, TLS, a read preference; or a **connection string** instead of the fields, kept in your keychain like a password since it can hold one.
+- **Redis**: the database number Test connection looks at (a backup holds them all) and TLS; the user field is Redis's ACL user.
+
+## Test connection
+
+**Test connection** tries the form as it is, before you save it (saving without it is fine too): it reaches the server over SSH, logs in with the database's own client using what you typed (or the kept password when you're changing a plan) and reads only its version and its databases, then writes a small file where the backups go and removes it. Each part says ok, or why not: the server didn't answer, the login was refused (for MongoDB, "against the authentication database admin"), there's no database by that name, the server doesn't speak the TLS you asked for, or the folder can't be written. A database it lists can be picked with one click.
+
+Opened again, a plan shows every value it was saved with; the password and a connection string show as *kept*, changed only if you type new ones.
+
 ## How a backup runs
 
 At its time, Oraknid connects to the server over SSH and runs the database's own dump: `pg_dump` (or `pg_dumpall` for all), `mysqldump` or `mariadb-dump`, `mongodump`, a Redis save and its file, a SQLite copy. In a container it runs there with `docker exec`, where those tools always are. The dump streams to Oraknid, is compressed (zstd), encrypted if the plan has a key, and written to its folder; to another server it streams through Oraknid over that server's SSH connection, so nothing is copied between your servers directly and no password is left on either.
