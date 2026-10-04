@@ -20,3 +20,4 @@ export * from "./server-insight.ts";
 export * from "./servers.ts";
 export * from "./system.ts";
 export * from "./tools.ts";
+export * from "./updates.ts";

@@ -52,6 +52,26 @@ curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/dev/install.sh | sh 
 
 Run it again to update: it fetches, rebuilds, and restarts the service.
 
+### Updating
+
+Oraknid looks for a new version on its own, a minute after it starts and then every six hours, and tells you once per version (a notification, a line on the Overview, and the word at the bottom of the sidebar: **0.1.0 · Up to date** or **Update available: v0.2.0**). What counts depends on what you installed, which the script remembers:
+
+- installed with `--dev`: new pre-releases, and new work on `dev` (**New work on dev (N commits)**);
+- installed from `main` or a release's tag: releases only, never a pre-release.
+
+**Settings → About & updates** shows the version, the channel, how it was installed, when it last looked (**Check now** looks at once) and what is new in each newer release. **Update now** asks first, saying how many jobs are running (they pause at a safe point while Oraknid restarts, and go on after it); then Oraknid copies its database to `~/.local/share/oraknid/backups/pre-update-….db` (the last three are kept), runs the install script again in the background, and restarts. The page follows it, says "Oraknid is restarting…" while it can't answer, and ends with **Updated to v0.2.0** and **Reload the page**. Your data, projects and settings stay where they are: the update replaces only the program in `~/.local/share/oraknid/app`. If the new version fails to build, Oraknid builds the one you had again and says so. The log is in `~/.local/share/oraknid/logs/update.log`.
+
+From a terminal it is the same:
+
+```sh
+oraknid update --check   # is there an update?
+oraknid update           # install it, following its log (--yes: even while jobs run)
+```
+
+Installed with the script of v0.1.0, which didn't yet remember what it installed? Run the install command once more (with `--dev` if you installed `dev`); from then on Oraknid updates itself.
+
+Away from home, only a device with full rights may update. Running Oraknid from a clone of your own (`pnpm dev`, or a build in your clone), there is no Update now: the page says so, and you update with git (`git pull`, `pnpm install`, `pnpm build`).
+
 ### By hand
 
 If you'd rather do each step yourself, you need Node 22.12 or newer, pnpm 9, git, bubblewrap, Python 3 and a C++ compiler (passt and rclone recommended):

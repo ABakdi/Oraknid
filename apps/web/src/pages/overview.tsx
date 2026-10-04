@@ -13,6 +13,7 @@ import { ACTIVE } from "@/components/task-drawer";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { UpdateNotice } from "@/components/updates";
 import { api } from "@/lib/api";
 import { ago, bytes, clock, tokens } from "@/lib/format";
 import { t } from "@/lib/i18n";
@@ -80,6 +81,7 @@ export function OverviewPage() {
   return (
     <div className="space-y-4">
       <PageHeader title={t("Overview")} sub={t("{n} job(s) active", { n: activeJobs.length })} />
+      <UpdateNotice />
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat label={t("Tokens today")} value={tokens(tokensToday)} />
         <TileLink href="/" onClick={() => document.getElementById("running-now")?.scrollIntoView()}>

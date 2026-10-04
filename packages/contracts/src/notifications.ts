@@ -27,6 +27,8 @@ export const NotifyEvent = z.enum([
   "security",
   /** A database backup failed (ADR-044). */
   "backup.failed",
+  /** A new release of Oraknid, once per version (ADR-048). */
+  "update.available",
 ]);
 export type NotifyEvent = z.infer<typeof NotifyEvent>;
 

@@ -364,6 +364,8 @@ export const HOME_ONLY = [
   "/storage/prune",
   "/jobs/setWaivers",
   "/jobs/setRules",
+  // Updating Oraknid restarts it (ADR-048).
+  "/updates/run",
 ];
 
 /** What a device away from home may call: with full rights, all but ALWAYS_HOME (ADR-030). */

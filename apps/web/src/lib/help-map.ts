@@ -239,6 +239,11 @@ export const PAGES: HelpPage[] = [
         name: "Backups",
         does: "My servers' database backups: every plan, the latest backups with Verify and Restore, and the age keys.",
       },
+      {
+        id: "about",
+        name: "About & updates",
+        does: "Oraknid's version, its channel (dev or stable) and how it was installed; Check now, what's new, Update now and its progress.",
+      },
     ],
   },
   {
@@ -1079,6 +1084,38 @@ export const CONTROLS: HelpControl[] = [
     name: "Tools for skills",
     does: "MCP tools a skill needs, set up once.",
     where: "Settings → Connections",
+  },
+  // Updates (ADR-048).
+  {
+    id: "settings.updates",
+    page: S,
+    tab: "about",
+    name: "Version and updates",
+    does: "The version running, its channel and how it was installed, when it last looked for an update, and the notes of what's new.",
+    where: "Settings → About & updates",
+  },
+  {
+    id: "settings.check-updates",
+    page: S,
+    tab: "about",
+    name: "Check now",
+    does: "Looks on GitHub for a new release (and, on the dev channel, new work on dev) at once.",
+    where: "Settings → About & updates, beside Last checked",
+  },
+  {
+    id: "settings.update-now",
+    page: S,
+    tab: "about",
+    name: "Update now",
+    does: "Installs the update after a confirm: the database copied first, then fetched, built and restarted; the data is kept. Only when there is an update.",
+    where: "Settings → About & updates, under what's new",
+  },
+  {
+    id: "nav.version",
+    page: null,
+    name: "Version",
+    does: "Oraknid's version, and whether an update is available; opens About & updates.",
+    where: "The sidebar, at the bottom",
   },
   // Backups (ADR-044).
   {

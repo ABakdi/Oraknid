@@ -77,6 +77,7 @@ import { startNightlyBackups } from "./storage/storage.ts";
 import { attachTerminal, TERMINAL_SETTING } from "./term/server.ts";
 import { McpBroker } from "./tools/broker.ts";
 import { ToolRegistry } from "./tools/registry.ts";
+import { Updates, type UpdatesOptions } from "./updates/service.ts";
 import { VERSION } from "./version.ts";
 import { setShadowRoot } from "./workspace/git.ts";
 import { GitHub } from "./workspace/github.ts";
@@ -120,6 +121,21 @@ export interface DaemonOptions {
   /** Leg adapters by kind (tests replace them). */
   adapters?: Partial<Record<LegKind, LegAdapter>>;
   healthIntervalMs?: number;
+  /** Updates (ADR-048): the app's folder, GitHub and how the update starts (tests). */
+  updates?: Partial<
+    Pick<
+      UpdatesOptions,
+      | "appDir"
+      | "fetch"
+      | "api"
+      | "launcher"
+      | "underSystemd"
+      | "env"
+      | "version"
+      | "checkEveryMs"
+      | "firstCheckMs"
+    >
+  >;
   /** Mail timings and the providers' servers (tests). */
   mail?: Pick<
     MailOptions,
@@ -401,6 +417,15 @@ export async function startDaemon(options: DaemonOptions) {
   const sandboxStatus = os.sandbox.status();
 
   const devices = new Devices(db, bus, now);
+  // Oraknid's own updates, from its releases on GitHub (ADR-048).
+  const updates = new Updates({
+    db,
+    bus,
+    paths,
+    now,
+    runningJobs: countActiveJobs(db),
+    ...options.updates,
+  });
   // A pairing link for away left unused expires (ADR-029).
   const unclaimed = setInterval(() => devices.expireUnclaimed(10 * 60_000), 60_000);
   unclaimed.unref();
@@ -696,6 +721,7 @@ export async function startDaemon(options: DaemonOptions) {
         downloads,
         mail,
         devices,
+        updates,
         brain,
         openPath:
           options.openPath ??
@@ -729,6 +755,7 @@ export async function startDaemon(options: DaemonOptions) {
   url = `http://${host}:${port}`;
   void nest.connect().catch((err) => console.error("nest link failed", err));
   mail.start();
+  updates.start();
 
   const info: RuntimeInfo = { pid: process.pid, url, version: VERSION, startedAt };
   // Readable by my user only: it holds the CLI's token.
@@ -763,6 +790,7 @@ export async function startDaemon(options: DaemonOptions) {
       clearInterval(mirrorTimer);
       clearInterval(unclaimed);
       clearInterval(blockedTimer);
+      updates.stop();
       budgets.stop();
       naming.stop();
       // Jobs reach a safe point and keep their state for the next start, within systemd's stop timeout.
@@ -821,6 +849,7 @@ export async function startDaemon(options: DaemonOptions) {
     cloud,
     mail,
     devices,
+    updates,
     cliToken: devices.cliToken,
     inbox,
     effects,

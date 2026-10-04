@@ -15,7 +15,9 @@
 #   --uninstall          remove the service and the `oraknid` command (your data is kept)
 #
 # Run it as yourself: it asks for sudo only to install missing packages
-# (and, on OpenRC or runit, to write the service once). Running it again updates.
+# (and, on OpenRC or runit, to write the service once). Running it again updates,
+# and so does Oraknid itself (Settings -> About, or `oraknid update`): it runs this
+# script with what <dir>/.oraknid-install.json says was installed.
 
 set -eu
 
@@ -315,10 +317,55 @@ fetch_source() {
 		mkdir -p "$(dirname "$DIR")"
 		run git clone --quiet --no-checkout "$FROM" "$DIR"
 	fi
-	run git -C "$DIR" fetch --quiet "$FROM" "$REF"
-	run git -C "$DIR" checkout --quiet --detach FETCH_HEAD
+	if is_commit "$REF" && git -C "$DIR" cat-file -e "$REF^{commit}" 2>/dev/null; then
+		# A commit this checkout has: an update going back to the version before (ADR-048).
+		run git -C "$DIR" checkout --quiet --detach "$REF"
+	else
+		run git -C "$DIR" fetch --quiet "$FROM" "$REF"
+		run git -C "$DIR" checkout --quiet --detach FETCH_HEAD
+	fi
 	say "At $(git -C "$DIR" log -1 --format='%h %s')"
-	grep -qx '/.tools/' "$DIR/.git/info/exclude" 2>/dev/null || echo '/.tools/' >>"$DIR/.git/info/exclude"
+	for own in /.tools/ /.oraknid-install.json; do
+		grep -qx "$own" "$DIR/.git/info/exclude" 2>/dev/null || echo "$own" >>"$DIR/.git/info/exclude"
+	done
+}
+
+# A full commit id (40 hex digits).
+is_commit() {
+	case "$1" in *[!0-9a-f]*) return 1 ;; esac
+	[ "${#1}" = 40 ]
+}
+
+# A string made safe inside a JSON string.
+json_str() {
+	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+# What was installed, for Oraknid's updates (ADR-048): the ref asked for and
+# its channel (dev for the dev branch; main, a release's tag or any other ref
+# is stable), the commit, the version, when, from where, and whether the
+# background service runs it.
+write_record() {
+	case "$REF" in
+	dev) channel=dev ;;
+	*) channel=stable ;;
+	esac
+	commit="$(git -C "$DIR" rev-parse HEAD)"
+	version="$(sed -n 's/^  "version": *"\([^"]*\)".*/\1/p' "$DIR/package.json" | head -n 1)"
+	if [ "$SERVICE" = 1 ]; then service=true; else service=false; fi
+	cat >"$DIR/.oraknid-install.json.new" <<EOF
+{
+  "ref": "$(json_str "$REF")",
+  "channel": "$channel",
+  "commit": "$commit",
+  "version": "$(json_str "$version")",
+  "installedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "from": "$(json_str "$FROM")",
+  "service": $service
+}
+EOF
+	mv -f "$DIR/.oraknid-install.json.new" "$DIR/.oraknid-install.json"
+	say "Recorded $REF ($channel channel, version $version) in $DIR/.oraknid-install.json"
 }
 
 build() {
@@ -355,7 +402,8 @@ finish() {
 	if [ "$SERVICE" = 1 ] && wait_until_up; then
 		url="$("$BIN_DIR/oraknid" status | awk '$1 == "url" { print $2 }')"
 		say "Oraknid is running. Open ${url:-http://127.0.0.1:7417} in your browser."
-		"$BIN_DIR/oraknid" pair || true
+		# An update from inside Oraknid: its browsers are paired already, and no code goes in its log.
+		[ -n "${ORAKNID_UPDATE:-}" ] || "$BIN_DIR/oraknid" pair || true
 	elif [ "$SERVICE" = 1 ]; then
 		say "Oraknid did not answer yet. See: oraknid status, oraknid logs"
 	else
@@ -396,11 +444,13 @@ main() {
 		--from=*) FROM="${1#*=}"; shift ;;
 		--no-service) SERVICE=0; shift ;;
 		--uninstall) UNINSTALL=1; shift ;;
-		-h | --help) sed -n '2,17p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' || true; exit 0 ;;
+		-h | --help) sed -n '2,20p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' || true; exit 0 ;;
 		*) die "unknown option $1 (see --help)" ;;
 		esac
 	done
 	case "$DIR" in /*) ;; *) DIR="$(pwd)/$DIR" ;; esac
+	# Another clone on this computer is recorded by its full path, for the updates.
+	if [ -d "$FROM" ]; then FROM="$(cd "$FROM" && pwd)"; fi
 
 	if [ "$UNINSTALL" = 1 ]; then
 		uninstall
@@ -420,6 +470,7 @@ main() {
 	ensure_pnpm
 	build
 	link_command
+	write_record
 
 	title "Checking this computer (oraknid doctor)"
 	"$BIN_DIR/oraknid" doctor </dev/null || true
@@ -431,4 +482,5 @@ main() {
 	finish
 }
 
-main "$@"
+# ORAKNID_INSTALL_LIB=1 only defines the functions, running nothing (the tests).
+[ "${ORAKNID_INSTALL_LIB:-}" = 1 ] || main "$@"

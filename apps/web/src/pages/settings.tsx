@@ -43,6 +43,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { UpdatesCard } from "@/components/updates";
 import { api, auth, message } from "@/lib/api";
 import { ago } from "@/lib/format";
 import { t } from "@/lib/i18n";
@@ -71,6 +72,7 @@ const TABS = [
   { id: "devices", label: "Devices & phone" },
   { id: "connections", label: "Connections" },
   { id: "backups", label: "Backups" },
+  { id: "about", label: "About & updates" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -152,6 +154,13 @@ export function SettingsPage({ tab }: { tab?: string }) {
       ),
     // Database backups on my servers (ADR-044).
     backups: () => wrap(<BackupsSettings />),
+    // Oraknid's version, its channel, and its updates (ADR-048).
+    about: () =>
+      wrap(
+        <Section help="settings.updates" title={t("Version and updates")}>
+          <UpdatesCard />
+        </Section>,
+      ),
   };
   const tabs: PageTab[] = TABS.map((x) => ({
     id: x.id,
@@ -347,6 +356,7 @@ const EVENTS: [NotifyEvent, string][] = [
   ["leg.unavailable", "A Leg became unavailable"],
   ["security", "Wrong PINs, a device unpaired"],
   ["backup.failed", "A backup failed"],
+  ["update.available", "A new version of Oraknid"],
 ];
 const DEFAULTS: Record<NotifyEvent, Route> = {
   approval: { desktop: true, push: true, email: "after-15-min" },
@@ -360,6 +370,7 @@ const DEFAULTS: Record<NotifyEvent, Route> = {
   "leg.unavailable": { desktop: false, push: false, email: "never" },
   security: { desktop: true, push: true, email: "now" },
   "backup.failed": { desktop: true, push: true, email: "now" },
+  "update.available": { desktop: true, push: true, email: "never" },
 };
 
 function NotificationsCard() {

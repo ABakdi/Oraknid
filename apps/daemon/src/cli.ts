@@ -11,7 +11,9 @@ import {
   writeSync,
 } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { createInterface } from "node:readline";
 import { format } from "node:util";
+import type { UpdatesView } from "@oraknid/contracts";
 import {
   createBwrapSandbox,
   createKeychainStore,
@@ -26,6 +28,8 @@ import type { Router } from "./api/router.ts";
 import { type RuntimeInfo, startDaemon } from "./daemon.ts";
 import { runDoctor } from "./doctor.ts";
 import { DEFAULT_HOST, DEFAULT_PORT, resolvePaths } from "./paths.ts";
+import { readRun, updateLog } from "./updates/runner.ts";
+import { Updates } from "./updates/service.ts";
 import { VERSION } from "./version.ts";
 
 const paths = resolvePaths();
@@ -241,7 +245,100 @@ program
     report(service.uninstall());
   });
 
+program
+  .command("update")
+  .description("update Oraknid to the newest version on its channel (your data is kept)")
+  .option("--check", "only say whether there is an update")
+  .option("-y, --yes", "update even while jobs run (they pause, and go on after the restart)")
+  .action(async ({ check, yes }: { check?: boolean; yes?: boolean }) => {
+    const running = await findRunning();
+    // Without the daemon, the same service here: its check in memory, the database's file copied.
+    const local = running
+      ? null
+      : new Updates({
+          db: null,
+          bus: { publish: () => {} },
+          paths,
+          now: Date.now,
+          runningJobs: () => 0,
+        });
+    const who = { remote: false, full: true };
+    const v = running
+      ? await api(running).updates.check()
+      : await local?.check().then(() => local.view(who));
+    if (!v) return;
+    printUpdates(v);
+    if (check) return;
+    if (!v.canUpdate) {
+      if (v.available || v.install.mode !== "script") process.exitCode = 1;
+      return;
+    }
+    if (v.runningJobs > 0 && !yes) {
+      const sure = await ask(
+        `${v.runningJobs} job(s) running: they pause at a safe point while Oraknid restarts, and go on after it. Update now? [y/N] `,
+      );
+      if (!sure) fail("Not updated. (Run it with --yes to update without asking.)");
+    }
+    const run = running
+      ? await api(running).updates.run({ confirm: true })
+      : await local?.run(who, { confirm: true });
+    if (!run) return;
+    if (run.backup) console.log(`Database copied to ${run.backup}`);
+    console.log(`Updating to ${run.target}; following ${updateLog(paths.logs)}\n`);
+    let shown = 0;
+    for (;;) {
+      const now = readRun(paths.dataDir, paths.logs, { now: Date.now, lines: 100_000 });
+      if (!now) fail("The update's status is gone.");
+      for (const line of now.log.slice(shown)) console.log(line);
+      shown = now.log.length;
+      if (now.state !== "running") {
+        const said: Record<string, string> = {
+          succeeded: `Updated to ${now.toVersion ? `v${now.toVersion}` : now.target}.`,
+          "rolled-back": `The update failed; Oraknid went back to v${now.fromVersion}.`,
+          failed: "The update failed; see the lines above.",
+          interrupted: "The update stopped without a word (was the computer stopped?).",
+        };
+        console.log(`\n${said[now.state]}`);
+        if (now.state !== "succeeded") process.exitCode = 1;
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  });
+
 await program.parseAsync();
+
+function printUpdates(v: UpdatesView) {
+  const i = v.install;
+  console.log(
+    i.mode === "script"
+      ? `Oraknid ${v.version} · ${i.channel === "dev" ? "dev channel (pre-releases and new work on dev)" : "stable channel (releases)"} · installed from ${i.ref} into ${i.appDir}`
+      : `Oraknid ${v.version} · running from a clone at ${i.appDir}`,
+  );
+  if (v.error) console.log(`! ${v.error}`);
+  for (const r of v.newer) {
+    console.log(`\n${r.tag}${r.prerelease ? " (pre-release)" : ""} — ${r.name}  ${r.url}`);
+    const notes = r.notes.trim().split("\n").slice(0, 12);
+    for (const line of notes) console.log(`  ${line}`);
+  }
+  if (v.devAhead?.count) {
+    console.log(`\nNew work on dev (${v.devAhead.count} commits)  ${v.devAhead.url}`);
+    for (const c of v.devAhead.commits.slice(0, 10))
+      console.log(`  ${c.sha.slice(0, 7)} ${c.message}`);
+  }
+  if (v.available) console.log(`\nUpdate available${v.target ? `: ${v.target}` : ""}.`);
+  else if (!v.error) console.log("\nUp to date.");
+  if (v.whyNot && v.available) console.log(v.whyNot);
+  else if (v.install.mode !== "script") console.log(v.whyNot);
+}
+
+async function ask(question: string): Promise<boolean> {
+  if (!process.stdin.isTTY) return false;
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await new Promise<string>((r) => rl.question(question, r));
+  rl.close();
+  return /^y(es)?$/i.test(answer.trim());
+}
 
 // ── helpers ─────────────────────────────────────────────────────────
 
