@@ -222,6 +222,16 @@ export const jobs = sqliteTable(
     /** Higher runs first among queued jobs. */
     priority: integer("priority").notNull().default(0),
     title: text("title").notNull(),
+    /**
+     * Who named it (Jobs-and-Projects → A job's name and description): I typed
+     * the title ("me", kept), The Eye named it ("eye"), or nobody yet (its
+     * goal's first line, named when a model can).
+     */
+    namedBy: text("named_by", { enum: ["me", "eye"] }),
+    /** One or two sentences: what it's for, then, once it ends, what it did. */
+    description: text("description"),
+    /** What the description says: its purpose, its outcome, or mine (kept). */
+    describedAs: text("described_as", { enum: ["purpose", "outcome", "mine"] }),
     goal: text("goal").notNull(),
     inputs: json<unknown[]>("inputs").notNull(),
     skillId: text("skill_id").notNull(),

@@ -320,6 +320,8 @@ export const InboxItem = z.object({
   answers: z.array(QuestionAnswer).nullable().default(null),
   /** Where it comes from, so items of several projects can be told apart (Checkpoint 1 → F1-2). */
   jobTitle: z.string().optional(),
+  /** The job's description (Jobs-and-Projects → A job's name and description). */
+  jobDescription: z.string().nullable().optional(),
   projectId: Id.optional(),
   projectName: z.string().optional(),
   taskTitle: z.string().nullable().optional(),

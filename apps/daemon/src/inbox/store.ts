@@ -87,6 +87,7 @@ export class InboxStore {
       .select({
         item: inboxItems,
         jobTitle: jobs.title,
+        jobDescription: jobs.description,
         projectId: jobs.projectId,
         projectName: projects.name,
         taskTitle: tasks.title,
@@ -101,6 +102,7 @@ export class InboxStore {
       .map((r) => ({
         ...(r.item as InboxItem),
         jobTitle: r.jobTitle,
+        jobDescription: r.jobDescription,
         projectId: r.projectId,
         projectName: r.projectName,
         taskTitle: r.taskTitle,

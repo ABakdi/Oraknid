@@ -152,6 +152,15 @@ export const DraftPatch = z.object({
 });
 export type DraftPatch = z.infer<typeof DraftPatch>;
 
+/** A job renamed by me: its name, its description, or both (`jobs.rename`). */
+export const JobRename = z.object({
+  id: Id,
+  title: z.string().trim().min(1).max(80).optional(),
+  /** Empty clears it; either way it's mine and kept. */
+  description: z.string().trim().max(400).optional(),
+});
+export type JobRename = z.infer<typeof JobRename>;
+
 export const TaskView = Task.extend({
   /** Why the router chose its Leg model: score, reasons, what it left out. */
   routing: z
@@ -174,6 +183,15 @@ export const TaskView = Task.extend({
 export type TaskView = z.infer<typeof TaskView>;
 
 export const JobView = Job.extend({
+  /**
+   * One or two sentences (Jobs-and-Projects → A job's name and description):
+   * what it's for, then what it did once it ended; null until The Eye writes one.
+   */
+  description: z.string().nullable().default(null),
+  /** Who named it: I typed the title ("me"), The Eye ("eye"), or nobody yet (its goal's first line). */
+  namedBy: z.enum(["me", "eye"]).nullable().default(null),
+  /** What the description says: its purpose, its outcome, or mine. */
+  describedAs: z.enum(["purpose", "outcome", "mine"]).nullable().default(null),
   tasks: z.array(TaskView),
   /** I chose to run it without the sandbox (ADR-006): shown in red. */
   unsandboxed: z.boolean(),

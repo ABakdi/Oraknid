@@ -44,6 +44,7 @@ import { type EyeBrain, PoolLegBrain } from "./eye/brain.ts";
 import { startBudgetWatch } from "./eye/budgets.ts";
 import { EyeDecisions } from "./eye/decisions.ts";
 import { serverAdded } from "./eye/links.ts";
+import { type NamingDeps, startJobNaming } from "./eye/naming.ts";
 import { eyeProgram } from "./eye/program.ts";
 import { startEyeReports } from "./eye/reports.ts";
 import { forgetGuidance, recordAnswer, resumeConversations } from "./eye/talk.ts";
@@ -109,6 +110,8 @@ export interface DaemonOptions {
   program?: JobProgram;
   /** The Eye's reasoning (tests replace it). */
   brain?: EyeBrain;
+  /** Naming jobs' timings (tests): the backfill's start (-1: never) and pace. */
+  naming?: Pick<NamingDeps, "gapMs" | "retryMs" | "draftDelayMs" | "backfillDelayMs">;
   /** Opens a folder on this machine; tests replace it. */
   openPath?: (path: string) => void;
   stallCheckMs?: number;
@@ -575,6 +578,15 @@ export async function startDaemon(options: DaemonOptions) {
 
   // The Eye speaks up in each project's conversation: a task done, the job done, blocked (ADR-045).
   startEyeReports({ db, bus, inbox, brain, now });
+  // Jobs named by what they are, and described: what for, then what they did.
+  const naming = startJobNaming({
+    db,
+    bus,
+    brain,
+    now,
+    tmpDir: join(paths.dataDir, "tmp", "naming"),
+    ...options.naming,
+  });
   const audit = startAuditExport(db, join(paths.logs, "audit"));
   const backups = startNightlyBackups(db, paths.backups, now);
   const budgets = startBudgetWatch({
@@ -743,6 +755,7 @@ export async function startDaemon(options: DaemonOptions) {
       clearInterval(unclaimed);
       clearInterval(blockedTimer);
       budgets.stop();
+      naming.stop();
       // Jobs reach a safe point and keep their state for the next start, within systemd's stop timeout.
       await Promise.race([
         runner.shutdown(),
@@ -803,6 +816,7 @@ export async function startDaemon(options: DaemonOptions) {
     inbox,
     effects,
     recovery,
+    naming,
     close,
   };
 }

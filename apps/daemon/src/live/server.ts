@@ -50,6 +50,8 @@ const RELAYED = new Set([
   "session.ended",
   "web.updated",
   "job.merged",
+  // A job named or renamed: the lists show it live (Jobs-and-Projects → A job's name).
+  "job.named",
 ]);
 
 export function attachLive({ server, bus, allow, heartbeatMs = 15_000, followLog }: LiveOptions) {

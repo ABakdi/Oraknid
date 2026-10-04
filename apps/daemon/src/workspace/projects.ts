@@ -13,6 +13,7 @@ import {
   type DraftPatch,
   type GitHubLink,
   GitHubLinkInput,
+  type JobRename,
   type NewJob,
   type NewProject,
   type NewProjectRepo,
@@ -405,7 +406,11 @@ export class Projects {
     if (job.state !== "draft") throw new Error("That job has started: change it from its page.");
     const { id, skillId, ...rest } = input;
     const set: Partial<typeof jobs.$inferInsert> = { ...rest };
-    if (rest.goal) set.title = firstLine(rest.goal);
+    // A new goal: its first line until The Eye names it again; a name I typed stays.
+    if (rest.goal && rest.goal !== job.goal && job.namedBy !== "me") {
+      Object.assign(set, { title: firstLine(rest.goal), namedBy: null });
+      if (job.describedAs !== "mine") Object.assign(set, { description: null, describedAs: null });
+    }
     if (skillId !== undefined) {
       const skill = skillId ? this.skills.latest(skillId) : undefined;
       if (skillId && !skill) throw new Error(`No skill ${skillId}.`);
@@ -613,6 +618,8 @@ export class Projects {
           id,
           projectId: project.id,
           title,
+          // A name I typed is kept; otherwise The Eye names it (eye/naming.ts).
+          namedBy: input.title ? "me" : null,
           goal: input.goal,
           inputs: input.inputs,
           skillId,
@@ -653,6 +660,41 @@ export class Projects {
     });
     return id;
   }
+
+  /**
+   * My name or description for a job (Jobs-and-Projects → A job's name and
+   * description): kept from then on, The Eye no longer changes it.
+   */
+  renameJob(input: JobRename) {
+    const job = this.db.select().from(jobs).where(eq(jobs.id, input.id)).get();
+    if (!job) throw new Error(`No job ${input.id}.`);
+    const set: Partial<typeof jobs.$inferInsert> = {};
+    if (input.title !== undefined) {
+      const title = input.title.replace(/\s+/g, " ").trim();
+      if (!title) throw new Error("A job's name can't be empty.");
+      Object.assign(set, { title, namedBy: "me" });
+    }
+    if (input.description !== undefined)
+      Object.assign(set, { description: input.description.trim() || null, describedAs: "mine" });
+    if (!Object.keys(set).length) throw new Error("Give a name or a description.");
+    this.bus.atomically(() => {
+      this.db.update(jobs).set(set).where(eq(jobs.id, input.id)).run();
+      const after = this.db.select().from(jobs).where(eq(jobs.id, input.id)).get();
+      this.bus.publish({
+        type: "job.named",
+        topic: `job:${input.id}`,
+        jobId: input.id,
+        payload: {
+          id: input.id,
+          title: after?.title,
+          description: after?.description ?? null,
+          namedBy: after?.namedBy ?? null,
+          describedAs: after?.describedAs ?? null,
+        },
+        actor: "owner",
+      });
+    });
+  }
 }
 
 type ProjectRow = typeof projects.$inferSelect;
@@ -688,7 +730,8 @@ function uniqueNames(repos: ProjectRepo[]): ProjectRepo[] {
   });
 }
 
-const firstLine = (goal: string) => {
+/** A job's name before The Eye gives it one: its goal's first line. */
+export const firstLine = (goal: string) => {
   const line = goal.trim().split("\n")[0] ?? "Job";
   return line.length > 60 ? `${line.slice(0, 57)}…` : line;
 };
