@@ -506,7 +506,9 @@ export class Backups {
       input.password ?? (kept ? await this.d.secrets.get(PASSWORD(kept.id)) : null) ?? undefined;
     const uri =
       target.kind === "mongodb"
-        ? (input.uri ?? (kept ? await this.d.secrets.get(URI(kept.id)) : null) ?? undefined)
+        ? (input.uri ??
+          (kept && !input.clearUri ? await this.d.secrets.get(URI(kept.id)) : null) ??
+          undefined)
         : undefined;
     const destination = this.#testDestination(input.destination).catch(
       (error): BackupTestResult["destination"] => ({ ok: false, said: words(error) }),

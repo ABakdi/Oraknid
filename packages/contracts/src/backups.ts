@@ -186,6 +186,8 @@ export type BackupPlanPatch = z.infer<typeof BackupPlanPatch>;
 export const BackupPlanTest = NewBackupPlan.omit({ enabled: true }).extend({
   name: z.string().max(80).default(""),
   planId: Id.optional(),
+  /** Not the plan's kept connection string: the fields. */
+  clearUri: z.boolean().optional(),
 });
 export type BackupPlanTest = z.infer<typeof BackupPlanTest>;
 
