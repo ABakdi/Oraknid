@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -66,11 +66,70 @@ export const logs = (name: string) => {
 
 const started: string[] = [];
 
-/** A throwaway container, removed by `removeContainers`. */
+/**
+ * Every container is labelled with the test process that made it, and a
+ * small watcher outside it removes them once that process is gone, however
+ * it ended: a failed hook, a runner that kills its workers (SIGTERM,
+ * SIGKILL, a timeout), Ctrl-C. Containers of a test process no longer
+ * running (from before this watcher) are removed when this file loads.
+ */
+const OWNER = "oraknid-test-owner";
+let watching = false;
+
+function watchOwner() {
+  if (watching) return;
+  watching = true;
+  const pid = String(process.pid);
+  const reaper = spawn(
+    "sh",
+    [
+      "-c",
+      'while kill -0 "$1" 2>/dev/null; do sleep 2; done; ids=$(docker ps -aq --filter "label=$2=$1"); [ -n "$ids" ] && docker rm -f -v $ids >/dev/null 2>&1; exit 0',
+      "sh",
+      pid,
+      OWNER,
+    ],
+    { detached: true, stdio: "ignore" },
+  );
+  reaper.unref();
+}
+
+/** Containers left by test processes that have ended: gone. */
+export function sweepOrphans() {
+  const r = spawnSync(
+    "docker",
+    ["ps", "-a", "--filter", `label=${OWNER}`, "--format", `{{.ID}} {{.Label "${OWNER}"}}`],
+    { encoding: "utf8" },
+  );
+  if (r.status !== 0) return;
+  const dead = r.stdout
+    .split("\n")
+    .map((l) => l.trim().split(" "))
+    .filter(([id, pid]) => {
+      if (!id || !pid) return false;
+      try {
+        process.kill(Number(pid), 0);
+        return false;
+      } catch (e) {
+        return (e as NodeJS.ErrnoException).code === "ESRCH";
+      }
+    })
+    .map(([id]) => id as string);
+  if (dead.length) spawnSync("docker", ["rm", "-f", "-v", ...dead]);
+}
+
+/** A throwaway container, removed by `removeContainers` (or by the watcher, should that not run). */
 export function container(name: string, args: string[]): string {
+  watchOwner();
   const full = `oraknid-test-${name}-${Math.random().toString(36).slice(2, 8)}`;
-  docker("run", "-d", "--name", full, ...args);
   started.push(full);
+  try {
+    docker("run", "-d", "--label", `${OWNER}=${process.pid}`, "--name", full, ...args);
+  } catch (error) {
+    // Made but not started (a port taken, an image's error): not left behind.
+    spawnSync("docker", ["rm", "-f", "-v", full]);
+    throw error;
+  }
   return full;
 }
 
@@ -80,6 +139,7 @@ export function removeContainers() {
 }
 // Should the test runner end the worker before its hooks: the containers go anyway.
 process.once("exit", removeContainers);
+if (hasDocker) sweepOrphans();
 
 export async function until(what: string, ok: () => boolean, ms = 90_000) {
   const end = Date.now() + ms;
