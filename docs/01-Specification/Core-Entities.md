@@ -32,6 +32,7 @@ erDiagram
 | `isGitRepo`, `shadow` | Detected on creation. A non-git folder I don't `git init` gets a shadow repo in Oraknid's data folder for checkpoints (see [[Sandboxing]]). |
 | `releaseBranch`, `workBranch` | Detected from the repo. Fallback is `main` / `dev` (rule BR-14). |
 | `createdAt`, `archivedAt` | |
+| `archivedWith` | What archiving did besides hiding it (2026-10-04, migration 0036): `githubArchived` (the GitHub repos it archived) and `folderDeleted`; null when it isn't archived. Unarchiving reads it ([[Jobs-and-Projects]] → Archiving and deleting a project). |
 | `skillIds` | The skills its jobs may use; The Eye picks one per job (Phase 8). Empty: the default. |
 | `serverIds` | The servers its jobs may use, none by default ([[Servers]]). |
 | `serverRoles` | Each of its servers' role in it, by server id (2026-10-03, [[ADR-042-Several-Repos-And-Servers]]): `role` (a word of mine: testing, staging, production…) and `production` (true or false when I marked it; null: production when the role is `production` or `prod`). |
@@ -47,9 +48,13 @@ A project is where I work: its conversation with The Eye is its jobs'
 messages together, and its Silk is its jobs' Silk, kept by job.
 
 **Life cycle:** active → archived (hidden from lists, kept for stats,
-takes no new jobs; restorable) → deleted (only on my request, refused
-while a job of it is going; its jobs and their history leave Oraknid; my
-folder, the job branches and the worktrees in it stay).
+takes no new jobs; restorable; its GitHub repos archived and its folder
+deleted if I chose, the folder cloned back when it is unarchived) →
+deleted (only on my request, refused while a job of it is going unless
+I cancel it; its jobs and their history leave Oraknid; my folder, the
+job branches and the worktrees in it stay unless I tick the folder, and
+its GitHub repos unless I tick them; [[Jobs-and-Projects]] → Archiving
+and deleting a project).
 
 ## Job
 
