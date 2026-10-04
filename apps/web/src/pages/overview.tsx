@@ -353,6 +353,11 @@ function RunningNow({ jobs, names }: { jobs: JobView[]; names: Map<string, strin
                   >
                     {j.title}
                   </Link>
+                  {j.description ? (
+                    <div className="truncate text-xs text-muted-foreground" title={j.description}>
+                      {j.description}
+                    </div>
+                  ) : null}
                   <div className="truncate text-xs text-muted-foreground">
                     {names.get(j.projectId) ?? t("a project")}
                     {j.blockedReason || j.pauseReason

@@ -93,5 +93,10 @@ broken, what a denial leads to).
   `git.test.ts` (the check and both ways of putting back), the policy's
   tests, and the web's (`eye-report.test.tsx`). By hand on a sample
   daemon at desktop width and at 390 px.
+- **The job's description** (2026-10-04, M13.17): the report of a job
+  done, or stopped or blocked with work done, is what the job's
+  description of what it did is written from, by a second quick call
+  (Jobs-and-Projects → A job's name and description). The summary itself
+  is unchanged.
 
 Related: [[The-Eye]] · [[Approvals-and-Autonomy]] · [[Drift-Control]] · [[ADR-037-Questions-With-Options]] · [[Web-UI]]

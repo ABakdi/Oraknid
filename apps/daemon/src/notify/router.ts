@@ -90,10 +90,17 @@ export function startNotificationRouter(o: {
           item.kind === "approval" ? "approval" : escalation ? "escalation" : "question";
         // Grouped: one notification that says how many wait, replacing the last one.
         const open = o.inbox.list("open").filter((i) => i.kind === item.kind).length;
+        // The job by its name (Jobs-and-Projects → A job's name and description).
+        const jobTitle = item.jobId
+          ? o.db.select({ title: jobs.title }).from(jobs).where(eq(jobs.id, item.jobId)).get()
+              ?.title
+          : undefined;
         const body =
           open > 1
             ? `${open} ${item.kind === "approval" ? "approvals" : "questions"} waiting. Latest: ${item.title}`
-            : item.title;
+            : jobTitle
+              ? `${item.title} — ${jobTitle}`
+              : item.title;
         return {
           p: {
             event,
@@ -131,7 +138,9 @@ export function startNotificationRouter(o: {
                   : `Blocked: ${job?.title ?? "a job"}`,
               body:
                 to === "completed"
-                  ? "Verified and complete."
+                  ? job?.description
+                    ? `Verified and complete. ${job.description}`
+                    : "Verified and complete."
                   : String(payload.reason ?? "It cannot continue."),
               url: url(`/jobs/${e.jobId}`),
               urgency: to === "completed" ? "normal" : "critical",

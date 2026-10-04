@@ -167,6 +167,48 @@ describe("The Eye's brain", () => {
     );
   });
 
+  it("names a job on the quick model, sending back a description in markdown (Jobs-and-Projects)", async () => {
+    const { brain, input, sent, models } = await brainWith(
+      [
+        `\`\`\`json\n${JSON.stringify({ title: "Ship it.", description: "**Pushes** it. Then more. And more." })}\n\`\`\``,
+        `\`\`\`json\n${JSON.stringify({ title: "Ship Phase 2 to GitHub", description: "Pushes Phase 2 to the project's GitHub repo." })}\n\`\`\``,
+      ],
+      { pins: (ids) => ({ quick: ids.haiku ?? null }) },
+    );
+    const r = await brain.nameJob({
+      jobId: input.jobId,
+      cwd: input.cwd,
+      goal: "now push phase 2",
+      project: "piano",
+    });
+    expect(r).toEqual({
+      title: "Ship Phase 2 to GitHub",
+      description: "Pushes Phase 2 to the project's GitHub repo.",
+    });
+    expect(models).toEqual(["haiku", "haiku"]);
+    expect(sent[0]).toContain('"now push phase 2"');
+    expect(sent[0]).toContain("what the job is for");
+    expect(sent[1]).toMatch(/"title" ends without punctuation.*no markdown.*one or two sentences/);
+  });
+
+  it("describes what an ended job did, and backfills only on the quick model I chose", async () => {
+    const reply = `\`\`\`json\n${JSON.stringify({ title: "Piano keys", description: "Built the keys on its branch." })}\n\`\`\``;
+    const { brain, input, sent } = await brainWith([reply]);
+    const ask = {
+      jobId: input.jobId,
+      cwd: input.cwd,
+      goal: "keys",
+      project: "piano",
+      outcome: "The job is done. Keys built.",
+    };
+    await brain.nameJob(ask);
+    expect(sent[0]).toContain("The job is done. Keys built.");
+    expect(sent[0]).toContain("what the job did");
+    await expect(brain.nameJob({ ...ask, quickOnly: true })).rejects.toThrow(
+      /^No Leg can think for The Eye right now: no quick model is chosen/,
+    );
+  });
+
   it("asks each kind of decision of its own model (ADR-022)", async () => {
     const { brain, input, models } = await brainWith([answer([task("t1")])], {
       pins: (ids) => ({ planning: ids.haiku ?? null }),

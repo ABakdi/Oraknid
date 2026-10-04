@@ -244,6 +244,7 @@ export function InboxItemCard({ item, highlight }: { item: InboxItem; highlight?
               : `/jobs/${item.jobId}`
           }
           className="block text-xs text-muted-foreground underline-offset-2 [overflow-wrap:anywhere] hover:underline"
+          title={item.jobDescription ?? undefined}
         >
           {item.projectName && item.jobTitle
             ? `${item.projectName} · ${item.jobTitle}`

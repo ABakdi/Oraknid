@@ -72,7 +72,8 @@ Eye's conversation sit beside them ([[Chats-and-Helper]]).
 ```
 
 - **Command palette (⌘K / Ctrl+K)**: jump to anything, and run any
-  control (pause job, new job, approve…).
+  control (pause job, new job, approve…). A job shows its name with its
+  description under it, and is found by either (2026-10-04).
 - **The sidebar folds** to icons (a button, or `[`), remembered per
   device; pages with a side panel of their own (Chats, Terminal, Email,
   a job opened in a project's Work tab) fold it by themselves while
@@ -129,7 +130,7 @@ Eye's conversation sit beside them ([[Chats-and-Helper]]).
 | **Activity stream** | Every Leg's and The Eye's actions as they happen, filterable by job, Leg and kind. Leg output appears as condensed lines that expand. |
 | **Problems** | Errors, drift events, kills, escalations, blocked jobs. Each links to the evidence. |
 | **Resources** | Per Leg and per process: CPU, RAM, GPU and VRAM (local models), disk I/O, network. Sparklines, with the full chart a click away. |
-| **Running now** | (2026-10-03, [[ADR-034-Projects-First]]) Every job going, waiting, paused or queued, across projects: its title, its project, its progress, a queued mark, and Pause or Resume on its row. A job opens in its project's Work tab. `/jobs` comes here. |
+| **Running now** | (2026-10-03, [[ADR-034-Projects-First]]) Every job going, waiting, paused or queued, across projects: its name and description (2026-10-04), its project, its progress, a queued mark, and Pause or Resume on its row. A job opens in its project's Work tab. `/jobs` comes here. |
 | **Totals** | Tokens today, by Leg. Jobs running and queued (the tile goes to Running now). Inbox count. |
 | **The last two weeks** | (2026-10-03) The charts across every project (Charts, below): tasks done per day, success and failure by Leg and by task kind, the Legs compared, cost once money is counted. |
 
@@ -140,6 +141,13 @@ is opened in its project's Work tab (below), with everything the job
 page had. `/jobs/<id>` and `/jobs/<id>/<tab>` (from notifications, push,
 old links) open the job's project at Work with that job open, its old
 Eye tab at the project's Eye tab; a draft opens on New work.
+
+**Its header** (2026-10-04, [[Jobs-and-Projects]] → A job's name and
+description): the job's name with a pencil to rename it (a dialog: name
+and description, either kept as mine from then on), its description
+(what it's for, then what it did; "The Eye names and describes it as
+soon as a model can" until then), its state, branch and tokens, and
+**What I asked**: my goal as I wrote it, folded until I open it.
 
 - **The Web**, an animated graph that updates live. Nodes are tasks,
   coloured by state, showing the Leg's avatar while assigned. When a
@@ -230,8 +238,9 @@ the address (`/projects/<id>/<tab>`):
   [[ADR-034-Projects-First]] → Changed): only the diagram, filling the
   tab, its controls floating over it (Compact / Expanded at the top
   left, zoom and fit at the bottom right); pinch and drag on a phone.
-  **Compact**, the default: a box per job in the order they ran (title,
-  state, tasks done), the job the project is about now highlighted.
+  **Compact**, the default: a box per job in the order they ran (name,
+  a line of its description, state, tasks done; the description in full
+  on hover), the job the project is about now highlighted.
   Selecting a box goes inside it, `/projects/<id>/workflow/<job>`: that
   job's own tasks, with **All jobs** to come back and "Open in Work".
   **Expanded**: every job's tasks drawn in full, each inside a frame
@@ -239,8 +248,9 @@ the address (`/projects/<id>/<tab>`):
   another, left to right on a computer, top to bottom on a phone. The
   choice is kept per project on the device. A task opens its drawer.
   `/projects/<id>/web` (the old address) opens Workflow.
-- **Work**: the jobs as a timeline, newest first: title, state,
-  progress, branch, tokens, a queued mark, Pause or Resume. Opening one
+- **Work**: the jobs as a timeline, newest first: name and description
+  (two lines at most), state, progress, branch, tokens, a queued mark,
+  Pause or Resume. Opening one
   shows it in place (Job, above); a draft opens on New work.
 - **Inbox**: the project's approvals and questions, answered in place.
 - **Silk**: the project's Silk kept by job, newest job first, the newest
@@ -565,7 +575,7 @@ approval's buttons each carry the line saying what that answer leads to
 (ADR-045), side by side on a wide screen and one under the other on a
 phone; a question that only explains an item's own options shows them
 in the component, not again as buttons beside Submit. Each item names its
-project and job. Filters: project, job, kind, state, and a search over
+project and job (the job's description on hover, 2026-10-04). Filters: project, job, kind, state, and a search over
 the text.
 
 ### Legs

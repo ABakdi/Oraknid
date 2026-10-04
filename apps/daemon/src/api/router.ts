@@ -34,6 +34,7 @@ import {
   InboxItem,
   Insight,
   JobExport,
+  JobRename,
   JobResult,
   JobView,
   LegPlanUsage,
@@ -1848,6 +1849,10 @@ export const router = {
     updateDraft: base
       .input(DraftPatch)
       .handler(({ context: c, input }) => guard(() => c.projects.updateDraft(input))),
+    /** My name or description for a job, kept from then on (Jobs-and-Projects → A job's name). */
+    rename: base
+      .input(JobRename)
+      .handler(({ context: c, input }) => guard(() => c.projects.renameJob(input))),
     /** A draft, or a job that has ended, gone (its branch stays in my repo). */
     remove: base
       .input(z.object({ id: z.string() }))
