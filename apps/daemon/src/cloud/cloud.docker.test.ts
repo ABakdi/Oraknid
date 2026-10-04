@@ -128,7 +128,10 @@ describe.skipIf(!!cloudSkip)("cloud storage against MinIO (ADR-046)", () => {
     const raw = readFileSync(file, "utf8");
     expect(raw).not.toContain(m.password);
     expect(raw).not.toContain(m.user);
-    expect(raw).not.toContain("s3");
+    // Encrypted as a whole: rclone's header, and no section in clear ("type = s3" would
+    // be one). Not "doesn't contain s3": the encrypted text is random and once had it.
+    expect(raw).toMatch(/^# Encrypted rclone configuration File/);
+    expect(raw).not.toMatch(/^\s*type\s*=/m);
     expect((spawnSync("stat", ["-c", "%a", file], { encoding: "utf8" }).stdout ?? "").trim()).toBe(
       "600",
     );
