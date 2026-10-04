@@ -2282,7 +2282,11 @@ describe("archiving and deleting a project (Phase 2 → M2.0)", () => {
     await api.projects.archive({ id: projectId, archived: true });
     expect((await api.projects.list()).find((p) => p.id === projectId)?.archivedAt).toBeTruthy();
     await api.projects.archive({ id: projectId, archived: false });
-    expect(await api.projects.delete({ id: projectId })).toEqual({ jobs: 1, folder: workspace });
+    expect(await api.projects.delete({ id: projectId })).toMatchObject({
+      jobs: 1,
+      folder: workspace,
+      kept: false,
+    });
     expect((await api.projects.list()).map((p) => p.id)).not.toContain(projectId);
     await expect(api.jobs.get({ id })).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(d.bus.since(0, [`job:${id}`], 10)).toEqual([]);

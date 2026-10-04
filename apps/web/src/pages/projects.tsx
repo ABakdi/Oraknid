@@ -1,17 +1,18 @@
 import type { ProjectView } from "@oraknid/contracts";
-import { FolderGit2, FolderOpen, Plus, SquareTerminal } from "lucide-react";
+import { Archive, ArchiveRestore, FolderOpen, Plus, SquareTerminal, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Redirect, useLocation } from "wouter";
 import { ActivityFeed } from "@/components/activity-feed";
 import { LegComparison, TokensChart } from "@/components/charts";
 import { BackButton, Empty, ErrorNote, Loading, PageHeader, Stat } from "@/components/common";
-import { useConfirm } from "@/components/confirm";
 import { EyeChat } from "@/components/eye-chat";
 import { ProjectBudgetCard } from "@/components/job-budget";
 import { NewProjectDialog } from "@/components/new-project";
 import { type PageTab, PageTabs } from "@/components/page-tabs";
+import { ProjectList } from "@/components/project-list";
 import { ProjectNetworkCard } from "@/components/project-network";
+import { ProjectMenu, ProjectRemovalDialog, type RemovalKind } from "@/components/project-removal";
 import { isSeveral, ProjectReposCard, ProjectRepoTab } from "@/components/project-repo";
 import { ProjectServersCard } from "@/components/project-servers";
 import { ProjectSkillsCard } from "@/components/project-skills";
@@ -47,7 +48,6 @@ export function ProjectsPage({
     refreshOn: (e) => e.type.startsWith("project.") || e.type === "job.created",
   });
   const [creating, setCreating] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
   const moved = id ? currentProjectPath(id, tab, job, sub) : null;
   if (moved) return <Redirect to={moved} replace />;
   if (projects.error) return <ErrorNote error={projects.error} />;
@@ -75,12 +75,15 @@ export function ProjectsPage({
         />
       </div>
     );
+  const active = all.filter((p) => !p.archivedAt);
   const archived = all.filter((p) => p.archivedAt);
-  const listed = all.filter((p) => showArchived || !p.archivedAt);
   // A project open: its id in the address; on a computer the first one by default.
   const selected = all.find((p) => p.id === id);
   const shown =
-    selected ?? (typeof window !== "undefined" && window.innerWidth >= 768 ? listed[0] : undefined);
+    selected ??
+    (typeof window !== "undefined" && window.innerWidth >= 768
+      ? (active[0] ?? archived[0])
+      : undefined);
   return (
     <div className="-mb-24 flex h-[calc(100dvh-7.5rem)] min-h-0 gap-4 md:-mb-8 md:h-[calc(100dvh-4.5rem)]">
       <aside
@@ -95,43 +98,11 @@ export function ProjectsPage({
           {add}
         </div>
         <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
-          {listed.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => go(`/projects/${p.id}`)}
-              className={cn(
-                "w-full rounded-lg border bg-card px-3 py-2 text-left hover:bg-accent",
-                p.id === shown?.id && "border-primary bg-accent",
-              )}
-            >
-              <div className="flex items-center gap-2 font-medium">
-                <FolderGit2 className="size-4 shrink-0" />
-                <span className="truncate" title={p.name}>
-                  {p.name}
-                </span>
-                {p.archivedAt ? (
-                  <span className="text-xs font-normal text-muted-foreground">{t("archived")}</span>
-                ) : null}
-              </div>
-              <div className="truncate text-xs text-muted-foreground" title={p.workspacePath}>
-                {p.workspacePath}
-              </div>
-              <div className="truncate text-xs text-muted-foreground">
-                {t("{n} job(s)", { n: p.jobCount })} ·{" "}
-                {p.shadow
-                  ? t("no git (checkpoints in a shadow repo)")
-                  : isSeveral(p.repos)
-                    ? t("{n} repos", { n: p.repos.length })
-                    : `${p.releaseBranch} / ${p.workBranch}`}
-              </div>
-            </button>
-          ))}
-          {archived.length ? (
-            <Button variant="ghost" size="sm" onClick={() => setShowArchived((v) => !v)}>
-              {showArchived ? t("Hide archived") : t("Show archived ({n})", { n: archived.length })}
-            </Button>
-          ) : null}
+          <ProjectList
+            projects={all}
+            shownId={shown?.id}
+            onOpen={(pid) => go(`/projects/${pid}`)}
+          />
         </div>
       </aside>
       <section className={cn("min-h-0 min-w-0 flex-1", !selected && "hidden md:block")}>
@@ -193,6 +164,12 @@ function ProjectDetail({
       <h2 className="min-w-0 truncate text-lg font-semibold" title={project.name}>
         {project.name}
       </h2>
+      {project.archivedAt ? (
+        <span className="flex shrink-0 items-center gap-1 rounded border px-1.5 text-xs text-muted-foreground">
+          <Archive className="size-3" />
+          {t("Archived")}
+        </span>
+      ) : null}
       <span
         className="hidden min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground sm:inline"
         title={project.workspacePath}
@@ -212,6 +189,7 @@ function ProjectDetail({
         <Plus className="size-4" />
         {t("New work")}
       </Button>
+      <ProjectMenu project={project} help="project.menu" />
     </div>
   );
   if (jobs.error) return <ErrorNote error={jobs.error} />;
@@ -339,40 +317,13 @@ function ProjectInbox({ id }: { id: string }) {
   );
 }
 
-/** Archive (hidden, kept for stats) or delete (gone from Oraknid, my folder untouched). */
+/**
+ * Archive (to Archived projects, everything kept; its GitHub repos and
+ * folder as I choose) or delete (gone from Oraknid; its folder and GitHub
+ * repos as I choose), each in its dialog (project-removal.tsx).
+ */
 function ProjectActions({ project }: { project: ProjectView }) {
-  const [, go] = useLocation();
-  const { confirm, dialog } = useConfirm();
-  const archive = async () => {
-    try {
-      await api.projects.archive({ id: project.id, archived: !project.archivedAt });
-      toast.success(project.archivedAt ? t("Back in the list.") : t("Archived."));
-    } catch (e) {
-      toast.error(message(e));
-    }
-  };
-  const remove = async () => {
-    if (
-      !(await confirm(
-        t("Delete “{name}”?", { name: project.name }),
-        t(
-          "Its jobs and their history (tasks, sessions, Silk, logs) leave Oraknid for good. Your folder, the job branches and worktrees in it stay as they are.",
-        ),
-        t("Delete"),
-        { keep: t("Keep it") },
-      ))
-    )
-      return;
-    try {
-      const r = await api.projects.delete({ id: project.id });
-      toast.success(
-        t("Deleted, with {n} job(s). {folder} is untouched.", { n: r.jobs, folder: r.folder }),
-      );
-      go("/projects", { replace: true });
-    } catch (e) {
-      toast.error(message(e));
-    }
-  };
+  const [open, setOpen] = useState<RemovalKind | null>(null);
   return (
     <div className="space-y-3 rounded-xl border bg-card p-4 text-sm">
       <div className="space-y-1">
@@ -398,24 +349,46 @@ function ProjectActions({ project }: { project: ProjectView }) {
       </div>
       <div className="text-xs text-muted-foreground">
         {project.archivedAt
-          ? t("Archived: hidden from the lists and New work, kept for stats.")
-          : t("Archive hides it from the lists and New work and keeps its stats.")}
+          ? project.archivedWith?.folderDeleted
+            ? t(
+                "Archived, its folder deleted: unarchiving clones it back from GitHub. Everything else is kept.",
+              )
+            : t("Archived: hidden from the lists and New work, everything kept.")
+          : t(
+              "Archive moves it to Archived projects, everything kept. Delete removes it from Oraknid, and its folder and GitHub repos if you choose.",
+            )}
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button data-help="project.archive" variant="secondary" size="sm" onClick={archive}>
-          {project.archivedAt ? t("Restore") : t("Archive")}
+        <Button
+          data-help="project.archive"
+          variant="secondary"
+          size="sm"
+          className="gap-1"
+          onClick={() => setOpen("archive")}
+        >
+          {project.archivedAt ? (
+            <ArchiveRestore className="size-4" />
+          ) : (
+            <Archive className="size-4" />
+          )}
+          {project.archivedAt ? t("Unarchive…") : t("Archive…")}
         </Button>
         <Button
           data-help="project.delete"
           variant="ghost"
           size="sm"
-          className="text-destructive"
-          onClick={remove}
+          className="gap-1 text-destructive"
+          onClick={() => setOpen("delete")}
         >
-          {t("Delete")}
+          <Trash2 className="size-4" />
+          {t("Delete…")}
         </Button>
       </div>
-      {dialog}
+      <ProjectRemovalDialog
+        project={project}
+        kind={open}
+        onOpenChange={(o) => !o && setOpen(null)}
+      />
     </div>
   );
 }

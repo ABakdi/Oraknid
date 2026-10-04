@@ -219,8 +219,12 @@ As built (2026-10-03, `stats.charts`):
 ### Projects
 
 A list with totals, and the project open beside it: **the place I
-work** ([[ADR-034-Projects-First]], 2026-10-03). Its page is in tabs, in
-the address (`/projects/<id>/<tab>`):
+work** ([[ADR-034-Projects-First]], 2026-10-03). Each card in the list
+has a **…** menu (Archive or Unarchive, Delete); archived projects are
+in their own **Archived projects** section at the bottom, closed until
+I open it or one of them is open (2026-10-04). The project's header has
+an "Archived" mark when it is, and the same **…** menu after New work.
+Its page is in tabs, in the address (`/projects/<id>/<tab>`):
 
 - **The Eye**: the project's one conversation with The Eye, filling the
   page like a chat. I ask for work here; The Eye passes it to the job
@@ -289,7 +293,25 @@ the address (`/projects/<id>/<tab>`):
   field, as wide as its word; on a phone under the name) and a
   **Production** mark, "live" beside a production server;
   then its repos (the same card), the folder and branches (each repo's
-  for several), archive or delete, and the project's command rules.
+  for several), **Archive…** / **Unarchive…** and **Delete…**, and
+  the project's command rules.
+- **Archive and delete dialogs** (2026-10-04, [[Jobs-and-Projects]] →
+  Archiving and deleting a project; `components/project-removal.tsx`):
+  each lists what it would do as checkboxes, read when it opens. Delete
+  says it can't be undone; "Always: Oraknid's records" is fixed; **Delete
+  the project folder from this computer** shows the path and size and,
+  ticked, what would be lost; **Delete the GitHub repo owner/name**, one
+  per linked repo, disabled with its reason when the account doesn't own
+  it, warning when the token lacks `delete_repo`. A folder or a repo
+  ticked asks me to type the project's name (or the one repo's full
+  name); **Delete** stays disabled until it matches, and while a job runs
+  until I tick **Cancel its running jobs first**. Archive has **Archive
+  the GitHub repo** per linked repo and **Delete the project folder from
+  this computer to free space**, disabled with each reason when
+  something isn't pushed or committed. Unarchive says the folder comes
+  back from GitHub when archiving deleted it (and which repo it is
+  cloning) and offers to unarchive the repos it archived. After, the
+  dialog lists each step with a mark: done, not done (with why), skipped.
 - In the projects list, a project of several repos says how many; New
   project (below) says how many repos it found, and their names. A job's Result
   lists each repo's branch, merged or not, and its commits; Merge

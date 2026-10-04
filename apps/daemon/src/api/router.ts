@@ -68,8 +68,10 @@ import {
   PlanHistory,
   PlanOutcome,
   ProfileOverrides,
+  ProjectArchive,
   ProjectBudget,
   ProjectBudgetView,
+  ProjectDelete,
   ProjectRepo,
   ProjectRepoPatch,
   ProjectView,
@@ -77,6 +79,8 @@ import {
   PushSubscriptionInput,
   QuestionAnswers,
   QuietHours,
+  RemovalPreview,
+  RemovalResult,
   ServerDatabases,
   ServerDocker,
   ServerLogSource,
@@ -203,6 +207,7 @@ import { listFolders, makeFolder } from "../workspace/folders.ts";
 import { type GitHub, GitHubError } from "../workspace/github.ts";
 import type { Repos } from "../workspace/github-repos.ts";
 import { NotAGitRepo, type Projects } from "../workspace/projects.ts";
+import { ProjectRemoval } from "../workspace/removal.ts";
 import { jobResult, mergeJob, taskDiff } from "../workspace/result.ts";
 import { projectFrom } from "../workspace/sources.ts";
 import { backupsRouter } from "./backups.ts";
@@ -311,6 +316,17 @@ const base = os.$context<ApiContext>().use(async ({ next }) => {
     });
   }
 });
+
+/** Archiving and deleting a project with my choices (its folder, its GitHub repos). */
+const removal = (c: ApiContext) =>
+  new ProjectRemoval({
+    projects: c.projects,
+    github: c.github,
+    bus: c.bus,
+    logsDir: c.paths.logs,
+    keep: [c.paths.dataDir, c.paths.configDir],
+    cancelJob: (id) => c.runner.cancel(id, "Cancelled to archive or delete its project."),
+  });
 
 const drafts = (c: ApiContext) => ({
   db: c.jobs.db,
@@ -953,17 +969,34 @@ export const router = {
       .handler(({ context: c, input }) =>
         guard(() => setProjectBudget(c.jobs.db, c.bus, input.id, input.budget)),
       ),
-    /** Hidden from the lists, kept for stats; or back again. */
-    archive: base
-      .input(z.object({ id: z.string(), archived: z.boolean() }))
-      .handler(({ context: c, input }) =>
-        guard(() => c.projects.setArchived(input.id, input.archived)),
-      ),
-    /** Gone from Oraknid with its jobs' history; my folder is left as it is. */
-    delete: base
+    /**
+     * What deleting or archiving would touch (Jobs-and-Projects → Archiving
+     * and deleting a project): the folder and its size, its running jobs,
+     * its repos with their GitHub repos and the token's scopes, and what
+     * deleting the folder would lose (changes not committed, commits not
+     * pushed), so archiving may delete it only when nothing would be.
+     */
+    removalPreview: base
       .input(z.object({ id: z.string() }))
-      .output(z.object({ jobs: z.number(), folder: z.string() }))
-      .handler(({ context: c, input }) => guard(() => c.projects.remove(input.id, c.paths.logs))),
+      .output(RemovalPreview)
+      .handler(({ context: c, input }) => guard(() => removal(c).preview(input.id))),
+    /**
+     * Hidden from the lists, kept for stats, its GitHub repos archived and
+     * its folder deleted when I tick them; or back again, its repos
+     * unarchived when I tick them and its folder cloned back if it went.
+     */
+    archive: base
+      .input(ProjectArchive)
+      .output(RemovalResult)
+      .handler(({ context: c, input }) => guard(() => removal(c).archive(input))),
+    /**
+     * Gone from Oraknid with its jobs' history; its folder and its GitHub
+     * repos too when I tick them. Each step is said, done or not.
+     */
+    delete: base
+      .input(ProjectDelete)
+      .output(RemovalResult)
+      .handler(({ context: c, input }) => guard(() => removal(c).delete(input))),
   },
   /**
    * The folder picker (Web-UI → The folder picker): this machine's folders by

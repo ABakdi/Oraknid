@@ -68,6 +68,71 @@ is New work's too (Starting work, below): there a folder I have that
 isn't a repo is made one without asking. All of it is
 `projects.createFrom` ([[API-Contract]]).
 
+### Archiving and deleting a project (2026-10-04, M13.23)
+
+Both are in the project's **…** menu (its header and its card in the
+list) and on its Settings tab, each a dialog where I tick what goes.
+Before it opens Oraknid reads what they would touch
+(`projects.removalPreview`): the folder and its size, the jobs still
+going, each repo with its GitHub repo (owned by its account or not,
+archived or not, the token's scopes when GitHub says them), and what
+deleting the folder would lose.
+
+**Delete** says it can't be undone. What goes:
+
+- **Always**: the project and its jobs leave Oraknid with their history
+  (tasks, sessions, Silk, inbox, events, logs). A job still going
+  refuses it; the dialog offers to cancel it first.
+- **The project folder**, when I tick it: the whole folder, its
+  worktrees (`.oraknid/`) and job branches with it, its path and size
+  shown. Oraknid refuses a folder that is a symbolic link, the root or
+  a top-level folder, my home folder or one holding it, one holding
+  Oraknid's own data, and one that holds or sits in another project's
+  folder; deleting never follows a symbolic link out (a link is removed
+  as a link).
+- **Each linked GitHub repo**, when I tick it, deleted on GitHub with
+  its account's token, only when that account owns it (its own, or an
+  organisation it administers). A token without the `delete_repo`
+  permission is refused by GitHub: said plainly, with where to grant it.
+- **Typed confirmation**: with a folder or a GitHub repo ticked, I type
+  the project's name (the repo's full name when one GitHub repo is all
+  that goes) before **Delete** is enabled; with only Oraknid's records,
+  the dialog is the confirmation.
+
+The order is GitHub, then the folder, then the records. A step on GitHub
+that fails keeps the project and its folder, so I can grant the
+permission and try again (a repo already deleted loses its link, so
+trying again doesn't ask for it); a folder that can't be deleted keeps
+the project too. The result lists every step, done, not done (and why)
+or skipped. `project.deleted` (or `project.delete-stopped`) records
+what went, never a token.
+
+**Archive** is reversible: the project moves to **Archived projects**
+(its own section at the bottom of the list), hidden from New work,
+everything kept. Jobs still going are cancelled first if I say so. I may
+also tick:
+
+- **Archive the GitHub repo**, for each linked repo its account owns:
+  read-only on GitHub (`archived: true`), nothing deleted.
+- **Delete the project folder** to free space, offered only when
+  nothing would be lost: every repo linked to a GitHub repo that exists,
+  no file changed and not committed (in the repo or its worktrees), no
+  commit on a branch that isn't on that GitHub repo (compared with its
+  branches as GitHub has them), no stash, and in a project of several
+  no file outside its repos. Otherwise the option is disabled with each
+  reason ("site: commits not on GitHub, on dev (2)."). I type the
+  project's name to confirm it.
+
+Each step is said; a GitHub step that fails doesn't stop the rest. The
+project records what archiving did (`archivedWith`: the GitHub repos it
+archived, whether it deleted the folder), so **Unarchive** knows: it
+offers to unarchive those repos on GitHub (ticked), and if the folder
+was deleted it clones each repo back from GitHub with its account, to
+the same path in the same layout (`apps/web` back in `apps/web`), its
+release and work branches made again from GitHub's, saying each repo as
+it goes. A clone that fails leaves the project archived, the repos
+already back kept, to try again.
+
 ## A job's name and description (2026-10-04)
 
 A job is named by what it is, not by the first words I typed ("now you

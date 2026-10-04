@@ -222,6 +222,139 @@ export const ProjectView = Project.extend({
 });
 export type ProjectView = z.infer<typeof ProjectView>;
 
+// ── Archiving and deleting a project, with my choices (Jobs-and-Projects →
+// Archiving and deleting a project).
+
+/** "owner/name" on GitHub. */
+const FullName = z.string().regex(/^[\w.-]+\/[\w.-]+$/, "owner/name");
+
+/** Deleting: its records always; its folder and its repos on GitHub when I tick them. */
+export const ProjectDelete = z.object({
+  id: Id,
+  /** The project's folder, worktrees included, deleted from this computer. */
+  deleteFolder: z.boolean().default(false),
+  /** Its linked GitHub repos (owner/name) deleted on GitHub with their accounts' tokens. */
+  deleteRepos: z.array(FullName).max(50).default([]),
+  /** Its running jobs cancelled first; otherwise a running job refuses it. */
+  stopJobs: z.boolean().default(false),
+});
+export type ProjectDelete = z.input<typeof ProjectDelete>;
+
+/** Archiving (with its choices) or unarchiving (with what to undo on GitHub). */
+export const ProjectArchive = z.object({
+  id: Id,
+  archived: z.boolean(),
+  /** Archiving: its linked GitHub repos (owner/name) made read-only on GitHub. */
+  archiveRepos: z.array(FullName).max(50).default([]),
+  /** Archiving: its folder deleted to free space; only when every repo is pushed and clean. */
+  deleteFolder: z.boolean().default(false),
+  /** Unarchiving: the GitHub repos it archived made writable again. */
+  unarchiveRepos: z.array(FullName).max(50).default([]),
+  /** Archiving: its running jobs cancelled first; otherwise a running job refuses it. */
+  stopJobs: z.boolean().default(false),
+});
+export type ProjectArchive = z.input<typeof ProjectArchive>;
+
+/** What would be lost in one repo if its folder went: changes not committed, commits not pushed. */
+export const RepoLoss = z.object({
+  /** Files changed or not tracked, in the repo or one of its worktrees (the first few). */
+  uncommitted: z.array(z.string()),
+  /** How many such files in all. */
+  uncommittedCount: z.number().int(),
+  /** Branches with commits that are on no branch of its GitHub repo. */
+  unpushed: z.array(z.object({ branch: z.string(), commits: z.number().int() })),
+  stashes: z.number().int(),
+  /** Why it couldn't be checked, if it couldn't. */
+  error: z.string().nullable(),
+});
+export type RepoLoss = z.infer<typeof RepoLoss>;
+
+/** One of its repos, before deleting or archiving: its GitHub repo and what its folder holds. */
+export const RemovalRepo = z.object({
+  name: z.string(),
+  folder: z.string(),
+  path: z.string(),
+  github: z
+    .object({
+      fullName: z.string(),
+      account: z.string(),
+      url: z.string(),
+      /** False while its link says it isn't created yet. */
+      ready: z.boolean(),
+      /** Owned by the account (its own, or an organisation it administers); null when unknown. */
+      owned: z.boolean().nullable(),
+      /** Already archived on GitHub; null when unknown. */
+      archived: z.boolean().nullable(),
+      /** The token's scopes, when GitHub says them (a classic token); null otherwise. */
+      scopes: z.array(z.string()).nullable(),
+      /** Whether the token may delete it: false when its scopes lack delete_repo, null when unknown. */
+      canDelete: z.boolean().nullable(),
+      /** Why GitHub couldn't be asked about it. */
+      error: z.string().nullable(),
+    })
+    .nullable(),
+  loss: RepoLoss,
+});
+export type RemovalRepo = z.infer<typeof RemovalRepo>;
+
+/** What deleting or archiving would touch (`projects.removalPreview`). */
+export const RemovalPreview = z.object({
+  id: Id,
+  name: z.string(),
+  folder: z.object({
+    path: z.string(),
+    exists: z.boolean(),
+    /** Its size on disk, symlinks not followed; null when not measured. */
+    bytes: z.number().nullable(),
+    files: z.number().int(),
+    /** Measuring stopped early: it is at least this much. */
+    partial: z.boolean(),
+    /** Why it can't be deleted here (a dangerous path); null when it can. */
+    refused: z.string().nullable(),
+  }),
+  runningJobs: z.array(z.object({ id: z.string(), title: z.string() })),
+  repos: z.array(RemovalRepo),
+  /** Files in its folder that are in none of its repos (a project of several), the first few. */
+  outside: z.array(z.string()),
+  /** Whether archiving may delete the folder, and if not, each reason. */
+  archiveFolder: z.object({ allowed: z.boolean(), reasons: z.array(z.string()) }),
+  archivedWith: z
+    .object({ githubArchived: z.array(z.string()), folderDeleted: z.boolean() })
+    .nullable(),
+});
+export type RemovalPreview = z.infer<typeof RemovalPreview>;
+
+/** One step of deleting, archiving or unarchiving, and how it went. */
+export const RemovalStep = z.object({
+  kind: z.enum([
+    "jobs",
+    "records",
+    "folder",
+    "github-delete",
+    "github-archive",
+    "github-unarchive",
+    "restore",
+    "archive",
+  ]),
+  /** What it was about: the folder's path, a repo's owner/name, the project's name. */
+  target: z.string(),
+  status: z.enum(["done", "failed", "skipped"]),
+  /** In words: what was done, or why not. */
+  message: z.string(),
+});
+export type RemovalStep = z.infer<typeof RemovalStep>;
+
+export const RemovalResult = z.object({
+  /** Every step asked for, in order. */
+  steps: z.array(RemovalStep),
+  /** Whether the project is still in Oraknid (deleting stopped before its records went). */
+  kept: z.boolean(),
+  /** Jobs deleted with it. */
+  jobs: z.number().int(),
+  folder: z.string(),
+});
+export type RemovalResult = z.infer<typeof RemovalResult>;
+
 /** Where a job's work is and what it holds (Jobs-and-Projects → Ending a job, Checkpoint 1 → F1-5). */
 export const JobResult = z.object({
   /** The folder the work is in. */

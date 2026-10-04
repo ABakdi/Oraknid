@@ -3,6 +3,7 @@ import type {
   BackupRetention,
   BackupSchedule,
   BackupTarget,
+  ProjectArchivedWith,
   ProjectRepo,
   Question,
   QuestionAnswer,
@@ -42,6 +43,8 @@ export const projects = sqliteTable("projects", {
   workBranch: text("work_branch").notNull(),
   createdAt: integer("created_at").notNull(),
   archivedAt: integer("archived_at"),
+  /** What archiving it did (repos archived on GitHub, its folder deleted), for unarchiving. */
+  archivedWith: json<ProjectArchivedWith>("archived_with"),
   /** The skills its jobs may use; The Eye picks one per job (Skills → Skills per project). Empty: the default. */
   skillIds: json<string[]>("skill_ids").notNull().default([]),
   /** The servers its jobs may use (Servers → Servers in projects). None by default. */
