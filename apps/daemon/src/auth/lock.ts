@@ -304,6 +304,9 @@ export const HOME_ONLY = [
   "/projects/updateRepo",
   "/projects/setLocalPorts",
   "/projects/delete",
+  // Archiving may delete its folder and archive its GitHub repos; the preview reads its folder.
+  "/projects/archive",
+  "/projects/removalPreview",
   // The folder picker (2026-10-04): this machine's folders, for a project made here.
   "/files/folders",
   "/files/makeFolder",

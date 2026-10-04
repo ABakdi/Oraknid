@@ -18,6 +18,13 @@ A line at the bottom says exactly what will happen before it does, for example *
 
 A project's page is where you work: its **The Eye**, **Workflow**, **Work**, **Repo**, **Inbox**, **Silk**, **Activity** and **Budget & stats** tabs (see [Jobs and The Eye](/docs/jobs.html)), and its **Settings**, **Skills** (which skills its jobs may use), **Servers** and **Network**. A project can have a budget across all its jobs. Its header has **Open folder** (the project's folder in your file manager, to look or test by hand) and **Terminal here** (a terminal that starts in that folder).
 
+**Archiving and deleting.** Both are in the project's **…** menu (in its header and on its card in the list) and on its **Settings** tab.
+
+- **Archive** moves the project to **Archived projects**, at the bottom of the list: hidden from New work, everything kept, and **Unarchive** brings it back. If jobs are running you're asked to cancel them first. You can also tick **Archive the GitHub repo** (it becomes read-only on GitHub) and **Delete the project folder from this computer to free space**. The folder option is only offered when nothing would be lost: every repo linked to GitHub, everything committed and every branch pushed; otherwise it says what isn't (*site: commits not on GitHub, on dev (2).*). When you unarchive, the repos it archived are offered back, and a deleted folder is cloned back from GitHub to the same place, each repo where it was.
+- **Delete** can't be undone. The project and its jobs' history always leave Oraknid. Tick **Delete the project folder from this computer** to remove the folder too (its path and size are shown; worktrees go with it), and **Delete the GitHub repo** for each linked repo you want gone on GitHub. With either ticked, type the project's name to enable **Delete**. Oraknid won't delete your home folder, a top-level folder, a folder holding another project, or anything a link points to, and only deletes a GitHub repo its account owns.
+
+Deleting a GitHub repo needs a token with the **delete_repo** permission (a classic token) or **Administration: Read and write** (a fine-grained one). Without it GitHub refuses and Oraknid tells you; nothing else is deleted then, so you can grant it in **github.com → Settings → Developer settings → Personal access tokens**, paste the token again in **Settings → Connections → GitHub**, and delete again. Afterwards the dialog lists each step: done, not done (and why), or skipped.
+
 ## GitHub
 
 Add one or more GitHub accounts in **Settings → Connections → GitHub**, each with a token. A token stays in your keychain, is given to git only for the command that needs it, and never to an agent.

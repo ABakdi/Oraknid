@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `archived_with` text;
