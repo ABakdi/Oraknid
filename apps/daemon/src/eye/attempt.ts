@@ -184,6 +184,46 @@ const hash = (s: string) => createHash("sha256").update(s).digest("hex").slice(0
  * work itself, self-prompt, watch for drift and climb the ladder, rotate
  * sessions, and on success commit and record progress in Silk.
  */
+/** The address a fetch reads: OpenCode puts it as the request's path, Claude Code in its input. */
+function fetchedUrl(r: { path: string | null; input: Record<string, unknown> }): string | null {
+  const url = r.input.url;
+  return typeof url === "string" ? url : r.path;
+}
+
+/**
+ * A page of the project's own linked GitHub repo (its page, its API, its raw
+ * files) isn't content from outside: reading it doesn't make the task
+ * untrusted. Anything else on the web still does (BR-15). Seen 2026-10-04:
+ * OpenCode looked at the piano repo's page and its push to that same repo
+ * then asked me.
+ */
+export function ownRepoPage(
+  url: string | null,
+  repos: { github?: { owner: string; name: string } | null }[],
+): boolean {
+  if (!url) return false;
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "https:") return false;
+  const parts = u.pathname.split("/").filter(Boolean);
+  const [owner, name] =
+    u.hostname === "api.github.com" && parts[0] === "repos"
+      ? [parts[1], parts[2]]
+      : u.hostname === "github.com" || u.hostname === "raw.githubusercontent.com"
+        ? [parts[0], parts[1]]
+        : [undefined, undefined];
+  if (!owner || !name) return false;
+  const repo = name.replace(/\.git$/, "").toLowerCase();
+  return repos.some(
+    (r) =>
+      r.github?.owner.toLowerCase() === owner.toLowerCase() && r.github.name.toLowerCase() === repo,
+  );
+}
+
 export async function runAttempt(
   d: AttemptDeps,
   job: AttemptJob,
@@ -508,7 +548,7 @@ export async function runAttempt(
     }
     const first = decide(r, policy);
     const fetches =
-      r.tool === "WebFetch" ||
+      (r.tool === "WebFetch" && !ownRepoPage(fetchedUrl(r), githubLinksOf(d.db, job.id))) ||
       r.tool === "WebSearch" ||
       (r.command ? /\b(curl|wget)\b/.test(r.command) : false);
     if (fetches && first.verdict !== "deny" && !readTheWeb) {

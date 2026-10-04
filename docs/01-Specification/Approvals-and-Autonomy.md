@@ -91,6 +91,13 @@ branches, my home) is refused, never asked, and the Leg is told to work
 in its folder: the project's own branches are Oraknid's to change at the
 end of the job.
 
+### Reading the project's own repo (2026-10-04)
+A task that read from the web is untrusted, and a gated action asks me
+from then on (BR-15). A page of the project's own linked GitHub repo
+(`github.com/<owner>/<name>…`, its API under `api.github.com/repos/…`, its
+raw files) isn't outside content and doesn't count: an agent looking at
+the piano repo's page made its push to that same repo ask me.
+
 ## The inbox
 
 One list for every approval and question across all jobs, newest and
