@@ -795,6 +795,14 @@ export const CONTROLS: HelpControl[] = [
     where: "A server's header",
   },
   {
+    id: "server.edit",
+    page: "servers",
+    needsItem: true,
+    name: "Edit (a server)",
+    does: "Changes its name, description, address, user or credentials, with Test connection before saving.",
+    where: "A server's header",
+  },
+  {
     id: "server.terminal",
     page: "servers",
     needsItem: true,
