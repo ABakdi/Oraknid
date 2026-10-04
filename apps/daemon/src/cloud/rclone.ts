@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { type ChildProcess, execFile, spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import {
   accessSync,
@@ -47,6 +47,25 @@ export function rcloneVersion(bin: string): string | null {
   const r = spawnSync(bin, ["version"], { encoding: "utf8", timeout: 10_000, env: cleanEnv() });
   if (r.status !== 0) return null;
   return r.stdout.trim().split("\n")[0] ?? null;
+}
+
+/** rclone's own description of every backend (`config providers`, JSON), read without a config. */
+export function rcloneProviders(bin: string): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      bin,
+      ["--config", "/dev/null", "--ask-password=false", "config", "providers"],
+      { env: cleanEnv(), maxBuffer: 64 << 20, timeout: 60_000, encoding: "utf8" },
+      (error, stdout) => {
+        if (error) return reject(new Error(`rclone couldn't list its providers: ${error.message}`));
+        try {
+          resolve(JSON.parse(stdout));
+        } catch {
+          reject(new Error("rclone's list of providers isn't one Oraknid reads."));
+        }
+      },
+    );
+  });
 }
 
 /** Mine, without any RCLONE_* of the shell's that would change what rclone does. */
@@ -198,10 +217,20 @@ export class Rclone {
   /** One command to its end: its output, and progress from its stats when asked. */
   async run(
     args: string[],
-    o: { stdin?: string; onStats?: (s: Stats) => void; signal?: AbortSignal } = {},
+    o: {
+      stdin?: string;
+      onStats?: (s: Stats) => void;
+      signal?: AbortSignal;
+      /** More of its environment: how a value reaches it without its command line. */
+      env?: Record<string, string>;
+      /** Stopped after this long. */
+      timeoutMs?: number;
+    } = {},
   ): Promise<RcloneResult> {
     const full = o.onStats ? ["--stats", "500ms", "-v", ...args] : args;
-    const child = await this.#spawn(full);
+    const child = await this.#spawn(full, o.env);
+    const timer = o.timeoutMs ? setTimeout(() => child.kill("SIGTERM"), o.timeoutMs) : null;
+    child.once("close", () => timer && clearTimeout(timer));
     const out: Buffer[] = [];
     let err = "";
     let partial = "";
@@ -278,6 +307,13 @@ export class Rclone {
     const text = readFileSync(this.o.configFile, "utf8");
     if (!text.trim()) return new Map();
     return parseIni(await decryptConfig(text, await this.o.password()));
+  }
+
+  /** Something that may write the config (rclone's own `config update`), one at a time with Oraknid's writes. */
+  serial<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.#writing.then(fn);
+    this.#writing = next.catch(() => {});
+    return next;
   }
 
   /** Changes the config: read, changed, encrypted, written whole (0600) in its place. */

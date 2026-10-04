@@ -1,4 +1,5 @@
 import {
+  CloudAddStep,
   CloudAuthorization,
   CloudListing,
   CloudPath,
@@ -8,6 +9,11 @@ import {
   CloudStatus,
   Id,
   NewCloudProvider,
+  NewRcloneProvider,
+  RcloneBackend,
+  RcloneBackendName,
+  RcloneBackends,
+  RcloneOptionName,
 } from "@oraknid/contracts";
 import { ORPCError, os } from "@orpc/server";
 import { z } from "zod";
@@ -79,11 +85,22 @@ export const cloudRouter = {
     .input(z.object({ id: Id }))
     .output(CloudProviderView)
     .handler(({ context: c, input }) => guard(() => c.cloud.check(input.id))),
-  /** Google Drive or Dropbox: rclone's sign-in, its address to open in a browser here. */
+  /**
+   * rclone's sign-in for a backend that signs in through a browser (Google
+   * Drive, Dropbox, OneDrive …), with what its form says so far: the address
+   * to open in a browser here.
+   */
   authorizeStart: base
-    .input(z.object({ kind: z.enum(["drive", "dropbox"]) }))
+    .input(
+      z.object({
+        kind: RcloneBackendName,
+        options: z.record(RcloneOptionName, z.string().max(4096)).optional(),
+      }),
+    )
     .output(CloudAuthorization)
-    .handler(({ context: c, input }) => guard(() => c.cloud.authorizeStart(input.kind))),
+    .handler(({ context: c, input }) =>
+      guard(() => c.cloud.authorizeStart(input.kind, input.options ?? {})),
+    ),
   authorizeStatus: base
     .input(z.object({ session: z.string().min(1).max(64) }))
     .output(CloudAuthorization)
@@ -91,6 +108,30 @@ export const cloudRouter = {
   authorizeCancel: base
     .input(z.object({ session: z.string().min(1).max(64) }))
     .handler(({ context: c, input }) => guard(() => c.cloud.authorizeCancel(input.session))),
+  /** Every backend rclone supports here, from its own schema (by name, for the picker). */
+  backends: base
+    .output(RcloneBackends)
+    .handler(({ context: c }) => guard(() => c.cloud.backends())),
+  /** One backend's options, for its form (hidden ones left out). */
+  backend: base
+    .input(z.object({ name: RcloneBackendName }))
+    .output(RcloneBackend)
+    .handler(({ context: c, input }) => guard(() => c.cloud.backend(input.name))),
+  /** A provider of any backend: added, or rclone's first question. */
+  addRclone: base
+    .input(NewRcloneProvider)
+    .output(CloudAddStep)
+    .handler(({ context: c, input }) => guard(() => c.cloud.addRclone(input))),
+  /** An answer to rclone's question while it sets a provider up. */
+  answerRclone: base
+    .input(z.object({ pending: z.string().min(8).max(64), answer: z.string().max(65_536) }))
+    .output(CloudAddStep)
+    .handler(({ context: c, input }) =>
+      guard(() => c.cloud.answerRclone(input.pending, input.answer)),
+    ),
+  cancelRclone: base
+    .input(z.object({ pending: z.string().min(8).max(64) }))
+    .handler(({ context: c, input }) => guard(() => c.cloud.cancelRclone(input.pending))),
   placement: base
     .output(CloudPlacement)
     .handler(({ context: c }) => guard(() => c.cloud.placement())),

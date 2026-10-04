@@ -295,6 +295,8 @@ export async function startDaemon(options: DaemonOptions) {
     // A provider a backup plan or a kept backup needs stays.
     usedBy: (id) => backupPlans.cloudUse(id),
   });
+  // rclone's list of backends, read once per version, so the add dialog opens on it.
+  cloud.preloadBackends();
   const downloads = new Downloads(now);
   // Scheduled, encrypted database backups (ADR-044); the schedule starts once notifications do.
   const backupPlans = new Backups({
