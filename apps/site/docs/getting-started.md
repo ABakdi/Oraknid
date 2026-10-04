@@ -36,10 +36,11 @@ OpenRC and runit services are system services that drop to your user, so writing
 Options go after `sh -s --`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/dev/install.sh | sh -s -- --ref dev
+curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/dev/install.sh | sh -s -- --dev
 ```
 
-- `--ref <branch>`: what to install (default `main`). Until the work on `dev` is merged, use `--ref dev`.
+- `--dev`: install the `dev` branch, where the newest work is (the same as `--ref dev`). Until it is merged into `main`, this is the one to use.
+- `--ref <branch>`: what to install (default `main`).
 - `--dir <path>`: where the program lives (default `~/.local/share/oraknid/app`).
 - `--no-service`: build and link, but don't run it in the background.
 - `--uninstall`: remove the service and the `oraknid` command. Your data stays.

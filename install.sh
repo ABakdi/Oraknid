@@ -3,11 +3,12 @@
 # docs/04-Decisions/ADR-036-One-Script-Install.md
 #
 #   curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/main/install.sh | sh
-#   curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/main/install.sh | sh -s -- --ref dev
+#   curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/dev/install.sh | sh -s -- --dev
 #   sh install.sh [options]          (from a clone)
 #
 # Options:
 #   --ref <branch>       what to install (default: main)
+#   --dev                the dev branch, where the newest work is: the same as --ref dev
 #   --dir <path>         where the program lives (default: ~/.local/share/oraknid/app)
 #   --from <path|url>    the repository to install from (default: GitHub)
 #   --no-service         build and link, but don't install the background service
@@ -386,6 +387,7 @@ The program stays in $DIR; remove it with: rm -rf '$DIR'"
 main() {
 	while [ $# -gt 0 ]; do
 		case "$1" in
+		--dev) REF=dev; shift ;;
 		--ref) REF="${2:?--ref needs a branch}"; shift 2 ;;
 		--ref=*) REF="${1#*=}"; shift ;;
 		--dir) DIR="${2:?--dir needs a path}"; shift 2 ;;

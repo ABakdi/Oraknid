@@ -13,7 +13,7 @@ services.
 - **`install.sh` at the repository's root**, run as me (it asks for
   `sudo` only to install missing packages):
   `curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/main/install.sh | sh`
-  or `sh install.sh` from a clone. Options: `--ref <branch>`,
+  or `sh install.sh` from a clone. Options: `--ref <branch>` (`--dev` for `--ref dev`, 2026-10-04),
   `--dir <path>` (default `~/.local/share/oraknid/app`), `--no-service`,
   `--uninstall`.
 - It **installs what is missing** with the system's package manager

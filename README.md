@@ -33,7 +33,7 @@ On Linux, as yourself (it asks for `sudo` only to install missing packages):
 ```sh
 curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/main/install.sh | sh
 # until dev is merged into main:
-curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/dev/install.sh | sh -s -- --ref dev
+curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/dev/install.sh | sh -s -- --dev
 ```
 
 It installs what is missing (git, Node 22.12+, pnpm through corepack,
