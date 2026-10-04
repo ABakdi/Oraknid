@@ -64,10 +64,13 @@ transaction, the loop let go between them, and the IMAP fetch loops let
 it go every 20 ms. Now the worst stall is **100–166 ms** during a
 first sync of 6,000 (259 ms at 12,000) and **44–174 ms** after a
 restart; `/health` answered within 140 ms throughout.
-**Tests:** `startup.perf.test.ts (run on its own after the suite, `pnpm check` → `test:perf`)` syncs 6,000 messages, restarts with 500
-more, probes `/health` throughout and checks the worst stall stays
-under 500 ms and every probe under 1 s (`STARTUP_MESSAGES` sets the
-count).
+**Tests:** `startup.perf.test.ts` (run on its own after the suite:
+`pnpm check` → `test:perf`) syncs 6,000 messages, restarts with 500
+more, probes `/health` throughout and checks each phase's worst stall
+stays under 800 ms plus twice the machine's own stall, and every probe
+under 1,000 ms plus twice it (`STARTUP_MESSAGES` sets the count). The
+machine's own stall is measured in the same window by a worker thread
+doing nothing, so a loaded machine doesn't fail the test (2026-10-04).
 
 ## Features
 

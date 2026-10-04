@@ -444,7 +444,7 @@ Done 2026-10-04 (ADR-045 → As built; Jobs-and-Projects → Ending a job,
 As built). A job may now go from `waiting` back to `verifying` (its end
 steps waiting for the repo question). Tested: `pnpm check`'s lint and
 types green; the web's 109 tests and the daemon's 366 pass, two daemon
-tests (`startup.perf.test.ts (run on its own after the suite, `pnpm check` → `test:perf`)`, `faults.test.ts`) and one web test
+tests (`startup.perf.test.ts` (run on its own after the suite: `pnpm check` → `test:perf`), `faults.test.ts`) and one web test
 (`project-repo.test.tsx`) failed only under load beside another agent's
 runs and pass alone; new: `eye.test.ts` (seven: the Leg's own-check
 answered, `.git` commands refused, a separate repo put back, the
@@ -462,7 +462,7 @@ left to me; at desktop width and at 390 px (the conversation, the
 question's options, the inbox).
 
 ### M13.15 — Cloud storage ([[ADR-046-Cloud-Storage]])
-- [x] Providers through rclone: Google Drive, Dropbox, MEGA, S3-compatible; the pool with upload, download, move, delete; automatic or chosen placement
+- [x] Providers through rclone: Google Drive, Dropbox, MEGA, S3-compatible (every rclone provider since M13.16); the pool with upload, download, move, delete; automatic or chosen placement
 - [x] Backups to cloud storage, and downloaded from the web page
 - [x] The helper and the guide
 
@@ -495,6 +495,34 @@ and port, MinIO in a container, all removed after) at desktop and at
 ### M13.17 — Jobs named by what they are (2026-10-04, [[Jobs-and-Projects]] → A job's name and description)
 - [x] A proper name and a description when a job is made; what it did when it ends; shown everywhere; rename ([[Jobs-and-Projects]] → A job's name and description, As built). Migration 0035; `nameJob` on the quick model with its rules checked; `eye/naming.ts` names a job made, describes one ended from The Eye's report, waits for a model and tries again, names older jobs at start (quick model only, 5 s apart); `jobs.rename` (allowed away from home, like the job's other edits); `job.named` relayed to the Overview.
   Tested: `naming.test.ts` (from my message: named, then what it did; a typed name kept; rename kept through the end; no model: the first line, named once a model is back; a draft named again after typing; the backfill), `brain.test.ts` (the call on the quick model, a markdown answer sent back, the backfill refused without a quick model), web `job-heading.test.tsx` (rename, the folded goal, Work's row, the Workflow's box). By hand on a sample daemon (fake OS, a scripted Leg, a stand-in brain, its own data folder and port, stopped after) at 1440 px and 390 px in headless Chromium: Running now, Work, the header with my goal opened, a rename shown live, the Workflow's boxes with their tooltips, the Inbox's job line, the palette, a job made without a model named once one came back; no sideways scroll, no console errors.
+
+### Fixes after M13.17 (2026-10-04)
+- [x] **Open folder** and **Terminal here** in a project's header: its folder in this computer's file manager, and a terminal started in it (the target `project:<id>`, never a path; [[ADR-028-Terminal]] → Extended).
+  Tested: `term.test.ts` (a terminal in a project's folder by its id only, its folder opened, a project that isn't there opens nothing).
+- [x] A Leg's write outside its folder is refused, not asked; its own `/tmp` and its home for the job are its to write ([[Approvals-and-Autonomy]] → Writing outside its folder).
+  Tested: `policy-drift.test.ts` (edits inside the worktree and its scratch space allowed, elsewhere refused without asking).
+- [x] GitHub branch checks look at the repo's real branches (those the task names, else its work branch); a bad `oraknid github-branch to` is repaired ([[ADR-038-Project-Accounts]], [[The-Eye]] → A check that is wrong).
+  Tested: `builtin-checks.test.ts` (the branches named that the repo has, the work branch otherwise, a check on a missing branch repaired).
+- [x] Reading the project's own repo on GitHub doesn't make a task untrusted (BR-5, [[Approvals-and-Autonomy]] → Reading the project's own repo).
+  Tested: `own-repo.test.ts` (the repo's page, its API and its raw files, and nothing else).
+- [x] A job whose checks fail and can't be replanned is blocked, not left verifying ([[Core-Entities]]).
+  Tested: `states.test.ts` (`verifying` → `blocked`, and back to `running`).
+- [x] The site stays the site on a paired device ("Open your Oraknid"); the loader, when my daemon can't be reached, says Oraknid runs on my computer and keeps retrying, with links to the site and the guide on a public Nest ([[ADR-033-Product-Site]] → Changed, [[Nest-Protocol]]).
+  Tested: no automated test; still to try by hand on a paired phone with my computer off.
+- [x] A server's key made again when ssh2 writes an ed25519 key malformed (about one in two hundred) ([[ADR-026-Servers]] → Fixed).
+  Tested: `keys.test.ts` (2,000 keys made, each read back).
+- [x] Linger checked before it is asked for, a refusal a warning with the command; doctor tells passt missing from passt unable to make a network here ([[ADR-036-One-Script-Install]], [[OS-Integration]]).
+  Tested: `systemd.test.ts` (linger already on left alone, a refused linger a warning); the systemd path in `systemd-nspawn` (ADR-036 → As built).
+- [x] Doctor's install hints name this system's package manager and package (apt, dnf, pacman, zypper, apk) ([[OS-Integration]]).
+  Tested: `doctor-hints.test.ts`.
+- [x] `install.sh --dev` installs the `dev` branch; `install.sh` installs rclone (recommended: a failure only warns) ([[ADR-036-One-Script-Install]]).
+  Tested: no automated test (`--dev` is `--ref dev`); the script hasn't been run again in a container since.
+- [x] Test containers carry their test process's id as a label and are removed by a watcher once it is gone, however it ended.
+  Tested: the runner killed with SIGKILL, the containers removed (M13.16).
+- [x] The startup timing test runs on its own after the suite (`pnpm check` → `test:perf`), its stalls judged against the machine's own ([[Checkpoint-1]] → B1-04).
+  Tested: `pnpm check` runs it after `turbo run typecheck test`; two races in `naming.test.ts` and `rclone-provider.test.tsx` made deterministic with it.
+- [x] A folder that isn't a git repo, chosen for a new project, is said in words (what to choose), not as an unknown error.
+  Tested: `layer2.test.ts` (a plain folder throws `NotAGitRepo`); the API now answers `BAD_REQUEST` with its message.
 
 ## Exit criterion
 

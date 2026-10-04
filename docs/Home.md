@@ -3,9 +3,12 @@
 *Always watching, many legs. A local background orchestrator that runs
 AI coding agents and local models from goal to verified completion.*
 
-**Where it stands (2026-10-03):** Phases 1 to 12 are built and tested
+**Where it stands (2026-10-04):** Phases 1 to 12 are built and tested
 on `dev`; what is left in each is hands-on (mine), named in its phase
-note and in the [[Roadmap]]. Next: those runs, then Later.
+note and in the [[Roadmap]]. Phase 13 is built on `dev` (M13.1 to
+M13.17); open: the piano job's last push check, mine to resume, M13.12's
+SQLite files and sizes inside containers, and [[Audit-2]] S2-02 (fixed
+in part). Next: those runs, then Later.
 
 ## 00 — Overview
 - [[Vision]] — why Oraknid exists, what it must feel like, pillars, MVP scope
@@ -54,8 +57,9 @@ note and in the [[Roadmap]]. Next: those runs, then Later.
 - [[Phase-8-Daily-Use]] — built
 - [[Phase-9-Servers]] — built
 - [[Phase-10-Lockdown]] — built: the PIN, Audit 2's fixes, settings in tabs
-- [[Phase-11-Workspace]] — built: pages in tabs, terminal workspace, device rights, a public Nest, the app's own look and the product site; both Nests deployed; the new mark mine to choose
+- [[Phase-11-Workspace]] — built: pages in tabs, terminal workspace, device rights, a public Nest, the app's own look and the product site; both Nests deployed; the mark kept, its pupil made vertical and gently wavy (2026-10-03)
 - [[Phase-12-Email]] — built: the Mail page, IMAP and POP3, agents' drafts; my Gmail syncs; an approved agent draft and an IMAP account to try
+- [[Phase-13-Projects-First]] — built on `dev`: projects first, Nest pages by mode, the one-script install, questions with options, Workflow, GitHub per project, Repos, Docs and the helper, several repos and servers, server insight, backups, The Eye speaks up, cloud storage, job names
 - Later ← **next**: containers per job, teams
 
 ## 04 — Decisions

@@ -29,6 +29,9 @@ several devices. Linux first.
 | Chat / Helper message | A free conversation with a model; the helper's conversation. | [[Chats-and-Helper]] |
 | Server / State document | A machine of mine over SSH, and what it has. | [[Servers]] |
 | Mail account / message / draft | My mail in Oraknid, and the agents' drafts. | [[ADR-032-Email]] |
+| Project repo | One git repo of a project, with its branches and GitHub link. | [[ADR-042-Several-Repos-And-Servers]] |
+| Backup plan / run | One database's scheduled, encrypted backup, and each time it ran. | [[ADR-044-Backups]] |
+| Cloud provider | One storage account in the pool, through rclone. | [[ADR-046-Cloud-Storage]] |
 
 Full data model: [[Core-Entities]].
 
@@ -46,7 +49,7 @@ Full data model: [[Core-Entities]].
 | Durability | Service, inhibitor, recovery, pause/resume, watchdog. | [[Durability]] | 1 |
 | Notifications | Desktop, push, email. | [[Notifications]] | 1 |
 | Security | Secrets, sandbox, command filter, injection, audit. | [[Security]] | 1 |
-| Web UI | Live overview, The Web, charts, controls, management. | [[Web-UI]] | 1 |
+| Web UI | Live overview, Workflow (The Web), charts, controls, management. | [[Web-UI]] | 1 |
 | Parallelism | Several tasks and jobs at once, merges. | [[Phase-3-Parallelism]] | 3 |
 | The Nest | Remote relay. | [[The-Nest]] | 4 |
 | Non-coding jobs | MCP tools, scoped credentials, the email flow. | [[Phase-6-Non-Coding-Skills]] | 6 |
@@ -56,6 +59,7 @@ Full data model: [[Core-Entities]].
 | Lockdown | A PIN on every device, Audit 2's fixes. | [[Security]] | 10 |
 | Workspace | Pages in tabs, shortcuts, a terminal workspace, device rights, a public Nest, the app's own look, the product site. | [[Web-UI]] · [[The-Nest]] | 11 |
 | Email | A mail client, agents that read, sort and draft. | [[Web-UI]] → Mail | 12 |
+| Projects first | The project as the place (its Eye, Work, Workflow, Repo tabs), Nest pages by mode, the one-script install, questions with options, GitHub per project, Repos, Docs and the helper, several repos and servers, server insight, backups, The Eye speaking up, cloud storage, job names. | [[Jobs-and-Projects]] · [[Phase-13-Projects-First]] | 13 |
 
 ## Business rules in one paragraph
 
