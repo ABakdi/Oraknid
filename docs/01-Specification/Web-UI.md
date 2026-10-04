@@ -80,7 +80,8 @@ storage sits between Servers and Terminal (2026-10-03).
 - **The sidebar folds** to icons (a button, or `[`), remembered per
   device; pages with a side panel of their own (Chats, Terminal, Email,
   a job opened in a project's Work tab) fold it by themselves while
-  they are open.
+  they are open. Above the fold button, Oraknid's version and whether
+  an update waits (2026-10-04, [[ADR-048-Updates]]; Settings → About & updates).
 - **Pages use their space** (2026-10-03): a page with more than one
   concern is in tabs, the tab in the address; each tab fills the height
   it needs, a conversation takes the whole height like Chats; changing
@@ -660,6 +661,27 @@ that opened Settings:
   for its kept secrets) and lists Server, Database and Where to, each
   ✓, ✗ or not tried with its words; a database it lists is one click
   away. At 390 px every field is one column, nothing scrolls sideways.
+- **About & updates** (2026-10-04, [[ADR-048-Updates]]): the version
+  running, its channel (dev or stable) and how it was installed
+  (install.sh, from which ref, into which folder; or "running from a
+  clone at <path>: update it with git", with no Update now), when it
+  last looked, **Check now**, a sentence when GitHub couldn't be
+  reached, the notes of every newer release on the channel (the newest
+  open, each with its link to GitHub), on the dev channel **New work on
+  dev (N commits)** with the newest of them, and **Update now** after a
+  confirm that says what happens (the database copied first; fetched,
+  built, restarted; my data kept; how many jobs run, and that they pause
+  and go on after the restart). Then the update's progress, its log as
+  it is written, "Oraknid is restarting…" while the daemon doesn't
+  answer, and the end: "Updated to v0.2.0" with **Reload the page**, or
+  that it failed and went back to the version before. Away from home,
+  Update now needs a device with full rights; the button says why it is
+  greyed out.
+
+The sidebar's foot shows the version and, at a glance, whether there is
+an update ("0.1.0 · Up to date", "0.1.0 · Update available: v0.2.0",
+"Updating…"; folded, a dot), opening About & updates; the Overview has
+a line under its title while an update waits ([[ADR-048-Updates]]).
 
 ### The lock
 

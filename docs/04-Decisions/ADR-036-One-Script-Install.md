@@ -89,4 +89,13 @@ services.
   warning with the command to run. `doctor` said "install passt" when
   passt was installed but couldn't make a network there; it now tells
   the two apart.
-Related: [[OS-Integration]] · [[ADR-012-Sleep-Inhibition]] · [[ADR-033-Product-Site]]
+- **Updates from inside Oraknid** (2026-10-04, [[ADR-048-Updates]]): the
+  script records what it installed in `<dir>/.oraknid-install.json`
+  (ref, channel, commit, version, when, from where, with or without the
+  service), which Oraknid reads to update itself from Settings → About
+  & updates or `oraknid update`, running this script again apart from
+  the daemon. A full commit id the checkout has is checked out without
+  fetching (going back after a failed update); `ORAKNID_UPDATE=1` prints
+  no pairing code.
+
+Related: [[OS-Integration]] · [[ADR-012-Sleep-Inhibition]] · [[ADR-033-Product-Site]] · [[ADR-048-Updates]]

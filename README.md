@@ -76,6 +76,7 @@ Python 3, a C++ compiler, and rclone for Cloud storage), builds Oraknid into
 machine (`oraknid doctor`), and runs it in the background with systemd, OpenRC
 or runit. It ends with the address to open and a pairing code. Running it again
 updates; `--uninstall` removes it and keeps your data.
+Update from Settings → About, or `oraknid update` ([how](docs/04-Decisions/ADR-048-Updates.md)).
 
 Options: `--dev`, `--ref <branch or tag>`, `--dir <path>`, `--from <path or URL>`,
 `--no-service`, `--uninstall` ([how it works](docs/04-Decisions/ADR-036-One-Script-Install.md)).
