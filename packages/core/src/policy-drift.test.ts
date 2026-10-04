@@ -346,6 +346,20 @@ describe("permission policy", () => {
     ).toMatchObject({ verdict: "ask" });
   });
 
+  it("lets OpenCode name a folder outside before it reads or writes there; the write itself is judged", () => {
+    const at = (path: string) => ({ tool: "ExternalDirectory", command: null, path });
+    const c = ctx({ autonomy: "supervised", scratch: ["/legs/OC/home/tmp"] });
+    expect(decide(at("/legs/OC/home/tmp/opencode/*"), c)).toMatchObject({
+      verdict: "allow",
+      reason: "its own scratch space, private to the sandbox",
+    });
+    expect(decide(at("/usr/share/doc/*"), c).verdict).toBe("allow");
+    expect(decide({ tool: "Write", command: null, path: "/usr/share/doc/x" }, c).verdict).toBe(
+      "deny",
+    );
+    expect(decide({ tool: "DoomLoop", command: null, path: null }, c).verdict).toBe("allow");
+  });
+
   it("keeps ordinary work flowing after a task read the web (BR-15 gates only gated actions)", () => {
     const untrusted = ctx({ untrusted: true, scratch: ["/tmp"] });
     expect(decide({ tool: "Edit", command: null, path: "/w/docs/a.md" }, untrusted).verdict).toBe(
