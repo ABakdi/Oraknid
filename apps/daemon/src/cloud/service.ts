@@ -1,9 +1,10 @@
 import type { ChildProcess } from "node:child_process";
-import { randomBytes } from "node:crypto";
-import { mkdirSync, rmSync, statSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Readable } from "node:stream";
 import {
+  type CloudAddStep,
   type CloudAuthorization,
   type CloudEntry,
   type CloudKind,
@@ -14,17 +15,33 @@ import {
   type CloudStatus,
   type CloudTransfer,
   NewCloudProvider,
+  NewRcloneProvider,
+  type RcloneBackend,
+  RcloneBackend as RcloneBackendShape,
+  type RcloneBackends,
+  type RcloneOption,
   type S3Preset,
 } from "@oraknid/contracts";
-import { choosePlace, type PlaceCandidate } from "@oraknid/core";
+import {
+  checkOptions,
+  choosePlace,
+  formModel,
+  formOptions,
+  type PlaceCandidate,
+  RCLONE_SCHEMA_FORMAT,
+  readRcloneOption,
+  readRcloneSchema,
+  summaryOf,
+} from "@oraknid/core";
 import { asc, eq } from "drizzle-orm";
+import { z } from "zod";
 import type { Db } from "../db/open.ts";
 import { cloudProviders } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 import type { Secrets } from "../os/secrets.ts";
 import { readSetting, writeSetting } from "../settings.ts";
-import { RCLONE_FIX, Rclone, rcloneError, rcloneVersion } from "./rclone.ts";
+import { RCLONE_FIX, Rclone, rcloneError, rcloneProviders, rcloneVersion } from "./rclone.ts";
 
 // Cloud storage (ADR-046): my providers through rclone, seen as one pool.
 // A file lives in one provider; folders are merged by path. Credentials
@@ -70,7 +87,35 @@ export const KIND_NAMES: Record<CloudKind, string> = {
   drive: "Google Drive",
   dropbox: "Dropbox",
   mega: "MEGA",
+  rclone: "rclone",
 };
+
+/** How long an add may wait on rclone's questions (OneDrive's drive …). */
+const PENDING_MS = 15 * 60_000;
+/** One step of rclone's own setup (`config update`), at most. */
+const STEP_MS = 120_000;
+
+/** rclone's answer to one step of a provider's setup (`config update --non-interactive`). */
+interface ConfigOut {
+  State: string;
+  Option: Record<string, unknown> | null;
+  Error: string;
+}
+
+/** An add of any backend, waiting on an answer to rclone's question. */
+interface Pending {
+  id: string;
+  providerId: string;
+  remote: string;
+  input: NewRcloneProvider;
+  backend: RcloneBackend;
+  /** Every secret given, to keep out of what is said. */
+  secrets: string[];
+  /** Where rclone's setup stands, and what it asks. */
+  state: string | null;
+  option: RcloneOption | null;
+  timer: NodeJS.Timeout;
+}
 
 /** A path inside the pool, made plain: no empty parts, never outside. */
 export function cleanPath(p: string): string {
@@ -98,7 +143,7 @@ interface LsItem {
 
 interface AuthSession {
   session: string;
-  kind: "drive" | "dropbox";
+  kind: string;
   state: "waiting" | "ready" | "failed";
   url: string | null;
   error: string | null;
@@ -212,6 +257,14 @@ export class Cloud {
       .all();
   }
 
+  /**
+   * Its free space is what it holds against a limit I set (object storage,
+   * and any backend whose `about` can't tell), not its own figure.
+   */
+  #sized(r: Row) {
+    return r.kind === "s3" || (r.kind === "rclone" && r.info.about !== "yes");
+  }
+
   #view(r: Row): CloudProviderView {
     const preset = (r.info.preset as S3Preset | undefined) ?? null;
     const where =
@@ -222,23 +275,29 @@ export class Cloud {
           : r.root
             ? `${r.root}/`
             : "the whole account";
+    const what =
+      r.kind === "rclone"
+        ? `${r.info.title ?? r.info.backend}${r.info.provider ? ` (${r.info.provider})` : ""}`
+        : preset
+          ? PRESET_NAMES[preset]
+          : KIND_NAMES[r.kind];
     return {
       id: r.id,
       name: r.name,
       kind: r.kind,
-      detail: `${preset ? PRESET_NAMES[preset] : KIND_NAMES[r.kind]} · ${where}`,
+      backend: r.kind === "rclone" ? (r.info.backend ?? "rclone") : r.kind,
+      detail: `${what} · ${where}`,
       preset,
       root: r.root,
-      space:
-        r.kind !== "s3"
-          ? r.freeBytes !== null
-            ? "provider"
-            : "unknown"
-          : r.unlimited
-            ? "unlimited"
-            : r.limitBytes
-              ? "limit"
-              : "unknown",
+      space: !this.#sized(r)
+        ? r.freeBytes !== null
+          ? "provider"
+          : "unknown"
+        : r.unlimited
+          ? "unlimited"
+          : r.limitBytes
+            ? "limit"
+            : "unknown",
       usedBytes: r.usedBytes,
       freeBytes: r.unlimited ? null : r.freeBytes,
       totalBytes: r.unlimited ? null : (r.totalBytes ?? r.limitBytes),
@@ -356,8 +415,8 @@ export class Cloud {
 
   async updateProvider(patch: CloudProviderPatch): Promise<CloudProviderView> {
     const r = this.#row(patch.id);
-    if (r.kind !== "s3" && (patch.limitBytes !== undefined || patch.unlimited !== undefined))
-      throw new Error(`${KIND_NAMES[r.kind]} says its own free space.`);
+    if (!this.#sized(r) && (patch.limitBytes !== undefined || patch.unlimited !== undefined))
+      throw new Error(`${r.info.title ?? KIND_NAMES[r.kind]} says its own free space.`);
     this.d.db
       .update(cloudProviders)
       .set({
@@ -401,27 +460,48 @@ export class Cloud {
   /** Used and free space: the provider's own (`about`), or what it holds against my limit. */
   async check(id: string): Promise<CloudProviderView> {
     const r = this.#row(id);
-    let set: Partial<Row>;
+    let set: Partial<Row> = {};
     try {
-      if (r.kind === "s3") {
-        const s = await this.rclone.json<{ bytes: number }>(["size", "--json", this.#at(r)]);
-        set = {
-          usedBytes: s.bytes,
-          freeBytes: r.limitBytes ? Math.max(0, r.limitBytes - s.bytes) : null,
-          totalBytes: r.limitBytes,
-          error: null,
-        };
-      } else {
-        const a = await this.rclone.json<{ total?: number; used?: number; free?: number }>([
+      let about: { total?: number; used?: number; free?: number } | null = null;
+      let cantTell = false;
+      if (!this.#sized(r)) {
+        const asked = this.rclone.json<{ total?: number; used?: number; free?: number }>([
           "about",
           "--json",
           `${r.remote}:`,
         ]);
+        // A backend with `about` whose server can't run it (an SFTP server without a shell)
+        // or can't say its free space (a WebDAV server without quotas): what it holds is read
+        // below, against a limit of mine; when that fails too, the provider is down.
+        about = r.kind === "rclone" ? await asked.catch(() => ({})) : await asked;
+        const free =
+          about.free ??
+          (about.total !== undefined && about.used !== undefined ? about.total - about.used : null);
+        if (free === null && r.kind === "rclone") {
+          cantTell = true;
+          about = null;
+        } else
+          set = {
+            usedBytes: about.used ?? null,
+            freeBytes: free,
+            totalBytes: about.total ?? null,
+            error: null,
+          };
+      }
+      if (!about) {
+        const s = await this.rclone.json<{ bytes: number }>(["size", "--json", this.#at(r)]);
+        if (cantTell) {
+          r.info = { ...r.info, about: "no" };
+          this.d.db
+            .update(cloudProviders)
+            .set({ info: r.info })
+            .where(eq(cloudProviders.id, id))
+            .run();
+        }
         set = {
-          usedBytes: a.used ?? null,
-          freeBytes:
-            a.free ?? (a.total !== undefined && a.used !== undefined ? a.total - a.used : null),
-          totalBytes: a.total ?? null,
+          usedBytes: s.bytes,
+          freeBytes: r.limitBytes ? Math.max(0, r.limitBytes - s.bytes) : null,
+          totalBytes: r.limitBytes,
           error: null,
         };
       }
@@ -469,6 +549,7 @@ export class Cloud {
       id: r.id,
       name: r.name,
       kind: r.kind,
+      object: r.kind === "s3" || r.info.bucket === "yes",
       free: r.unlimited ? Number.POSITIVE_INFINITY : r.freeBytes,
       priority: r.priority,
       broken: !!r.error,
@@ -769,17 +850,299 @@ export class Cloud {
     this.#publish("cloud.folder.deleted", { path: p }, actor);
   }
 
-  // ── Google Drive and Dropbox: rclone's own sign-in, in a browser on this computer
+  // ── Every backend rclone supports (ADR-046 → Changed 2026-10-04)
+
+  #schema: { version: string; backends: Promise<RcloneBackend[]> } | null = null;
+
+  /**
+   * rclone's backends, read from its own `config providers` once per rclone
+   * version: kept in memory, and on disk beside the config so the next start
+   * doesn't ask again.
+   */
+  #backends(): Promise<RcloneBackend[]> {
+    const { rclone } = this.status();
+    if (!rclone.found || !rclone.path || !rclone.version)
+      return Promise.reject(new Error(`rclone isn't installed. ${RCLONE_FIX}`));
+    if (this.#schema?.version === rclone.version) return this.#schema.backends;
+    const version = rclone.version;
+    const bin = rclone.path;
+    const file = join(
+      this.d.dataDir,
+      "cloud",
+      `backends-${createHash("sha256").update(`${version}|${RCLONE_SCHEMA_FORMAT}`).digest("hex").slice(0, 16)}.json`,
+    );
+    const backends = (async () => {
+      try {
+        const kept = JSON.parse(readFileSync(file, "utf8")) as {
+          version?: string;
+          backends?: unknown;
+        };
+        if (kept.version === version) return z.array(RcloneBackendShape).parse(kept.backends);
+      } catch {}
+      const read = readRcloneSchema(await rcloneProviders(bin));
+      try {
+        mkdirSync(join(this.d.dataDir, "cloud"), { recursive: true, mode: 0o700 });
+        writeFileSync(file, JSON.stringify({ version, backends: read }), { mode: 0o600 });
+      } catch {}
+      return read;
+    })();
+    this.#schema = { version, backends };
+    // A failure is asked again next time.
+    backends.catch(() => {
+      if (this.#schema?.backends === backends) this.#schema = null;
+    });
+    return backends;
+  }
+
+  /** Read at start, so the add dialog opens on it at once; nothing said when rclone isn't there. */
+  preloadBackends() {
+    if (this.rclone.bin()) void this.#backends().catch(() => {});
+  }
+
+  async backends(): Promise<RcloneBackends> {
+    const list = await this.#backends();
+    return { version: this.status().rclone.version, backends: list.map(summaryOf) };
+  }
+
+  async backend(name: string): Promise<RcloneBackend> {
+    const b = (await this.#backends()).find((x) => x.name === name);
+    if (!b) throw new Error(`rclone here has no backend ${name}.`);
+    return b;
+  }
+
+  readonly #pending = new Map<string, Pending>();
+
+  /**
+   * A provider of any backend, from the form made of rclone's schema: its
+   * options checked against that schema, passwords obscured through
+   * rclone's stdin, everything written into the encrypted config; then
+   * rclone's own setup runs (`config update`, its values in its
+   * environment, never its command line) and may ask questions (OneDrive's
+   * drive, a code), answered with `answerRclone`; then it is checked.
+   */
+  async addRclone(input: NewRcloneProvider, actor = "owner"): Promise<CloudAddStep> {
+    const p = NewRcloneProvider.parse(input);
+    const b = await this.backend(p.backend);
+    const { values, errors } = checkOptions(b, p.options);
+    const wrong = Object.entries(errors);
+    if (wrong.length)
+      throw new Error(`Check the form: ${wrong.map(([k, v]) => `${k}: ${v}`).join(" ")}`);
+    const fields = new Map(formOptions(formModel(b, values)).map((o) => [o.name, o]));
+    const secrets: string[] = [];
+    const section = new Map<string, string>([["type", b.name]]);
+    for (const [k, v] of Object.entries(values)) {
+      const o = fields.get(k);
+      if (o?.secret) secrets.push(v, p.options[k] ?? "");
+      section.set(k, o?.password ? await this.rclone.obscure(v) : v);
+      if (o?.password) secrets.push(section.get(k) as string);
+    }
+    let auth: AuthSession | undefined;
+    if (b.oauth) {
+      auth = p.authSession ? this.#auth.get(p.authSession) : undefined;
+      if (!auth || auth.kind !== b.name) throw new Error(`Sign in to ${b.title} first.`);
+      if (auth.state !== "ready" || !auth.token)
+        throw new Error("The sign-in hasn't finished: finish it in the browser first.");
+      for (const [k, v] of Object.entries(auth.extra)) if (!section.has(k)) section.set(k, v);
+      section.set("token", auth.token);
+      secrets.push(auth.token);
+    }
+    const providerId = newId(this.#now());
+    const pending: Pending = {
+      id: randomBytes(12).toString("base64url"),
+      providerId,
+      remote: `o-${providerId.toLowerCase()}`,
+      input: { ...p, options: {} },
+      backend: b,
+      secrets: secrets.filter((s) => s.length >= 3),
+      state: null,
+      option: null,
+      timer: setTimeout(() => void this.cancelRclone(pending.id), PENDING_MS),
+    };
+    pending.timer.unref();
+    // What the pages say of it: the sub-provider (not a secret), nothing else of the form.
+    if (values.provider) pending.input.options = { provider: values.provider };
+    await this.rclone.edit((s) => {
+      s.set(pending.remote, section);
+    });
+    this.#pending.set(pending.id, pending);
+    if (auth && p.authSession) this.#auth.delete(p.authSession);
+    return this.#setup(pending, null, null, actor);
+  }
+
+  /** An answer to rclone's question; a password or a code passes in its environment. */
+  async answerRclone(pendingId: string, answer: string, actor = "owner"): Promise<CloudAddStep> {
+    const p = this.#pending.get(pendingId);
+    if (!p?.state || !p.option) throw new Error("That add isn't waiting any more: start again.");
+    const o = p.option;
+    const v = answer.trim();
+    if (/[\r\n]/.test(v)) throw new Error("An answer can't hold a line break.");
+    if (o.exclusive && o.examples.length && !o.examples.some((e) => e.value === v))
+      throw new Error(`Pick one of: ${o.examples.map((e) => e.help || e.value).join(", ")}.`);
+    if (o.required && !v && !o.default) throw new Error("It needs an answer.");
+    if (o.secret && v.length >= 3) p.secrets.push(v);
+    return this.#setup(p, p.state, v, actor);
+  }
+
+  /** An add given up: its section gone from the config. */
+  async cancelRclone(pendingId: string) {
+    const p = this.#pending.get(pendingId);
+    if (!p) return;
+    this.#pending.delete(pendingId);
+    clearTimeout(p.timer);
+    await this.rclone
+      .edit((s) => {
+        s.delete(p.remote);
+      })
+      .catch(() => {});
+  }
+
+  #scrub(p: Pending, m: string) {
+    return p.secrets.reduce((t, x) => (x ? t.split(x).join("•••") : t), m);
+  }
+
+  /** One step of rclone's setup: its state and the answer, in its environment. */
+  async #configStep(remote: string, state: string | null, result: string | null) {
+    const env: Record<string, string> =
+      state === null
+        ? {}
+        : { RCLONE_CONTINUE: "true", RCLONE_STATE: state, RCLONE_RESULT: result ?? "" };
+    const r = await this.rclone.serial(() =>
+      this.rclone.run(["config", "update", remote, "--non-interactive"], {
+        env,
+        timeoutMs: STEP_MS,
+      }),
+    );
+    if (r.code !== 0) throw new Error(rcloneError(r.stderr));
+    try {
+      return JSON.parse(r.stdout) as ConfigOut;
+    } catch {
+      throw new Error("rclone's setup said something Oraknid doesn't understand.");
+    }
+  }
+
+  async #setup(
+    p: Pending,
+    state: string | null,
+    result: string | null,
+    actor: string,
+  ): Promise<CloudAddStep> {
+    try {
+      let out = await this.#configStep(p.remote, state, result);
+      let said: string | null = null;
+      for (let i = 0; i < 50; i++) {
+        if (out.Error) said = out.Error;
+        if (!out.State) {
+          if (out.Error) throw new Error(out.Error);
+          break;
+        }
+        const opt = out.Option;
+        // A step with nothing to ask goes on; a token already there is kept.
+        if (!opt || opt.Name === "config_refresh_token") {
+          out = await this.#configStep(p.remote, out.State, opt ? "false" : "");
+          continue;
+        }
+        const option = readRcloneOption(opt);
+        if (!option) throw new Error("rclone asked something Oraknid can't show.");
+        p.state = out.State;
+        p.option = { ...option, required: option.required || option.exclusive };
+        return {
+          provider: null,
+          question: {
+            pending: p.id,
+            option: p.option,
+            error: said ? this.#scrub(p, said) : null,
+          },
+        };
+      }
+      if (out.State) throw new Error("rclone's setup didn't end.");
+      return { provider: await this.#finish(p, actor), question: null };
+    } catch (error) {
+      await this.cancelRclone(p.id);
+      throw new Error(
+        `${p.backend.title} didn't answer: ${this.#scrub(p, error instanceof Error ? error.message : String(error))}`,
+      );
+    }
+  }
+
+  /** Set up: its folder made and listed, what it can say learned, then kept. */
+  async #finish(p: Pending, actor: string): Promise<CloudProviderView> {
+    const { remote, input, backend: b } = p;
+    const root = cleanPath(input.folder);
+    const f = await this.rclone.json<{ Features?: { About?: boolean; BucketBased?: boolean } }>([
+      "backend",
+      "features",
+      `${remote}:`,
+    ]);
+    const bucket = f.Features?.BucketBased === true || b.bucket;
+    if (bucket && !root)
+      throw new Error(
+        `${b.title} keeps files in buckets: give the folder as bucket or bucket/folder.`,
+      );
+    if (root) await this.rclone.ok(["mkdir", `${remote}:${root}`]);
+    await this.rclone.ok(["lsjson", "--max-depth", "1", `${remote}:${root}`]);
+    this.#pending.delete(p.id);
+    clearTimeout(p.timer);
+    const about = f.Features?.About === true;
+    const last = this.#rows().at(-1);
+    this.d.db
+      .insert(cloudProviders)
+      .values({
+        id: p.providerId,
+        name: input.name,
+        kind: "rclone",
+        remote,
+        root,
+        info: {
+          backend: b.name,
+          title: b.title,
+          provider: input.options.provider ?? null,
+          about: about ? "yes" : "no",
+          bucket: bucket ? "yes" : "no",
+        },
+        limitBytes: input.limitBytes,
+        unlimited: about ? false : input.unlimited,
+        priority: (last?.priority ?? -1) + 1,
+        createdAt: this.#now(),
+      })
+      .run();
+    this.#publish(
+      "cloud.provider.added",
+      { id: p.providerId, name: input.name, kind: "rclone", backend: b.name },
+      actor,
+    );
+    await this.check(p.providerId).catch(() => {});
+    return this.provider(p.providerId);
+  }
+
+  // ── Signing in through rclone's own authorization, in a browser on this computer
 
   /**
    * Starts `rclone authorize`: its address (on 127.0.0.1, so a browser on
    * this computer) comes back; the token it hands over is kept in memory
    * until the provider is added.
    */
-  async authorizeStart(kind: "drive" | "dropbox"): Promise<CloudAuthorization> {
+  async authorizeStart(
+    kind: string,
+    options: Record<string, string> = {},
+  ): Promise<CloudAuthorization> {
+    const args = ["authorize", kind];
+    if (kind !== "drive" && kind !== "dropbox") {
+      const b = await this.backend(kind);
+      if (!b.oauth)
+        throw new Error(`${b.title} doesn't sign in through a browser: fill in its form.`);
+      // What the sign-in needs to know (Zoho's region): the everyday options set, never a
+      // secret. Always a blob, so what rclone sets beside the token (pCloud's host) comes back.
+      const fields = new Map(formOptions(formModel(b, options)).map((o) => [o.name, o]));
+      const blob: Record<string, string> = {};
+      for (const [k, v] of Object.entries(options)) {
+        const o = fields.get(k);
+        if (o && !o.secret && !o.advanced && v.trim() && !/[\r\n]/.test(v)) blob[k] = v.trim();
+      }
+      args.push(Buffer.from(JSON.stringify(blob)).toString("base64").replace(/=+$/, ""));
+    }
     for (const a of this.#auth.values()) if (a.state === "waiting") this.authorizeCancel(a.session);
     const session = randomBytes(12).toString("base64url");
-    const child = await this.rclone.start(["authorize", kind, "--auth-no-open-browser"]);
+    const child = await this.rclone.start([...args, "--auth-no-open-browser"]);
     const a: AuthSession = {
       session,
       kind,
@@ -866,6 +1229,7 @@ export class Cloud {
 
   stop() {
     for (const a of this.#auth.values()) a.child?.kill("SIGTERM");
+    for (const p of this.#pending.values()) clearTimeout(p.timer);
     this.rclone.stopAll();
   }
 

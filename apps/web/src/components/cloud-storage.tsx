@@ -67,6 +67,7 @@ import { t } from "@/lib/i18n";
 import { live, useLive } from "@/lib/live";
 import { remote } from "@/lib/remote";
 import { UploadError, uploadFile } from "@/lib/upload";
+import { RclonePicker, RcloneProviderForm } from "./rclone-provider";
 
 // Cloud storage (ADR-046, Web-UI → Cloud storage): my providers, the pool
 // as one listing, uploads with their progress, where uploads go.
@@ -79,6 +80,7 @@ const KIND_NAMES: Record<CloudProviderView["kind"], string> = {
   drive: "Google Drive",
   dropbox: "Dropbox",
   mega: "MEGA",
+  rclone: "Another provider",
 };
 
 const GiB = 1 << 30;
@@ -148,7 +150,7 @@ export function ProvidersCard({ providers }: { providers: CloudProviderView[] })
         {providers.length === 0 ? (
           <div className="text-sm text-muted-foreground">
             {t(
-              "None yet. Add Google Drive, Dropbox, MEGA or any S3-compatible storage (MinIO, AWS, R2, B2, Wasabi).",
+              "None yet. Add Google Drive, Dropbox, MEGA, S3-compatible storage, or any other provider rclone supports (OneDrive, SFTP, WebDAV, pCloud, Box, B2…).",
             )}
           </div>
         ) : null}
@@ -156,7 +158,9 @@ export function ProvidersCard({ providers }: { providers: CloudProviderView[] })
           <div key={p.id} className="space-y-2 rounded-md border px-3 py-2 text-sm">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium">{p.name}</span>
-              <Badge variant="outline">{KIND_NAMES[p.kind]}</Badge>
+              <Badge variant="outline">
+                {p.kind === "rclone" ? p.backend : KIND_NAMES[p.kind]}
+              </Badge>
               {p.error ? <Badge variant="destructive">{t("not answering")}</Badge> : null}
               <span className="ml-auto flex items-center gap-1">
                 <Button
@@ -249,14 +253,15 @@ function EditProviderDialog({
   );
   const [unlimited, setUnlimited] = useState(provider.unlimited);
   const [error, setError] = useState<string | null>(null);
+  // Object storage, or a provider that can't say its own free space: a limit of mine.
+  const sized =
+    provider.kind === "s3" || (provider.kind === "rclone" && provider.space !== "provider");
   const save = async () => {
     try {
       await api.cloud.updateProvider({
         id: provider.id,
         name: name.trim() || provider.name,
-        ...(provider.kind === "s3"
-          ? { unlimited, limitBytes: limit ? Math.round(Number(limit) * GiB) : null }
-          : {}),
+        ...(sized ? { unlimited, limitBytes: limit ? Math.round(Number(limit) * GiB) : null } : {}),
       });
       toast.success(t("Saved."));
       onClose();
@@ -277,9 +282,7 @@ function EditProviderDialog({
             t("Name"),
             <Input id="cp-rename" value={name} onChange={(e) => setName(e.target.value)} />,
           )}
-          {provider.kind === "s3" ? (
-            <SpaceFields {...{ limit, setLimit, unlimited, setUnlimited }} />
-          ) : null}
+          {sized ? <SpaceFields {...{ limit, setLimit, unlimited, setUnlimited }} /> : null}
           <ErrorNote error={error} />
         </div>
         <DialogFooter>
@@ -330,10 +333,13 @@ function SpaceFields({
   );
 }
 
-type Kind = NewCloudProvider["kind"];
+/** A short form, or `rclone`: any other provider, from rclone's own list. */
+type Kind = NewCloudProvider["kind"] | "rclone";
 
 export function AddProviderDialog({ onClose }: { onClose: () => void }) {
   const [kind, setKind] = useState<Kind>("s3");
+  /** The backend picked from rclone's list. */
+  const [picked, setPicked] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [folder, setFolder] = useState("");
   const [preset, setPreset] = useState<S3Preset>("Minio");
@@ -376,6 +382,7 @@ export function AddProviderDialog({ onClose }: { onClose: () => void }) {
 
   const choose = (k: Kind) => {
     setKind(k);
+    setPicked(null);
     setError(null);
     if (auth?.state === "waiting") void api.cloud.authorizeCancel({ session: auth.session });
     setAuth(null);
@@ -392,6 +399,7 @@ export function AddProviderDialog({ onClose }: { onClose: () => void }) {
 
   const submit = async () => {
     setError(null);
+    if (kind === "rclone") return;
     const base = { name: name.trim() || KIND_NAMES[kind], folder: folder.trim() };
     let body: NewCloudProvider;
     if (kind === "s3")
@@ -436,8 +444,8 @@ export function AddProviderDialog({ onClose }: { onClose: () => void }) {
             )}
           </DialogDescription>
         </DialogHeader>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup">
-          {(["s3", "drive", "dropbox", "mega"] as Kind[]).map((k) => (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5" role="radiogroup">
+          {(["s3", "drive", "dropbox", "mega", "rclone"] as Kind[]).map((k) => (
             // biome-ignore lint/a11y/useSemanticElements: a tile, not a native radio
             <button
               key={k}
@@ -447,201 +455,229 @@ export function AddProviderDialog({ onClose }: { onClose: () => void }) {
               onClick={() => choose(k)}
               className={`rounded-md border px-2 py-2 text-left text-xs ${kind === k ? "border-primary bg-primary/10" : "hover:bg-muted"}`}
             >
-              {KIND_NAMES[k]}
+              {k === "rclone" ? (
+                <span data-help="storage.add-any">{KIND_NAMES[k]}</span>
+              ) : (
+                KIND_NAMES[k]
+              )}
             </button>
           ))}
         </div>
-        <form
-          className="space-y-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void submit();
-          }}
-        >
-          {field(
-            "cp-name",
-            t("Name"),
-            <Input
-              id="cp-name"
-              value={name}
-              placeholder={KIND_NAMES[kind]}
-              onChange={(e) => setName(e.target.value)}
-            />,
-          )}
-          {kind === "s3" ? (
-            <>
-              {field(
-                "cp-preset",
-                t("Service"),
-                <Select value={preset} onValueChange={(v) => setPreset(v as S3Preset)}>
-                  <SelectTrigger id="cp-preset" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PRESETS.map(([v, label]) => (
-                      <SelectItem key={v} value={v}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>,
-              )}
-              {preset === "AWS"
-                ? null
-                : field(
-                    "cp-endpoint",
-                    t("Endpoint"),
+        {kind === "rclone" ? (
+          picked ? (
+            <RcloneProviderForm
+              name={picked}
+              onBack={() => setPicked(null)}
+              onDone={onClose}
+              spaceFields={(s) => <SpaceFields {...s} />}
+            />
+          ) : (
+            <RclonePicker onPick={(b) => (b.short ? choose(b.short) : setPicked(b.name))} />
+          )
+        ) : (
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void submit();
+            }}
+          >
+            {field(
+              "cp-name",
+              t("Name"),
+              <Input
+                id="cp-name"
+                value={name}
+                placeholder={KIND_NAMES[kind]}
+                onChange={(e) => setName(e.target.value)}
+              />,
+            )}
+            {kind === "s3" ? (
+              <>
+                {field(
+                  "cp-preset",
+                  t("Service"),
+                  <Select value={preset} onValueChange={(v) => setPreset(v as S3Preset)}>
+                    <SelectTrigger id="cp-preset" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PRESETS.map(([v, label]) => (
+                        <SelectItem key={v} value={v}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>,
+                )}
+                {preset === "AWS"
+                  ? null
+                  : field(
+                      "cp-endpoint",
+                      t("Endpoint"),
+                      <Input
+                        id="cp-endpoint"
+                        value={endpoint}
+                        placeholder={presetHint ?? ""}
+                        onChange={(e) => setEndpoint(e.target.value)}
+                      />,
+                    )}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {field(
+                    "cp-region",
+                    t("Region"),
                     <Input
-                      id="cp-endpoint"
-                      value={endpoint}
-                      placeholder={presetHint ?? ""}
-                      onChange={(e) => setEndpoint(e.target.value)}
+                      id="cp-region"
+                      value={region}
+                      placeholder={preset === "R2" ? "auto" : "us-east-1"}
+                      onChange={(e) => setRegion(e.target.value)}
                     />,
                   )}
+                  {field(
+                    "cp-bucket",
+                    t("Bucket"),
+                    <Input
+                      id="cp-bucket"
+                      value={bucket}
+                      onChange={(e) => setBucket(e.target.value)}
+                    />,
+                    t("Made when it isn't there."),
+                  )}
+                  {field(
+                    "cp-access",
+                    t("Access key"),
+                    <Input
+                      id="cp-access"
+                      autoComplete="off"
+                      value={accessKeyId}
+                      onChange={(e) => setAccessKeyId(e.target.value)}
+                    />,
+                  )}
+                  {field(
+                    "cp-secret",
+                    t("Secret key"),
+                    <Input
+                      id="cp-secret"
+                      type="password"
+                      autoComplete="new-password"
+                      value={secretAccessKey}
+                      onChange={(e) => setSecret(e.target.value)}
+                    />,
+                  )}
+                </div>
+                <SpaceFields {...{ limit, setLimit, unlimited, setUnlimited }} />
+                <button
+                  type="button"
+                  className="text-xs text-primary underline"
+                  data-help="storage.s3-all"
+                  onClick={() => {
+                    choose("rclone");
+                    setPicked("s3");
+                  }}
+                >
+                  {t("Another S3 service: every one rclone knows (Hetzner, Scaleway, IDrive e2…)")}
+                </button>
+              </>
+            ) : null}
+            {kind === "mega" ? (
               <div className="grid gap-3 sm:grid-cols-2">
                 {field(
-                  "cp-region",
-                  t("Region"),
+                  "cp-email",
+                  t("E-mail"),
                   <Input
-                    id="cp-region"
-                    value={region}
-                    placeholder={preset === "R2" ? "auto" : "us-east-1"}
-                    onChange={(e) => setRegion(e.target.value)}
+                    id="cp-email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                   />,
                 )}
                 {field(
-                  "cp-bucket",
-                  t("Bucket"),
+                  "cp-password",
+                  t("Password"),
                   <Input
-                    id="cp-bucket"
-                    value={bucket}
-                    onChange={(e) => setBucket(e.target.value)}
-                  />,
-                  t("Made when it isn't there."),
-                )}
-                {field(
-                  "cp-access",
-                  t("Access key"),
-                  <Input
-                    id="cp-access"
-                    autoComplete="off"
-                    value={accessKeyId}
-                    onChange={(e) => setAccessKeyId(e.target.value)}
-                  />,
-                )}
-                {field(
-                  "cp-secret",
-                  t("Secret key"),
-                  <Input
-                    id="cp-secret"
+                    id="cp-password"
                     type="password"
                     autoComplete="new-password"
-                    value={secretAccessKey}
-                    onChange={(e) => setSecret(e.target.value)}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                   />,
                 )}
               </div>
-              <SpaceFields {...{ limit, setLimit, unlimited, setUnlimited }} />
-            </>
-          ) : null}
-          {kind === "mega" ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {field(
-                "cp-email",
-                t("E-mail"),
-                <Input
-                  id="cp-email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />,
-              )}
-              {field(
-                "cp-password",
-                t("Password"),
-                <Input
-                  id="cp-password"
-                  type="password"
-                  autoComplete="new-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />,
-              )}
-            </div>
-          ) : null}
-          {kind === "drive" || kind === "dropbox" ? (
-            <div
-              className="space-y-2 rounded-md bg-muted/40 p-3 text-sm"
-              data-help="storage.sign-in"
-            >
-              {away ? (
-                <div className="text-muted-foreground">
-                  {t(
-                    "Signing in to {kind} needs a browser on the computer running Oraknid: rclone waits for it there. Do it at home.",
-                    { kind: KIND_NAMES[kind] },
-                  )}
-                </div>
-              ) : !auth || auth.state === "failed" ? (
-                <>
+            ) : null}
+            {kind === "drive" || kind === "dropbox" ? (
+              <div
+                className="space-y-2 rounded-md bg-muted/40 p-3 text-sm"
+                data-help="storage.sign-in"
+              >
+                {away ? (
                   <div className="text-muted-foreground">
                     {t(
-                      "Sign in with rclone's own authorization, in a browser on this computer. Nothing to register.",
+                      "Signing in to {kind} needs a browser on the computer running Oraknid: rclone waits for it there. Do it at home.",
+                      { kind: KIND_NAMES[kind] },
                     )}
                   </div>
-                  {auth?.error ? <ErrorNote error={auth.error} /> : null}
-                  <Button type="button" size="sm" onClick={() => void signIn()}>
-                    {t("Sign in to {kind}", { kind: KIND_NAMES[kind] })}
-                  </Button>
-                </>
-              ) : auth.state === "waiting" ? (
-                <>
-                  <div>{t("Open the sign-in page, allow rclone, then come back here.")}</div>
-                  {auth.url ? (
-                    <a
-                      href={auth.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-primary underline"
-                    >
-                      {t("Open the sign-in page")}
-                      <ExternalLink className="size-3.5" />
-                    </a>
-                  ) : null}
-                  <div className="text-xs text-muted-foreground">
-                    {t("Waiting for the sign-in…")}
-                  </div>
-                </>
-              ) : (
-                <div className="text-success">{t("Signed in. Add it to finish.")}</div>
-              )}
-            </div>
-          ) : null}
-          {field(
-            "cp-folder",
-            kind === "s3" ? t("Folder in the bucket") : t("Folder in the account"),
-            <Input
-              id="cp-folder"
-              value={folder}
-              placeholder={t("none: all of it")}
-              onChange={(e) => setFolder(e.target.value)}
-            />,
-            t("What the pool shows of this provider."),
-          )}
-          <ErrorNote error={error} />
-          <DialogFooter>
-            <Button type="button" variant="secondary" onClick={onClose}>
-              {t("Cancel")}
-            </Button>
-            <Button
-              type="submit"
-              disabled={
-                busy || ((kind === "drive" || kind === "dropbox") && auth?.state !== "ready")
-              }
-            >
-              {busy ? t("Checking…") : t("Add")}
-            </Button>
-          </DialogFooter>
-        </form>
+                ) : !auth || auth.state === "failed" ? (
+                  <>
+                    <div className="text-muted-foreground">
+                      {t(
+                        "Sign in with rclone's own authorization, in a browser on this computer. Nothing to register.",
+                      )}
+                    </div>
+                    {auth?.error ? <ErrorNote error={auth.error} /> : null}
+                    <Button type="button" size="sm" onClick={() => void signIn()}>
+                      {t("Sign in to {kind}", { kind: KIND_NAMES[kind] })}
+                    </Button>
+                  </>
+                ) : auth.state === "waiting" ? (
+                  <>
+                    <div>{t("Open the sign-in page, allow rclone, then come back here.")}</div>
+                    {auth.url ? (
+                      <a
+                        href={auth.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-primary underline"
+                      >
+                        {t("Open the sign-in page")}
+                        <ExternalLink className="size-3.5" />
+                      </a>
+                    ) : null}
+                    <div className="text-xs text-muted-foreground">
+                      {t("Waiting for the sign-in…")}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-success">{t("Signed in. Add it to finish.")}</div>
+                )}
+              </div>
+            ) : null}
+            {field(
+              "cp-folder",
+              kind === "s3" ? t("Folder in the bucket") : t("Folder in the account"),
+              <Input
+                id="cp-folder"
+                value={folder}
+                placeholder={t("none: all of it")}
+                onChange={(e) => setFolder(e.target.value)}
+              />,
+              t("What the pool shows of this provider."),
+            )}
+            <ErrorNote error={error} />
+            <DialogFooter>
+              <Button type="button" variant="secondary" onClick={onClose}>
+                {t("Cancel")}
+              </Button>
+              <Button
+                type="submit"
+                disabled={
+                  busy || ((kind === "drive" || kind === "dropbox") && auth?.state !== "ready")
+                }
+              >
+                {busy ? t("Checking…") : t("Add")}
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
   );

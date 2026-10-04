@@ -113,4 +113,80 @@ by name.
   writes the config at the same moment could be lost (writes are
   serialised among Oraknid's own, not against rclone's).
 
+## As built (2026-10-04, M13.16): every provider rclone supports
+- **The schema** (`@oraknid/core` → `rclone.ts`, shared by the daemon
+  and the web form): `rclone config providers` (JSON) read into the
+  backends offered: 55 of rclone v1.75.1's 69, leaving out the wrappers
+  (alias, cache, chunker, combine, compress, crypt, hasher, union), this
+  computer (local, memory), the read-only ones (http, doi, archive) and
+  hidden ones (tardigrade, an old name of storj). Hidden options are
+  dropped. An option is a **secret** (a password field, scrubbed from
+  errors) when rclone keeps it obscured (`IsPassword`) or marks it
+  sensitive and its name says pass, secret, key, token, cookie,
+  credentials, pem …; addresses and user names marked sensitive stay
+  text. **Signs in through a browser**: drive, dropbox, onedrive, box,
+  pcloud, yandex, zoho, hidrive, premiumizeme, putio, sharefile,
+  google photos, google cloud storage, huaweidrive (each answered
+  `rclone authorize <backend>` here; a backend with `token` and
+  `client_id` options is taken as one too, except mailru, jottacloud,
+  linkbox, filefabric and shade, whose tokens come another way); for
+  those, rclone's own app: token, client id and secret, auth and token
+  URLs are left out of the form. Object storage (buckets): s3, b2, gcs,
+  azureblob, swift, oracleobjectstorage, qingstor, storj, and any
+  rclone's `backend features` says is bucket-based.
+- **Read once per rclone version**: at the daemon's start (not
+  blocking it), without Oraknid's config (`--config /dev/null`), kept in
+  memory and in `<data>/cloud/backends-<hash of the version and the
+  format>.json`. `cloud.backends` gives the list without options,
+  `cloud.backend` one backend's options ([[API-Contract]]).
+- **The form** (`formModel`): the sub-provider first when a backend has
+  a `provider` option with choices (s3's 53, koofr, storj,
+  oracleobjectstorage), required to go on; options conditioned on
+  another sub-provider (rclone's `Provider`, `!` for all but) left out,
+  each option once (Koofr's password is listed per service), choices
+  filtered the same way; required options without a default first, the
+  everyday ones, the advanced ones apart. `checkOptions` checks what
+  comes back: unknown or another service's options, required ones,
+  booleans, whole numbers, sizes (`64M`, `5Gi`, `off`), durations
+  (`1h30m`), choices of an exclusive option; a PEM key's line breaks
+  become `\n` as rclone wants, a credentials JSON one line.
+- **Adding** (`cloud.addRclone`): the section written as for the short
+  forms (`IsPassword` values obscured through `rclone obscure -` on
+  stdin; a browser sign-in's token and the fields rclone set beside it,
+  as its authorize is always given a blob of the form's everyday,
+  non-secret options, so Zoho's region goes in and pCloud's host comes
+  back). Then **rclone's own setup**, `config update <remote>
+  --non-interactive`, with `RCLONE_CONTINUE`, `RCLONE_STATE` and
+  `RCLONE_RESULT` in its environment, never its command line: "token
+  already configured, replace it?" is answered no; a step with nothing
+  to ask goes on; anything else is a **question** (`cloud.answerRclone`,
+  its answer checked against the choices) with what was wrong with the
+  last answer; serialised with Oraknid's own writes of the config. Then
+  `backend features` (About, BucketBased; a bucket-based one without a
+  bucket is refused), the folder made and listed, the row kept (kind
+  `rclone`, `info`: backend, title, sub-provider, about, bucket; no
+  value of the form). A failure or a cancel (`cancelRclone`, or 15
+  minutes) removes the section.
+- **Free space**: `about` when rclone says the backend has it; when it
+  fails or says no free space (an SFTP server without a shell, a WebDAV
+  server without quotas) and `size` answers, the provider is marked as
+  one that can't tell: a limit of mine or pay as you go, as for object
+  storage, else used only when picked. "By size" placement sends large
+  files to the bucket-based ones.
+- **Tested**: the schema and the form against what the real rclone
+  v1.75.1 printed (recorded, gzipped, the user name made "me"); the
+  generic path end to end with the real rclone against SFTP (atmoz/sftp
+  in a throwaway unprivileged container) and WebDAV (`rclone serve
+  webdav` started by the test): added from the form, a file uploaded,
+  listed, downloaded, a wrong password refused in rclone's words, the
+  passwords on no command line (`/proc` sampled while adding and
+  uploading), in no view, event or row; a config rclone itself wrote
+  read back. OneDrive's sign-in and questions, a two-factor code, a
+  failing and a cancelled setup with a stand-in rclone.
+- **Not yet**: the backends' own client id and secret (rclone's app
+  only); a question rclone asks that needs a browser of its own
+  (Jottacloud's "traditional" sign-in: its personal login token works);
+  a provider's options can't be changed after it is added (remove and
+  add again).
+
 Related: [[ADR-044-Backups]] · [[ADR-021-Tools-Broker]] · [[Security]] · [[Web-UI]]

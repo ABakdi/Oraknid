@@ -208,6 +208,9 @@ importers:
       '@oraknid/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@oraknid/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@orpc/client':
         specifier: 1.15.4
         version: 1.15.4

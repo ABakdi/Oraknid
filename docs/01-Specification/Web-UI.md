@@ -398,12 +398,31 @@ says how to install it. Otherwise the pool, with **Providers** and
 - **Providers**: each with its kind, what it is (preset, bucket and
   endpoint, account, folder), used and free space as a bar, when it was
   checked, its error; Check, Edit (name; a space limit or pay as you go
-  for object storage), Remove (a second step: its files stay in the
-  account). **Add a provider**: a dialog with the four kinds as tiles;
-  S3 (service, endpoint, region, bucket, keys, space), Google Drive and
-  Dropbox (**Sign in** gives rclone's sign-in page to open on this
+  for object storage and any provider that can't say its free space),
+  Remove (a second step: its files stay in the account). **Add a
+  provider**: a dialog with five tiles; S3 (service, endpoint, region,
+  bucket, keys, space; a link to rclone's full S3 form), Google Drive
+  and Dropbox (**Sign in** gives rclone's sign-in page to open on this
   computer, then Add; away from home it says to do it there), MEGA
   (e-mail, password); each with the folder the pool shows.
+  **Another provider** (2026-10-04) lists rclone's own backends (its
+  `config providers`: 55 with rclone v1.75.1, not the wrappers, this
+  computer or the read-only ones) with a search by name or another
+  name, a badge for those that sign in through a browser and those
+  that keep buckets; Google Drive, Dropbox and MEGA found there open
+  their short forms. A picked one gets a form made of rclone's
+  description of it: Name; the service first when it has several (S3's
+  53, Koofr's, Storj's), its other options shown only once one is
+  picked; the options it needs (marked *), its everyday ones, the rest
+  under **Advanced (n)**, closed; each typed (a switch, a choice, a
+  number, a size, a duration, a text with suggestions), its first line
+  of help as the label and the rest as the hint; passwords, keys and
+  tokens as password fields (a PEM key as a text area). One that signs
+  in through a browser has **Sign in** as Drive does, and Add only once
+  signed in; a bucket-keeping one asks the bucket and folder, and its
+  space limit. After Add, rclone's own questions, if any (OneDrive's
+  type of connection and drive, a two-factor code), come one at a time
+  with **Continue** and **Cancel**, and what was wrong with an answer.
 - **Where uploads go**: Automatic by a rule (most free space, my
   priority order with up and down arrows, by size with "large from") or
   always one provider.

@@ -5,7 +5,8 @@ import { Id, Timestamp } from "./common.ts";
 // pool. Credentials go into Oraknid's encrypted rclone config and never come
 // back in a view.
 
-export const CloudKind = z.enum(["s3", "drive", "dropbox", "mega"]);
+/** The short forms, and `rclone`: any other backend rclone supports, from its schema. */
+export const CloudKind = z.enum(["s3", "drive", "dropbox", "mega", "rclone"]);
 export type CloudKind = z.infer<typeof CloudKind>;
 
 /** Which S3-compatible service: each sets rclone's `provider` and what the form asks. */
@@ -100,6 +101,8 @@ export const CloudProviderView = z.object({
   id: Id,
   name: z.string(),
   kind: CloudKind,
+  /** rclone's backend: s3, drive, dropbox, mega, or the one picked from its list (sftp, onedrive …). */
+  backend: z.string(),
   /** In words: "MinIO · bucket photos", "Google Drive · Oraknid/". */
   detail: z.string(),
   preset: S3Preset.nullable(),
@@ -173,10 +176,11 @@ export const CloudStatus = z.object({
 });
 export type CloudStatus = z.infer<typeof CloudStatus>;
 
-/** A Google Drive or Dropbox sign-in through rclone's own authorization. */
+/** A sign-in through rclone's own authorization (Google Drive, Dropbox, OneDrive, Box …). */
 export const CloudAuthorization = z.object({
   session: z.string(),
-  kind: z.enum(["drive", "dropbox"]),
+  /** The backend signed in to: drive, dropbox, or any other that signs in through a browser. */
+  kind: z.string(),
   state: z.enum(["waiting", "ready", "failed"]),
   /** The address to open in a browser on this computer. */
   url: z.string().nullable(),
@@ -196,3 +200,109 @@ export const CloudTransfer = z.object({
   error: z.string().nullable(),
 });
 export type CloudTransfer = z.infer<typeof CloudTransfer>;
+
+// ── Every provider rclone supports (ADR-046 → Changed 2026-10-04)
+
+/** A backend's name as rclone knows it ("sftp", "google photos"). */
+export const RcloneBackendName = z
+  .string()
+  .min(1)
+  .max(40)
+  .regex(/^[a-z0-9][a-z0-9 ]*$/, "a backend's name: lowercase letters, digits and spaces");
+
+/** An option's name in rclone's config. */
+export const RcloneOptionName = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z0-9_]+$/, "an option's name: lowercase letters, digits and _");
+
+/** One choice of an option; `provider`: only for these sub-providers (rclone's condition). */
+export const RcloneExample = z.object({
+  value: z.string(),
+  help: z.string(),
+  provider: z.string().nullable(),
+});
+export type RcloneExample = z.infer<typeof RcloneExample>;
+
+/** One option of a backend, as rclone describes it (`config providers`), hidden ones left out. */
+export const RcloneOption = z.object({
+  name: RcloneOptionName,
+  help: z.string(),
+  /** rclone's type: string, bool, int, SizeSuffix, Duration, Tristate, CommaSepList … */
+  type: z.string(),
+  /** rclone's default, as text ("" when none). */
+  default: z.string(),
+  required: z.boolean(),
+  advanced: z.boolean(),
+  /** rclone keeps it obscured (IsPassword): Oraknid obscures it through rclone's stdin. */
+  password: z.boolean(),
+  /** A password field, kept only in the encrypted config (passwords, keys, tokens). */
+  secret: z.boolean(),
+  /** Only one of the examples. */
+  exclusive: z.boolean(),
+  examples: z.array(RcloneExample),
+  /** Only for these sub-providers (s3's provider …): "AWS,Minio", or "!AWS" for all but. */
+  provider: z.string().nullable(),
+});
+export type RcloneOption = z.infer<typeof RcloneOption>;
+
+export const RcloneBackendSummary = z.object({
+  name: RcloneBackendName,
+  /** In words: "Microsoft OneDrive", "SSH/SFTP". */
+  title: z.string(),
+  description: z.string(),
+  /** Its prefix for flags (`--sftp-…`). */
+  prefix: z.string(),
+  /** Other names to find it by. */
+  aliases: z.array(z.string()),
+  /** Signs in through a browser with `rclone authorize` (OAuth). */
+  oauth: z.boolean(),
+  /** Keeps files in buckets: the folder starts with the bucket. */
+  bucket: z.boolean(),
+  /** Oraknid's own short form for it (Google Drive, Dropbox, MEGA). */
+  short: z.enum(["drive", "dropbox", "mega"]).nullable(),
+});
+export type RcloneBackendSummary = z.infer<typeof RcloneBackendSummary>;
+
+export const RcloneBackend = RcloneBackendSummary.extend({ options: z.array(RcloneOption) });
+export type RcloneBackend = z.infer<typeof RcloneBackend>;
+
+/** rclone's list of backends, for the add dialog. */
+export const RcloneBackends = z.object({
+  /** The rclone it came from ("rclone v1.75.1"). */
+  version: z.string().nullable(),
+  backends: z.array(RcloneBackendSummary),
+});
+export type RcloneBackends = z.infer<typeof RcloneBackends>;
+
+/** A provider of any backend, from the form made of rclone's schema. */
+export const NewRcloneProvider = z.object({
+  name: Name,
+  backend: RcloneBackendName,
+  /** The options set in the form (empty ones left out); secrets go only into the encrypted config. */
+  options: z.record(RcloneOptionName, z.string().max(65_536)).default({}),
+  /** A finished sign-in (`cloud.authorizeStart` with this backend), for one that signs in through a browser. */
+  authSession: z.string().min(8).max(64).nullable().default(null),
+  folder: Folder,
+  limitBytes: Limit,
+  unlimited: z.boolean().default(false),
+});
+export type NewRcloneProvider = z.infer<typeof NewRcloneProvider>;
+
+/** A question rclone asks while it sets a provider up (OneDrive's drive, a code …). */
+export const RcloneQuestion = z.object({
+  /** The add in progress, to answer or cancel. */
+  pending: z.string(),
+  option: RcloneOption,
+  /** What went wrong with the last answer, in rclone's words. */
+  error: z.string().nullable(),
+});
+export type RcloneQuestion = z.infer<typeof RcloneQuestion>;
+
+/** An add's step: the provider, added; or rclone's next question. */
+export const CloudAddStep = z.object({
+  provider: CloudProviderView.nullable(),
+  question: RcloneQuestion.nullable(),
+});
+export type CloudAddStep = z.infer<typeof CloudAddStep>;

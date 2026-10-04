@@ -797,7 +797,7 @@ export const backupRuns = sqliteTable(
 export const cloudProviders = sqliteTable("cloud_providers", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
-  kind: text("kind", { enum: ["s3", "drive", "dropbox", "mega"] }).notNull(),
+  kind: text("kind", { enum: ["s3", "drive", "dropbox", "mega", "rclone"] }).notNull(),
   /** Its section in the rclone config. */
   remote: text("remote").notNull().unique(),
   /** The bucket and folder, or the folder in the account; "" for the whole account. */

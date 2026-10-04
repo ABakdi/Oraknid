@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -280,5 +280,294 @@ describe("cloud storage providers through rclone (ADR-046)", () => {
     const ini = parseIni("[a]\ntype = s3\nkey = v = w\n");
     expect(ini.get("a")?.get("key")).toBe("v = w");
     expect(writeIni(ini)).toBe("[a]\ntype = s3\nkey = v = w\n");
+  });
+});
+
+// ── Every provider rclone supports (ADR-046 → Changed 2026-10-04)
+
+const step = (
+  state: string,
+  name: string,
+  extra: Record<string, unknown> = {},
+): { State: string; Option: Record<string, unknown> } => ({
+  State: state,
+  Option: {
+    Name: name,
+    Help: `${name}?`,
+    Default: "",
+    DefaultStr: "",
+    Type: "string",
+    Required: false,
+    IsPassword: false,
+    Sensitive: false,
+    Exclusive: false,
+    Hide: 0,
+    Advanced: false,
+    ...extra,
+  },
+});
+
+/** OneDrive's own setup after the sign-in, as rclone v1.75.1 asks it. */
+const ONEDRIVE_SETUP = {
+  "|": step("*oauth-confirm,choose_type,,", "config_refresh_token", {
+    Type: "bool",
+    Default: true,
+    DefaultStr: "true",
+    Exclusive: true,
+    Examples: [
+      { Value: "true", Help: "Yes" },
+      { Value: "false", Help: "No" },
+    ],
+  }),
+  "*oauth-confirm,choose_type,,|false": step("choose_type_done", "config_type", {
+    Help: "Type of connection",
+    Default: "onedrive",
+    DefaultStr: "onedrive",
+    Exclusive: true,
+    Examples: [
+      { Value: "onedrive", Help: "OneDrive Personal or Business" },
+      { Value: "sharepoint", Help: "Root Sharepoint site" },
+    ],
+  }),
+  "choose_type_done|onedrive": step("driveid_final", "config_driveid", {
+    Help: "Select drive you want to use",
+    Exclusive: true,
+    Examples: [{ Value: "b!drive-1", Help: "OneDrive (personal)" }],
+  }),
+  "driveid_final|b!drive-1": { State: "", Option: null },
+};
+
+describe("every provider rclone supports, from its schema", () => {
+  it("lists rclone's backends from its own schema, read once per version and kept", async () => {
+    const { api, argv, dir } = await setup();
+    const list = await api.cloud.backends();
+    expect(list.version).toBe("rclone v1.75.1-fake");
+    expect(list.backends).toHaveLength(55);
+    expect(list.backends.find((b) => b.name === "onedrive")).toMatchObject({
+      title: "Microsoft OneDrive",
+      oauth: true,
+      short: null,
+    });
+    expect(list.backends[0]).not.toHaveProperty("options");
+    const sftp = await api.cloud.backend({ name: "sftp" });
+    expect(sftp.options.find((o) => o.name === "pass")).toMatchObject({ password: true });
+    await expect(api.cloud.backend({ name: "nope" })).rejects.toThrow(/no backend nope/);
+    await api.cloud.backends();
+    expect(argv().match(/config providers/g)).toHaveLength(1);
+    // Kept beside the config: a daemon started again doesn't ask rclone.
+    const kept = readdirSync(join(dir, "cloud")).filter((f) => f.startsWith("backends-"));
+    expect(kept).toHaveLength(1);
+  });
+
+  it("SFTP from its form: checked against the schema, its password obscured on stdin, never an argument", async () => {
+    const { api, daemon, config, argv, rc } = await setup({ about: false });
+    await expect(
+      api.cloud.addRclone({ name: "Box", backend: "sftp", options: { port: "x" }, folder: "" }),
+    ).rejects.toThrow(/Check the form: port: It should be a whole number. host: It's needed./);
+    const password = `sftp-S3cr3t-${Math.random().toString(36).slice(2)}`;
+    const step1 = await api.cloud.addRclone({
+      name: "My server",
+      backend: "sftp",
+      options: { host: "files.example.org", user: "me", pass: password, port: "2222" },
+      folder: "Oraknid",
+      limitBytes: 1_000_000,
+    });
+    expect(step1.question).toBeNull();
+    const p = step1.provider;
+    expect(p).toMatchObject({
+      kind: "rclone",
+      backend: "sftp",
+      detail: "SSH/SFTP · Oraknid/",
+      space: "limit",
+      limitBytes: 1_000_000,
+      freeBytes: 1_000_000,
+    });
+    const section = (await config()).get(`o-${p?.id.toLowerCase()}`);
+    expect(Object.fromEntries(section ?? [])).toEqual({
+      type: "sftp",
+      host: "files.example.org",
+      user: "me",
+      port: "2222",
+      pass: `OBSCURED-${password.length}`,
+    });
+    expect(argv()).toMatch(/config update o-\S+ --non-interactive/);
+    expect(argv()).not.toContain(password);
+    expect(events(daemon)).not.toContain(password);
+    expect(events(daemon)).not.toContain("files.example.org");
+    const rows = JSON.stringify(daemon.db.$client.prepare("select * from cloud_providers").all());
+    expect(rows).not.toContain(password);
+    expect(rows).not.toContain("files.example.org");
+    expect(readFileSync(rc.envLog, "utf8")).toContain("continue= state= result=");
+    // It can't say its free space: a limit of mine, as for object storage.
+    await api.cloud.updateProvider({ id: p?.id as string, unlimited: true });
+    expect((await api.cloud.providers())[0]).toMatchObject({ space: "unlimited" });
+  });
+
+  it("OneDrive: rclone's sign-in with the form's region, then its own questions, answered in its environment", async () => {
+    const blob = Buffer.from(
+      JSON.stringify({
+        token: '{"access_token":"EwB-fake","token_type":"Bearer","expiry":"2030-01-01T00:00:00Z"}',
+        region: "global",
+      }),
+    )
+      .toString("base64")
+      .replace(/=+$/, "");
+    const { api, daemon, config, argv, rc } = await setup({ token: blob, setup: ONEDRIVE_SETUP });
+    // Not before signing in.
+    await expect(
+      api.cloud.addRclone({ name: "OneDrive", backend: "onedrive", folder: "" }),
+    ).rejects.toThrow(/Sign in to Microsoft OneDrive first/);
+    await expect(api.cloud.authorizeStart({ kind: "sftp" })).rejects.toThrow(
+      /doesn't sign in through a browser/,
+    );
+    const a = await api.cloud.authorizeStart({
+      kind: "onedrive",
+      options: { region: "global", tenant: "" },
+    });
+    expect(a).toMatchObject({ kind: "onedrive", url: expect.stringContaining("127.0.0.1") });
+    const sent = /authorize onedrive (\S+) --auth-no-open-browser/.exec(argv())?.[1] ?? "";
+    expect(JSON.parse(Buffer.from(sent, "base64").toString("utf8"))).toEqual({ region: "global" });
+    let s = a;
+    for (let i = 0; i < 50 && s.state === "waiting"; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+      s = await api.cloud.authorizeStatus({ session: a.session });
+    }
+    expect(s.state).toBe("ready");
+
+    const q1 = await api.cloud.addRclone({
+      name: "OneDrive",
+      backend: "onedrive",
+      options: { region: "global" },
+      authSession: a.session,
+      folder: "Oraknid",
+    });
+    expect(q1.provider).toBeNull();
+    // The token already there is kept without asking; the type of connection is asked.
+    expect(q1.question?.option).toMatchObject({
+      name: "config_type",
+      exclusive: true,
+      default: "onedrive",
+    });
+    await expect(
+      api.cloud.answerRclone({ pending: q1.question?.pending as string, answer: "nope" }),
+    ).rejects.toThrow(/Pick one of/);
+    const q2 = await api.cloud.answerRclone({
+      pending: q1.question?.pending as string,
+      answer: "onedrive",
+    });
+    expect(q2.question?.option.examples).toEqual([
+      { value: "b!drive-1", help: "OneDrive (personal)", provider: null },
+    ]);
+    const done = await api.cloud.answerRclone({
+      pending: q2.question?.pending as string,
+      answer: "b!drive-1",
+    });
+    expect(done.question).toBeNull();
+    expect(done.provider).toMatchObject({
+      kind: "rclone",
+      backend: "onedrive",
+      detail: "Microsoft OneDrive · Oraknid/",
+      space: "provider",
+      freeBytes: 10737418240,
+    });
+    const env = readFileSync(rc.envLog, "utf8");
+    expect(env).toContain("state=*oauth-confirm,choose_type,, result=false");
+    expect(env).toContain("state=choose_type_done result=onedrive");
+    expect(env).toContain("state=driveid_final result=b!drive-1");
+    expect(argv()).not.toContain("choose_type");
+    expect(argv()).not.toContain("b!drive-1");
+    const section = (await config()).get(`o-${done.provider?.id.toLowerCase()}`);
+    expect(section?.get("type")).toBe("onedrive");
+    expect(section?.get("region")).toBe("global");
+    expect(JSON.parse(section?.get("token") ?? "{}").access_token).toBe("EwB-fake");
+    for (const where of [
+      argv(),
+      events(daemon),
+      JSON.stringify(await api.cloud.providers()),
+      JSON.stringify(daemon.db.$client.prepare("select * from cloud_providers").all()),
+    ])
+      expect(where).not.toContain("EwB-fake");
+    // A finished add can't be answered again.
+    await expect(
+      api.cloud.answerRclone({ pending: q2.question?.pending as string, answer: "x" }),
+    ).rejects.toThrow(/isn't waiting/);
+  });
+
+  it("a code rclone asks for passes in its environment, and is said nowhere; a setup that fails leaves nothing", async () => {
+    const code = "842913";
+    const { api, daemon, config, argv, rc } = await setup({
+      setup: {
+        "|": step("2fa_do", "config_2fa", {
+          Help: "Two-factor authentication: please enter your 2FA code",
+          Sensitive: true,
+          IsPassword: true,
+          Required: true,
+        }),
+        "2fa_do|000000": {
+          ...step("2fa_do", "config_2fa", { IsPassword: true, Required: true }),
+          Error: "wrong code 000000",
+        },
+        [`2fa_do|${code}`]: { State: "", Option: null },
+      },
+    });
+    const password = `apple-S3cr3t-${Math.random().toString(36).slice(2)}`;
+    const q = await api.cloud.addRclone({
+      name: "iCloud",
+      backend: "iclouddrive",
+      options: { apple_id: "me@example.com", password },
+      folder: "",
+    });
+    expect(q.question?.option).toMatchObject({ name: "config_2fa", secret: true });
+    const again = await api.cloud.answerRclone({
+      pending: q.question?.pending as string,
+      answer: "000000",
+    });
+    expect(again.question?.error).toBe("wrong code •••");
+    const done = await api.cloud.answerRclone({
+      pending: q.question?.pending as string,
+      answer: code,
+    });
+    expect(done.provider?.detail).toBe("iCloud Drive and Photos · the whole account");
+    expect(readFileSync(rc.envLog, "utf8")).toContain(`result=${code}`);
+    for (const s of [code, password]) {
+      expect(argv()).not.toContain(s);
+      expect(events(daemon)).not.toContain(s);
+    }
+    expect(
+      Object.fromEntries((await config()).get(`o-${done.provider?.id.toLowerCase()}`) ?? []),
+    ).toMatchObject({ type: "iclouddrive", apple_id: "me@example.com" });
+
+    // rclone says it can't go on: refused, its section gone.
+    const failing = await setup({
+      setup: { "|": { State: "", Option: null, Error: `login refused for ${password}` } },
+    });
+    await expect(
+      failing.api.cloud.addRclone({
+        name: "x",
+        backend: "iclouddrive",
+        options: { apple_id: "me@example.com", password },
+        folder: "",
+      }),
+    ).rejects.toThrow(/iCloud Drive and Photos didn't answer: login refused for •••/);
+    expect((await failing.config()).size).toBe(0);
+    expect(await failing.api.cloud.providers()).toEqual([]);
+
+    // One given up is gone from the config too.
+    const asking = await setup({ setup: { "|": step("x", "config_any") } });
+    const w = await asking.api.cloud.addRclone({
+      name: "x",
+      backend: "pikpak",
+      options: { user: "me", pass: "pw-123456" },
+      folder: "",
+    });
+    expect((await asking.config()).size).toBe(1);
+    await asking.api.cloud.cancelRclone({ pending: w.question?.pending as string });
+    expect((await asking.config()).size).toBe(0);
+  });
+
+  it("adding one of any backend, and answering rclone, are home only; the list of backends is not", () => {
+    for (const p of ["addRclone", "answerRclone"]) expect(remoteAllowed(`/cloud/${p}`)).toBe(false);
+    for (const p of ["backends", "backend", "cancelRclone"])
+      expect(remoteAllowed(`/cloud/${p}`)).toBe(true);
   });
 });

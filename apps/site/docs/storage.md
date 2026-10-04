@@ -1,6 +1,6 @@
 # Cloud storage
 
-**Cloud storage** (in the sidebar, or `g y`) puts your storage accounts together as one pool: Google Drive, Dropbox, MEGA, and any S3-compatible object storage (MinIO, AWS S3, Cloudflare R2, Backblaze B2, Wasabi). You upload; Oraknid puts each file where it fits, or where you say.
+**Cloud storage** (in the sidebar, or `g y`) puts your storage accounts together as one pool: Google Drive, Dropbox, MEGA, any S3-compatible object storage (MinIO, AWS S3, Cloudflare R2, Backblaze B2, Wasabi, Hetzner …), and any other provider rclone supports (OneDrive, pCloud, Box, SFTP, WebDAV, FTP, SMB, Proton Drive, iCloud Drive, Azure, Google Cloud Storage and some fifty more). You upload; Oraknid puts each file where it fits, or where you say.
 
 ## rclone
 
@@ -10,13 +10,23 @@ Oraknid keeps its own rclone config in its data folder, **encrypted** with a pas
 
 ## Providers
 
-**Add a provider**, then pick its kind:
+**Add a provider**, then pick its kind (the last tile, **Another provider**, opens rclone's whole list):
 
 - **Object storage (S3)**: the service (MinIO, AWS, R2, B2, Wasabi, or another), its endpoint, region, bucket (made when it isn't there), access key and secret key. Object storage can't say how much room it has: give it a **space limit**, or mark it **pay as you go** (never full), so uploads can go there automatically; without either, it's used only when you pick it.
 - **Google Drive** or **Dropbox**: **Sign in** opens rclone's own sign-in page; allow it, come back, and **Add**. It uses rclone's app, so there is nothing to register. The sign-in page opens on the computer running Oraknid, so do it there (away from home it says so).
 - **MEGA**: your e-mail and password.
+- **Another provider**: any provider rclone supports, picked from rclone's own list. Type to search it by name (*onedrive*, *ssh* finds SFTP, *hetzner* the S3 services). The form is made from rclone's description of that provider:
+  - when it serves several services (S3 has 53: AWS, Hetzner, Scaleway, IDrive e2, DigitalOcean …), pick the service first; its own options follow, with its regions and endpoints as suggestions;
+  - the options it needs come first (marked \*), then its everyday ones; the rest are under **Advanced**, where an empty field keeps rclone's default;
+  - passwords, keys and tokens are password fields, and like every key they go only into the encrypted config. A password rclone keeps obscured is obscured by rclone itself, given to it on its input, never on a command line;
+  - one that signs in through a browser (OneDrive, Box, pCloud, Yandex Disk, Zoho, HiDrive, put.io, Google Photos, Google Cloud Storage …) has **Sign in**, as Google Drive does;
+  - object storage (B2, Azure Blob, Google Cloud Storage, Swift …) asks for the bucket and a folder in it (*bucket/folder*), and its space limit.
 
-Each one can show the whole account, or only a folder of it (*Folder in the account*). A provider is checked when added and shows its **used and free space**; the arrows button checks again. **Edit** renames it (and, for object storage, changes its limit). **Remove** forgets it and its keys; its files stay in the account. A provider that a backup plan or a kept backup needs can't be removed.
+  After **Add**, rclone may have questions of its own to finish: OneDrive asks which kind of account and which drive, iCloud Drive or a server with two-factor sign-in asks for the code. They come one at a time; **Cancel** gives up and forgets what you gave. The S3 form's **Another S3 service** link opens rclone's full S3 form.
+
+  Not in the list: rclone's wrappers around another remote (crypt, union, alias, chunker …), this computer's own disk, and the read-only ones (HTTP, DOI datasets, archives). Signing in through a browser always uses rclone's own app; your own client id isn't asked. Jottacloud signs in with a personal login token, given when rclone asks for it.
+
+Each one can show the whole account, or only a folder of it (*Folder in the account*). A provider is checked when added and shows its **used and free space**; the arrows button checks again. A provider that can't say its free space (object storage, a WebDAV server without quotas, an SFTP server without a shell) is treated like object storage: give it a limit, or it's used only when you pick it. **Edit** renames it (and, for those, changes its limit). **Remove** forgets it and its keys; its files stay in the account. A provider that a backup plan or a kept backup needs can't be removed.
 
 ## The pool
 
