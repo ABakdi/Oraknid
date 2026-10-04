@@ -1,16 +1,26 @@
 import { randomBytes } from "node:crypto";
-import { createReadStream, createWriteStream, mkdirSync, renameSync, rmSync } from "node:fs";
+import {
+  createReadStream,
+  createWriteStream,
+  mkdirSync,
+  renameSync,
+  rmdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type {
   BackupDestination,
   BackupKeyView,
   BackupPlanPatch,
+  BackupPlanTest,
   BackupPlanView,
   BackupRunView,
   BackupTarget,
+  BackupTestResult,
   NewBackupPlan,
   RestorePreview,
 } from "@oraknid/contracts";
@@ -30,13 +40,17 @@ import { exec, execStream, q } from "../servers/ssh.ts";
 import {
   checkTarget,
   dumpCommand,
-  EXT,
+  extOf,
   KIND_NAMES,
+  mongoTestScript,
   PLACED,
+  pgFormatOf,
   plainError,
+  readTest,
   restoreCommand,
   sane,
   secretLine,
+  testCommand,
 } from "./dump.ts";
 import {
   ageDecrypt,
@@ -59,6 +73,8 @@ type PlanRow = typeof backupPlans.$inferSelect;
 type RunRow = typeof backupRuns.$inferSelect;
 
 const PASSWORD = (planId: string) => `backup.plan.${planId}.password`;
+/** MongoDB: a connection string, a secret (it can hold a password). */
+const URI = (planId: string) => `backup.plan.${planId}.uri`;
 const PRIVATE_KEY = (keyId: string) => `backup.key.${keyId}`;
 /** A plan's time this far past when Oraknid looks: it was off, so the run is a missed one. */
 const MISSED_AFTER = 10 * 60_000;
@@ -121,6 +137,29 @@ async function piped(stages: unknown[], farEnd?: Promise<unknown> | null) {
   } finally {
     settled = true;
   }
+}
+
+const words = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/** Why a server couldn't be reached over SSH, in plain words. */
+function sshWords(
+  error: unknown,
+  srv: { name: string; host: string; port: number; user: string } | null,
+) {
+  const m = words(error);
+  const code = (error as NodeJS.ErrnoException | undefined)?.code ?? "";
+  if (!srv) return m;
+  const at = `${srv.host}:${srv.port}`;
+  if (code === "ECONNREFUSED" || /ECONNREFUSED/.test(m))
+    return `${srv.name} (${at}) refused the connection: is SSH running there, on that port?`;
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN" || /getaddrinfo/.test(m))
+    return `There's no host "${srv.host}": check ${srv.name}'s address.`;
+  if (/Timed out|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH/i.test(`${code} ${m}`))
+    return `${srv.name} (${at}) gave no answer: it may be off, or a firewall is in the way.`;
+  if (/authentication methods failed/i.test(m))
+    return `${srv.name} refused the SSH login of ${srv.user}: check the server's key or password.`;
+  if (/host key/i.test(m)) return `${m} (Servers → ${srv.name}).`;
+  return `${srv.name} couldn't be reached over SSH: ${m}`;
 }
 
 interface PendingRestore {
@@ -314,6 +353,7 @@ export class Backups {
       keyId: p.keyId,
       enabled: p.enabled,
       hasPassword: !!(await this.d.secrets.get(PASSWORD(p.id))),
+      hasUri: p.target.kind === "mongodb" && !!(await this.d.secrets.get(URI(p.id))),
       nextRunAt: p.enabled ? p.nextRunAt : null,
       running: this.#running.has(p.id),
       lastRun: last ? this.#runView(last) : null,
@@ -364,7 +404,10 @@ export class Backups {
     const target = TargetSchema.parse(input.target);
     this.#check({ ...input, target });
     const id = newId(this.#now());
+    if (input.uri && target.kind !== "mongodb")
+      throw new Error("A connection string is MongoDB's: leave it empty for this kind.");
     if (input.password) await this.d.secrets.set(PASSWORD(id), input.password);
+    if (input.uri) await this.d.secrets.set(URI(id), input.uri);
     this.d.db
       .insert(backupPlans)
       .values({
@@ -387,9 +430,21 @@ export class Backups {
 
   async updatePlan(patch: BackupPlanPatch, actor = "owner"): Promise<BackupPlanView> {
     const p = this.#planRow(patch.id);
+    // A target given without its kind's fields keeps the plan's own (a
+    // change from the helper, or an older client, never resets them).
+    const target = patch.target
+      ? TargetSchema.parse({
+          ...patch.target,
+          options:
+            patch.target.options ??
+            (patch.target.kind === p.target.kind ? p.target.options : undefined),
+        })
+      : p.target;
+    if (patch.uri && target.kind !== "mongodb")
+      throw new Error("A connection string is MongoDB's: leave it empty for this kind.");
     const next = {
       name: patch.name ?? p.name,
-      target: patch.target ? TargetSchema.parse(patch.target) : p.target,
+      target,
       schedule: patch.schedule ?? p.schedule,
       destination: patch.destination ?? p.destination,
       retention: patch.retention ?? p.retention,
@@ -399,6 +454,9 @@ export class Backups {
     this.#check(next);
     if (patch.password) await this.d.secrets.set(PASSWORD(p.id), patch.password);
     else if (patch.clearPassword) await this.d.secrets.delete(PASSWORD(p.id));
+    if (patch.uri) await this.d.secrets.set(URI(p.id), patch.uri);
+    // Another kind has no use for it.
+    else if (patch.clearUri || target.kind !== "mongodb") await this.d.secrets.delete(URI(p.id));
     const rescheduled =
       JSON.stringify(next.schedule) !== JSON.stringify(p.schedule) || (next.enabled && !p.enabled);
     this.d.db
@@ -426,9 +484,209 @@ export class Backups {
         .all())
         if (r.path) await this.#deleteFile(r).catch(() => {});
     await this.d.secrets.delete(PASSWORD(id));
+    await this.d.secrets.delete(URI(id));
     this.d.db.delete(backupRuns).where(eq(backupRuns.planId, id)).run();
     this.d.db.delete(backupPlans).where(eq(backupPlans.id, id)).run();
     this.#publish("backup.plan.removed", { id, name: p.name }, "owner");
+  }
+
+  // ── Test connection
+
+  /**
+   * Test connection (ADR-044 → Changed 2026-10-04): the form as it is,
+   * nothing saved. The server over SSH; the database's own client logged
+   * in with what was given, read only (its version and databases); the
+   * destination, a small file written there and removed. Each part says
+   * ok or why not; secrets go as the dump's do, never on a command line.
+   */
+  async testPlan(input: BackupPlanTest): Promise<BackupTestResult> {
+    const kept = input.planId ? this.#planRow(input.planId) : null;
+    const target = TargetSchema.parse(input.target);
+    const password =
+      input.password ?? (kept ? await this.d.secrets.get(PASSWORD(kept.id)) : null) ?? undefined;
+    const uri =
+      target.kind === "mongodb"
+        ? (input.uri ?? (kept ? await this.d.secrets.get(URI(kept.id)) : null) ?? undefined)
+        : undefined;
+    const destination = this.#testDestination(input.destination).catch(
+      (error): BackupTestResult["destination"] => ({ ok: false, said: words(error) }),
+    );
+    const result: BackupTestResult = {
+      server: { ok: null, said: "" },
+      database: {
+        ok: null,
+        said: "Not tried: the server wasn't reached.",
+        version: null,
+        databases: [],
+      },
+      destination: { ok: null, said: "" },
+    };
+    let client: Client | null = null;
+    let srv: ReturnType<Servers["row"]> | null = null;
+    try {
+      srv = this.d.servers.row(target.serverId);
+      client = await this.d.servers.client(target.serverId);
+      result.server = { ok: true, said: `Reached ${srv.name} over SSH as ${srv.user}.` };
+    } catch (error) {
+      result.server = { ok: false, said: sshWords(error, srv) };
+    }
+    if (client && srv)
+      result.database = await this.#testDatabase(client, srv, target, password, uri);
+    result.destination = await destination;
+    return result;
+  }
+
+  async #testDatabase(
+    client: Client,
+    srv: { name: string; user: string },
+    target: BackupTarget,
+    password: string | undefined,
+    uri: string | undefined,
+  ): Promise<BackupTestResult["database"]> {
+    const name = KIND_NAMES[target.kind];
+    const no = (said: string) => ({ ok: false, said, version: null, databases: [] });
+    try {
+      checkTarget(target);
+    } catch (error) {
+      return no(words(error));
+    }
+    // MongoDB's shell takes its login in the script on stdin; the others in the secret line.
+    const stdin =
+      target.kind === "mongodb"
+        ? `\n${mongoTestScript(target, password, uri)}`
+        : `${secretLine(target.kind, password)}\n`;
+    let r: { code: number | null; stdout: string; stderr: string };
+    try {
+      r = await exec(client, testCommand(target, { uri: !!uri }), { stdin, timeoutMs: 45_000 });
+    } catch {
+      return no(`${name} gave no answer in 45 seconds.`);
+    }
+    if (r.code !== 0)
+      return no(
+        plainError(target, r.code, `${r.stdout}\n${r.stderr}`, {
+          server: srv.name,
+          user: srv.user,
+          password,
+          uri,
+        }),
+      );
+    const { version, databases } = readTest(target.kind, r.stdout);
+    const shown = databases.length
+      ? `${databases.slice(0, 12).join(", ")}${databases.length > 12 ? ` and ${databases.length - 12} more` : ""}`
+      : "none it may list";
+    const where = target.container ? ` in ${target.container}` : "";
+    if (
+      target.database &&
+      (target.kind === "postgres" || target.kind === "mysql" || target.kind === "mongodb") &&
+      !databases.includes(target.database)
+    )
+      return {
+        ok: false,
+        said: `${name} ${version ?? ""}${where} let the login in, but has no database "${target.database}" (it has ${shown}).`,
+        version,
+        databases,
+      };
+    return {
+      ok: true,
+      said:
+        target.kind === "sqlite"
+          ? `SQLite ${version ?? ""} opened ${target.path} (read only)${where}.`
+          : `${name} ${version ?? ""}${where} let the login in; its databases: ${shown}.`,
+      version,
+      databases,
+    };
+  }
+
+  /** The destination takes a file: a small one written there and removed, with any folder it made. */
+  async #testDestination(d: BackupDestination): Promise<BackupTestResult["destination"]> {
+    const probe = `.oraknid-probe-${randomBytes(6).toString("hex")}`;
+    if (d.kind === "local") {
+      const folder = resolve(localFolder(d.folder));
+      let made: string | undefined;
+      try {
+        made = mkdirSync(folder, { recursive: true, mode: 0o700 });
+        const file = join(folder, probe);
+        writeFileSync(file, "oraknid\n", { mode: 0o600 });
+        rmSync(file, { force: true });
+        return { ok: true, said: `This computer's folder ${d.folder} takes backups.` };
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        return {
+          ok: false,
+          said:
+            code === "EACCES" || code === "EPERM"
+              ? `Oraknid can't write in ${d.folder} on this computer: permission denied.`
+              : code === "ENOTDIR" || code === "EEXIST"
+                ? `${d.folder} on this computer is a file, not a folder.`
+                : code === "EROFS"
+                  ? `${d.folder} is on a read-only disk.`
+                  : code === "ENOSPC"
+                    ? `The disk holding ${d.folder} is full.`
+                    : `${d.folder} on this computer: ${words(error)}`,
+        };
+      } finally {
+        // Only the folders this test made, each removed only while empty.
+        if (made)
+          for (let x = folder; x.startsWith(made); x = dirname(x)) {
+            try {
+              rmdirSync(x);
+            } catch {
+              break;
+            }
+            if (x === made) break;
+          }
+      }
+    }
+    if (d.kind === "server") {
+      let srv: ReturnType<Servers["row"]> | null = null;
+      try {
+        srv = this.d.servers.row(d.serverId);
+        const c = await this.d.servers.client(d.serverId);
+        const folder = remoteFolder(d.folder).replace(/\/+$/, "") || ".";
+        // Writes a file in the folder (made if need be) and removes both what it made.
+        const script =
+          'd=$1; r=0; t=$d; top=; while [ ! -d "$t" ]; do top=$t; t=$(dirname "$t"); done; umask 077; mkdir -p "$d" || exit 3; f="$d/$2"; echo oraknid > "$f" || { r=4; }; rm -f "$f"; if [ -n "$top" ]; then x=$d; while rmdir "$x" 2>/dev/null; do [ "$x" = "$top" ] && break; x=$(dirname "$x"); done; fi; exit $r';
+        const r = await exec(c, `sh -c ${q(script)} sh ${q(folder)} ${q(probe)}`, {
+          timeoutMs: 30_000,
+        });
+        if (r.code === 0)
+          return { ok: true, said: `${srv.name}'s folder ${d.folder} takes backups.` };
+        const said = r.stderr.trim().split("\n").at(-1) ?? "";
+        return {
+          ok: false,
+          said: /Permission denied/i.test(said)
+            ? `${srv.user} can't write in ${d.folder} on ${srv.name}: permission denied.`
+            : /Read-only/i.test(said)
+              ? `${d.folder} on ${srv.name} is on a read-only disk.`
+              : /No space/i.test(said)
+                ? `The disk holding ${d.folder} on ${srv.name} is full.`
+                : /Not a directory|File exists/i.test(said)
+                  ? `${d.folder} on ${srv.name} is a file, not a folder.`
+                  : `Couldn't write in ${d.folder} on ${srv.name}: ${said || `exit ${r.code}`}`,
+        };
+      } catch (error) {
+        return { ok: false, said: sshWords(error, srv) };
+      }
+    }
+    const cloud = this.d.cloud;
+    if (!cloud) return { ok: false, said: "Cloud storage isn't available here." };
+    if (!d.providerId && cloud.providers().length === 0)
+      return { ok: false, said: "There is no cloud storage yet: add a provider in Cloud storage." };
+    const file = cloud.tmpFile("probe");
+    try {
+      writeFileSync(file, "oraknid\n", { mode: 0o600 });
+      const at = `${d.folder.replace(/^\/+|\/+$/g, "")}/${probe}`;
+      const put = await cloud.putFile(file, at, { providerId: d.providerId, actor: "oraknid" });
+      await cloud.deleteFile(put.providerId, put.path, "oraknid");
+      return {
+        ok: true,
+        said: `Cloud storage (${cloud.label(put.providerId)}) took a test file in ${d.folder} and let it be removed.`,
+      };
+    } catch (error) {
+      return { ok: false, said: `Cloud storage: ${words(error)}` };
+    } finally {
+      cloud.removeTmp(file);
+    }
   }
 
   runs(o: { planId?: string; limit?: number } = {}): BackupRunView[] {
@@ -495,7 +753,8 @@ export class Backups {
     const started = this.#now();
     const t = p.target;
     const password = await this.d.secrets.get(PASSWORD(p.id));
-    const name = `${stamp(started)}-${t.database ?? (t.kind === "sqlite" ? slug(t.path?.split("/").pop() ?? "db") : "all")}.${EXT[t.kind]}.zst${p.keyId ? ".age" : ""}`;
+    const uri = t.kind === "mongodb" ? await this.d.secrets.get(URI(p.id)) : null;
+    const name = `${stamp(started)}-${t.kind === "redis" ? "all" : (t.database ?? (t.kind === "sqlite" ? slug(t.path?.split("/").pop() ?? "db") : "all"))}.${extOf(t)}.zst${p.keyId ? ".age" : ""}`;
     const dir = `${slug(p.name)}-${p.id.slice(-6).toLowerCase()}`;
     let cleanup: () => Promise<void> = async () => {};
     /** Where it went: in the pool, the provider it was placed in. */
@@ -508,8 +767,8 @@ export class Backups {
       user = srv.user;
       const recipient = p.keyId ? this.#keyRow(p.keyId).publicKey : null;
       const source = await this.d.servers.client(t.serverId);
-      const { channel, done } = await execStream(source, dumpCommand(t));
-      channel.end(`${secretLine(t.kind, password)}\n`);
+      const { channel, done } = await execStream(source, dumpCommand(t, { uri: !!uri }));
+      channel.end(`${secretLine(t.kind, password, uri ?? undefined)}\n`);
       const counter = tap();
       // Where it goes: written as `.part`, renamed once the dump said it ended well.
       let path: string;
@@ -584,7 +843,9 @@ export class Backups {
       }
       const dump = await done;
       if (dump.code !== 0)
-        throw new Error(plainError(t, dump.code, dump.stderr, { server, user, password }));
+        throw new Error(
+          plainError(t, dump.code, dump.stderr, { server, user, password, uri: uri ?? undefined }),
+        );
       const destFailed = await destError();
       if (destFailed) throw new Error(destFailed);
       if (counter.size === 0) throw new Error("The dump wrote nothing.");
@@ -614,7 +875,7 @@ export class Backups {
     } catch (error) {
       await cleanup().catch(() => {});
       let message = error instanceof Error ? error.message : String(error);
-      if (password) message = message.split(password).join("•••");
+      for (const s of [password, uri]) if (s) message = message.split(s).join("•••");
       const ended = this.#now();
       this.d.db
         .update(backupRuns)
@@ -879,6 +1140,10 @@ export class Backups {
     const same = JSON.stringify(t) === JSON.stringify(p.target);
     const password =
       pending.password ?? (same ? await this.d.secrets.get(PASSWORD(p.id)) : undefined);
+    const uri =
+      same && t.kind === "mongodb"
+        ? ((await this.d.secrets.get(URI(p.id))) ?? undefined)
+        : undefined;
     const srv = this.d.servers.row(t.serverId);
     this.#publish(
       "backup.restore.started",
@@ -887,10 +1152,13 @@ export class Backups {
     );
     try {
       const client = await this.d.servers.client(t.serverId);
-      const { channel, done } = await execStream(client, restoreCommand(t, p.target.database));
+      const { channel, done } = await execStream(
+        client,
+        restoreCommand(t, p.target.database, { uri: !!uri, pgFormat: pgFormatOf(r.path) }),
+      );
       // What the tool prints is dropped; its stderr is kept for the error.
       channel.on("data", () => {});
-      channel.write(`${secretLine(t.kind, password)}\n`);
+      channel.write(`${secretLine(t.kind, password, uri)}\n`);
       let broken: unknown = null;
       await this.#unpack(r, channel, done).catch((e) => {
         broken = e;
@@ -899,7 +1167,7 @@ export class Backups {
       const placed = t.kind === "redis" && res.stderr.includes(PLACED);
       if (res.code !== 0 && !placed)
         throw new Error(
-          plainError(t, res.code, res.stderr, { server: srv.name, user: srv.user, password }),
+          plainError(t, res.code, res.stderr, { server: srv.name, user: srv.user, password, uri }),
         );
       if (broken) throw broken;
       const note =
@@ -910,7 +1178,7 @@ export class Backups {
       return { note };
     } catch (error) {
       let message = error instanceof Error ? error.message : String(error);
-      if (password) message = message.split(password).join("•••");
+      for (const s of [password, uri]) if (s) message = message.split(s).join("•••");
       this.#publish(
         "backup.restore.ended",
         { planId: p.id, runId: r.id, ok: false, error: message },

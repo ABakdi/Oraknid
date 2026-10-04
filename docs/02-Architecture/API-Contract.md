@@ -55,7 +55,7 @@ from home once the device is unlocked.
   `setServers` / `setServerRole` / `addRepo` / `detectRepos` /
   `removeRepo` / `updateRepo` / `setLocalPorts` / `delete` / `setGitHub` ·
   `servers.add` / `update` / `setup` / `acceptHostKey` / `editState` /
-  `remove` / `restart` · `backups.createPlan` / `updatePlan` /
+  `remove` / `restart` · `backups.createPlan` / `updatePlan` / `testPlan` /
   `removePlan` / `prepareRestore` / `restore` / `importKey` /
   `exportKey` / `removeKey` · `cloud.addProvider` / `updateProvider` /
   `removeProvider` / `authorizeStart` · `github.addAccount` / `removeAccount` /
