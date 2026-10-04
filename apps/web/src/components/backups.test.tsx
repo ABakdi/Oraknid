@@ -1,4 +1,10 @@
-import type { BackupKeyView, BackupPlanView, BackupRunView, ServerView } from "@oraknid/contracts";
+import type {
+  BackupKeyView,
+  BackupPlanView,
+  BackupRunView,
+  BackupTestResult,
+  ServerView,
+} from "@oraknid/contracts";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -52,6 +58,22 @@ const prepareRestore = vi.fn(async (_: unknown) => ({
   expiresAt: Date.now() + 60_000,
 }));
 const restore = vi.fn(async (_: unknown) => ({ note: "Restored." }));
+let providers: { id: string; name: string }[] = [];
+let listed = (): BackupPlanView[] => [PLAN];
+const TESTED: BackupTestResult = {
+  server: { ok: true, said: "Reached db-box over SSH as me." },
+  database: {
+    ok: false,
+    said: 'PostgreSQL 16.4 in shop-db let the login in, but has no database "shopp" (it has postgres, shop).',
+    version: "16.4",
+    databases: ["postgres", "shop"],
+  },
+  destination: {
+    ok: false,
+    said: "Oraknid can't write in /backups on this computer: permission denied.",
+  },
+};
+const testPlan = vi.fn(async (_: unknown) => TESTED);
 
 vi.mock("@/lib/api", () => ({
   api: {
@@ -70,6 +92,8 @@ vi.mock("@/lib/api", () => ({
               port: 5432,
               sizeBytes: null,
               note: null,
+              // Read from its environment by the daemon: never a password's value.
+              login: { user: "app", database: "shop", passwordSet: true },
             },
             {
               kind: "redis",
@@ -86,13 +110,14 @@ vi.mock("@/lib/api", () => ({
         },
       }),
     },
-    cloud: { providers: async () => [] },
+    cloud: { providers: async () => providers },
     backups: {
-      plans: async () => [PLAN],
+      plans: async () => listed(),
       keys: async () => keys,
       runs: async () => [],
       createPlan: (x: unknown) => createPlan(x),
       updatePlan: (x: unknown) => updatePlan(x),
+      testPlan: (x: unknown) => testPlan(x),
       createKey: (x: { name: string }) => createKey(x),
       exportKey: (x: { id: string }) => exportKey(x),
       prepareRestore: (x: unknown) => prepareRestore(x),
@@ -121,13 +146,14 @@ const PLAN: BackupPlanView = {
   keyId: KEY.id,
   enabled: true,
   hasPassword: true,
+  hasUri: false,
   nextRunAt: null,
   running: false,
   lastRun: null,
   createdAt: 1,
 };
 
-const { PlanForm, BackupKeys, RestoreDialog } = await import("./backups");
+const { PlanForm, BackupKeys, BackupPlans, RestoreDialog } = await import("./backups");
 const { ServerBackupsTab } = await import("./server-backups");
 
 afterEach(() => {
@@ -183,6 +209,15 @@ describe("a backup plan's form", () => {
         database: "shop",
         user: "app",
         path: null,
+        options: {
+          mysql: {
+            tls: "default",
+            singleTransaction: true,
+            routines: true,
+            events: false,
+            triggers: true,
+          },
+        },
       },
       schedule: { kind: "cron", line: "15 */6 * * *" },
       destination: { kind: "server", serverId: ID(2), folder: "backups/shop" },
@@ -225,6 +260,187 @@ describe("a backup plan's form", () => {
     expect(updatePlan.mock.calls[0]?.[0]).toMatchObject({ id: PLAN.id, name: "Shop (nightly)" });
     expect(updatePlan.mock.calls[0]?.[0]).not.toHaveProperty("password");
   });
+});
+
+/** A plan with a value in every field, none of them the form's defaults. */
+const FULL: BackupPlanView = {
+  ...PLAN,
+  id: ID(21),
+  name: "Ledger",
+  target: {
+    serverId: ID(1),
+    kind: "postgres",
+    container: null,
+    host: "10.0.0.5",
+    port: 5433,
+    database: "ledger",
+    user: "books",
+    path: null,
+    options: {
+      postgres: {
+        sslmode: "require",
+        schemas: ["sales", "hr"],
+        format: "custom",
+        extra: ["--no-comments", "--exclude-table-data=logs"],
+      },
+    },
+  },
+  schedule: { kind: "weekly", day: 3, at: "04:15" },
+  destination: { kind: "cloud", providerId: ID(7), folder: "Books/backups" },
+  retention: { count: 7, days: 60 },
+  keyId: KEY.id,
+  enabled: false,
+  hasPassword: true,
+};
+
+const value = (label: string | RegExp) => (screen.getByLabelText(label) as HTMLInputElement).value;
+const shown = (label: string | RegExp) => screen.getByLabelText(label).textContent;
+
+describe("a saved plan opened again (ADR-044 → Changed 2026-10-04)", () => {
+  it("shows every value it was saved with, even after another form was open, and saves it unchanged", async () => {
+    providers = [{ id: ID(7), name: "B2" }];
+    keys = [KEY];
+    listed = () => [PLAN, FULL];
+    render(<BackupPlans />);
+    // A new plan's form first (its defaults), then Edit: the plan's own values, not the defaults.
+    fireEvent.click(await screen.findByRole("button", { name: "New backup plan" }));
+    type("Name", "typed in the new form");
+    fireEvent.click(screen.getByRole("button", { name: "Edit Shop" }));
+    expect(value("Name")).toBe("Shop");
+    fireEvent.click(screen.getByRole("button", { name: "Edit Ledger" }));
+    expect(screen.getByText("Change the plan")).toBeTruthy();
+    expect(value("Name")).toBe("Ledger");
+    expect(shown("Kind")).toBe("PostgreSQL");
+    expect(screen.queryByLabelText("Container name")).toBeNull();
+    expect(value("Host")).toBe("10.0.0.5");
+    expect(value("Port")).toBe("5433");
+    expect(value("Database")).toBe("ledger");
+    expect(value("User")).toBe("books");
+    expect(value("Password")).toBe("");
+    expect(screen.getByLabelText("Password").getAttribute("placeholder")).toBe(
+      "kept; type to change",
+    );
+    expect(shown("Every")).toBe("Week");
+    expect(shown("On")).toBe("Wednesday");
+    expect(value("At")).toBe("04:15");
+    await waitFor(() => expect(shown("Kept on")).toBe("Cloud storage: B2"));
+    expect(value("Folder")).toBe("Books/backups");
+    expect(value("Keep the last")).toBe("7");
+    expect(value("None older than (days)")).toBe("60");
+    expect(shown("Encryption")).toBe("age key Offsite");
+    fireEvent.click(screen.getByRole("button", { name: /Advanced: PostgreSQL's own fields/ }));
+    expect(shown("TLS (sslmode)")).toBe("require");
+    expect(shown("Dump format")).toBe("Custom (pg_restore)");
+    expect(value("Schemas")).toBe("sales, hr");
+    expect(value("More pg_dump options")).toBe("--no-comments --exclude-table-data=logs");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(updatePlan).toHaveBeenCalled());
+    // Exactly what it was saved with: no default, no password, and paused stays the switch's.
+    expect(updatePlan.mock.calls[0]?.[0]).toEqual({
+      id: FULL.id,
+      name: FULL.name,
+      target: FULL.target,
+      schedule: FULL.schedule,
+      destination: FULL.destination,
+      retention: FULL.retention,
+      keyId: FULL.keyId,
+    });
+    providers = [];
+    listed = () => [PLAN];
+  }, 30_000);
+
+  it("Test connection sends the form as it is (the kept password by the plan's id) and shows each part; a database it lists can be picked", async () => {
+    render(<PlanForm plan={FULL} servers={SERVERS} keys={[KEY]} onDone={() => {}} />);
+    type("Database", "shopp");
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    const results = await screen.findByRole("status", { name: "Test results" });
+    expect(results.textContent).toContain("Server: Reached db-box over SSH as me.");
+    expect(results.textContent).toContain('has no database "shopp"');
+    expect(results.textContent).toContain("Where to: Oraknid can't write in /backups");
+    expect(testPlan).toHaveBeenCalledTimes(1);
+    const sent = testPlan.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(sent).toMatchObject({
+      planId: FULL.id,
+      target: { ...FULL.target, database: "shopp" },
+      destination: FULL.destination,
+    });
+    expect(sent).not.toHaveProperty("password");
+    expect(sent).not.toHaveProperty("enabled");
+    fireEvent.click(screen.getByRole("button", { name: "shop" }));
+    expect(value("Database")).toBe("shop");
+    // Nothing was saved by testing.
+    expect(updatePlan).not.toHaveBeenCalled();
+  }, 20_000);
+});
+
+describe("each kind's own fields, under Advanced", () => {
+  it("shows a kind's own fields only, and sends them with the plan", async () => {
+    const done = vi.fn();
+    render(<PlanForm serverId={ID(1)} servers={SERVERS} keys={[]} onDone={done} />);
+    const advanced = (kind: string) =>
+      screen.getByRole("button", { name: `Advanced: ${kind}'s own fields` });
+    fireEvent.click(advanced("PostgreSQL"));
+    expect(screen.getByLabelText("TLS (sslmode)")).toBeTruthy();
+    // An option off the list is refused before it's sent.
+    type("More pg_dump options", "--file=/etc/passwd");
+    type("Name", "x");
+    type("Container name", "db");
+    fireEvent.click(screen.getByRole("button", { name: "Make the plan" }));
+    expect(
+      await screen.findByText("--file=/etc/passwd isn't a pg_dump option Oraknid passes on."),
+    ).toBeTruthy();
+    expect(createPlan).not.toHaveBeenCalled();
+
+    await choose("Kind", "MySQL / MariaDB");
+    expect(screen.queryByLabelText("TLS (sslmode)")).toBeNull();
+    expect(screen.getByRole("switch", { name: "Events" })).toBeTruthy();
+    expect(screen.getByRole("switch", { name: "Triggers" })).toBeTruthy();
+    expect(screen.getByRole("switch", { name: /One transaction/ })).toBeTruthy();
+
+    await choose("Kind", "Redis");
+    expect(screen.getByLabelText("Database number")).toBeTruthy();
+    expect(screen.getByLabelText("User (ACL)")).toBeTruthy();
+
+    await choose("Kind", "SQLite");
+    expect(screen.queryByRole("button", { name: /Advanced/ })).toBeNull();
+
+    await choose("Kind", "MongoDB");
+    type("Authentication database", "shop");
+    type("Replica set", "rs0");
+    await choose("TLS", "On, without checking its certificate");
+    await choose("Read preference", "secondaryPreferred");
+    type("User", "app");
+    type("Password", "pw-typed");
+    fireEvent.click(
+      screen.getByRole("switch", { name: "Connect with a connection string instead" }),
+    );
+    // The fields of where and who give way to the string.
+    expect(screen.queryByLabelText("Host")).toBeNull();
+    expect(screen.queryByLabelText("Password")).toBeNull();
+    type("Connection string", "mongodb://app:pw@10.0.0.9/shop?authSource=shop");
+    fireEvent.click(screen.getByRole("button", { name: "Make the plan" }));
+    await waitFor(() => expect(done).toHaveBeenCalled());
+    const sent = createPlan.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(sent).toMatchObject({
+      target: {
+        kind: "mongodb",
+        container: "db",
+        user: "app",
+        options: {
+          mongodb: {
+            authSource: "shop",
+            replicaSet: "rs0",
+            tls: "insecure",
+            readPreference: "secondaryPreferred",
+          },
+        },
+      },
+      uri: "mongodb://app:pw@10.0.0.9/shop?authSource=shop",
+    });
+    // Only the kind's own fields go, and no password beside the string.
+    expect(Object.keys((sent.target as { options: object }).options)).toEqual(["mongodb"]);
+    expect(sent).not.toHaveProperty("password");
+  }, 30_000);
 });
 
 describe("keys", () => {
@@ -289,7 +505,18 @@ describe("a server's Backups tab", () => {
     fireEvent.click(await screen.findByRole("button", { name: "New backup plan" }));
     await choose("Found on the server", "postgres 16.4 · container shop-db");
     expect((screen.getByLabelText("Container name") as HTMLInputElement).value).toBe("shop-db");
+    // Its login, as its container's environment says it; the password never filled in.
+    expect(value("User")).toBe("app");
+    expect(value("Database")).toBe("shop");
+    expect(value("Password")).toBe("");
+    expect(
+      screen.getByText(
+        "A password is set in the container's environment: type it here (Oraknid doesn't read it from there).",
+      ),
+    ).toBeTruthy();
     await choose("Found on the server", "redis 7.2 · redis-server");
+    expect(value("User (ACL)")).toBe("");
+    expect(screen.queryByText(/A password is set in the container's environment/)).toBeNull();
     expect(screen.queryByLabelText("Container name")).toBeNull();
     expect((screen.getByLabelText("Port") as HTMLInputElement).value).toBe("6380");
   }, 20_000);
