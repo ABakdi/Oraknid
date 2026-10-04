@@ -7,6 +7,7 @@ import { Agents } from "@/components/agents";
 import { Empty, ErrorNote, Loading, StateBadge } from "@/components/common";
 import { useConfirm } from "@/components/confirm";
 import { JobBudget, JobStats } from "@/components/job-budget";
+import { JobGoal, JobTitle } from "@/components/job-heading";
 import { JobResult } from "@/components/job-result";
 import { JobSettings } from "@/components/job-settings";
 import { OrderDialog } from "@/components/order-dialog";
@@ -109,10 +110,8 @@ export function JobDetail({ id, sub }: { id: string; sub?: string }) {
               <ChevronLeft className="size-5" />
             </Link>
           </Button>
-          <div className="min-w-0 flex-1">
-            <h3 className="truncate text-base font-semibold" title={j.title}>
-              {j.title}
-            </h3>
+          <div className="min-w-0 flex-1 space-y-1">
+            <JobTitle job={j} />
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <StateBadge state={j.state} />
               {j.queuedAt ? (
@@ -126,6 +125,7 @@ export function JobDetail({ id, sub }: { id: string; sub?: string }) {
               <span>{tokens(j.tokens)} tokens</span>
               {j.startedAt ? <span>{t("started {when}", { when: ago(j.startedAt) })}</span> : null}
             </div>
+            <JobGoal goal={j.goal} />
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">

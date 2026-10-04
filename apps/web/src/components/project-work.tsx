@@ -42,6 +42,7 @@ export function workflowJobs(jobs: JobView[]): FlowJob[] {
       const box: FlowJob = {
         id: j.id,
         title: j.title,
+        description: j.description,
         state: j.state,
         done: j.tasks.filter(finished).length,
         total: j.tasks.length,
@@ -156,7 +157,12 @@ export function ProjectWorkflow({
             </Button>
             {drilled ? (
               <>
-                <span className="min-w-0 truncate px-1 text-sm font-medium" title={drilled.title}>
+                <span
+                  className="min-w-0 truncate px-1 text-sm font-medium"
+                  title={
+                    drilled.description ? `${drilled.title}\n${drilled.description}` : drilled.title
+                  }
+                >
                   {drilled.title}
                 </span>
                 <StateBadge state={drilled.state} className="shrink-0" />
@@ -278,7 +284,8 @@ export function ProjectWork({
   );
 }
 
-function WorkRow({ job: j }: { job: JobView }) {
+/** A job in the Work timeline: its name, its description, where it stands. */
+export function WorkRow({ job: j }: { job: JobView }) {
   const done = j.tasks.filter(finished).length;
   const running = ACTIVE.includes(j.state);
   return (
@@ -291,6 +298,15 @@ function WorkRow({ job: j }: { job: JobView }) {
         >
           {j.title}
         </Link>
+        {j.description ? (
+          <p
+            className="line-clamp-2 text-sm text-muted-foreground"
+            title={j.description}
+            data-testid="job-description"
+          >
+            {j.description}
+          </p>
+        ) : null}
         <div className="flex min-w-0 flex-wrap gap-x-2 text-xs text-muted-foreground">
           <span>
             {j.state === "draft"

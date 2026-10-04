@@ -93,6 +93,8 @@ const WITH_LEG = ["assigned", "running", "verifying", "done"];
 export interface FlowJob {
   id: string;
   title: string;
+  /** What it's for, or what it did (Jobs-and-Projects → A job's name and description). */
+  description?: string | null;
   state: string;
   done: number;
   total: number;
@@ -228,7 +230,7 @@ const JobCard = memo(({ data, targetPosition, sourcePosition }: NodeProps<JobNod
     <button
       type="button"
       onClick={() => data.onOpen(job.id)}
-      title={t("Open “{title}”", { title: job.title })}
+      title={openTitle(job)}
       aria-current={job.current ? "true" : undefined}
       className={cn(
         "flex h-[76px] w-[220px] flex-col justify-between rounded-lg border bg-card px-2.5 py-2 text-left shadow-sm transition-shadow hover:shadow-md",
@@ -238,8 +240,20 @@ const JobCard = memo(({ data, targetPosition, sourcePosition }: NodeProps<JobNod
     >
       <Handle type="target" position={targetPosition ?? Position.Left} className="!opacity-0" />
       <div className="flex items-start gap-1">
-        <div className="line-clamp-2 min-w-0 flex-1 text-xs font-medium leading-snug">
-          {job.title}
+        <div className="min-w-0 flex-1">
+          <div
+            className={cn(
+              "min-w-0 text-xs font-medium leading-snug",
+              job.description ? "line-clamp-1" : "line-clamp-2",
+            )}
+          >
+            {job.title}
+          </div>
+          {job.description ? (
+            <div className="line-clamp-1 text-[10px] leading-snug text-muted-foreground">
+              {job.description}
+            </div>
+          ) : null}
         </div>
         <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
       </div>
@@ -268,7 +282,7 @@ const FrameCard = memo(({ data, targetPosition, sourcePosition }: NodeProps<Fram
       <button
         type="button"
         onClick={() => data.onOpen(job.id)}
-        title={t("Open “{title}”", { title: job.title })}
+        title={openTitle(job)}
         className="flex h-10 w-full items-center gap-2 rounded-t-xl px-4 text-left hover:bg-accent/60"
       >
         <span className="min-w-0 truncate text-sm font-medium">{job.title}</span>
@@ -286,6 +300,10 @@ const FrameCard = memo(({ data, targetPosition, sourcePosition }: NodeProps<Fram
 });
 
 const nodeTypes = { task: TaskCard, job: JobCard, frame: FrameCard };
+
+/** A job box's tooltip: open it, and its description in full. */
+const openTitle = (job: FlowJob) =>
+  `${t("Open “{title}”", { title: job.title })}${job.description ? `\n${job.description}` : ""}`;
 
 /**
  * The Web, live (Web-UI → Job): tasks coloured by state, the Leg (its avatar) on each

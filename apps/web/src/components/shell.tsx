@@ -521,11 +521,18 @@ function Palette({ open, onOpenChange }: { open: boolean; onOpenChange: (o: bool
           {(jobs.data ?? []).map((j) => (
             <CommandItem
               key={j.id}
-              value={`job ${j.title} ${j.state}`}
+              value={`job ${j.title} ${j.description ?? ""} ${j.state}`}
               onSelect={() => run(() => go(jobHref(j)))}
             >
               <ListTodo className="size-4" />
-              <span className="flex-1 truncate">{j.title}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{j.title}</span>
+                {j.description ? (
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {j.description}
+                  </span>
+                ) : null}
+              </span>
               <span className="text-xs text-muted-foreground">{j.state}</span>
             </CommandItem>
           ))}
