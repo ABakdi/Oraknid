@@ -32,6 +32,22 @@ On creation Oraknid:
 4. Adds `.oraknid/` to `.git/info/exclude`, except `.oraknid/silk/`,
    which I may choose to commit.
 
+## A job's name and description (2026-10-04)
+
+A job is named by what it is, not by the first words I typed ("now you
+shoudl take a look and make sure everything is im…" helped nobody):
+- **When it's made**, The Eye gives it a **name** (a few words, like a
+  commit's subject: "Ship Phase 2 to GitHub") and a **description** (one
+  or two sentences: what it's for). A name I typed myself is kept.
+  The quick model does it, from the goal and the project; without a
+  model, the first line stays until one can.
+- **When it ends**, the description becomes **what it did**: what was
+  built or changed, where it is (branch, pushed where), what's left to
+  me; from The Eye's job summary (ADR-045).
+- Both show wherever the job does: Work, Running now, the Inbox, the
+  Workflow's boxes, the job's header, notifications; my goal stays as I
+  wrote it, under the description. I can rename a job.
+
 ## Starting work (the New work page, Phase 8)
 
 In a project I already have, new work starts in its Eye tab: I write
