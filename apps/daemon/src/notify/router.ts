@@ -207,6 +207,24 @@ export function startNotificationRouter(o: {
           itemId: null,
         };
       }
+      case "update.available": {
+        // A new release, once per version (ADR-048).
+        const u = payload as { tag?: string; name?: string };
+        return {
+          p: {
+            event: "update.available",
+            jobId: null,
+            n: {
+              title: `Update available: ${u.tag ?? "a new version"}`,
+              body: `${u.name && u.name !== u.tag ? `${u.name}. ` : ""}Update from Settings → About & updates.`,
+              url: url("/settings/about"),
+              urgency: "normal",
+              tag: "update",
+            },
+          },
+          itemId: null,
+        };
+      }
       case "system.recovered": {
         const s = payload as { jobsResumed?: string[]; effectsNeedingMe?: number };
         return {

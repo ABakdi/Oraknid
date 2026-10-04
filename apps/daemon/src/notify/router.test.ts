@@ -108,6 +108,24 @@ describe("notification routing", () => {
     expect(sent.map((s) => s.n.title)).toEqual(["Approval needed"]);
   });
 
+  it("tells me about a new version of Oraknid on the desktop, not by email (ADR-048)", async () => {
+    const { d, sent } = await start();
+    d.bus.publish({
+      type: "update.available",
+      topic: "overview",
+      jobId: null,
+      payload: { tag: "v0.2.0", name: "Oraknid v0.2.0", version: "0.2.0" },
+    });
+    await wait(20);
+    expect(sent.map((s) => s.channel)).toEqual(["desktop"]);
+    expect(sent[0]?.n).toMatchObject({
+      title: "Update available: v0.2.0",
+      body: "Oraknid v0.2.0. Update from Settings → About & updates.",
+      tag: "update",
+    });
+    expect(sent[0]?.n.url).toMatch(/\/settings\/about$/);
+  });
+
   it("follows my changes to the routing table", async () => {
     const { d, sent } = await start();
     d.notifications.update({

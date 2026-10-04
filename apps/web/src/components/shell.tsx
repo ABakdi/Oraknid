@@ -46,6 +46,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { SidebarUpdate } from "@/components/updates";
 import { api, message } from "@/lib/api";
 import { goPrefix } from "@/lib/go-prefix";
 import { t } from "@/lib/i18n";
@@ -344,6 +345,8 @@ export function Shell({ children }: { children: ReactNode }) {
             );
           })}
           <div className="flex-1" />
+          {/* The version, and whether there is an update (ADR-048). */}
+          <SidebarUpdate folded={folded} />
           <Button
             variant="ghost"
             size="sm"

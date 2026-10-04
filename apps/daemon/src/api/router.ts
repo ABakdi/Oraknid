@@ -93,6 +93,8 @@ import {
   SystemStatus,
   type TaskView,
   ToolView,
+  UpdateRun,
+  UpdatesView,
   UpdateTool,
 } from "@oraknid/contracts";
 import { scrubDeep, scrubSecrets } from "@oraknid/core";
@@ -184,6 +186,7 @@ import type { SkillStore } from "../skills/store.ts";
 import { pruneLogs, storageUsage } from "../storage/storage.ts";
 import { TERMINAL_SETTING } from "../term/server.ts";
 import type { ToolRegistry } from "../tools/registry.ts";
+import type { Asker, Updates } from "../updates/service.ts";
 import { VERSION } from "../version.ts";
 import { type GitHub, GitHubError } from "../workspace/github.ts";
 import type { Repos } from "../workspace/github-repos.ts";
@@ -259,6 +262,8 @@ export interface ApiContext {
   /** My mail (ADR-032). */
   mail: MailService;
   devices: Devices;
+  /** Oraknid's own updates (ADR-048). */
+  updates: Updates;
   brain: EyeBrain;
   /** Opens a folder on this machine (xdg-open). */
   openPath: (path: string) => void;
@@ -609,6 +614,12 @@ async function guard<T>(fn: () => Promise<T> | T): Promise<T> {
   }
 }
 
+/** Who asks for an update: the CLI and a device at home, or away from home with its rights (ADR-030). */
+const asker = (c: ApiContext): Asker => ({
+  remote: c.remote,
+  full: c.device === null || c.devices.isFull(c.device),
+});
+
 // Procedures follow docs/02-Architecture/API-Contract.md. Later milestones add the rest.
 /** What runs on a server (ADR-043): each part read while its screen asks; restarting asked first. */
 const ServerPart = z.object({ id: z.string(), fresh: z.boolean().optional() });
@@ -687,6 +698,29 @@ export const router = {
         service: c.service.status(),
       }),
     ),
+  },
+  /** Oraknid's own updates (ADR-048). */
+  updates: {
+    status: base.output(UpdatesView).handler(({ context: c }) => c.updates.view(asker(c))),
+    /** Check now: asks GitHub at once; a failure is in the view, in words. */
+    check: base.output(UpdatesView).handler(async ({ context: c }) => {
+      await c.updates.check();
+      return c.updates.view(asker(c));
+    }),
+    /** Update now; `confirm` when jobs are running (they pause and go on after the restart). */
+    run: base
+      .input(z.object({ confirm: z.boolean().default(false) }))
+      .output(UpdateRun)
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          const who = asker(c);
+          if (who.remote && !who.full)
+            throw new ORPCError("FORBIDDEN", {
+              message: "Updating Oraknid away from home needs a device with full rights.",
+            });
+          return c.updates.run(who, input);
+        }),
+      ),
   },
   secrets: {
     unlock: base.input(z.object({ passphrase: z.string() })).handler(({ context: c, input }) => {
