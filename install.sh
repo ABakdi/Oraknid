@@ -2,12 +2,12 @@
 # Install Oraknid, start it, and keep it running in the background.
 # docs/04-Decisions/ADR-036-One-Script-Install.md
 #
-#   curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/main/install.sh | sh     (main: the latest release)
 #   curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/dev/install.sh | sh -s -- --dev
 #   sh install.sh [options]          (from a clone)
 #
 # Options:
-#   --ref <branch>       what to install (default: main)
+#   --ref <branch|tag>   what to install (default: main, the latest release)
 #   --dev                the dev branch, where the newest work is: the same as --ref dev
 #   --dir <path>         where the program lives (default: ~/.local/share/oraknid/app)
 #   --from <path|url>    the repository to install from (default: GitHub)

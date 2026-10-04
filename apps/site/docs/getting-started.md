@@ -15,6 +15,9 @@ The install script brings the rest.
 curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/main/install.sh | sh
 ```
 
+That installs the latest release (`main` follows the releases); each [release](https://github.com/ABakdi/Oraknid/releases) carries its own `install.sh`, pinned to it. For the newest work, from the `dev` branch, add `--dev` to the script from `dev`:
+`curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/dev/install.sh | sh -s -- --dev`.
+
 Run it as yourself, not as root. It asks for `sudo` only to install what is missing, and prints every command it runs:
 
 - **git**, **bubblewrap** (`bwrap`: every agent runs in a sandbox), **Python 3** and a C++ compiler, from your distribution (apt, dnf, pacman, zypper or apk);

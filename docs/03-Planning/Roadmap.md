@@ -47,6 +47,9 @@ piano job's last push check (mine to resume), M13.12's SQLite files and
 in-container sizes, and Audit-2 S2-02 (fixed in part). Next: those
 hands-on runs, then Later.
 
+**Released (2026-10-04): v0.1.0**, a pre-release of Phases 1 to 13
+([[ADR-047-Releases]], [CHANGELOG](../../CHANGELOG.md)).
+
 Phase notes for Later and the Windows phase are written when their turn comes.
 
 ## Changes of order
