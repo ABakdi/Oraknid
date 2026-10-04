@@ -26,6 +26,12 @@ Agents reach the internet, but none of the services running on your computer. If
 
 Add a server with its address and a password or key. Oraknid installs a key of its own, reads what runs there (only reads) and writes a **state document**: services, ports, what must not break. A small `oraknid-monitor` script reports CPU, memory, disk and network every few seconds.
 
+For a key, **choose its file** (usually `~/.ssh/id_ed25519`, the one without `.pub`; in the file picker, Ctrl+H shows hidden folders like `.ssh`) or drop it on the box: the dialog shows the file's name and the kind of key it read, and asks for the passphrase when the key has one. **Paste it instead** is there too. A public key (`.pub`) is caught before you save. **Fix wording** next to the description tidies your words (spelling, grammar, clarity, nothing added), and **Undo** brings yours back.
+
+**Test connection** tries what you typed before you save: it says "Logged in as root: Linux 6.1 (vps1)" with the server's host key, or why not, in plain words (wrong password or key, passphrase needed, no such host, nothing listening on that port, no answer, or a host key that changed).
+
+Made a mistake, or the server moved? **Edit** in its header (or **Fix the connection** under its error) opens the same dialog filled in: change the name, description, address, port, user, key or password, and test again. Leave the key and password empty to keep the ones you gave. A new address forgets the old host key; a new password means **Set up** again.
+
 A server's page has tabs for what runs there, each read only while you look at it and never stored:
 
 - **Docker**: containers grouped by compose project, with their state, health, uptime, ports, CPU and memory; images, volumes and networks, with the unused ones marked.
