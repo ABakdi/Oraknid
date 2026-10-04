@@ -1,4 +1,5 @@
 import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
+import { join } from "node:path";
 import {
   Autonomy,
   Budget,
@@ -77,11 +78,14 @@ import {
   ServerDocker,
   ServerLogSource,
   ServerLogs,
+  ServerPatch,
   ServerProxies,
   ServerRestart,
   ServerRole,
   ServerSample,
   ServerState,
+  ServerTest,
+  ServerTestResult,
   ServerTraffic,
   ServerView,
   SessionLogPage,
@@ -92,6 +96,7 @@ import {
   StorageUsage,
   SystemStatus,
   type TaskView,
+  TextPolish,
   ToolView,
   UpdateTool,
 } from "@oraknid/contracts";
@@ -149,6 +154,7 @@ import {
   writeGlobalPolicy,
   writeProjectPolicy,
 } from "../eye/policy.ts";
+import { polishText } from "../eye/polish.ts";
 import {
   answerInProject,
   conversation,
@@ -924,18 +930,19 @@ export const router = {
       .input(NewServer)
       .output(ServerView)
       .handler(({ context: c, input }) => guard(() => c.servers.add(input))),
+    /** Anything about it: name, description, address, user, or new credentials (empty: the kept ones). */
     update: base
-      .input(
-        z.object({
-          id: z.string(),
-          name: z.string().min(1).optional(),
-          description: z.string().optional(),
-        }),
-      )
+      .input(ServerPatch)
+      .output(ServerView)
       .handler(({ context: c, input }) => {
         const { id, ...patch } = input;
         return guard(() => c.servers.update(id, patch));
       }),
+    /** Test connection: the form as it is, nothing saved; with `id`, missing credentials are the kept ones. */
+    test: base
+      .input(ServerTest)
+      .output(ServerTestResult)
+      .handler(({ context: c, input }) => guard(() => c.servers.test(input))),
     /** Oraknid's key, discovery, the state document and oraknid-monitor, with my click. */
     setup: base
       .input(z.object({ id: z.string() }))
@@ -970,6 +977,15 @@ export const router = {
   backups: backupsRouter,
   /** Cloud storage: providers and the pool (ADR-046). */
   cloud: cloudRouter,
+  /** A text of mine rephrased by a quick model, for any textarea (Chats-and-Helper → Fix wording). */
+  text: {
+    polish: base
+      .input(TextPolish)
+      .output(z.object({ text: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(() => polishText(c.brain, join(c.tmpDir, "polish"), input)),
+      ),
+  },
   /** The Oraknid helper: what I ask in words, done through this API (ADR-024). */
   helper: {
     conversation: base

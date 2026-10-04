@@ -9,9 +9,56 @@ a job I started does so, through its approvals.
 ## Adding a server
 
 On the **Servers** page, **Add a server**: a name, the host, the port
-and the user, how to log in (a password, or a private key I paste),
-and in my words what it is and what it has ("the VPS for my sites:
-nginx, two Node apps under pm2, Postgres").
+and the user, how to log in (a password, or a private key), and in my
+words what it is and what it has ("the VPS for my sites: nginx, two
+Node apps under pm2, Postgres"). **Fix wording** next to the
+description rewrites it with a quick model (Chats-and-Helper → Fix
+wording); **Undo** brings mine back.
+
+A private key is given as **its file** first (2026-10-04): a box to
+choose the file or drop it on, which then shows the file's name and
+what was read ("id_ed25519 · OpenSSH private key", and "with a
+passphrase" when its header says so). **Paste it instead** opens a box
+of fixed size that scrolls both ways, without wrapping, so a long key
+never stretches the dialog. Before anything is sent the form looks at
+the key lightly: a public key (`ssh-ed25519 …`, a `.pub`) or text that
+isn't a key is said in words and can't be saved; the daemon has the
+last word when it connects.
+
+### Testing the connection (2026-10-04)
+
+**Test connection**, in the add dialog and the edit one, tries the form
+as it is, before anything is saved (`servers.test`): it connects over
+SSH with a 10-second limit and runs `uname -sr; uname -n`. It says
+either "Logged in as root: Linux 6.1.0 (vps1)." with the host key's
+fingerprint, or why not, in plain words (the same words the backups'
+checks use, `sshWords` in `servers/ssh.ts`): the login refused (wrong
+password or key), the key has a passphrase and none was given, the
+passphrase doesn't open the key, it is a public key, no host by that
+name, the connection refused (SSH not running on that port), no answer
+(off, or a firewall), or another host key than the one pinned, with
+its fingerprint. Nothing is pinned or kept by a test. Away from home
+it is refused like adding a server.
+
+### Editing a server (2026-10-04)
+
+**Edit**, in a server's header, and **Fix the connection** next to an
+error (also on a project's servers, "Can't connect: fix it"), opens the
+same dialog filled in with the server: its name, description, host,
+port and user, and empty credentials, which mean "keep the current
+ones". Anything can be changed (`servers.update`):
+
+- A **new host or port** forgets the pinned host key (the next
+  connection pins the new one, shown by Test connection) and
+  oraknid-monitor's install there.
+- A **new private key** (with its passphrase, or none) replaces the
+  kept key or password; a **passphrase alone** goes with the key kept.
+- A **new password** replaces the key, and the server is to set up
+  again: Set up installs Oraknid's key with it, as for a new one.
+- Its connection is dropped and its error cleared: the next use
+  connects with what was saved.
+
+`server.updated` names the fields changed, never a secret.
 
 The first connection checks the host key and shows its fingerprint;
 it is pinned from then on, and a different key later stops every

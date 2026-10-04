@@ -72,6 +72,41 @@ export function connect(
   });
 }
 
+/**
+ * Why a server couldn't be reached over SSH, in plain words: for the
+ * backups' checks and Test connection (Servers → Testing the connection).
+ */
+export function sshWords(
+  error: unknown,
+  srv: { name: string; host: string; port: number; user: string } | null,
+): string {
+  const m = error instanceof Error ? error.message : String(error);
+  const code = (error as NodeJS.ErrnoException | undefined)?.code ?? "";
+  if (!srv) return m;
+  const at = `${srv.host}:${srv.port}`;
+  // The key itself, before anything goes on the wire.
+  if (/no passphrase given/i.test(m))
+    return "This private key has a passphrase: type it under the key.";
+  if (/bad passphrase|integrity check failed|Failed to decrypt/i.test(m))
+    return "The passphrase doesn't open this private key.";
+  if (
+    /does not contain a \(valid\) private key|Unsupported key format|Cannot parse privateKey/i.test(
+      m,
+    )
+  )
+    return "That isn't a private key Oraknid can read: give the private one (not the .pub), in OpenSSH or PEM format.";
+  if (code === "ECONNREFUSED" || /ECONNREFUSED/.test(m))
+    return `${srv.name} (${at}) refused the connection: is SSH running there, on that port?`;
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN" || /getaddrinfo/.test(m))
+    return `There's no host "${srv.host}": check ${srv.name}'s address.`;
+  if (/Timed out|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|took too long/i.test(`${code} ${m}`))
+    return `${srv.name} (${at}) gave no answer: it may be off, or a firewall is in the way.`;
+  if (/authentication methods failed/i.test(m))
+    return `${srv.name} refused the SSH login of ${srv.user}: check the server's key or password.`;
+  if (/host key/i.test(m)) return `${m} (Servers → ${srv.name}).`;
+  return `${srv.name} couldn't be reached over SSH: ${m}`;
+}
+
 /** One command; its exit code and output (each capped). */
 export function exec(
   client: Client,

@@ -16,8 +16,6 @@ import {
 } from "@/components/server-insight";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api, message } from "@/lib/api";
 import { ago, bytes } from "@/lib/format";
@@ -141,7 +139,8 @@ const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0);
 function ServerDetail({ s, tab }: { s: ServerView; tab?: string }) {
   const [, go] = useLocation();
   const { confirm, dialog } = useConfirm();
-  const [editing, setEditing] = useState<{ name: string; description: string } | null>(null);
+  // The add dialog, editing this server (Servers → Editing a server).
+  const [editing, setEditing] = useState(false);
   const remove = async () => {
     if (
       !(await confirm(
@@ -215,6 +214,16 @@ function ServerDetail({ s, tab }: { s: ServerView; tab?: string }) {
           {t("Discover again")}
         </Button>
         <Button
+          data-help="server.edit"
+          size="sm"
+          variant="secondary"
+          className="gap-1"
+          onClick={() => setEditing(true)}
+        >
+          <Pencil className="size-3.5" />
+          {t("Edit")}
+        </Button>
+        <Button
           data-help="server.terminal"
           size="sm"
           variant="secondary"
@@ -226,7 +235,14 @@ function ServerDetail({ s, tab }: { s: ServerView; tab?: string }) {
         </Button>
       </div>
       {s.error ? (
-        <div className="text-sm text-destructive [overflow-wrap:anywhere]">{s.error}</div>
+        <div className="flex flex-wrap items-start gap-2 text-sm text-destructive">
+          <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{s.error}</span>
+          {/* A wrong address, user or key: fixed and tested in the same dialog. */}
+          <Button size="sm" variant="secondary" className="gap-1" onClick={() => setEditing(true)}>
+            <Pencil className="size-3.5" />
+            {t("Fix the connection")}
+          </Button>
+        </div>
       ) : null}
       {s.hostKeyOffered ? (
         <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
@@ -261,66 +277,12 @@ function ServerDetail({ s, tab }: { s: ServerView; tab?: string }) {
             ? t("Seen {when}.", { when: ago(s.lastSeenAt) })
             : ""}
       </div>
-      {editing ? (
-        <form
-          className="space-y-3 rounded-md border p-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void act(
-              api.servers
-                .update({
-                  id: s.id,
-                  name: editing.name.trim(),
-                  description: editing.description,
-                })
-                .then(() => setEditing(null)),
-              t("Saved."),
-            );
-          }}
-        >
-          <div className="space-y-1.5">
-            <Label htmlFor="se-name">{t("Name")}</Label>
-            <Input
-              id="se-name"
-              value={editing.name}
-              onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="se-desc">{t("What it is and what it has")}</Label>
-            <Textarea
-              id="se-desc"
-              rows={3}
-              value={editing.description}
-              onChange={(e) => setEditing({ ...editing, description: e.target.value })}
-            />
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button type="button" size="sm" variant="secondary" onClick={() => setEditing(null)}>
-              {t("Cancel")}
-            </Button>
-            <Button type="submit" size="sm" disabled={!editing.name.trim()}>
-              {t("Save")}
-            </Button>
-          </div>
-        </form>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            variant="secondary"
-            className="gap-1"
-            onClick={() => setEditing({ name: s.name, description: s.description })}
-          >
-            <Pencil className="size-3.5" />
-            {t("Edit")}
-          </Button>
-          <Button size="sm" variant="ghost" className="gap-1 text-destructive" onClick={remove}>
-            <Trash2 className="size-3.5" />
-            {t("Remove this server")}
-          </Button>
-        </div>
-      )}
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="ghost" className="gap-1 text-destructive" onClick={remove}>
+          <Trash2 className="size-3.5" />
+          {t("Remove this server")}
+        </Button>
+      </div>
     </div>
   );
   // A server's tabs (ADR-043): what runs there is read only once it is set up.
@@ -376,6 +338,7 @@ function ServerDetail({ s, tab }: { s: ServerView; tab?: string }) {
         <>
           {header}
           {dialog}
+          <AddServer server={s} open={editing} onOpenChange={setEditing} />
         </>
       }
       className="mb-0 h-full md:mb-0 md:h-full"

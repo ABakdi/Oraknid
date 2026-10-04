@@ -306,6 +306,7 @@ export const HOME_ONLY = [
   "/projects/delete",
   "/servers/add",
   "/servers/update",
+  "/servers/test",
   "/servers/setup",
   "/servers/acceptHostKey",
   "/servers/editState",

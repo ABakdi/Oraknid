@@ -19,6 +19,22 @@ The **Chats** page, like a chat app:
 - A chat keeps its messages; it is named from its first message,
   renamable and deletable. Coming back to a chat continues it.
 
+## Fix wording (2026-10-04)
+
+A small button, **Fix wording**, next to a textarea where I describe
+something in my words (first a server's description): one call to The
+Eye's quick model (`text.polish({text, kind})`, `polishText` in The
+Eye's brain, the same pick of model as a job's name) rewrites the text
+with its spelling and grammar fixed and made clear, keeping its
+meaning, its language and every fact (names, versions, numbers,
+addresses, paths). The text goes to the model as data, never as
+instructions; nothing is kept by the daemon. The rewrite replaces my
+text, and **Undo** (in the toast, and next to the button until I
+change the text again) brings mine back. With no model, it says so
+plainly ("No model can rephrase text right now: add a Leg, or choose
+The Eye's quick model"). The web app's `PolishButton` puts it on any
+textarea.
+
 ## The Oraknid helper ([[ADR-024-Oraknid-Helper]])
 
 A round button at the bottom left of every screen opens a small chat

@@ -1,5 +1,13 @@
 import { mkdirSync } from "node:fs";
-import type { NewServer, ServerSample, ServerState, ServerView } from "@oraknid/contracts";
+import type {
+  NewServer,
+  ServerPatch,
+  ServerSample,
+  ServerState,
+  ServerTest,
+  ServerTestResult,
+  ServerView,
+} from "@oraknid/contracts";
 import { and, asc, desc, eq, lt } from "drizzle-orm";
 import ssh2, { type Client } from "ssh2";
 import type { Db } from "../db/open.ts";
@@ -11,7 +19,7 @@ import type { Secrets } from "../os/secrets.ts";
 import { discover } from "./discovery.ts";
 import { insightSummary, ServerInsight } from "./insight.ts";
 import { MONITOR_HASH, MONITOR_PATH, MONITOR_SCRIPT } from "./monitor.ts";
-import { connect, exec, isHostKeyChanged, newKeyPair, q } from "./ssh.ts";
+import { connect, exec, isHostKeyChanged, newKeyPair, q, sshWords } from "./ssh.ts";
 
 // My servers (Servers, ADR-026/027): reached over SSH with Oraknid's own
 // key, discovered read-only, documented by The Eye, sampled by
@@ -23,6 +31,8 @@ const KEY = (id: string) => `server.${id}.key`;
 const PASSWORD = (id: string) => `server.${id}.password`;
 const PASSPHRASE = (id: string) => `server.${id}.passphrase`;
 const DAY = 24 * 3600_000;
+/** How long Test connection waits for the server, and for its answer. */
+const TEST_TIMEOUT_MS = 10_000;
 
 export class Servers {
   readonly #busy = new Map<string, string>();
@@ -110,14 +120,25 @@ export class Servers {
       .map((r) => this.view(r));
   }
 
+  /** A private key (and its passphrase) or a password into the keychain, in place of what was there. */
+  async #keep(id: string, c: { privateKey?: string; password?: string; passphrase?: string }) {
+    if (c.privateKey) {
+      await this.o.secrets.set(KEY(id), `${c.privateKey.trim()}\n`);
+      await this.o.secrets.delete(PASSWORD(id));
+      if (c.passphrase) await this.o.secrets.set(PASSPHRASE(id), c.passphrase);
+      else await this.o.secrets.delete(PASSPHRASE(id));
+    } else if (c.password) {
+      await this.o.secrets.set(PASSWORD(id), c.password);
+      await this.o.secrets.delete(KEY(id));
+      await this.o.secrets.delete(PASSPHRASE(id));
+    }
+  }
+
   async add(input: NewServer): Promise<ServerView> {
     if (!input.password && !input.privateKey)
       throw new Error("Give a password (used once) or a private key.");
     const id = newId(this.#now());
-    if (input.privateKey) await this.o.secrets.set(KEY(id), `${input.privateKey.trim()}\n`);
-    if (input.privateKey && input.passphrase)
-      await this.o.secrets.set(PASSPHRASE(id), input.passphrase);
-    if (input.password) await this.o.secrets.set(PASSWORD(id), input.password);
+    await this.#keep(id, input);
     this.o.db
       .insert(servers)
       .values({
@@ -135,11 +156,125 @@ export class Servers {
     return this.view(this.row(id));
   }
 
-  async update(id: string, patch: { name?: string; description?: string }) {
-    this.row(id);
-    if (!Object.keys(patch).length) return;
-    this.o.db.update(servers).set(patch).where(eq(servers.id, id)).run();
-    this.#publish("server.updated", { id });
+  /**
+   * Anything about a server, changed after it was added (Servers → Editing
+   * a server). A new address forgets the pinned host key (the next
+   * connection pins the new one) and oraknid-monitor's install; a new
+   * password makes it a server to set up again, which installs Oraknid's key
+   * with it. Its connection is dropped: the next use connects with the new.
+   */
+  async update(id: string, patch: Omit<ServerPatch, "id">): Promise<ServerView> {
+    const r = this.row(id);
+    const { privateKey, password, passphrase, ...fields } = patch;
+    if (privateKey && password) throw new Error("Give a private key or a password, not both.");
+    if (passphrase && !privateKey && r.auth !== "my-key")
+      throw new Error("A passphrase goes with a private key of yours: give the key too.");
+    const set: Partial<ServerRow> = {};
+    for (const [k, v] of Object.entries(fields))
+      if (v !== undefined && v !== r[k as keyof ServerRow]) Object.assign(set, { [k]: v });
+    const moved = set.host !== undefined || set.port !== undefined;
+    if (moved)
+      Object.assign(set, {
+        hostKey: null,
+        hostKeyLine: null,
+        hostKeyOffered: null,
+        monitorHash: null,
+      });
+    if (privateKey) set.auth = "my-key";
+    if (password) Object.assign(set, { auth: "password", setup: "new" });
+    const reach = moved || set.user !== undefined || !!privateKey || !!password || !!passphrase;
+    if (reach) set.error = null;
+    if (privateKey || password) await this.#keep(id, { privateKey, password, passphrase });
+    else if (passphrase) await this.o.secrets.set(PASSPHRASE(id), passphrase);
+    if (Object.keys(set).length) this.o.db.update(servers).set(set).where(eq(servers.id, id)).run();
+    if (reach) this.#drop(id);
+    this.o.bus.publish({
+      type: "server.updated",
+      topic: "overview",
+      jobId: null,
+      // What changed, never a secret.
+      payload: {
+        id,
+        fields: [
+          ...Object.keys(fields).filter((k) => k in set),
+          ...(privateKey ? ["privateKey"] : []),
+          ...(password ? ["password"] : []),
+          ...(passphrase ? ["passphrase"] : []),
+        ],
+        ...(moved ? { hostKeyCleared: true } : {}),
+      },
+      actor: "owner",
+    });
+    return this.view(this.row(id));
+  }
+
+  /**
+   * Test connection (Servers → Testing the connection): the form's values,
+   * nothing saved, a short timeout. With a server's id, credentials left out
+   * are the kept ones, and its pinned host key is checked while the address
+   * is the same.
+   */
+  async test(input: ServerTest): Promise<ServerTestResult> {
+    const r = input.id ? this.row(input.id) : null;
+    let creds: { privateKey?: string; password?: string; passphrase?: string } = input;
+    if (r && !input.privateKey && !input.password) {
+      const privateKey = await this.o.secrets.get(KEY(r.id));
+      const password = privateKey ? undefined : await this.o.secrets.get(PASSWORD(r.id));
+      const passphrase = input.passphrase ?? (await this.o.secrets.get(PASSPHRASE(r.id)));
+      creds = {
+        ...(privateKey ? { privateKey } : {}),
+        ...(password ? { password } : {}),
+        ...(privateKey && passphrase ? { passphrase } : {}),
+      };
+    }
+    const none = { system: null, hostname: null, fingerprint: null };
+    if (!creds.privateKey && !creds.password)
+      return { ok: false, said: "Give a private key or a password to try.", ...none };
+    const same = r && r.host === input.host && r.port === input.port;
+    const srv = {
+      name: r?.name || input.host,
+      host: input.host,
+      port: input.port,
+      user: input.user,
+    };
+    let client: Client | undefined;
+    try {
+      const c = await connect(
+        {
+          host: input.host,
+          port: input.port,
+          user: input.user,
+          hostKey: same && r ? r.hostKey : null,
+          ...(creds.privateKey ? { privateKey: creds.privateKey } : { password: creds.password }),
+          ...(creds.privateKey && creds.passphrase ? { passphrase: creds.passphrase } : {}),
+        },
+        TEST_TIMEOUT_MS,
+      );
+      client = c.client;
+      const res = await exec(client, "uname -sr; uname -n", { timeoutMs: TEST_TIMEOUT_MS });
+      const [system = "", hostname = ""] = res.stdout.trim().split("\n");
+      const what = [system.trim(), hostname.trim() && `(${hostname.trim()})`]
+        .filter(Boolean)
+        .join(" ");
+      return {
+        ok: true,
+        said: `Logged in as ${input.user}${what ? `: ${what}` : ""}.`,
+        system: system.trim() || null,
+        hostname: hostname.trim() || null,
+        fingerprint: c.fingerprint,
+      };
+    } catch (error) {
+      if (isHostKeyChanged(error))
+        return {
+          ok: false,
+          said: `The server presented another host key than the one pinned (now ${error.offered}). Only trust it if you know why it changed; save, then accept it on the server's page.`,
+          ...none,
+          fingerprint: error.offered,
+        };
+      return { ok: false, said: sshWords(error, srv), ...none };
+    } finally {
+      client?.end();
+    }
   }
 
   /** Connects with what the keychain holds, pinning the host key the first time. */

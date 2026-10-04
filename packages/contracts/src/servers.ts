@@ -19,6 +19,52 @@ export const NewServer = z.object({
 });
 export type NewServer = z.infer<typeof NewServer>;
 
+/**
+ * A server changed after it was added (Servers → Editing a server): what is
+ * given changes, what is left out stays. A new private key or password
+ * replaces the kept credentials; a passphrase alone goes with the kept key.
+ */
+export const ServerPatch = z.object({
+  id: Id,
+  name: z.string().min(1).max(60).optional(),
+  description: z.string().optional(),
+  host: z.string().min(1).optional(),
+  port: z.number().int().min(1).max(65535).optional(),
+  user: z.string().min(1).optional(),
+  password: z.string().min(1).optional(),
+  privateKey: z.string().min(1).optional(),
+  passphrase: z.string().min(1).optional(),
+});
+export type ServerPatch = z.infer<typeof ServerPatch>;
+
+/**
+ * Test connection (Servers → Testing the connection): the form as it is,
+ * nothing saved. With `id`, credentials left out are the kept ones, and the
+ * pinned host key is checked while the address is the same.
+ */
+export const ServerTest = z.object({
+  id: Id.optional(),
+  host: z.string().min(1),
+  port: z.number().int().min(1).max(65535).default(22),
+  user: z.string().min(1),
+  password: z.string().min(1).optional(),
+  privateKey: z.string().min(1).optional(),
+  passphrase: z.string().min(1).optional(),
+});
+export type ServerTest = z.infer<typeof ServerTest>;
+
+export const ServerTestResult = z.object({
+  ok: z.boolean(),
+  /** In plain words: what it found, or why it couldn't. */
+  said: z.string(),
+  /** `uname -sr` there, when it got in. */
+  system: z.string().nullable(),
+  hostname: z.string().nullable(),
+  /** The host key it presented (a new one, when it changed). */
+  fingerprint: z.string().nullable(),
+});
+export type ServerTestResult = z.infer<typeof ServerTestResult>;
+
 /** One reading of oraknid-monitor. */
 export const ServerSample = z.object({
   at: Timestamp,

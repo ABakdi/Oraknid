@@ -1,7 +1,8 @@
-import { isProduction, type ServerRole } from "@oraknid/contracts";
+import { isProduction, type ServerRole, type ServerView } from "@oraknid/contracts";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Link } from "wouter";
+import { AddServer } from "@/components/add-server";
 import { Loading } from "@/components/common";
 import { AddServerButton } from "@/components/setup";
 import { Badge } from "@/components/ui/badge";
@@ -85,6 +86,8 @@ export function ProjectServersCard({ projectId }: { projectId: string }) {
     topics: ["overview"],
     refreshOn: (e) => e.type.startsWith("server."),
   });
+  // A server that can't be reached, fixed from here (Servers → Editing a server).
+  const [fixing, setFixing] = useState<ServerView | null>(null);
   const projects = useLive(() => api.projects.list(), {
     topics: ["overview"],
     refreshOn: (e) => e.type === "project.servers",
@@ -147,6 +150,17 @@ export function ProjectServersCard({ projectId }: { projectId: string }) {
                 {s.busy ?? t("Set it up")}
               </Button>
             ) : null}
+            {s.error ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                title={s.error}
+                className="text-destructive"
+                onClick={() => setFixing(s)}
+              >
+                {t("Can't connect: fix it")}
+              </Button>
+            ) : null}
             {set.includes(s.id) && s.setup === "ready" ? (
               <ServerRoleFields
                 key={JSON.stringify(project.serverRoles?.[s.id] ?? null)}
@@ -168,6 +182,15 @@ export function ProjectServersCard({ projectId }: { projectId: string }) {
         <AddServerButton
           onAdded={(x) => toast.success(t("Set {name} up, then tick it here.", { name: x.name }))}
         />
+        {fixing ? (
+          <AddServer
+            server={fixing}
+            open
+            onOpenChange={(o) => {
+              if (!o) setFixing(null);
+            }}
+          />
+        ) : null}
       </CardContent>
     </Card>
   );
