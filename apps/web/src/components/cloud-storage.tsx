@@ -79,6 +79,7 @@ const KIND_NAMES: Record<CloudProviderView["kind"], string> = {
   drive: "Google Drive",
   dropbox: "Dropbox",
   mega: "MEGA",
+  rclone: "rclone",
 };
 
 const GiB = 1 << 30;

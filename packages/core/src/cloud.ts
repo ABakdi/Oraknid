@@ -9,6 +9,8 @@ export interface PlaceCandidate {
   id: string;
   name: string;
   kind: CloudKind;
+  /** Object storage (buckets): what "by size" sends large files to; s3 when not said. */
+  object?: boolean;
   /** Bytes free; null: unknown; Infinity: pay as you go. */
   free: number | null;
   priority: number;
@@ -31,7 +33,7 @@ export function bytesText(n: number): string {
   return `${u === 0 ? v : v.toFixed(v >= 10 ? 0 : 1)} ${units[u]}`;
 }
 
-const isObject = (k: CloudKind) => k === "s3";
+const isObject = (c: PlaceCandidate) => c.object ?? c.kind === "s3";
 
 /** Most free first, then the priority order. */
 const byFree = (a: PlaceCandidate, b: PlaceCandidate) =>
@@ -77,8 +79,8 @@ export function choosePlace(
   if (placement.rule === "priority") order = [...fits].sort(byPriority);
   else if (placement.rule === "size") {
     const large = size >= placement.largeFromBytes;
-    const first = fits.filter((c) => isObject(c.kind) === large).sort(byFree);
-    const then = fits.filter((c) => isObject(c.kind) !== large).sort(byFree);
+    const first = fits.filter((c) => isObject(c) === large).sort(byFree);
+    const then = fits.filter((c) => isObject(c) !== large).sort(byFree);
     order = [...first, ...then];
   } else order = [...fits].sort(byFree);
   return { ok: true, id: (order[0] as PlaceCandidate).id };
