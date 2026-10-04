@@ -8,8 +8,9 @@ Whoever drives Oraknid drives your computer. These are the walls that keep it yo
 - Each sandbox has a **network of its own** (pasta): the internet, but not your local services or your desktop. A project can open the specific ports it needs.
 - A **Landlock** rule keeps agents away from your desktop's sockets.
 - Every command an agent wants to run is judged against your rules. Commands hidden inside others (`bash -c`, `find -exec`, `xargs`) are read through.
-- Pushes, merges, deploys, sending mail and spending money always wait for your approval.
-- Content from the web, mail or untrusted files is labelled as data in every prompt, and a task that read it can't trigger a gated action alone.
+- An agent can't write outside its job's folder (its own `/tmp` and home aside): such a write is refused, not asked, and the agent is told to work in its folder.
+- Deploys, sending mail, spending money and pushes anywhere but the project's own GitHub repo always wait for your approval. Merging into your work branch and pushing to the project's repo are Oraknid's own steps at the end of a job, and happen only when you asked for them.
+- Content from the web, mail or untrusted files is labelled as data in every prompt, and a task that read it can't trigger a gated action alone. Reading the project's own GitHub repo doesn't count as untrusted.
 
 ## Only you open it
 

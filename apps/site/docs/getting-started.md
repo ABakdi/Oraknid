@@ -19,6 +19,7 @@ Run it as yourself, not as root. It asks for `sudo` only to install what is miss
 
 - **git**, **bubblewrap** (`bwrap`: every agent runs in a sandbox), **Python 3** and a C++ compiler, from your distribution (apt, dnf, pacman, zypper or apk);
 - **passt**, so each sandbox gets its own network and can't reach your desktop or your local services (recommended);
+- **rclone**, for Cloud storage (recommended; without it only Cloud storage waits, and `oraknid doctor` says how to install it);
 - **Node 22.12 or newer**: your distribution's when it is recent enough, otherwise one from nodejs.org, checked against its checksum and kept inside Oraknid's folder;
 - **pnpm**, through corepack.
 
@@ -42,6 +43,7 @@ curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/dev/install.sh | sh 
 - `--dev`: install the `dev` branch, where the newest work is (the same as `--ref dev`). Until it is merged into `main`, this is the one to use.
 - `--ref <branch>`: what to install (default `main`).
 - `--dir <path>`: where the program lives (default `~/.local/share/oraknid/app`).
+- `--from <path|url>`: install from another clone, a folder or a git URL, instead of GitHub.
 - `--no-service`: build and link, but don't run it in the background.
 - `--uninstall`: remove the service and the `oraknid` command. Your data stays.
 
@@ -49,7 +51,7 @@ Run it again to update: it fetches, rebuilds, and restarts the service.
 
 ### By hand
 
-If you'd rather do each step yourself, you need Node 22.12 or newer, pnpm 9, git, bubblewrap, Python 3 and a C++ compiler (passt recommended):
+If you'd rather do each step yourself, you need Node 22.12 or newer, pnpm 9, git, bubblewrap, Python 3 and a C++ compiler (passt and rclone recommended):
 
 ```sh
 git clone -b dev {{repo}}.git

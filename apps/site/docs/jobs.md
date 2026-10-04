@@ -6,7 +6,7 @@ A **job** is one piece of work: a goal in a project. **The Eye** is the part of 
 
 In a project, ask for it in the project's **The Eye** tab: The Eye starts a job, or adds the work to the one running. **New work** is for a first request, a new project, or a draft to keep and start later. The Eye may ask a few questions first, then writes the plan.
 
-Each job works on its own branch, in its own worktree inside your project. Your branch is never touched until you merge. In a project of several repos, the job's folder looks like the project's: each repo it works in is there at its folder, on the job's branch, and its tasks' checks run from that folder (`cd web && npm test`).
+Each job works on its own branch, in its own worktree inside your project. Your branch is never touched until the job is merged, by you or by Oraknid at the end when you asked for it. In a project of several repos, the job's folder looks like the project's: each repo it works in is there at its folder, on the job's branch, and its tasks' checks run from that folder (`cd web && npm test`).
 
 ## A job's name
 
@@ -39,7 +39,7 @@ The Eye asks with options, one question at a time, the one it recommends marked:
 
 ## Approvals
 
-Some actions always wait for you: a push, a merge, a deploy, sending mail, spending money. Others depend on the job's **autonomy**: Supervised asks about anything unusual, Standard asks less, Full only for the actions above. Answer in the **Inbox**, from your computer or your phone.
+Some actions always wait for you: a deploy, sending mail, spending money, a push anywhere but the project's GitHub repo, or a force-push. Others depend on the job's **autonomy**: Supervised asks about anything unusual, Standard asks less, Full only for the actions above. Answer in the **Inbox**, from your computer or your phone.
 
 Every answer says what it does: under **Approve** and **Deny** you read what follows (if you deny, the agent is told and tries another way, and you're asked if it can't). When a task keeps going wrong you choose between **Try again with my advice**, **Give it to another Leg**, **I'll do it myself**, **Leave it out** (the tasks that need it are listed and left out too) and **Stop the job** (the work stays on its branch).
 

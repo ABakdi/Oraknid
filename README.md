@@ -10,17 +10,21 @@ specifications, architecture, phases and decisions. Start at
 
 ## Status
 
-Phase 1 (the MVP) is in progress. See [the roadmap](docs/03-Planning/Roadmap.md).
+Phases 1 to 12 are built; Phase 13 (projects first) is built on `dev`.
+See [the roadmap](docs/03-Planning/Roadmap.md).
 
 ## Layout
 
 ```
 apps/daemon/          the service: The Eye, the API, the live socket, the CLI (`oraknid`)
 apps/web/             the web UI (React, shadcn/ui), served by the daemon
+apps/nest/            The Nest: the relay for away from home, and the phone loader
+apps/site/            the product site and the guide, served at a public Nest's root
 packages/contracts/   every entity, API shape and live frame, defined once (Zod)
 packages/os/          Linux integration: sandbox, sleep lock, secrets, metrics, notifications, service
-packages/core/        pure rules: life cycles, capability profiles
-packages/legs/        the Leg SDK and adapters: Claude Code, OpenAI-compatible
+packages/core/        pure rules: life cycles, capability profiles, the command policy
+packages/tunnel/      the end-to-end encrypted tunnel between a device and the daemon
+packages/legs/        the Leg SDK (sdk/) and adapters: claude-code, openai-compatible, opencode, antigravity
 docs/                 the canon
 ```
 
@@ -37,11 +41,13 @@ curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/dev/install.sh | sh 
 ```
 
 It installs what is missing (git, Node 22.12+, pnpm through corepack,
-bubblewrap, passt, Python 3, a C++ compiler), builds into
+bubblewrap, passt, Python 3, a C++ compiler, and rclone for Cloud
+storage), builds into
 `~/.local/share/oraknid/app`, links `oraknid` into `~/.local/bin`, runs
 `oraknid doctor`, and runs Oraknid in the background with systemd, OpenRC
 or runit (an autostart entry otherwise). It ends with the address and a
-pairing code. Options: `--ref`, `--dir`, `--no-service`, `--uninstall`
+pairing code. Options: `--dev`, `--ref`, `--dir`, `--from`, `--no-service`,
+`--uninstall`
 ([ADR-036](docs/04-Decisions/ADR-036-One-Script-Install.md)). Running it
 again updates.
 

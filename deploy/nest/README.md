@@ -12,8 +12,10 @@ keeps only a hash of each secret, in `/data/daemons.json` on its volume.
 `NEST_INVITE` makes registering need a code. A public Nest limits
 registrations per address per hour, the number of daemons, devices and
 bytes per daemon per day, and forgets a daemon unseen for 30 days. It
-sees who connects and how much, never what. Its page says whether it is
-public, and shows its loader fingerprint as before.
+sees who connects and how much, never what. A public Nest's site says
+it is public. A private Nest has no page since ADR-035 (its root answers
+a bare 404): the loader page, `https://<domain>/app/`, shows the loader
+fingerprint on either.
 
 1. A small VPS with Docker, and a domain (or subdomain) pointed at it.
 2. Clone this repository on it, then in `deploy/nest/`:
@@ -26,7 +28,7 @@ public, and shows its loader fingerprint as before.
    same daemon id (`home-1`).
 5. Pair a phone: Settings → Devices & phone → Show the code, and scan
    it with the phone. Compare the loader fingerprint shown at home with
-   the one at the bottom of the Nest's page.
+   the one at the bottom of the loader page (`https://<NEST_DOMAIN>/app/`).
 
 Updating: `git pull && docker compose up -d --build`.
 
@@ -38,7 +40,7 @@ site for the domain (checked with `nginx -t` before a reload), gets the
 certificate with certbot, and prints the id and secret for Settings.
 Other sites and containers are left alone; running it again updates it.
 
-    curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/main/deploy/nest/install.sh -o install.sh
+    curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/dev/deploy/nest/install.sh -o install.sh
     sudo sh install.sh nest.example.com --email me@example.com
 
 `--public` or `--private` (the default) chooses the mode, `--invite CODE`
