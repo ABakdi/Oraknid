@@ -48,6 +48,57 @@ shoudl take a look and make sure everything is im…" helped nobody):
   Workflow's boxes, the job's header, notifications; my goal stays as I
   wrote it, under the description. I can rename a job.
 
+**As built (2026-10-04, M13.17):**
+- **Stored**: `jobs.named_by` (`me` for a name I typed or gave it,
+  `eye`, null while it is its goal's first line), `jobs.description`,
+  `jobs.described_as` (`purpose`, `outcome`, `mine`), migration 0035.
+  A name I type when making a job sets `me`; The Eye never changes a
+  name or description of mine.
+- **Naming** (`eye/naming.ts`): listening to the event stream, one call
+  at a time, never holding up the job. A job made (from my message, a
+  follow-up, New work, a draft, the helper) asks `nameJob` on the quick
+  model (ADR-022; three minutes at most): a title of at most 60
+  characters, no end punctuation, no markdown, and one or two plain
+  sentences. An answer that breaks those rules is sent back once with
+  what's wrong, then dropped (the first line stays). A draft's goal
+  changed brings its first line back and names it again once I've
+  stopped typing for 15 s. Without a model ("No Leg can think…") the
+  call waits and is tried again when a Leg is added, changed or healthy
+  again, when The Eye's models change, and every 10 minutes.
+- **What it did**: when The Eye reports the job done, or stopped or
+  blocked with at least one task done (ADR-045), the same call gets that
+  report (its summary, facts such as the branch, the merge and the
+  pushes, what's left to me) and the tasks done, and the description
+  becomes what it did (`outcome`). A job not named yet gets its name in
+  the same call.
+- **Rename**: `jobs.rename` (name, description or both); an empty
+  description clears it. Allowed away from home, like the job's other
+  edits (autonomy, priority). Every change publishes `job.named`.
+- **Older jobs**: 30 s after the start, each job still named by its
+  goal's first line is named (an ended one with what it did, from The
+  Eye's last report, else its Silk), five seconds apart, on the quick
+  model I chose only (none chosen: they wait for one). A job whose title
+  isn't its first line was named by me: marked so, nothing asked.
+- **Shown**: Work's rows (two lines), the opened job's header (pencil,
+  description, **What I asked** folded), Running now, the Workflow's
+  boxes (a line, in full on hover), the Inbox's job line (on hover),
+  the command palette (and found by it). Notifications name the job in
+  a question's text and add its description to "Done".
+- **Tested**: `naming.test.ts` (a job from my message named, then what
+  it did from the report; a typed name kept and described; rename, and
+  mine kept through the end; no model: the first line, then named once
+  a model is back; a draft named again; the backfill on the quick model
+  only, ended jobs with what they did, a typed one left), `brain.test.ts`
+  (the quick model's call, a markdown answer sent back, the outcome
+  prompt, the backfill refused without a quick model), the web's
+  `job-heading.test.tsx` (rename, only what changed sent, the folded
+  goal, Work's row and the Workflow's box). By hand on a sample daemon
+  (fake OS, a scripted Leg, a stand-in brain; its own data folder and
+  port) at 1440 px and 390 px: Running now, Work, the header with the
+  goal opened, a rename shown live, the Workflow's boxes, the Inbox's
+  job line, the palette, and a job made without a model named once one
+  came back.
+
 ## Starting work (the New work page, Phase 8)
 
 In a project I already have, new work starts in its Eye tab: I write

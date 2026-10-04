@@ -36,7 +36,8 @@ device locks or is revoked (see [[Security]]).
 The topic pattern also accepts `chat:<id>`; nothing publishes there yet
 (chats use `chat.*` on `overview`).
 
-A job's state, its tasks' states and its sessions' starts and ends also
+A job's state, its tasks' states, its sessions' starts and ends, and its
+name or description changing (`job.named`, 2026-10-04) also
 reach `overview` subscribers as a hint to reload, at most 4/s per
 client, never stored or replayed ([[Audit-1]] Q1-05).
 

@@ -55,7 +55,9 @@ folder, the job branches and the worktrees in it stay).
 
 | Field | Meaning |
 | :-- | :-- |
-| `id`, `projectId`, `title`, `goal` | The goal is free text in my words. |
+| `id`, `projectId`, `title`, `goal` | The goal is free text in my words, kept as I wrote it. The title is a name The Eye gives it, or mine; its goal's first line until then. |
+| `namedBy` | Who named it (2026-10-04, [[Jobs-and-Projects]] → A job's name and description): `me` (typed or renamed, kept), `eye`, or null (still its first line). |
+| `description`, `describedAs` | One or two plain sentences: what it's for (`purpose`), what it did once it ended (`outcome`), or mine (`mine`, kept). |
 | `inputs` | Extra docs, folders or links attached on creation. |
 | `skillId`, `skillVersion` | The skill is pinned to a version for the job's whole life. |
 | `autonomy` | `supervised` · `standard` · `full` (see [[Approvals-and-Autonomy]]). |

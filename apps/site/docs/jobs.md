@@ -8,6 +8,10 @@ In a project, ask for it in the project's **The Eye** tab: The Eye starts a job,
 
 Each job works on its own branch, in its own worktree inside your project. Your branch is never touched until you merge. In a project of several repos, the job's folder looks like the project's: each repo it works in is there at its folder, on the job's branch, and its tasks' checks run from that folder (`cd web && npm test`).
 
+## A job's name
+
+The Eye names each job by what it is ("Fix the login redirect loop"), with a sentence or two on what it's for, as soon as it's made; when the job ends, that line becomes what it did: what was built, its branch, where it was pushed, what's left to you. A name you type when you make the job is kept. Without a model the job keeps the first line of your request until one is there. The name and the description show in Work, Running now, the Workflow, the Inbox and the command palette; your request stays as you wrote it under **What I asked** in the job's header. The pencil beside the name renames it, or changes its description: what you write there is yours, and The Eye leaves it alone.
+
 ## What The Eye does
 
 - **Plans** the goal into small tasks, each with checks that prove it is done.
