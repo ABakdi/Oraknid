@@ -487,7 +487,8 @@ and port, MinIO in a container, all removed after) at desktop and at
 390 px.
 
 ### M13.16 — Every rclone provider, and a backup form that helps (2026-10-04)
-- [ ] Cloud storage: every provider rclone supports, forms made from its schema, search by name ([[ADR-046-Cloud-Storage]] → Changed)
+- [x] Cloud storage: every provider rclone supports, forms made from its schema, search by name ([[ADR-046-Cloud-Storage]] → Changed; As built M13.16). rclone's `config providers` read once per version (55 backends offered with v1.75.1); **Another provider** in Add a provider: a search, then a form made of the backend's schema (its service first, required options, the rest under Advanced, typed, secrets as password fields); browser sign-in through `rclone authorize` for the 14 that have it; rclone's own setup questions (OneDrive's drive, a code) asked one at a time, answers in its environment. Short forms for Drive, Dropbox, MEGA and S3 kept.
+  Tested: the schema and the form model against the recorded output of the real rclone v1.75.1 (core); SFTP (atmoz/sftp in a throwaway unprivileged container) and WebDAV (`rclone serve webdav`) added through the generic path with the real rclone, a file up, listed and down, passwords on no command line while adding and uploading (`/proc` sampled), nor in views, events or SQLite; OneDrive's sign-in and questions, a two-factor code, a failing and a cancelled setup with a stand-in rclone; the web picker, required vs Advanced, S3's services, password fields and questions (component tests); by hand on a sample daemon (its own temp data folder, a free port, a WebDAV provider added from the form) at desktop and 390 px, all stopped and removed after.
 - [ ] Backups: Test connection, editing keeps every value, a picked database fills the form, each kind's fields under Advanced ([[ADR-044-Backups]] → Changed)
 
 ## Exit criterion
