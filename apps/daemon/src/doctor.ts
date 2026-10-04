@@ -16,17 +16,18 @@ export interface DoctorInputs {
  * wrong and how to fix it (BR-17).
  */
 export function runDoctor(paths: Paths, inputs: DoctorInputs): DoctorCheck[] {
+  const pm = packageManager();
   return [
     checkNode(),
     checkDataDir(paths),
-    checkCommand("git", ["--version"], "git", "Install git: sudo pacman -S git"),
+    checkCommand("git", ["--version"], "git", `Install git: ${installCommand(pm, "git")}`),
     {
       name: "Sandbox (bubblewrap)",
       ok: inputs.sandbox.available,
       detail: inputs.sandbox.detail,
       fix: inputs.sandbox.available
         ? null
-        : "Install bubblewrap (sudo pacman -S bubblewrap) and allow unprivileged user namespaces. Jobs refuse to run without it.",
+        : `Install bubblewrap (${installCommand(pm, "bubblewrap")}) and allow unprivileged user namespaces. Jobs refuse to run without it.`,
     },
     checkCommand(
       "systemd-inhibit",
@@ -50,11 +51,50 @@ export function runDoctor(paths: Paths, inputs: DoctorInputs): DoctorCheck[] {
       "notify-send",
       ["--version"],
       "Desktop notifications (notify-send)",
-      "Install libnotify: sudo pacman -S libnotify",
+      `Install libnotify: ${installCommand(pm, "libnotify")}`,
     ),
     checkOptional("nvidia-smi", ["--version"], "NVIDIA GPU metrics (nvidia-smi)"),
     checkRclone(),
   ];
+}
+
+type PackageManager = "apt" | "dnf" | "pacman" | "zypper" | "apk" | null;
+
+/** This system's package manager, as install.sh finds it. */
+export function packageManager(
+  has: (cmd: string) => boolean = (cmd) =>
+    spawnSync("sh", ["-c", `command -v ${cmd}`]).status === 0,
+): PackageManager {
+  if (has("apt-get")) return "apt";
+  if (has("dnf")) return "dnf";
+  if (has("pacman")) return "pacman";
+  if (has("zypper")) return "zypper";
+  if (has("apk")) return "apk";
+  return null;
+}
+
+/** Packages are named per distribution: libnotify's command is libnotify-bin on Debian. */
+const PACKAGE_NAMES: Record<string, Partial<Record<Exclude<PackageManager, null>, string>>> = {
+  libnotify: { apt: "libnotify-bin", zypper: "libnotify-tools" },
+};
+
+/** The command that installs a package here, or a plain word when the package manager is unknown. */
+export function installCommand(pm: PackageManager, pkg: string): string {
+  const name = PACKAGE_NAMES[pkg]?.[pm ?? "apt"] ?? pkg;
+  switch (pm) {
+    case "apt":
+      return `sudo apt install ${name}`;
+    case "dnf":
+      return `sudo dnf install ${name}`;
+    case "pacman":
+      return `sudo pacman -S ${name}`;
+    case "zypper":
+      return `sudo zypper install ${name}`;
+    case "apk":
+      return `sudo apk add ${name}`;
+    default:
+      return `install ${pkg} with your package manager`;
+  }
 }
 
 /** Cloud storage's rclone (ADR-046): optional, said with how to get it. */
