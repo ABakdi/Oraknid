@@ -1,23 +1,33 @@
-import type {
-  BackupDestination,
-  BackupKeyView,
-  BackupPlanView,
-  BackupRunView,
-  BackupSchedule,
-  BackupTarget,
-  CloudProviderView,
-  DbKind,
-  NewBackupPlan,
-  RestorePreview,
-  ServerView,
+import {
+  type BackupDestination,
+  type BackupKeyView,
+  type BackupOptions,
+  type BackupPlanView,
+  type BackupRunView,
+  type BackupSchedule,
+  type BackupTarget,
+  type BackupTestResult,
+  type CloudProviderView,
+  type DbKind,
+  kindOptions,
+  type MongoOptions,
+  type NewBackupPlan,
+  PG_EXTRA_OPTION,
+  type PgOptions,
+  type RestorePreview,
+  type ServerView,
 } from "@oraknid/contracts";
 import {
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Copy,
   Download,
   KeyRound,
+  MinusCircle,
   Pencil,
   Play,
+  PlugZap,
   Plus,
   RotateCcw,
   ShieldCheck,
@@ -96,6 +106,10 @@ export interface DatabaseChoice {
   database?: string | null;
   /** SQLite: the file. */
   path?: string | null;
+  /** Its login, when its container's environment says it (POSTGRES_USER…). */
+  user?: string | null;
+  /** A password is set in its container's environment (its value is never read). */
+  passwordInEnv?: boolean;
   /** How it's shown: "postgres 16 in shop-db". */
   label?: string;
 }
@@ -216,6 +230,8 @@ export function BackupPlans({
       ))}
       {editing ? (
         <PlanForm
+          // Another plan (or a new one) is another form: its values are its own, never the last one's.
+          key={editing === "new" ? "new" : editing.id}
           plan={editing === "new" ? undefined : editing}
           serverId={serverId}
           servers={servers.data}
@@ -409,7 +425,36 @@ const emptyTarget = (serverId: string): BackupTarget => ({
 });
 
 const num = (s: string) => (s.trim() === "" ? null : Number(s));
+/** "a, b c" → ["a", "b", "c"]. */
+const words = (s: string) => s.split(/[\s,]+/).filter(Boolean);
 
+type KindOptions = ReturnType<typeof kindOptions>;
+
+/** The plan as the form holds it: every saved value, each kind's fields filled in. */
+function initial(plan: BackupPlanView | undefined, serverId: string, keys: BackupKeyView[]) {
+  const target = plan ? { ...plan.target } : emptyTarget(serverId);
+  return {
+    name: plan?.name ?? "",
+    target,
+    inDocker: plan ? plan.target.container !== null : true,
+    options: kindOptions(target),
+    schedule: plan?.schedule ?? ({ kind: "daily", at: "03:30" } as BackupSchedule),
+    dest:
+      plan?.destination ?? ({ kind: "local", folder: "~/Backups/oraknid" } as BackupDestination),
+    count: plan ? String(plan.retention.count ?? "") : "14",
+    days: plan ? String(plan.retention.days ?? "") : "",
+    keyId: plan ? plan.keyId : (keys[0]?.id ?? null),
+    useUri: !!plan?.hasUri,
+  };
+}
+
+/**
+ * A plan's form (ADR-044 → Changed 2026-10-04): a plan opened again shows
+ * every value it was saved with (the password and a connection string as
+ * "kept", changed only when typed); a database picked from those found
+ * fills it; each kind's own fields are under Advanced; Test connection
+ * tries it as it is, nothing saved.
+ */
 export function PlanForm({
   plan,
   serverId,
@@ -425,25 +470,33 @@ export function PlanForm({
   databases?: DatabaseChoice[];
   onDone: () => void;
 }) {
-  const first = serverId ?? servers[0]?.id ?? "";
-  const [name, setName] = useState(plan?.name ?? "");
-  const [target, setTarget] = useState<BackupTarget>(plan?.target ?? emptyTarget(first));
-  const [inDocker, setInDocker] = useState(plan ? plan.target.container !== null : true);
+  const [start] = useState(() => initial(plan, serverId ?? servers[0]?.id ?? "", keys));
+  const [name, setName] = useState(start.name);
+  const [target, setTarget] = useState<BackupTarget>(start.target);
+  const [inDocker, setInDocker] = useState(start.inDocker);
+  const [options, setOptions] = useState<KindOptions>(start.options);
   const [password, setPassword] = useState("");
-  const [schedule, setSchedule] = useState<BackupSchedule>(
-    plan?.schedule ?? { kind: "daily", at: "03:30" },
-  );
-  const [dest, setDest] = useState<BackupDestination>(
-    plan?.destination ?? { kind: "local", folder: "~/Backups/oraknid" },
-  );
-  const [count, setCount] = useState(plan ? String(plan.retention.count ?? "") : "14");
-  const [days, setDays] = useState(plan ? String(plan.retention.days ?? "") : "");
-  const [keyId, setKeyId] = useState<string | null>(plan ? plan.keyId : (keys[0]?.id ?? null));
+  const [useUri, setUseUri] = useState(start.useUri);
+  const [uri, setUri] = useState("");
+  const [schedule, setSchedule] = useState<BackupSchedule>(start.schedule);
+  const [dest, setDest] = useState<BackupDestination>(start.dest);
+  const [count, setCount] = useState(start.count);
+  const [days, setDays] = useState(start.days);
+  const [keyId, setKeyId] = useState<string | null>(start.keyId);
+  const [advanced, setAdvanced] = useState(false);
+  const [extraText, setExtraText] = useState(start.options.postgres.extra.join(" "));
+  const [schemasText, setSchemasText] = useState(start.options.postgres.schemas.join(", "));
+  const [envHint, setEnvHint] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [tested, setTested] = useState<BackupTestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const set = (patch: Partial<BackupTarget>) => setTarget((x) => ({ ...x, ...patch }));
+  const setOpt = <K extends keyof KindOptions>(kind: K, patch: Partial<KindOptions[K]>) =>
+    setOptions((o) => ({ ...o, [kind]: { ...o[kind], ...patch } }));
   const others = servers.filter((s) => s.id !== target.serverId);
   const providers = useCloudProviders();
+  const mongoUri = target.kind === "mongodb" && useUri;
 
   const pick = (i: string) => {
     const d = databases?.[Number(i)];
@@ -455,34 +508,77 @@ export function PlanForm({
       container: d.container ?? null,
       host: d.host ?? null,
       port: d.port ?? null,
-      database: d.database ?? null,
+      database: d.kind === "redis" ? null : (d.database ?? null),
+      user: d.user ?? null,
       path: d.path ?? null,
     }));
+    setEnvHint(
+      d.passwordInEnv
+        ? t(
+            "A password is set in the container's environment: type it here (Oraknid doesn't read it from there).",
+          )
+        : null,
+    );
+    setTested(null);
     if (!name) setName(d.label ?? `${kindName(d.kind)} ${d.database ?? d.container ?? ""}`.trim());
   };
 
-  const submit = async () => {
-    setError(null);
-    const body: NewBackupPlan = {
+  /** The form as the API takes it, or what's missing in words. */
+  const body = (): NewBackupPlan | string => {
+    const extra = words(extraText);
+    const wrong = extra.find((x) => !PG_EXTRA_OPTION.test(x));
+    if (target.kind === "postgres" && wrong)
+      return t("{option} isn't a pg_dump option Oraknid passes on.", { option: wrong });
+    const kindOpts: BackupOptions =
+      target.kind === "postgres"
+        ? { postgres: { ...options.postgres, extra, schemas: words(schemasText) } }
+        : target.kind === "mysql"
+          ? { mysql: options.mysql }
+          : target.kind === "mongodb"
+            ? { mongodb: options.mongodb }
+            : target.kind === "redis"
+              ? { redis: options.redis }
+              : {};
+    const b: NewBackupPlan = {
       name: name.trim(),
       target: {
         ...target,
         container: inDocker ? target.container?.trim() || null : null,
         path: target.kind === "sqlite" ? target.path : null,
+        // Redis's database is the number Test connection looks at.
+        database:
+          target.kind === "sqlite" ? null : target.database?.trim() ? target.database.trim() : null,
+        options: kindOpts,
       },
       schedule,
       destination: dest,
       retention: { count: num(count), days: num(days) },
       keyId,
       enabled: plan?.enabled ?? true,
-      ...(password ? { password } : {}),
+      ...(password && !mongoUri ? { password } : {}),
+      ...(mongoUri && uri ? { uri: uri.trim() } : {}),
     };
-    if (!body.name) return setError(t("Give the plan a name."));
-    if (inDocker && !body.target.container) return setError(t("Give the container's name."));
+    if (inDocker && !b.target.container) return t("Give the container's name.");
+    if (mongoUri && !uri && !plan?.hasUri) return t("Give the connection string, or turn it off.");
+    return b;
+  };
+
+  const submit = async () => {
+    setError(null);
+    if (!name.trim()) return setError(t("Give the plan a name."));
+    const b = body();
+    if (typeof b === "string") return setError(b);
     setBusy(true);
     try {
-      if (plan) await api.backups.updatePlan({ id: plan.id, ...body });
-      else await api.backups.createPlan(body);
+      if (plan) {
+        // Paused or on is the plan's switch, not the form's.
+        const { enabled: _, ...change } = b;
+        await api.backups.updatePlan({
+          id: plan.id,
+          ...change,
+          ...(target.kind === "mongodb" && !useUri && plan.hasUri ? { clearUri: true } : {}),
+        });
+      } else await api.backups.createPlan(b);
       toast.success(plan ? t("Plan saved.") : t("Plan made: it runs at its time."));
       onDone();
     } catch (e) {
@@ -492,13 +588,271 @@ export function PlanForm({
     }
   };
 
-  const field = (id: string, label: string, node: React.ReactNode, hint?: string) => (
-    <div className="space-y-1">
+  const test = async () => {
+    setError(null);
+    setTested(null);
+    const b = body();
+    if (typeof b === "string") return setError(b);
+    const { enabled: _, ...rest } = b;
+    setTesting(true);
+    try {
+      setTested(
+        await api.backups.testPlan({
+          ...rest,
+          ...(plan ? { planId: plan.id } : {}),
+          // Off: the kept connection string isn't the one to try.
+          ...(target.kind === "mongodb" && !useUri && plan?.hasUri ? { clearUri: true } : {}),
+        }),
+      );
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const field = (id: string, label: string, node: React.ReactNode, hint?: string | null) => (
+    <div className="min-w-0 space-y-1">
       <Label htmlFor={id}>{label}</Label>
       {node}
       {hint ? <div className="text-xs text-muted-foreground">{hint}</div> : null}
     </div>
   );
+  const select = <V extends string>(
+    id: string,
+    label: string,
+    value: V,
+    choices: [V, string][],
+    onChange: (v: V) => void,
+    hint?: string,
+  ) =>
+    field(
+      id,
+      label,
+      <Select value={value} onValueChange={(v) => v && onChange(v as V)}>
+        <SelectTrigger id={id} className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {choices.map(([v, l]) => (
+            <SelectItem key={v} value={v}>
+              {l}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>,
+      hint,
+    );
+  const toggle = (id: string, label: string, checked: boolean, onChange: (v: boolean) => void) => (
+    <div className="flex items-center gap-2">
+      <Switch id={id} checked={checked} onCheckedChange={onChange} />
+      <Label htmlFor={id} className="font-normal">
+        {label}
+      </Label>
+    </div>
+  );
+  const TLS3: ["off" | "on" | "insecure", string][] = [
+    ["off", t("Off")],
+    ["on", t("On")],
+    ["insecure", t("On, without checking its certificate")],
+  ];
+
+  const advancedFields = (() => {
+    switch (target.kind) {
+      case "postgres":
+        return (
+          <>
+            {select(
+              "bk-sslmode",
+              t("TLS (sslmode)"),
+              options.postgres.sslmode ?? "default",
+              [
+                ["default", t("The client's default (prefer)")],
+                ["disable", "disable"],
+                ["allow", "allow"],
+                ["prefer", "prefer"],
+                ["require", "require"],
+                ["verify-ca", "verify-ca"],
+                ["verify-full", "verify-full"],
+              ],
+              (v) =>
+                setOpt("postgres", {
+                  sslmode: v === "default" ? null : (v as PgOptions["sslmode"]),
+                }),
+            )}
+            {select(
+              "bk-format",
+              t("Dump format"),
+              options.postgres.format,
+              [
+                ["plain", t("Plain SQL")],
+                ["custom", t("Custom (pg_restore)")],
+              ],
+              (v) => setOpt("postgres", { format: v }),
+              t("Custom needs a database named above; it restores with pg_restore."),
+            )}
+            {field(
+              "bk-schemas",
+              t("Schemas"),
+              <Input
+                id="bk-schemas"
+                value={schemasText}
+                onChange={(e) => setSchemasText(e.target.value)}
+                placeholder={t("empty: all of them")}
+              />,
+              t("Only these, separated by commas."),
+            )}
+            {field(
+              "bk-extra",
+              t("More pg_dump options"),
+              <Input
+                id="bk-extra"
+                className="font-mono"
+                value={extraText}
+                onChange={(e) => setExtraText(e.target.value)}
+                placeholder="--no-comments --exclude-table-data=logs"
+              />,
+              t(
+                "From a fixed list (--no-comments, --no-publications, --no-tablespaces, --inserts, --schema-only, --data-only, --exclude-table=…, --exclude-table-data=…, --exclude-schema=…, --table=…, …): nothing that changes where it goes.",
+              ),
+            )}
+          </>
+        );
+      case "mysql":
+        return (
+          <>
+            {select(
+              "bk-mysql-tls",
+              t("TLS"),
+              options.mysql.tls,
+              [
+                ["default", t("The client's default")],
+                ["off", t("Off")],
+                ["required", t("Required")],
+                ["verify", t("Required, the certificate checked")],
+              ],
+              (v) => setOpt("mysql", { tls: v }),
+            )}
+            <div className="space-y-2 pt-1">
+              {toggle(
+                "bk-single",
+                t("One transaction (a consistent dump of InnoDB, without locking)"),
+                options.mysql.singleTransaction,
+                (v) => setOpt("mysql", { singleTransaction: v }),
+              )}
+              {toggle(
+                "bk-routines",
+                t("Routines (procedures and functions)"),
+                options.mysql.routines,
+                (v) => setOpt("mysql", { routines: v }),
+              )}
+              {toggle("bk-events", t("Events"), options.mysql.events, (v) =>
+                setOpt("mysql", { events: v }),
+              )}
+              {toggle("bk-triggers", t("Triggers"), options.mysql.triggers, (v) =>
+                setOpt("mysql", { triggers: v }),
+              )}
+            </div>
+          </>
+        );
+      case "mongodb":
+        return (
+          <>
+            {field(
+              "bk-authsource",
+              t("Authentication database"),
+              <Input
+                id="bk-authsource"
+                value={options.mongodb.authSource ?? ""}
+                onChange={(e) => setOpt("mongodb", { authSource: e.target.value.trim() || null })}
+                placeholder="admin"
+              />,
+              t("Where the user was made (authSource)."),
+            )}
+            {field(
+              "bk-replset",
+              t("Replica set"),
+              <Input
+                id="bk-replset"
+                value={options.mongodb.replicaSet ?? ""}
+                onChange={(e) => setOpt("mongodb", { replicaSet: e.target.value.trim() || null })}
+                placeholder="rs0"
+              />,
+            )}
+            {select("bk-mongo-tls", t("TLS"), options.mongodb.tls, TLS3, (v) =>
+              setOpt("mongodb", { tls: v }),
+            )}
+            {select(
+              "bk-readpref",
+              t("Read preference"),
+              options.mongodb.readPreference ?? "default",
+              [
+                ["default", t("The default (primary)")],
+                ["primary", "primary"],
+                ["primaryPreferred", "primaryPreferred"],
+                ["secondary", "secondary"],
+                ["secondaryPreferred", "secondaryPreferred"],
+                ["nearest", "nearest"],
+              ],
+              (v) =>
+                setOpt("mongodb", {
+                  readPreference: v === "default" ? null : (v as MongoOptions["readPreference"]),
+                }),
+            )}
+            <div className="space-y-2 sm:col-span-2">
+              {toggle(
+                "bk-use-uri",
+                t("Connect with a connection string instead"),
+                useUri,
+                setUseUri,
+              )}
+              {useUri
+                ? field(
+                    "bk-uri",
+                    t("Connection string"),
+                    <Input
+                      id="bk-uri"
+                      type="password"
+                      autoComplete="off"
+                      className="font-mono"
+                      value={uri}
+                      onChange={(e) => setUri(e.target.value)}
+                      placeholder={
+                        plan?.hasUri ? t("kept; type to change") : "mongodb://user:password@host/db"
+                      }
+                    />,
+                    t(
+                      "Kept in the keychain like a password (it can hold one), never on a command line; it says where and who, instead of the fields above.",
+                    ),
+                  )
+                : null}
+            </div>
+          </>
+        );
+      case "redis":
+        return (
+          <>
+            {field(
+              "bk-redis-db",
+              t("Database number"),
+              <Input
+                id="bk-redis-db"
+                inputMode="numeric"
+                value={target.database ?? ""}
+                onChange={(e) => set({ database: e.target.value.replace(/\D/g, "") || null })}
+                placeholder="0"
+              />,
+              t("The one Test connection looks at; a backup holds all of them."),
+            )}
+            {select("bk-redis-tls", t("TLS"), options.redis.tls, TLS3, (v) =>
+              setOpt("redis", { tls: v }),
+            )}
+          </>
+        );
+      case "sqlite":
+        return null;
+    }
+  })();
 
   return (
     <form
@@ -528,7 +882,7 @@ export function PlanForm({
           : field(
               "bk-server",
               t("Server"),
-              <Select value={target.serverId} onValueChange={(v) => set({ serverId: v })}>
+              <Select value={target.serverId} onValueChange={(v) => v && set({ serverId: v })}>
                 <SelectTrigger id="bk-server" className="w-full">
                   <SelectValue placeholder={t("Pick a server")} />
                 </SelectTrigger>
@@ -552,7 +906,7 @@ export function PlanForm({
               "bk-found",
               t("Found on the server"),
               <Select onValueChange={pick}>
-                <SelectTrigger id="bk-found" className="w-full">
+                <SelectTrigger id="bk-found" className="w-full" data-help="backups.found">
                   <SelectValue placeholder={t("Pick one, or describe it below")} />
                 </SelectTrigger>
                 <SelectContent>
@@ -567,6 +921,9 @@ export function PlanForm({
                   ))}
                 </SelectContent>
               </Select>,
+              t(
+                "Fills in its kind, where it runs, and its user and database when its container says them.",
+              ),
             )
           : null}
         <div className="grid gap-3 sm:grid-cols-2">
@@ -575,9 +932,11 @@ export function PlanForm({
             t("Kind"),
             <Select
               value={target.kind}
-              onValueChange={(v) =>
-                set({ kind: v as DbKind, ...(v === "redis" ? { database: null } : {}) })
-              }
+              onValueChange={(v) => {
+                if (!v) return;
+                set({ kind: v as DbKind, ...(v === "redis" ? { database: null } : {}) });
+                setTested(null);
+              }}
             >
               <SelectTrigger id="bk-kind" className="w-full">
                 <SelectValue />
@@ -619,6 +978,10 @@ export function PlanForm({
                 placeholder="/srv/app/data.db"
               />,
             )
+          ) : mongoUri ? (
+            <div className="text-xs text-muted-foreground sm:col-span-2">
+              {t("The connection string (under Advanced) says where and who.")}
+            </div>
           ) : (
             <>
               {field(
@@ -656,7 +1019,7 @@ export function PlanForm({
                   )}
               {field(
                 "bk-user",
-                t("User"),
+                target.kind === "redis" ? t("User (ACL)") : t("User"),
                 <Input
                   id="bk-user"
                   value={target.user ?? ""}
@@ -666,7 +1029,9 @@ export function PlanForm({
                       ? "root"
                       : target.kind === "postgres"
                         ? "postgres"
-                        : ""
+                        : target.kind === "redis"
+                          ? "default"
+                          : ""
                   }
                 />,
               )}
@@ -681,13 +1046,34 @@ export function PlanForm({
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder={plan?.hasPassword ? t("kept; type to change") : ""}
                 />,
-                t(
-                  "Kept in the keychain, given to the dump through its environment, never on a command line.",
-                ),
+                envHint ??
+                  t(
+                    "Kept in the keychain, given to the dump through its environment, never on a command line.",
+                  ),
               )}
             </>
           )}
         </div>
+        {advancedFields ? (
+          <div className="space-y-3" data-help="backups.advanced">
+            <Button
+              type="button"
+              size="sm"
+              variant="link"
+              className="h-auto gap-1 p-0 text-xs"
+              aria-expanded={advanced}
+              onClick={() => setAdvanced(!advanced)}
+            >
+              {advanced ? (
+                <ChevronDown className="size-3.5" />
+              ) : (
+                <ChevronRight className="size-3.5" />
+              )}
+              {t("Advanced: {kind}'s own fields", { kind: kindName(target.kind) })}
+            </Button>
+            {advanced ? <div className="grid gap-3 sm:grid-cols-2">{advancedFields}</div> : null}
+          </div>
+        ) : null}
       </fieldset>
 
       <fieldset className="space-y-3">
@@ -807,6 +1193,7 @@ export function PlanForm({
                     : dest.serverId
               }
               onValueChange={(v) =>
+                v &&
                 setDest(
                   v === "local"
                     ? {
@@ -895,7 +1282,7 @@ export function PlanForm({
             t("Encryption"),
             <Select
               value={keyId ?? "none"}
-              onValueChange={(v) => setKeyId(v === "none" ? null : v)}
+              onValueChange={(v) => v && setKeyId(v === "none" ? null : v)}
             >
               <SelectTrigger id="bk-key" className="w-full">
                 <SelectValue />
@@ -913,16 +1300,96 @@ export function PlanForm({
           )}
         </div>
       </fieldset>
-      {error ? <div className="text-sm text-destructive">{error}</div> : null}
+      {tested ? (
+        <TestResults result={tested} kind={target.kind} onUse={(db) => set({ database: db })} />
+      ) : null}
+      {error ? (
+        <div role="alert" className="text-sm text-destructive [overflow-wrap:anywhere]">
+          {error}
+        </div>
+      ) : null}
       <div className="flex flex-wrap gap-2">
         <Button type="submit" size="sm" disabled={busy}>
           {plan ? t("Save") : t("Make the plan")}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="gap-1"
+          data-help="backups.test"
+          disabled={testing || busy}
+          onClick={() => void test()}
+        >
+          <PlugZap className="size-3.5" />
+          {testing ? t("Testing…") : t("Test connection")}
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={onDone}>
           {t("Cancel")}
         </Button>
       </div>
     </form>
+  );
+}
+
+/** Test connection's answer: each part ok, or why not; a database it lists can be picked. */
+function TestResults({
+  result,
+  kind,
+  onUse,
+}: {
+  result: BackupTestResult;
+  kind: DbKind;
+  onUse: (database: string) => void;
+}) {
+  const parts: [string, BackupTestResult["server"]][] = [
+    [t("Server"), result.server],
+    [t("Database"), result.database],
+    [t("Where to"), result.destination],
+  ];
+  const picks =
+    result.database.ok !== null && (kind === "postgres" || kind === "mysql" || kind === "mongodb")
+      ? result.database.databases.slice(0, 20)
+      : [];
+  return (
+    <div className="space-y-2" aria-label={t("Test results")} role="status">
+      <ul className="space-y-1 text-xs">
+        {parts.map(([label, p]) => (
+          <li
+            key={label}
+            className={`flex gap-1.5 ${p.ok === true ? "text-success" : p.ok === false ? "text-destructive" : "text-muted-foreground"}`}
+          >
+            {p.ok === true ? (
+              <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" aria-label={t("ok")} />
+            ) : p.ok === false ? (
+              <XCircle className="mt-0.5 size-3.5 shrink-0" aria-label={t("not ok")} />
+            ) : (
+              <MinusCircle className="mt-0.5 size-3.5 shrink-0" aria-label={t("not tried")} />
+            )}
+            <span className="[overflow-wrap:anywhere]">
+              <span className="font-medium">{label}:</span> {p.said}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {picks.length > 1 ? (
+        <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+          {t("Back up one of them:")}
+          {picks.map((d) => (
+            <Button
+              key={d}
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="h-6 px-2 text-xs"
+              onClick={() => onUse(d)}
+            >
+              {d}
+            </Button>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

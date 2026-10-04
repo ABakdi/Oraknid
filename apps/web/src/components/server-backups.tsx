@@ -15,7 +15,10 @@ export function choiceOf(d: ServerDatabase): DatabaseChoice {
     // In its container the dump reaches it on its own socket or port; on the host, by its port.
     host: null,
     port: inContainer ? null : d.port,
-    database: null,
+    // What its container's environment says (ADR-043 reads it); never a password.
+    database: d.login?.database ?? null,
+    user: d.login?.user ?? null,
+    passwordInEnv: d.login?.passwordSet ?? false,
     label: `${d.kind === "mysql" ? "MySQL/MariaDB" : d.kind}${d.version ? ` ${d.version}` : ""} · ${inContainer ? t("container {name}", { name: d.name }) : d.name}`,
   };
 }

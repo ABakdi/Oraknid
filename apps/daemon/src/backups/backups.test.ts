@@ -2,7 +2,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { BackupRunView } from "@oraknid/contracts";
+import { type BackupRunView, MongoOptions, MysqlOptions, PgOptions } from "@oraknid/contracts";
 import { generateX25519Identity } from "age-encryption";
 import { afterEach, describe, expect, it } from "vitest";
 import { remoteAllowed } from "../auth/lock.ts";
@@ -11,7 +11,7 @@ import type { HelperDeps } from "../helper/service.ts";
 import { rigDaemon, settle } from "../testing/backup-rig.ts";
 import { fakeOs } from "../testing/fake-os.ts";
 import { fakeSsh } from "../testing/fake-ssh.ts";
-import { dumpCommand, plainError, restoreCommand, sane } from "./dump.ts";
+import { checkTarget, dumpCommand, plainError, restoreCommand, sane, secretLine } from "./dump.ts";
 
 // Backups without Docker (ADR-044): a SQLite database on the "server"
 // (a stand-in SSH server whose commands run here), keys, Verify, the
@@ -320,12 +320,142 @@ describe("backup commands (ADR-044)", () => {
     expect(sane("sqlite", Buffer.alloc(0), Buffer.alloc(0), 0).note).toMatch(/empty/);
   });
 
+  it("each kind's own fields become its flags or its environment; a secret only on stdin", () => {
+    const pg = {
+      ...t,
+      options: {
+        postgres: PgOptions.parse({
+          sslmode: "verify-full",
+          schemas: ["sales", "public"],
+          format: "custom",
+          extra: ["--no-comments"],
+        }),
+      },
+    };
+    const c = dumpCommand(pg);
+    for (const part of ["PGSSLMODE=verify-full", "-Fc", "sales", "--no-comments"])
+      expect(c).toContain(part);
+    expect(c).not.toContain("--clean");
+    expect(restoreCommand(pg, "shop", { pgFormat: "custom" })).toContain("pg_restore");
+    const mysql = {
+      ...t,
+      kind: "mysql" as const,
+      options: {
+        mysql: MysqlOptions.parse({ tls: "verify", singleTransaction: false, events: true }),
+      },
+    };
+    const m = dumpCommand(mysql);
+    expect(m).toContain("VERIFY_IDENTITY");
+    expect(m).toContain("--ssl-verify-server-cert");
+    expect(m).toContain("--events");
+    expect(m).not.toContain("--single-transaction");
+    const mongo = {
+      ...t,
+      kind: "mongodb" as const,
+      options: {
+        mongodb: MongoOptions.parse({
+          authSource: "shop",
+          replicaSet: "rs0",
+          tls: "insecure",
+          readPreference: "secondary",
+        }),
+      },
+    };
+    const g = dumpCommand(mongo);
+    for (const part of ["rs0/127.0.0.1:27017", "--sslAllowInvalidCertificates", "secondary"])
+      expect(g).toContain(part);
+    // With a connection string, it says where and who: no host or user flags.
+    expect(dumpCommand(mongo, { uri: true })).not.toContain("--username");
+    const line = secretLine("mongodb", "pw", "mongodb://a:pw@h/db");
+    expect(JSON.parse(line)).toEqual({ password: "pw", uri: "mongodb://a:pw@h/db" });
+    expect(() => secretLine("postgres", "a\nb")).toThrow(/line break/);
+    // An option off the list never reaches pg_dump.
+    expect(PgOptions.safeParse({ extra: ["--file=/etc/passwd"] }).success).toBe(false);
+    expect(PgOptions.safeParse({ extra: ["--exclude-table=x;rm"] }).success).toBe(false);
+    expect(() =>
+      checkTarget({
+        ...t,
+        database: null,
+        options: { postgres: PgOptions.parse({ format: "custom" }) },
+      }),
+    ).toThrow(/name the database/);
+    expect(
+      plainError(mongo, 1, "MongoServerError: Authentication failed.", {
+        server: "vps",
+        user: "me",
+      }),
+    ).toMatch(/against the authentication database "shop"/);
+    expect(
+      plainError(mongo, 1, "connect to mongodb://app:hunter2@x:1/ failed", {
+        server: "vps",
+        user: "me",
+      }),
+    ).not.toContain("hunter2");
+    // pg_dump's custom format: "PGDMP", and a last data block ending in a zero length.
+    const head = Buffer.concat([Buffer.from("PGDMP"), Buffer.from([1, 16, 0, 4, 8, 1])]);
+    expect(sane("postgres", head, Buffer.from([7, 0, 0, 0, 0, 0]), 2000).note).toMatch(
+      /custom-format dump, complete/,
+    );
+  });
+
+  it("Test connection reads a SQLite file read-only and says what's missing, in words", async () => {
+    if (!hasSqlite) return;
+    const { api, serverId, dir } = await setup();
+    const file = sqliteDb();
+    const base = sqlitePlan(serverId, file, join(dir, "probe"), null);
+    const ok = await api.backups.testPlan(base);
+    expect(ok.server.ok).toBe(true);
+    expect(ok.database).toMatchObject({ ok: true, databases: ["main"] });
+    expect(ok.database.said).toMatch(/^SQLite 3\.\S+ opened .*shop\.db \(read only\)\.$/);
+    expect(ok.destination).toMatchObject({ ok: true });
+    const missing = await api.backups.testPlan({
+      ...base,
+      target: { ...base.target, path: join(dir, "nope.db") },
+    });
+    expect(missing.database).toMatchObject({
+      ok: false,
+      said: `There's no file ${join(dir, "nope.db")} in box.`,
+    });
+    // Nothing saved by testing.
+    expect(await api.backups.plans()).toEqual([]);
+  });
+
+  it("a change keeps what it doesn't name: a paused plan stays paused, each kind's fields stay", async () => {
+    const { api, serverId, dir } = await setup();
+    const plan = await api.backups.createPlan({
+      ...sqlitePlan(serverId, "/srv/x.db", join(dir, "out"), null),
+      name: "PG",
+      target: {
+        ...t,
+        serverId,
+        container: null,
+        options: { postgres: PgOptions.parse({ sslmode: "require", schemas: ["sales"] }) },
+      },
+      enabled: false,
+    });
+    await api.backups.updatePlan({ id: plan.id, name: "PG (renamed)" });
+    // The target again, without its kind's fields (the helper, an older form): they stay.
+    const { options: _, ...bare } = plan.target;
+    const after = await api.backups.updatePlan({ id: plan.id, target: { ...bare, port: 5433 } });
+    expect(after).toMatchObject({ name: "PG (renamed)", enabled: false });
+    expect(after.target.port).toBe(5433);
+    expect(after.target.options?.postgres).toMatchObject({
+      sslmode: "require",
+      schemas: ["sales"],
+    });
+    // The helper's change too.
+    expect(
+      BACKUP_ACTIONS.update_backup_plan?.input.parse({ id: plan.id, name: "x" }),
+    ).not.toHaveProperty("enabled");
+  });
+
   it("restoring and changing plans and keys stay at home, or with full rights", () => {
     for (const p of [
       "/backups/restore",
       "/backups/prepareRestore",
       "/backups/exportKey",
       "/backups/createPlan",
+      "/backups/testPlan",
     ])
       expect(remoteAllowed(p, false), p).toBe(false);
     for (const p of ["/backups/run", "/backups/verify", "/backups/plans", "/backups/createKey"])

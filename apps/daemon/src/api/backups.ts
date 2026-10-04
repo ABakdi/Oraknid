@@ -1,9 +1,11 @@
 import {
   BackupKeyView,
   BackupPlanPatch,
+  BackupPlanTest,
   BackupPlanView,
   BackupRunView,
   BackupTarget,
+  BackupTestResult,
   Id,
   NewBackupPlan,
   RestorePreview,
@@ -55,6 +57,14 @@ export const backupsRouter = {
     .input(BackupPlanPatch)
     .output(BackupPlanView)
     .handler(({ context: c, input }) => guard(() => c.backups.updatePlan(input))),
+  /**
+   * Test connection: the plan's form as it is, nothing saved (with
+   * `planId`, an empty password or connection string is the plan's kept one).
+   */
+  testPlan: base
+    .input(BackupPlanTest)
+    .output(BackupTestResult)
+    .handler(({ context: c, input }) => guard(() => c.backups.testPlan(input))),
   /** Its backups stay where they are unless `deleteBackups`. */
   removePlan: base
     .input(z.object({ id: Id, deleteBackups: z.boolean().default(false) }))

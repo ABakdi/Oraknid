@@ -93,6 +93,10 @@ describe("the map of the screens (ADR-041)", () => {
     expect(text).toContain("security (Security:");
     expect(text).toMatch(/- work\.goal \[field\]: What do you want done\?/);
     expect(text).toMatch(/- project\.archive \[needs item\]/);
+    // The backup plan's form: its test, its own fields, and the databases found (ADR-044).
+    expect(text).toMatch(/- backups\.test.*: Test connection/);
+    expect(text).toMatch(/- backups\.advanced.*: Advanced/);
+    expect(text).toMatch(/- backups\.found \[needs item\]/);
     expect(text.length).toBeLessThan(80_000);
   });
 });

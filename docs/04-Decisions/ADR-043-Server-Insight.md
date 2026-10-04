@@ -85,6 +85,11 @@ helper.
   server blocks merged into 19 sites, 6 certificates (two already ended),
   `nginx -t` ok, 104 requests in 15 minutes from two access logs, and a
   followed container log stopped with nothing left running.
+- **A database container's login** (2026-10-04, for a backup plan's
+  form, [[ADR-044-Backups]] → As built): the databases part adds
+  `login: {user, database, passwordSet}` to each container, from its
+  environment, filtered on the server so a password's value never
+  leaves it; the monitor script itself is unchanged.
 
 ## Consequences
 - The state document (ADR-026) is fed by what this finds.

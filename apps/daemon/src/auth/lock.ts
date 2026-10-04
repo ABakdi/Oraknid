@@ -313,6 +313,7 @@ export const HOME_ONLY = [
   // Backups (ADR-044): a plan's password and destination, keys, and restoring.
   "/backups/createPlan",
   "/backups/updatePlan",
+  "/backups/testPlan",
   "/backups/removePlan",
   "/backups/prepareRestore",
   "/backups/restore",

@@ -607,6 +607,23 @@ that opened Settings:
   this computer; Verify; Restore in two steps, the database's name
   typed back), and the encryption keys (public halves; Make a key shows
   the private one once to download or copy; Import a key).
+- **The plan's form** (2026-10-04, [[ADR-044-Backups]] → Changed): one
+  form per plan (keyed by its id), opened with every value it was saved
+  with, the password and a MongoDB connection string as "kept; type to
+  change"; pausing stays the plan's switch, never the form's. A database
+  picked from those found fills in its kind, container or port, and the
+  user and database its container's environment gives, with "a password
+  is set in the container's environment" instead of any password.
+  **Advanced: <kind>'s own fields** folds each kind's fields (PostgreSQL
+  sslmode, dump format, schemas, more pg_dump options checked against
+  the daemon's list; MySQL/MariaDB TLS and four switches; MongoDB
+  authentication database, replica set, TLS, read preference, a
+  connection string instead of the fields; Redis database number and
+  TLS, the user labelled as Redis's ACL user). **Test connection**
+  beside Save sends the form as it is (`backups.testPlan`, the plan's id
+  for its kept secrets) and lists Server, Database and Where to, each
+  ✓, ✗ or not tried with its words; a database it lists is one click
+  away. At 390 px every field is one column, nothing scrolls sideways.
 
 ### The lock
 
