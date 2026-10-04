@@ -36,7 +36,7 @@ import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 import type { Secrets } from "../os/secrets.ts";
 import type { Servers } from "../servers/service.ts";
-import { exec, execStream, q } from "../servers/ssh.ts";
+import { exec, execStream, q, sshWords } from "../servers/ssh.ts";
 import {
   checkTarget,
   dumpCommand,
@@ -140,27 +140,6 @@ async function piped(stages: unknown[], farEnd?: Promise<unknown> | null) {
 }
 
 const words = (error: unknown) => (error instanceof Error ? error.message : String(error));
-
-/** Why a server couldn't be reached over SSH, in plain words. */
-function sshWords(
-  error: unknown,
-  srv: { name: string; host: string; port: number; user: string } | null,
-) {
-  const m = words(error);
-  const code = (error as NodeJS.ErrnoException | undefined)?.code ?? "";
-  if (!srv) return m;
-  const at = `${srv.host}:${srv.port}`;
-  if (code === "ECONNREFUSED" || /ECONNREFUSED/.test(m))
-    return `${srv.name} (${at}) refused the connection: is SSH running there, on that port?`;
-  if (code === "ENOTFOUND" || code === "EAI_AGAIN" || /getaddrinfo/.test(m))
-    return `There's no host "${srv.host}": check ${srv.name}'s address.`;
-  if (/Timed out|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH/i.test(`${code} ${m}`))
-    return `${srv.name} (${at}) gave no answer: it may be off, or a firewall is in the way.`;
-  if (/authentication methods failed/i.test(m))
-    return `${srv.name} refused the SSH login of ${srv.user}: check the server's key or password.`;
-  if (/host key/i.test(m)) return `${m} (Servers → ${srv.name}).`;
-  return `${srv.name} couldn't be reached over SSH: ${m}`;
-}
 
 interface PendingRestore {
   runId: string;

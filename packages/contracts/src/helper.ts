@@ -53,3 +53,16 @@ export const HelperContext = z.object({
   about: z.string().max(100).optional(),
 });
 export type HelperContext = z.input<typeof HelperContext>;
+
+/**
+ * Text of mine rephrased by a quick model (Chats-and-Helper → Fix wording):
+ * spelling and grammar fixed, made clear, the meaning and every fact kept.
+ * `kind` says what the text is, for the model's tone.
+ */
+export const TextPolishKind = z.enum(["server-description", "description", "plain"]);
+export type TextPolishKind = z.infer<typeof TextPolishKind>;
+export const TextPolish = z.object({
+  text: z.string().min(1).max(8000),
+  kind: TextPolishKind.default("plain"),
+});
+export type TextPolish = z.infer<typeof TextPolish>;
