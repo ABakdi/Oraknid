@@ -38,6 +38,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ErrorNote, Loading } from "@/components/common";
 import { useConfirm } from "@/components/confirm";
+import { FolderPickerButton } from "@/components/folder-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1241,11 +1242,22 @@ export function PlanForm({
           {field(
             "bk-folder",
             t("Folder"),
-            <Input
-              id="bk-folder"
-              value={dest.folder}
-              onChange={(e) => setDest({ ...dest, folder: e.target.value })}
-            />,
+            <div className="flex gap-2">
+              <Input
+                id="bk-folder"
+                value={dest.folder}
+                onChange={(e) => setDest({ ...dest, folder: e.target.value })}
+              />
+              {/* A folder on this computer: chosen with the folder picker too (M13.19). */}
+              {dest.kind === "local" ? (
+                <FolderPickerButton
+                  value={dest.folder}
+                  onChoose={(folder) => setDest({ ...dest, folder })}
+                  title={t("Where the backups go")}
+                  label={t("Folder")}
+                />
+              ) : null}
+            </div>,
             dest.kind === "local"
               ? t("On this computer; ~ is your home.")
               : dest.kind === "cloud"
