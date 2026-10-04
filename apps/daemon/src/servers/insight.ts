@@ -108,6 +108,70 @@ async function runPart<K extends InsightPart>(
   return data;
 }
 
+/** The environment's names a login is read from, by kind (the official images' own). */
+const LOGIN_ENV = {
+  postgres: { user: ["POSTGRES_USER"], database: ["POSTGRES_DB"] },
+  mysql: {
+    user: ["MARIADB_USER", "MYSQL_USER"],
+    database: ["MARIADB_DATABASE", "MYSQL_DATABASE"],
+  },
+  mongodb: { user: ["MONGO_INITDB_ROOT_USERNAME"], database: ["MONGO_INITDB_DATABASE"] },
+  redis: { user: ["REDIS_USERNAME", "REDIS_USER"], database: [] },
+} as const;
+
+/**
+ * Reads, on the server, each database container's environment and prints
+ * only the names above with their values; of any other variable naming a
+ * password (or Redis's `--requirepass`), only that it is there. A
+ * password's value never leaves the server.
+ */
+const LOGINS_SCRIPT = `D=$(command -v docker || command -v podman) || exit 0
+for c in "$@"; do
+  "$D" inspect -f '{{range .Config.Env}}{{println .}}{{end}}{{range .Config.Cmd}}{{println "CMD=" .}}{{end}}' "$c" 2>/dev/null | awk -v c="$c" '
+    /^(${[...new Set(Object.values(LOGIN_ENV).flatMap((k) => [...k.user, ...k.database]))].join("|")})=/ { print c "\\t" $0; next }
+    /^[A-Z0-9_]*(EMPTY_PASSWORD|RANDOM_ROOT_PASSWORD|PASSWORD_HASH)=/ { next }
+    /^[A-Z0-9_]*(PASSWORD|_PWD|_PASS)[A-Z0-9_]*=./ { sub(/=.*/, ""); print c "\\t" $0 "=" ; next }
+    /^CMD=.*requirepass/ { print c "\\tREQUIREPASS=" }'
+done`;
+
+/** Adds each database container's login, read from its environment (never a password's value). */
+export async function addLogins(client: Client, data: ServerDatabases): Promise<void> {
+  const containers = data.databases.filter(
+    (d) => d.source === "container" && /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(d.name),
+  );
+  if (!containers.length) return;
+  const r = await exec(
+    client,
+    `sh -c ${q(LOGINS_SCRIPT)} sh ${containers.map((d) => q(d.name)).join(" ")}`,
+    { timeoutMs: 30_000 },
+  );
+  const env = new Map<string, Map<string, string>>();
+  for (const line of r.stdout.split("\n")) {
+    const tab = line.indexOf("\t");
+    if (tab < 0) continue;
+    const [c, kv] = [line.slice(0, tab), line.slice(tab + 1)];
+    const eq = kv.indexOf("=");
+    if (eq < 0) continue;
+    const m = env.get(c) ?? new Map<string, string>();
+    m.set(kv.slice(0, eq), kv.slice(eq + 1).trim());
+    env.set(c, m);
+  }
+  for (const d of containers) {
+    const m = env.get(d.name);
+    if (!m) continue;
+    const names = LOGIN_ENV[d.kind];
+    const first = (keys: readonly string[]) => keys.map((k) => m.get(k)).find((v) => v) ?? null;
+    const known = new Set<string>(
+      Object.values(LOGIN_ENV).flatMap((k) => [...k.user, ...k.database]),
+    );
+    d.login = {
+      user: first(names.user),
+      database: first(names.database),
+      passwordSet: [...m.keys()].some((k) => !known.has(k)),
+    };
+  }
+}
+
 export class ServerInsight {
   readonly #cache = new Map<string, { at: number; value: Promise<unknown> }>();
 
@@ -135,7 +199,10 @@ export class ServerInsight {
         part === "traffic"
           ? [...new Set((await this.part(id, "proxy")).data.proxies.flatMap((p) => p.accessLogs))]
           : [];
-      return runPart(client, part, args);
+      const data = await runPart(client, part, args);
+      // Containers' logins, for a backup plan's form (ADR-044): never a password.
+      if (part === "databases") await addLogins(client, data as ServerDatabases).catch(() => {});
+      return data;
     })();
     this.#cache.set(key, { at: now, value });
     try {

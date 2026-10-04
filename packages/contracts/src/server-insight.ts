@@ -65,6 +65,19 @@ export const ServerDatabase = z.object({
   /** Only when it can be read without credentials. */
   sizeBytes: z.number().nullable(),
   note: z.string().nullable(),
+  /**
+   * A container's login, read from its environment (POSTGRES_USER,
+   * MYSQL_DATABASE, MONGO_INITDB_ROOT_USERNAME…) for a backup plan
+   * (ADR-044): never a password's value, only whether one is set there.
+   */
+  login: z
+    .object({
+      user: z.string().nullable(),
+      database: z.string().nullable(),
+      passwordSet: z.boolean(),
+    })
+    .nullable()
+    .default(null),
 });
 export type ServerDatabase = z.infer<typeof ServerDatabase>;
 
