@@ -31,6 +31,11 @@ the standard one.
   with full rights only; it needs the device's token and an unlocked
   session like every call ([[ADR-029-App-Lock]]).
 
+*Extended 2026-10-04:* a terminal on this computer can start in a
+project's folder: the target `project:<id>` names the project, never a
+path, and a project that isn't mine (or a folder that isn't there) opens
+nothing.
+
 ## Consequences
 - Anyone with a paired device and the setting on has a shell on this
   machine: pairing is the gate, as for everything else.

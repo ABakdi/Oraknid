@@ -294,7 +294,11 @@ the address (`/projects/<id>/<tab>`):
 - **Skills**, **Servers**, **Network** (the ports on this computer its
   jobs may reach, like a local database; [[Sandboxing]]).
 
-**New work** in its header opens its Eye tab. Its Servers tab adds a
+**Open folder** and **Terminal here** in its header (2026-10-04): the
+project's folder in this computer's file manager, to look at or test the
+work by hand (away from home, its path is copied instead), and a terminal
+on this computer started in that folder (`/terminal/project:<id>`: the
+terminal takes the project's id, never a path, ADR-028). **New work** in its header opens its Eye tab. Its Servers tab adds a
 server or sets one up in place, its Skills tab shows which tools a
 skill still needs. With a job open, the list of projects steps aside
 below 1280 px.

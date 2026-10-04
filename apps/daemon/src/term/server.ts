@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import type { IncomingMessage, Server } from "node:http";
 import { homedir } from "node:os";
 import { WebSocketServer } from "ws";
@@ -21,7 +22,7 @@ interface Pty {
   onExit(f: () => void): void;
 }
 
-async function localPty(cols: number, rows: number): Promise<Pty> {
+async function localPty(cols: number, rows: number, cwd = homedir()): Promise<Pty> {
   // Loaded only when a terminal opens: a native module the rest never needs.
   const pty = await import("node-pty");
   const shell = process.env.SHELL || "/bin/bash";
@@ -29,7 +30,7 @@ async function localPty(cols: number, rows: number): Promise<Pty> {
     name: "xterm-256color",
     cols,
     rows,
-    cwd: homedir(),
+    cwd,
     env: { ...process.env, TERM: "xterm-256color" } as Record<string, string>,
   });
   return {
@@ -64,8 +65,19 @@ export function attachTerminal(o: {
   /** Typing in the terminal is activity: it keeps the session unlocked. */
   active?: (req: IncomingMessage) => void;
   enabled: () => boolean;
+  /**
+   * A project's folder, for a terminal opened from its page: the target is
+   * `project:<id>`, never a path, so a terminal starts only in a folder that
+   * is one of my projects. Null: no such project.
+   */
+  projectFolder?: (id: string) => string | null;
 }) {
   const wss = new WebSocketServer({ noServer: true });
+  const projectCwd = (id: string) => {
+    const folder = o.projectFolder?.(id);
+    if (!folder || !existsSync(folder)) throw new Error("That project's folder isn't here.");
+    return folder;
+  };
   // A terminal lives only while its device is paired and unlocked, and the
   // terminal is on (ADR-029): checked every 10 s and at once on a lock.
   const open = new Map<import("ws").WebSocket, IncomingMessage>();
@@ -128,7 +140,9 @@ export function attachTerminal(o: {
         pty =
           target === "local"
             ? await localPty(cols, rows)
-            : await serverPty(o.servers, target, cols, rows);
+            : target.startsWith("project:")
+              ? await localPty(cols, rows, projectCwd(target.slice("project:".length)))
+              : await serverPty(o.servers, target, cols, rows);
       } catch (error) {
         ws.send(`\r\n\x1b[31m${error instanceof Error ? error.message : String(error)}\x1b[0m\r\n`);
         ws.close();

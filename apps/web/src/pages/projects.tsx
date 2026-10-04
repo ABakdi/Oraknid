@@ -1,5 +1,5 @@
 import type { ProjectView } from "@oraknid/contracts";
-import { FolderGit2, Plus } from "lucide-react";
+import { FolderGit2, FolderOpen, Plus, SquareTerminal } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Redirect, useLocation } from "wouter";
@@ -35,6 +35,7 @@ import { tokens } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { currentProjectPath } from "@/lib/links";
 import { useLive } from "@/lib/live";
+import { remote } from "@/lib/remote";
 import { cn } from "@/lib/utils";
 import { InboxItemCard } from "@/pages/inbox";
 
@@ -200,6 +201,7 @@ function ProjectDetail({
         {project.workspacePath}
       </span>
       <span className="flex-1 sm:hidden" />
+      <ProjectFolderButtons id={id} path={project.workspacePath} />
       <Button
         data-help="project.new-work"
         size="sm"
@@ -567,5 +569,52 @@ function NewProject({ open, onOpenChange }: { open: boolean; onOpenChange: (o: b
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * The project's folder, to go and look or test by hand: opened in this
+ * computer's file manager, or a terminal started in it. Away from home the
+ * file manager would open on the computer, not here: its path is copied.
+ */
+function ProjectFolderButtons({ id, path }: { id: string; path: string }) {
+  const [, go] = useLocation();
+  const away = !!remote();
+  return (
+    <>
+      <Button
+        data-help="project.open-folder"
+        size="sm"
+        variant="outline"
+        className="shrink-0 gap-1"
+        title={away ? t("Copy the folder's path: {path}", { path }) : path}
+        onClick={async () => {
+          if (away) {
+            await navigator.clipboard?.writeText(path).catch(() => {});
+            toast.success(t("Path copied: {path}", { path }));
+            return;
+          }
+          try {
+            await api.projects.openFolder({ id });
+          } catch (e) {
+            toast.error(message(e));
+          }
+        }}
+      >
+        <FolderOpen className="size-4" />
+        <span className="hidden sm:inline">{away ? t("Copy path") : t("Open folder")}</span>
+      </Button>
+      <Button
+        data-help="project.terminal-here"
+        size="sm"
+        variant="outline"
+        className="shrink-0 gap-1"
+        title={t("A terminal in {path}", { path })}
+        onClick={() => go(`/terminal/${encodeURIComponent(`project:${id}`)}`)}
+      >
+        <SquareTerminal className="size-4" />
+        <span className="hidden sm:inline">{t("Terminal here")}</span>
+      </Button>
+    </>
   );
 }

@@ -533,6 +533,13 @@ export async function startDaemon(options: DaemonOptions) {
       if (who && who !== "cli") lock.check(who, unlockOf(req.headers, req.url));
     },
     enabled: () => readSetting(db, TERMINAL_SETTING, z.boolean(), false),
+    projectFolder: (id) => {
+      try {
+        return projectsService.require(id).workspacePath;
+      } catch {
+        return null;
+      }
+    },
   });
 
   const metricsLoop = startMetricsLoop({

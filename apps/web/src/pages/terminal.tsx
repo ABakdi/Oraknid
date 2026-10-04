@@ -47,8 +47,13 @@ export function TerminalPage({ target }: { target?: string }) {
   const [picking, setPicking] = useState(false);
   const next = useRef(1);
 
+  const projects = useLive(() => api.projects.list(), { topics: ["overview"] });
   const label = (id: string) =>
-    id === "local" ? t("This computer") : (servers.data?.find((s) => s.id === id)?.name ?? id);
+    id === "local"
+      ? t("This computer")
+      : id.startsWith("project:")
+        ? (projects.data?.find((p) => `project:${p.id}` === id)?.name ?? t("A project"))
+        : (servers.data?.find((s) => s.id === id)?.name ?? id);
   const open = (id: string) => {
     const key = next.current++;
     setSessions((s) => {
@@ -69,9 +74,10 @@ export function TerminalPage({ target }: { target?: string }) {
   // The first terminal: the one in the address, or this computer.
   // biome-ignore lint/correctness/useExhaustiveDependencies: once, when the page can open one
   useEffect(() => {
-    if (enabled.data && next.current === 1 && (target === undefined || servers.data))
-      open(target ?? "local");
-  }, [enabled.data, servers.data]);
+    const named =
+      target === undefined || (servers.data && (!target.startsWith("project:") || projects.data));
+    if (enabled.data && next.current === 1 && named) open(target ?? "local");
+  }, [enabled.data, servers.data, projects.data]);
 
   // Shortcuts (Web-UI → Terminal): caught before the shell sees them.
   // biome-ignore lint/correctness/useExhaustiveDependencies: close only uses the state setters

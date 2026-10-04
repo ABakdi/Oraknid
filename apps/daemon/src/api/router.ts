@@ -187,7 +187,7 @@ import type { ToolRegistry } from "../tools/registry.ts";
 import { VERSION } from "../version.ts";
 import { type GitHub, GitHubError } from "../workspace/github.ts";
 import type { Repos } from "../workspace/github-repos.ts";
-import type { Projects } from "../workspace/projects.ts";
+import { NotAGitRepo, type Projects } from "../workspace/projects.ts";
 import { jobResult, mergeJob, taskDiff } from "../workspace/result.ts";
 import { projectFrom } from "../workspace/sources.ts";
 import { backupsRouter } from "./backups.ts";
@@ -588,6 +588,9 @@ async function guard<T>(fn: () => Promise<T> | T): Promise<T> {
             : "BAD_REQUEST",
         { message: error.message },
       );
+    // A folder that isn't a git repo: its message says what to choose (Jobs-and-Projects).
+    if (error instanceof NotAGitRepo)
+      throw new ORPCError("BAD_REQUEST", { message: error.message });
     if (error instanceof Error && error.constructor === Error) {
       const code =
         /^No (such |[a-z]+ )?\w*\s*[0-9A-HJKMNP-TV-Z]{26}\b|^No (job|task|project|device|session|inbox item)\b/.test(
@@ -696,6 +699,14 @@ export const router = {
     }),
   },
   projects: {
+    /** Opens a project's folder in this computer's file manager (xdg-open). */
+    openFolder: base.input(z.object({ id: z.string() })).handler(({ context: c, input }) =>
+      guard(() => {
+        const folder = c.projects.require(input.id).workspacePath;
+        if (!existsSync(folder)) throw new Error(`The project's folder isn't here: ${folder}.`);
+        c.openPath(folder);
+      }),
+    ),
     /** My command rules for one project (Approvals → Rules, M1.9). */
     policy: base
       .input(z.object({ id: z.string() }))

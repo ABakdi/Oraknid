@@ -528,6 +528,22 @@ export const CONTROLS: HelpControl[] = [
     where: "A project's Repo tab, one section per repo",
   },
   {
+    id: "project.open-folder",
+    page: "projects",
+    needsItem: true,
+    name: "Open folder",
+    does: "Opens the project's folder in this computer's file manager, to look at or test the work by hand; away from home it copies the folder's path.",
+    where: "A project's header, beside New work",
+  },
+  {
+    id: "project.terminal-here",
+    page: "projects",
+    needsItem: true,
+    name: "Terminal here",
+    does: "Opens a terminal on this computer that starts in the project's folder (the terminal must be on).",
+    where: "A project's header, beside New work",
+  },
+  {
     id: "project.new-work",
     page: "projects",
     needsItem: true,
