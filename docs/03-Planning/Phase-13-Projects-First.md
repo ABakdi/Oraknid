@@ -516,13 +516,13 @@ and port, MinIO in a container, all removed after) at desktop and at
 - [x] Doctor's install hints name this system's package manager and package (apt, dnf, pacman, zypper, apk) ([[OS-Integration]]).
   Tested: `doctor-hints.test.ts`.
 - [x] `install.sh --dev` installs the `dev` branch; `install.sh` installs rclone (recommended: a failure only warns) ([[ADR-036-One-Script-Install]]).
-  Tested: no automated test (`--dev` is `--ref dev`); the script hasn't been run again in a container since.
+  Tested: the README's one-liner, `curl … dev/install.sh | sh -s -- --dev --no-service`, run on a fresh Debian 12 (a plain unprivileged container, 2026-10-04): it installed the packages, rclone among them (Debian's 1.60), cloned `dev` at its newest commit (5d3873d), built, linked `oraknid` and ran `doctor`. That run found `doctor`'s install hints naming `pacman` on Debian, fixed (`doctor-hints.test.ts`).
 - [x] Test containers carry their test process's id as a label and are removed by a watcher once it is gone, however it ended.
   Tested: the runner killed with SIGKILL, the containers removed (M13.16).
 - [x] The startup timing test runs on its own after the suite (`pnpm check` → `test:perf`), its stalls judged against the machine's own ([[Checkpoint-1]] → B1-04).
   Tested: `pnpm check` runs it after `turbo run typecheck test`; two races in `naming.test.ts` and `rclone-provider.test.tsx` made deterministic with it.
 - [x] A folder that isn't a git repo, chosen for a new project, is said in words (what to choose), not as an unknown error.
-  Tested: `layer2.test.ts` (a plain folder throws `NotAGitRepo`); the API now answers `BAD_REQUEST` with its message.
+  Tested: `layer2.test.ts` (a plain folder throws `NotAGitRepo`); `term.test.ts` (`projects.create` on a plain folder is refused with its message in words, not as an error inside Oraknid).
 
 ## Exit criterion
 
