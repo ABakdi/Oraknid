@@ -97,13 +97,37 @@ export function defaultProfile(kind: LegKind, model: string): ProfileSettings {
     return { ...agy, strengths: flat(4), quotaWeight: 3, maxDifficulty: "high" };
   }
   if (kind === "opencode") {
-    return {
-      ...base,
-      costModel: "subscription",
-      tools: AGENT_TOOLS,
-      strengths: flat(3),
-      maxDifficulty: "medium",
-    };
+    const oc = { ...base, costModel: "subscription" as const, tools: AGENT_TOOLS };
+    // A free or trial model (OpenCode Zen's): no one vouches for it, its provider may drop it
+    // any minute. It starts low and earns its place (M13.22: free models took a research
+    // task from Claude Sonnet, then failed it seven times).
+    if (isFreeModel(m))
+      return {
+        ...oc,
+        costModel: "free",
+        strengths: flat(2),
+        maxDifficulty: "medium",
+        prior: "unproven",
+      };
+    switch (knownFamily(m)) {
+      case "frontier":
+        return {
+          ...oc,
+          strengths: flat(5, { mechanical: 4 }),
+          quotaWeight: 3,
+          maxDifficulty: "high",
+        };
+      case "mid":
+        return {
+          ...oc,
+          strengths: flat(4, { planning: 3, architecture: 3 }),
+          maxDifficulty: "medium",
+        };
+      case "small":
+        return { ...oc, strengths: flat(2, { mechanical: 3, summarize: 3 }), maxDifficulty: "low" };
+      default:
+        return { ...oc, strengths: flat(2), maxDifficulty: "medium", prior: "unproven" };
+    }
   }
   // A bare local model: good for small, mechanical and text work until it proves otherwise.
   return {
@@ -111,6 +135,29 @@ export function defaultProfile(kind: LegKind, model: string): ProfileSettings {
     strengths: flat(1, { mechanical: 3, summarize: 3, classify: 3, docs: 2 }),
     knownFailures: ["may not call tools reliably"],
   };
+}
+
+/** A free or trial model, by its name: OpenCode Zen's `-free` ones and big-pickle, OpenRouter's `:free`. */
+export function isFreeModel(model: string): boolean {
+  const m = model.toLowerCase();
+  return /(^|[-:/])free$/.test(m) || /(^|\/)big-pickle$/.test(m);
+}
+
+/**
+ * A model family Oraknid knows by name wherever it runs (through OpenCode's
+ * providers): its frontier models, its middle ones, its small ones.
+ */
+export function knownFamily(model: string): "frontier" | "mid" | "small" | null {
+  const m = model.toLowerCase();
+  if (/haiku|nano\b|-mini\b|flash-lite|\blite\b/.test(m)) return "small";
+  if (/opus|fable|gpt-5(?![\w.-]*mini)|gemini-[\d.]+-pro|\bo3\b|grok-4/.test(m)) return "frontier";
+  if (
+    /sonnet|gpt-4\.1|gemini-[\d.]+-flash|deepseek|qwen3-coder|kimi-k2|glm-4\.[5-9]|devstral|codestral/.test(
+      m,
+    )
+  )
+    return "mid";
+  return null;
 }
 
 /** Which capability a task kind exercises, for learning from outcomes. */

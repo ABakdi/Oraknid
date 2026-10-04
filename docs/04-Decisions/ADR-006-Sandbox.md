@@ -46,6 +46,11 @@ local models. Agent permission settings alone are too weak.
   each sandbox has a **network namespace of its own**, with the internet
   and only the local ports a project lists or a Leg's own settings name
   (S2-21). Details in [[Sandboxing]].
+- 2026-10-04 (M13.22): git works in a job's worktree. The project's
+  `.git` is a throwaway layer inside, in which the objects, refs, logs
+  and the worktree's own git folder are the real ones; its config, hooks
+  and the worktree's links stay read-only. Before, git there said "not a
+  git repository" and agents failed simple git commands.
 
 ## Why not containers
 Heavier, slower to start per session, and GPU passthrough adds work.

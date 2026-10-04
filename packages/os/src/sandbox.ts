@@ -20,6 +20,13 @@ export interface SandboxSpec {
   inboundPorts?: number[];
   /** This computer's network, not one of its own: only while I sign a Leg in (its browser callback). */
   hostNetwork?: boolean;
+  /**
+   * A worktree's git folders (M13.22), bound after the others: the
+   * project's `.git` as a throwaway layer over its entries, what git writes
+   * writable, the rest read-only, and the links that say where the
+   * repository is read-only again. Found from `cwd` when not given.
+   */
+  git?: { layer: string[]; readonly: string[]; writable: string[]; protect: string[] };
 }
 
 export interface SandboxStatus {

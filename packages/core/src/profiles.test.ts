@@ -4,6 +4,8 @@ import {
   effectiveProfile,
   emptyStoredProfile,
   estimateUtilization,
+  isFreeModel,
+  knownFamily,
   learnStrength,
   record,
 } from "./profiles.ts";
@@ -90,5 +92,42 @@ describe("estimated utilization", () => {
     expect(estimateUtilization(500, undefined)).toBeNull();
     expect(estimateUtilization(250, 1000)).toBe(0.25);
     expect(estimateUtilization(5000, 1000)).toBe(1);
+  });
+});
+
+describe("priors for models Oraknid doesn't know (M13.22)", () => {
+  it("starts OpenCode's free models unproven and free, below a known family", () => {
+    for (const m of ["big-pickle", "jev-1.13-free", "deepseek-v4-flash-free", "x/y:free"]) {
+      const p = defaultProfile("opencode", m);
+      expect([p.prior, p.costModel, p.strengths.implementation]).toEqual(["unproven", "free", 2]);
+    }
+    const unknown = defaultProfile("opencode", "some-new-model");
+    expect(unknown.prior).toBe("unproven");
+    expect(unknown.costModel).toBe("subscription");
+  });
+
+  it("knows the families behind an OpenCode provider by name", () => {
+    expect(knownFamily("anthropic/claude-opus-4-8")).toBe("frontier");
+    expect(knownFamily("openai/gpt-5.2")).toBe("frontier");
+    expect(knownFamily("openai/gpt-5-mini")).toBe("small");
+    expect(knownFamily("claude-sonnet-4-6")).toBe("mid");
+    expect(knownFamily("google/gemini-3.1-pro")).toBe("frontier");
+    expect(knownFamily("big-pickle")).toBeNull();
+    const sonnet = defaultProfile("opencode", "anthropic/claude-sonnet-4-6");
+    expect([sonnet.prior, sonnet.maxDifficulty, sonnet.strengths.implementation]).toEqual([
+      undefined,
+      "medium",
+      4,
+    ]);
+    expect(isFreeModel("deepseek-v4-flash-free")).toBe(true);
+    expect(isFreeModel("deepseek-chat")).toBe(false);
+  });
+
+  it("lets my override vouch for one", () => {
+    const p = effectiveProfile("opencode", "big-pickle", {
+      overrides: { prior: "known" },
+      observed: {},
+    });
+    expect(p.prior).toBe("known");
   });
 });

@@ -7,14 +7,16 @@ import {
   readFileSync,
   readlinkSync,
   renameSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { decide } from "@oraknid/core";
 import { createBwrapSandbox } from "@oraknid/os";
 import { describe, expect, it } from "vitest";
-import { jobHomeDir, prepareJobHome, removeJobHomes } from "./job-home.ts";
+import { jobHomeDir, prepareJobHome, removeJobHomes, scratchFor } from "./job-home.ts";
 import { sandboxPlan } from "./plan.ts";
 import type { LegRow } from "./registry.ts";
 
@@ -171,4 +173,66 @@ describe("a home per job on a shared Leg (Audit 2, S2-08)", () => {
       expect(a.stdout).toContain("shared settings");
     },
   );
+});
+
+describe("a job's scratch on its Leg (M13.22)", () => {
+  /** An OpenCode Leg as its probe left it: its tmp, its database, its login. */
+  function openCodeLeg() {
+    const root = mkdtempSync(join(tmpdir(), "oraknid-scratch-"));
+    const legsDir = join(root, "legs");
+    const legHome = join(legsDir, "OC", "home");
+    const data = join(legHome, ".local", "share", "opencode");
+    mkdirSync(join(legHome, "tmp", "opencode"), { recursive: true });
+    mkdirSync(data, { recursive: true });
+    writeFileSync(join(data, "opencode.db"), "the Leg's sessions");
+    writeFileSync(join(data, "auth.json"), "opencode login");
+    return { root, legsDir, legHome, data };
+  }
+
+  it("gives each job its own tmp and OpenCode database, its login still shared", () => {
+    const l = openCodeLeg();
+    const a = prepareJobHome({ legsDir: l.legsDir, legId: "OC", jobId: "A", legHome: l.legHome });
+    expect(existsSync(join(a.home, "tmp"))).toBe(false);
+    expect(existsSync(join(a.home, ".local/share/opencode/opencode.db"))).toBe(false);
+    expect(readFileSync(join(a.home, ".local/share/opencode/auth.json"), "utf8")).toBe(
+      "opencode login",
+    );
+    expect(a.shared).not.toContain(join(l.legHome, "tmp"));
+    expect(a.shared).not.toContain(join(l.data, "opencode.db"));
+  });
+
+  it("turns the links an older home had for them into the job's own", () => {
+    const l = openCodeLeg();
+    const home = jobHomeDir(l.legsDir, "OC", "A");
+    mkdirSync(join(home, ".local", "share", "opencode"), { recursive: true });
+    symlinkSync(join(l.legHome, "tmp"), join(home, "tmp"));
+    symlinkSync(join(l.data, "opencode.db"), join(home, ".local/share/opencode/opencode.db"));
+    prepareJobHome({ legsDir: l.legsDir, legId: "OC", jobId: "A", legHome: l.legHome });
+    expect(existsSync(join(home, "tmp"))).toBe(false);
+    expect(existsSync(join(home, ".local/share/opencode/opencode.db"))).toBe(false);
+    // The Leg's own are untouched.
+    expect(readFileSync(join(l.data, "opencode.db"), "utf8")).toBe("the Leg's sessions");
+  });
+
+  it("lets OpenCode write its own tmp, as the refused writes of 2026-10-04 asked", () => {
+    const l = openCodeLeg();
+    // The sandbox's own /tmp aside: this test's folders are under the host's.
+    const scratch = scratchFor(l.legsDir, "OC", "J").filter((s) => s !== "/tmp");
+    expect(scratchFor(l.legsDir, "OC", "J")).toContain("/tmp");
+    const ctx = {
+      worktree: join(l.root, "piano"),
+      autonomy: "standard" as const,
+      waived: new Set<never>(),
+      scratch,
+    };
+    const write = (path: string) => decide({ tool: "Write", command: null, path }, ctx).verdict;
+    // OpenCode's external_directory asks, as they came (a pattern ending in /*).
+    expect(write(join(l.legHome, "tmp", "opencode", "*"))).toBe("allow");
+    expect(write(join(l.legHome, "tmp", "opencode", "audiobench", "*"))).toBe("allow");
+    expect(write(join(jobHomeDir(l.legsDir, "OC", "J"), "tmp", "opencode", "x.txt"))).toBe("allow");
+    // Anywhere else is still refused: the Leg's login, another job's home, my home.
+    expect(write(join(l.data, "auth.json"))).toBe("deny");
+    expect(write(join(jobHomeDir(l.legsDir, "OC", "K"), "tmp", "x"))).toBe("deny");
+    expect(write("/home/someone/.bashrc")).toBe("deny");
+  });
 });

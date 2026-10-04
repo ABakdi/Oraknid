@@ -30,10 +30,12 @@ import {
   type Observed,
   type PolicyVerdict,
   programsOf,
+  providerFailure,
   type RouteCandidate,
   record,
   route,
   skillExcerpt,
+  taskScope,
 } from "@oraknid/core";
 import type {
   LegEvent,
@@ -50,7 +52,7 @@ import { SideEffects } from "../engine/effects.ts";
 import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 import type { InboxStore } from "../inbox/store.ts";
-import { jobHomeDir } from "../legs/job-home.ts";
+import { jobHomeDir, scratchFor } from "../legs/job-home.ts";
 import { sandboxPlan } from "../legs/plan.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor, Supervised } from "../legs/supervisor.ts";
@@ -335,6 +337,8 @@ export async function runAttempt(
     const share = quotaShare?.hard ? quotaShare.limit : null;
     const until = [
       ...d.registry.all().map((l) => l.limitedUntil),
+      // A model or Leg resting after a provider failure (M13.22).
+      ...candidates.map((c) => c.cooldown?.until),
       ...(share === null
         ? []
         : candidates.flatMap((c) =>
@@ -349,7 +353,7 @@ export async function runAttempt(
       reason: heldBack
         ? `"${task.title}" hit a usage limit on ${[...blockedKinds].join(", ")}; other accounts of the same provider are not used as fallback (ADR-009). It waits${resets}, for another provider, or for my setting.`
         : until
-          ? `All allowed Legs are out of quota${resets}${routed.excluded.length ? `: ${routed.excluded.map((e) => e.why).join(" ")}` : "."}`
+          ? `All allowed Legs are ${candidates.some((c) => c.cooldown) ? "resting after provider failures or " : ""}out of quota${resets}${routed.excluded.length ? `: ${routed.excluded.map((e) => e.why).join(" ")}` : "."}`
           : `No Leg can take "${task.title}": ${routed.excluded.map((e) => e.why).join(" ") || "there are no Legs."}`,
       until: until ?? null,
     };
@@ -510,7 +514,7 @@ export async function runAttempt(
   let usage = null as UsageSnapshot | null;
 
   const observed: Observed = {
-    scope: task.scope,
+    scope: scopeOf(task),
     changedPaths: [],
     commands: [],
     verifyFailures: [],
@@ -538,8 +542,8 @@ export async function runAttempt(
     // The broker judges every call to a job's tool: the Leg's own ask for it passes (ADR-021).
     if (isBrokered(r.tool, brokered)) return { allow: true };
     const policy = policyFor(d.db, job.id, ws.cwd);
-    // Its own /tmp and this job's home are private to its sandbox: its to use.
-    policy.scratch = ["/tmp", jobHomeDir(d.legsDir, leg.legId, job.id)];
+    // Its own /tmp, this job's home and the Leg's tmp and cache are its scratch (M13.22).
+    policy.scratch = scratchFor(d.legsDir, leg.legId, job.id);
     if (readTheWeb) policy.untrusted = true;
     if (toolRows.length) {
       const declared = d.tools?.registry.declarations(toolRows) ?? new Map();
@@ -658,7 +662,7 @@ export async function runAttempt(
         id: task.id,
         title: task.title,
         instructions: task.instructions,
-        scope: task.scope,
+        scope: scopeOf(task),
         verify: task.verify,
       },
       goal: job.goal,
@@ -1032,14 +1036,14 @@ export async function runAttempt(
     // there, the next attempt starts out of scope and trips D1 again.
     if (drift.code === "D1") {
       const outside = (await ws.tree.changedSince(scopeBase)).filter(
-        (p) => !inTaskScope(p, task.scope),
+        (p) => !inTaskScope(p, scopeOf(task)),
       );
       ws.tree.restorePaths(scopeBase, outside, ws.trash);
     }
     switch (next.step) {
       case "correct": {
         await session?.session.send(
-          `${correctivePrompt(drift, task.scope, task.verify)}${failure ? `\n\n${failure}` : ""}`,
+          `${correctivePrompt(drift, scopeOf(task), task.verify)}${failure ? `\n\n${failure}` : ""}`,
         );
         return;
       }
@@ -1085,7 +1089,7 @@ export async function runAttempt(
   };
 
   const finish = (
-    outcome: "succeeded" | "failed" | "reassigned" | "abandoned",
+    outcome: "succeeded" | "failed" | "reassigned" | "abandoned" | "unavailable",
     success: boolean,
   ) => {
     release();
@@ -1096,7 +1100,8 @@ export async function runAttempt(
       .where(eq(attempts.id, attemptId))
       .run();
     const m = d.registry.model(leg.legModelId);
-    if (m) {
+    // Its provider failing says nothing of what the model can do (M13.22).
+    if (m && outcome !== "unavailable") {
       const stored = record(d.registry.storedProfile(m), task.kind as TaskKind, {
         success,
         tokens: observed.tokensSinceProgress,
@@ -1183,12 +1188,33 @@ export async function runAttempt(
           })
           .where(eq(tasks.id, taskId))
           .run();
-        finish("reassigned", false);
+        // A usage limit is the account's, not the task failing: not counted against it (M13.22).
+        finish("unavailable", false);
         return { kind: "retry", reason: `${leg.legName} hit a usage limit` };
       }
       if (end.reason === "error") {
         await handOff(false);
         await closeSession();
+        // Its provider failed, not the task (M13.22): the model (or the Leg) rests, the
+        // attempt isn't counted against the task, and routing tries elsewhere next.
+        const infra = providerFailure(end.error);
+        if (infra) {
+          const { until, inARow } = d.registry.providerFailed(leg.legId, leg.legModelId, infra);
+          const what = infra.scope === "leg" ? leg.legName : `${leg.legName} · ${leg.model}`;
+          event("task.provider-failed", {
+            legId: leg.legId,
+            legModelId: leg.legModelId,
+            scope: infra.scope,
+            reason: infra.reason,
+            until,
+            inARow,
+          });
+          finish("unavailable", false);
+          return {
+            kind: "retry",
+            reason: `${what} failed at its provider (${infra.reason}); it rests until ${new Date(until).toISOString()}, and the attempt doesn't count against the task`,
+          };
+        }
         d.db
           .update(tasks)
           .set({ avoid: [...new Set([...task.avoid, leg.legModelId])] })
@@ -1197,6 +1223,9 @@ export async function runAttempt(
         finish("failed", false);
         return { kind: "retry", reason: `${leg.legName} failed: ${end.error ?? "unknown error"}` };
       }
+
+      // A turn went through: its provider works (M13.22).
+      d.registry.providerWorked(leg.legId, leg.legModelId);
 
       // My messages to The Eye for the work now (Talking to The Eye) go on before any check.
       const told = takeGuidance(job.id, guidanceSeen);
@@ -1208,6 +1237,7 @@ export async function runAttempt(
       }
 
       observed.changedPaths = await ws.tree.changedSince(scopeBase);
+      observed.scope = scopeOf(task);
       let verified = task.verify.length === 0;
       let failure = "";
       if (task.verify.length) {
@@ -1291,6 +1321,8 @@ export async function runAttempt(
           });
           if (!repair.broken) break;
           task.verify = task.verify.map((v) => (v === bad.command ? repair.command : v));
+          // The file a corrected check names is the task's to write (M13.22).
+          observed.scope = scopeOf(task);
           d.db.update(tasks).set({ verify: task.verify }).where(eq(tasks.id, taskId)).run();
           d.silk.add({
             jobId: job.id,
@@ -1640,6 +1672,18 @@ async function nextTurnEnd(
 
 const iterators = new WeakMap<Supervised, AsyncIterator<LegEvent>>();
 
+/**
+ * What a task may change (M13.22): its scope, the files its checks and
+ * instructions name, docs/ for research and planning (taskScope).
+ */
+const scopeOf = (task: TaskRow) =>
+  taskScope({
+    kind: task.kind,
+    scope: task.scope,
+    verify: task.verify,
+    instructions: task.instructions,
+  });
+
 const inTaskScope = (path: string, scope: string[]) =>
   path.startsWith(".oraknid/") || inScope(path, scope);
 
@@ -1660,6 +1704,8 @@ export function candidatesFor(registry: LegRegistry, allowed: string[]): RouteCa
         effortLevels: m.effortLevels,
         profile: m.profile,
         windows: [...view.quota, ...m.quota],
+        cooldown: registry.cooldownOf(leg.id, m.id),
+        legProviderFailures: registry.providerStreak(leg.id),
       });
     }
   }

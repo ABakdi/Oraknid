@@ -151,12 +151,72 @@ that agent and model, from my edits, and from observation.
 | `speed` | Observed tokens/s and first-token latency. |
 | `tools` | Whether it can edit files, run shell, use MCP, browse. |
 | `knownFailures` | Free-text patterns plus detectors, e.g. "claims tests pass without running them". |
+| `prior` | `known`, or `unproven` for a free or unknown model: routing starts it low until it proves itself (below). |
 | `observed` | Per task kind and effort: attempts, success rate, average tokens and time, escalations. |
 
 **Learning.** `observed` is updated after every attempt. Strength
 scores are adjusted slowly from observed success: at most ±0.5 per 20
 attempts, so one bad day doesn't rewrite a profile. My manual edits are
 kept as overrides and always win over learned values. The UI shows both.
+
+### Known and unproven models (M13.22, 2026-10-04)
+
+A profile's `prior` says whether Oraknid knows the model. A known family
+(Claude's Opus, Sonnet and Haiku; Gemini's Pro and Flash; GPT-5 and its
+mini; Sonnet or GPT-5 reached through OpenCode's providers, recognised by
+name) starts from its default strengths. An **unproven** model, a free
+or trial one (OpenCode Zen's `-free` models and `big-pickle`, an
+OpenRouter `:free` one) or a name Oraknid doesn't know, starts low:
+strengths of 2, `costModel` `free` for the free ones, `maxDifficulty`
+`medium`. My override can vouch for one (`prior: known`).
+
+Routing trusts each model from its prior and its record on that kind of
+task (on every kind while it has none on this one), as a success rate
+with the prior counted as earlier attempts: a known model as three at
+70%, so one failure moves it a little; an unproven one as a single
+attempt at 40%, so every outcome moves it fast. Two tasks done and an
+unproven model counts as proven; one failed and it falls further. Its
+`score` term is `(rate − 0.7) × 5`, and the routing record says it in
+words ("unproven: no task seen done yet", "4 of 4 research tasks done",
+"0 of 1 research tasks done (still unproven)").
+
+Seen 2026-10-04: OpenCode's fourteen free models had a default profile
+of 3 everywhere and no cost, and scored above Claude Sonnet on a Claude
+Max subscription whose week was at 67% ("right size for the task,
+capability 3.0/5, quota cost ×1.0"). Now the same pool gives a medium
+research or implementation task to Sonnet; the free models take work
+when Claude's windows are kept for hard tasks, or once they have proven
+themselves.
+
+### Provider failures (M13.22)
+
+A session that ends on its provider's error is not the task failing.
+`providerFailure` reads the error: a model gone at its provider ("Model
+is unavailable", "model not found") rests that model 30 min; a 5xx,
+"Internal server error", an overloaded or unreachable provider rests the
+model 5 min; the account (401/403, a bad key, signed out, no credit, a
+usage limit said as an error) rests the whole Leg 15 min; the Leg's own
+program breaking under it (OpenCode's database, a crash) rests the Leg
+2 min. Each failure in a row doubles the rest, up to four hours. An
+error that is none of these is the task's, as before.
+
+The attempt ends `unavailable`: it isn't counted in the task's attempts
+(the job blocks after eight failed ones), the model's `observed` record
+isn't touched, and the task isn't told to avoid the model for good.
+`task.provider-failed` and `leg.cooldown` say what rests, why and until
+when; routing leaves a resting model out ("resting until 12:05 UTC after
+a provider failure (Internal server error)"). A turn that goes through
+ends the rest and the count. When every allowed model rests, the job is
+blocked until the first one is back.
+
+The next try goes elsewhere: after one provider failure on a Leg, its
+unproven models are not the next try (−1.5); after two in a row, every
+model of that Leg gives way to another Leg (−3). A usage limit
+(`rate-limited`) isn't counted against the task either; it keeps its
+handoff and its rule on other accounts of the same provider (ADR-009).
+
+Rests are kept in memory: a restart forgets them, and a model that
+still fails rests again at its next failure.
 
 ## Leg adapter contract
 

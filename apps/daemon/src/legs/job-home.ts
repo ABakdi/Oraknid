@@ -30,6 +30,9 @@ import { dirname, join } from "node:path";
 const HOME_PRIVATE = [
   ".ssh",
   ".cache",
+  // Scratch: OpenCode's TMPDIR. Linked, it resolved to the Leg's own home, outside the job's,
+  // and its writes there were refused four times (M13.22, 2026-10-04).
+  "tmp",
   ".bash_history",
   ".python_history",
   ".node_repl_history",
@@ -39,6 +42,12 @@ const HOME_PRIVATE = [
   ".local/share/opencode/storage",
   ".local/share/opencode/snapshot",
   ".local/share/opencode/log",
+  // OpenCode 2's sessions live in its database: shared, one job's server read and wrote
+  // another's, from a sandbox that sees only the file, not its journal beside it (M13.22).
+  ".local/share/opencode/opencode.db",
+  ".local/share/opencode/opencode.db-wal",
+  ".local/share/opencode/opencode.db-shm",
+  ".local/share/opencode/repos",
 ];
 
 /** Never shared from a Claude Code Leg's config folder: its sessions and what they leave. */
@@ -66,6 +75,16 @@ export interface JobHome {
 /** Where a Leg keeps its jobs' homes: beside its own, never inside it. */
 export function jobsDir(legsDir: string, legId: string): string {
   return join(legsDir, legId, "jobs");
+}
+
+/**
+ * Where a job's session may write besides its worktree, never asked (M13.22):
+ * its sandbox's /tmp, the job's home on the Leg (its tmp, caches, config),
+ * and the Leg's own tmp and cache, which a home made before M13.22 links to.
+ */
+export function scratchFor(legsDir: string, legId: string, jobId: string): string[] {
+  const legHome = join(legsDir, legId, "home");
+  return ["/tmp", jobHomeDir(legsDir, legId, jobId), join(legHome, "tmp"), join(legHome, ".cache")];
 }
 
 /** A job's home on a Leg (made by prepareJobHome). */
@@ -180,6 +199,13 @@ function backInto(src: string, dst: string, privates: string[]): void {
  */
 function mirror(src: string, dst: string, privates: string[], shared: string[]): void {
   mkdirSync(dst, { recursive: true, mode: 0o700 });
+  // A private entry an older Oraknid linked in becomes the job's own again.
+  for (const name of privates.filter((p) => !p.includes("/"))) {
+    const to = join(dst, name);
+    try {
+      if (lstatSync(to).isSymbolicLink()) unlinkSync(to);
+    } catch {}
+  }
   if (!existsSync(src)) return;
   for (const name of readdirSync(src)) {
     if (privates.includes(name)) continue;

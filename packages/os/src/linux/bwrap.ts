@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, readlinkSync } from "node:fs";
 import type { Sandbox, SandboxSpec, SandboxStatus } from "../sandbox.ts";
+import { gitBinds, gitEnv } from "./git-binds.ts";
 
 /** Top-level directories that are symlinks into /usr on merged-/usr systems (Arch). */
 const MERGED_USR = ["/bin", "/sbin", "/lib", "/lib64"];
@@ -100,7 +101,13 @@ export function createBwrapSandbox(options: BwrapOptions = {}): Sandbox {
 
     wrap(spec: SandboxSpec) {
       const isolated = (spec.network ?? true) && !spec.hostNetwork && ownNet();
-      const args = bwrapArgs(spec, exists, symlinkTarget);
+      // Git works in a job's worktree: its folders in the project's .git, and git's settings (M13.22).
+      const git = spec.git ?? gitBinds(spec.cwd);
+      const args = bwrapArgs(
+        { ...spec, git, env: { ...gitEnv(git), ...spec.env } },
+        exists,
+        symlinkTarget,
+      );
       // pasta first: the sandbox gets a network namespace of its own, with the
       // internet through pasta and only the chosen ports of this computer (Audit 2 → S2-21).
       // Landlock comes inside pasta: applied before it, pasta's user namespace can't map ids.
@@ -148,6 +155,13 @@ export function bwrapArgs(
   // Read-only first: a writable bind listed later wins where they overlap.
   for (const dir of dedupe(spec.readonly)) a.push("--ro-bind", dir, dir);
   for (const dir of dedupe(spec.writable)) a.push("--bind", dir, dir);
+  // A worktree's git folders last, in this order: the project's .git as a throwaway layer,
+  // its entries in it (what git writes writable, the rest read-only), then the links that
+  // say where the repository is, read-only again (gitBinds).
+  for (const dir of spec.git?.layer ?? []) a.push("--tmpfs", dir);
+  for (const dir of spec.git?.readonly ?? []) a.push("--ro-bind", dir, dir);
+  for (const dir of spec.git?.writable ?? []) a.push("--bind", dir, dir);
+  for (const file of spec.git?.protect ?? []) a.push("--ro-bind", file, file);
 
   a.push("--chdir", spec.cwd, "--clearenv");
   const env = { ...spec.env, HOME: spec.home };

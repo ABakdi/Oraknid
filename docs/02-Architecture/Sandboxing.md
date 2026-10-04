@@ -34,6 +34,11 @@ bwrap --unshare-all --share-net --die-with-parent --new-session \
   --bind <worktree> <worktree> \
   --bind <job's home on the Leg> … --setenv HOME <job's home> \
   --bind <each linked entry of the Leg's home> <the same path> \
+  --tmpfs <project>/.git \
+  --ro-bind <project>/.git/{config,hooks,HEAD,info,packed-refs,…} <the same paths> \
+  --bind <project>/.git/{objects,refs,logs} <the same paths> \
+  --bind <project>/.git/worktrees/<job> <the same path> \
+  --ro-bind <worktree>/.git … --ro-bind <project>/.git/worktrees/<job>/{commondir,gitdir} … \
   --chdir <worktree> \
   --clearenv --setenv PATH … <only the variables this Leg needs> \
   -- <command>
@@ -53,8 +58,10 @@ bwrap --unshare-all --share-net --die-with-parent --new-session \
   login and settings serve every job and a refreshed token reaches the
   Leg; the sandbox binds those entries at their own path, never the
   Leg's home as a whole. Not linked, so each job's own: `~/.ssh`,
-  `~/.cache`, `~/.local/state`, shell histories, OpenCode's sessions
-  (`.local/share/opencode/storage`, `snapshot`, `log`), and Claude's
+  `~/.cache`, `~/.local/state`, `~/tmp` (OpenCode's `TMPDIR`), shell
+  histories, OpenCode's sessions (`.local/share/opencode/storage`,
+  `snapshot`, `log`, OpenCode 2's database `opencode.db` with its `-wal`
+  and `-shm`, and `repos`; M13.22), and Claude's
   `projects`, `todos`, `shell-snapshots`, `file-history`,
   `session-env`, `plans`, `history.jsonl`, `debug`, `ide`. What a
   session makes anywhere else in its home is the job's. A linked file a
@@ -66,6 +73,38 @@ bwrap --unshare-all --share-net --die-with-parent --new-session \
   bwrap. What is still shared: what a session writes inside a linked
   folder (its settings, `~/.config`), by design, and sessions that
   aren't a job's (chats, The Eye's planning) use the Leg's home.
+  A link that a home made before M13.22 has for one of these is removed,
+  so it becomes the job's own: linked, OpenCode's `tmp` resolved to the
+  Leg's home, outside the job's, and its writes there were refused (four
+  times on 2026-10-04); one database for every job's server, seen by a
+  sandbox that binds the file but not its journal beside it, failed its
+  queries ("Failed query: select … from session_message").
+- **Git in a job's worktree** (M13.22, 2026-10-04): the worktree's
+  `.git` is a file pointing into the project's `.git/worktrees/<job>`,
+  and the objects and refs live in the project's `.git`. Bound only the
+  worktree, every git command inside said "not a git repository" (and
+  OpenCode, seeing no repository, ran `git init`: the piano job). Now
+  `gitBinds` finds each worktree (the folder itself, or a several-repo
+  job folder's, up to two levels down) and the wrapper mounts the
+  project's `.git` as a throwaway tmpfs holding its entries: the
+  objects, refs, logs (and `lfs`, `rr-cache`) and this worktree's own
+  folder writable, everything else (config, hooks, info, packed refs,
+  HEAD) read-only; then the worktree's `.git` file and its folder's
+  `commondir` and `gitdir` read-only again. What git writes beside them
+  (`packed-refs.lock`, which `commit` takes) lands in the tmpfs, as does
+  anything a Leg would add there to steer Oraknid's own git, which runs
+  outside the sandbox (a `commondir`, a hook, a config naming a
+  `core.fsmonitor` program): none of it reaches the project. Git's
+  settings come at the command line's level (`GIT_CONFIG_COUNT`):
+  `safe.directory=*`, `gc.auto=0`, `maintenance.auto=false`, and, when
+  the project's config names no one, my identity from my global config
+  (Oraknid's otherwise), since the sandbox's home is the job's. So
+  `status`, `diff`, `log`, `add`, `commit`, `switch -c`, `stash` and
+  deleting a branch it made work as they do outside, on the project's
+  own objects and refs; the project's config can't be changed from
+  inside (deleting a branch leaves that branch's settings there, and git
+  says so). A test runs them in bwrap in a worktree of a temp repo, and
+  OpenCode really runs them in a job.
 - Verification commands run in the same wrapper, with a throwaway home
   instead of the Leg's, after the command policy has allowed them.
 - Network is shared (Legs need their APIs), so the wrapper runs under

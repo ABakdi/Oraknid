@@ -21,6 +21,10 @@ export interface RouteCandidate {
   profile: EffectiveProfile;
   /** Every window that applies: the account's and the model's own. */
   windows: { name: string; utilization: number | null; resetsAt: number | null }[];
+  /** A provider failure set this model, or its whole Leg, aside until then (M13.22). */
+  cooldown?: { until: number; reason: string } | null;
+  /** Provider failures in a row on its Leg, none since a turn went through (M13.22). */
+  legProviderFailures?: number;
 }
 
 export interface RouteTask {
@@ -70,6 +74,46 @@ const DEFAULT_EFFORT: Record<Difficulty, string[]> = {
   high: ["high", "xhigh", "max"],
 };
 
+/**
+ * How far routing trusts a model for a kind of task (M13.22): its prior,
+ * moved by what it got done. A known family starts at the success rate the
+ * default strengths assume and moves slowly; an unproven model (a free one,
+ * an unknown name) starts below it, as if it had failed once already, and
+ * every outcome moves it fast: two tasks done and it is trusted like a
+ * known model, one failed and it falls further. Its record on this kind of
+ * task when it has one, else on every kind.
+ */
+export function trust(
+  profile: EffectiveProfile,
+  kind: TaskKind,
+): { score: number; reason: string | null; proven: boolean } {
+  const unproven = profile.prior === "unproven";
+  const kinds = Object.values(profile.observed);
+  const all = {
+    attempts: kinds.reduce((n, o) => n + (o?.attempts ?? 0), 0),
+    successes: kinds.reduce((n, o) => n + (o?.successes ?? 0), 0),
+  };
+  const own = profile.observed[kind];
+  const seen = own && own.attempts > 0 ? own : all.attempts > 0 ? all : null;
+  const [prior, weight] = unproven ? [0.4, 1] : [EXPECTED, 3];
+  const done = seen?.successes ?? 0;
+  const tried = seen?.attempts ?? 0;
+  const rate = (done + prior * weight) / (tried + weight);
+  const score = Math.round((rate - EXPECTED) * 5 * 100) / 100;
+  // Proven: a known family, or an unproven one that got two tasks of any kind done.
+  const proven = !unproven || all.successes >= 2;
+  if (!seen) return { score, reason: unproven ? "unproven: no task seen done yet" : null, proven };
+  const what = seen === own ? `${kind} tasks` : "tasks";
+  return {
+    score,
+    reason: `${done} of ${tried} ${what} done${proven ? "" : " (still unproven)"}`,
+    proven,
+  };
+}
+
+/** The success rate the default strengths assume (profiles.ts, learnStrength). */
+const EXPECTED = 0.7;
+
 /** The effort for a difficulty, raised by step-ups, within what the model supports. */
 export function chooseEffort(
   levels: string[],
@@ -103,6 +147,12 @@ export function route(task: RouteTask, candidates: RouteCandidate[], o: RouteOpt
     }
     if (c.health !== "healthy" && c.health !== "degraded") {
       out(`${c.health}.`);
+      continue;
+    }
+    if (c.cooldown && c.cooldown.until > now) {
+      out(
+        `resting until ${new Date(c.cooldown.until).toISOString().slice(11, 16)} UTC after a provider failure (${c.cooldown.reason}).`,
+      );
       continue;
     }
     const full = c.windows.find(
@@ -167,11 +217,20 @@ export function route(task: RouteTask, candidates: RouteCandidate[], o: RouteOpt
     score += capability;
     reasons.push(`capability ${capability.toFixed(1)}/5`);
 
-    const seen = c.profile.observed[task.kind];
-    if (seen && seen.attempts >= 3) {
-      const rate = seen.successes / seen.attempts;
-      score += (rate - 0.7) * 4;
-      reasons.push(`${Math.round(rate * 100)}% success on ${task.kind} tasks`);
+    const trusted = trust(c.profile, task.kind);
+    score += trusted.score;
+    if (trusted.reason) reasons.push(trusted.reason);
+
+    // Its provider failing is not the task failing, but the next try goes elsewhere (M13.22).
+    const streak = c.legProviderFailures ?? 0;
+    if (streak >= 2) {
+      score -= 3;
+      reasons.push(`${streak} provider failures in a row on ${c.legName}: another Leg first`);
+    } else if (streak === 1 && !trusted.proven) {
+      score -= 1.5;
+      reasons.push(
+        `${c.legName} just failed at its provider: not another unproven model of it next`,
+      );
     }
 
     const effort = chooseEffort(c.effortLevels, task.difficulty, task.stepUp);

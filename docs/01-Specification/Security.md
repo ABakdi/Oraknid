@@ -39,6 +39,19 @@ sandbox limits damage, but it doesn't make that safe.
   the host's network is shared, and `oraknid doctor` says so. Every
   sandbox also runs under Landlock, so the desktop's abstract sockets
   are out of reach (S2-01).
+- **Git works inside the sandbox** (M13.22, 2026-10-04): a job's
+  worktree gets the project's `.git` as a throwaway layer in which only
+  the objects, refs, logs and the worktree's own git folder are the real
+  ones, writable; its config and hooks are read-only, the worktree's
+  links to the repository too, and anything else written there is gone
+  with the sandbox ([[Sandboxing]] → Git in a job's worktree). Everyday
+  git on the job's branch (`status`, `diff`, `log`, `add`, `commit`,
+  `switch -c`, `stash`) is on the allow list and never asks, untrusted
+  or not; a push, a merge or deleting a branch stays gated.
+- A Leg's scratch, written without asking: its sandbox's `/tmp`, its
+  home for the job (its own `tmp`, caches and config), and its Leg's
+  `tmp` and cache. Anywhere else outside its folder is refused
+  ([[Approvals-and-Autonomy]] → Writing outside its folder).
 - **Nothing a Leg can write is trusted by Oraknid's own tools** (BR-22,
   [[Audit-1]]): git calls on a worktree use the main repo's records,
   never the worktree's `.git`, with fsmonitor and hooks off; shadow repos
@@ -77,6 +90,11 @@ sandbox limits damage, but it doesn't make that safe.
 - Job inputs are marked untrusted when I create the job, and a task
   becomes untrusted once it reads from the web (WebFetch, WebSearch,
   `curl`, `wget`).
+- Untrusted changes only the gated actions (and calls of the job's tools
+  that write): a research task reads the web as its job, and everything
+  else goes on as before: its edits, its scratch, its tests, and its
+  everyday git on the job's branch never ask (M13.22, a test runs each
+  untrusted).
 - MCP tools reach a Leg only through Oraknid's broker
   ([[ADR-021-Tools-Broker]]): the server runs in its own sandbox with
   its secrets, which the Leg never sees. A call a tool declares as a

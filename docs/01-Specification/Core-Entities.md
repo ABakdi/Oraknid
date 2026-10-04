@@ -138,8 +138,9 @@ a version number that increases on every plan change.
 ## Attempt and Session
 
 An **attempt** is one Leg's try at one task. It ends `succeeded`,
-`failed`, `reassigned` or `abandoned`, and records the escalation steps
-used. A **session** is one process or conversation of that Leg within
+`failed`, `reassigned`, `abandoned`, or `unavailable` (its provider
+failed or hit a usage limit: not counted against the task, M13.22), and
+records the escalation steps used. A **session** is one process or conversation of that Leg within
 the attempt, on one Leg model and effort level. It records the Leg's native session ID (for resume), its
 start and end, the tokens in and out, the context size reached, and
 why it ended (`completed`, `rotated`, `interrupted`, `killed`, `crashed`,

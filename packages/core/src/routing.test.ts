@@ -179,3 +179,128 @@ describe("effort", () => {
     expect(chooseEffort([], "high", 1)).toBeNull();
   });
 });
+
+// M13.22: the research task of 2026-10-04. Claude Max healthy (its week at 67%),
+// OpenCode's free models unproven, Antigravity rate-limited.
+describe("routing: proven before unproven (M13.22)", () => {
+  const week = [{ name: "seven_day", utilization: 0.67, resetsAt: null }];
+  const max = (model: string, over: Partial<RouteCandidate> = {}) =>
+    claude(model, { windows: week, ...over });
+  const free = (model: string, over: Partial<RouteCandidate> = {}): RouteCandidate => ({
+    legId: "OC",
+    legModelId: `oc-${model}`,
+    model,
+    legName: "Opencode",
+    health: "healthy",
+    paused: false,
+    effortLevels: [],
+    profile: effectiveProfile("opencode", model, emptyStoredProfile()),
+    windows: [],
+    ...over,
+  });
+  const research = task({
+    kind: "research",
+    requiredCapabilities: ["summarize", "classify"],
+  });
+  const live = () => [
+    max("sonnet"),
+    max("opus"),
+    max("haiku"),
+    free("big-pickle"),
+    free("jev-1.13-free"),
+    free("deepseek-v4-flash-free"),
+    free("mimo-v2.6-flash-free"),
+  ];
+
+  it("gives the medium research task to Claude Sonnet, and says why the free models lost", () => {
+    const r = route(research, live(), { moneyAllowed: false });
+    expect(r.ranked[0]?.candidate.model).toBe("sonnet");
+    const pickle = r.ranked.find((x) => x.candidate.model === "big-pickle");
+    expect(pickle?.reasons).toContain("unproven: no task seen done yet");
+    expect((pickle?.score ?? 0) < (r.ranked[0]?.score ?? 0)).toBe(true);
+  });
+
+  it("gives medium implementation to Sonnet too, a flat subscription before a free model", () => {
+    const r = route(task(), live(), { moneyAllowed: false });
+    expect(r.ranked[0]?.candidate.model).toBe("sonnet");
+    expect(r.ranked[0]?.reasons).toContain("quota cost ×2.0");
+  });
+
+  it("lets a free model earn its place from what it gets done, and lose it faster", () => {
+    let good = emptyStoredProfile();
+    for (let i = 0; i < 4; i++)
+      good = record(good, "research", { success: true, tokens: 1, ms: 1, escalations: 0 });
+    const proven = free("big-pickle", {
+      profile: effectiveProfile("opencode", "big-pickle", good),
+    });
+    const fresh = free("jev-1.13-free");
+    const before = route(research, [fresh], { moneyAllowed: false }).ranked[0]?.score ?? 0;
+    const after = route(research, [proven], { moneyAllowed: false }).ranked[0];
+    expect(after?.reasons).toContain("4 of 4 research tasks done");
+    expect((after?.score ?? 0) - before).toBeGreaterThan(1.5);
+    let bad = emptyStoredProfile();
+    bad = record(bad, "research", { success: false, tokens: 1, ms: 1, escalations: 0 });
+    const failed = free("big-pickle", { profile: effectiveProfile("opencode", "big-pickle", bad) });
+    const once = route(research, [failed], { moneyAllowed: false }).ranked[0];
+    expect(once?.reasons).toContain("0 of 1 research tasks done (still unproven)");
+    expect((once?.score ?? 0) < before).toBe(true);
+    // A known model moves slowly from one failure: one bad day doesn't rewrite it.
+    const sonnetOnce = max("sonnet", { profile: effectiveProfile("claude-code", "sonnet", bad) });
+    const s0 = route(research, [max("sonnet")], { moneyAllowed: false }).ranked[0]?.score ?? 0;
+    const s1 = route(research, [sonnetOnce], { moneyAllowed: false }).ranked[0]?.score ?? 0;
+    expect(s0 - s1).toBeLessThan(before - (once?.score ?? 0));
+  });
+
+  it("still lets the free models work when Claude's window is kept for hard tasks", () => {
+    const scarce = [{ name: "seven_day", utilization: 0.9, resetsAt: null }];
+    const r = route(
+      research,
+      [max("sonnet", { windows: scarce }), free("big-pickle"), free("jev-1.13-free")],
+      { moneyAllowed: false },
+    );
+    expect(r.ranked[0]?.candidate.legName).toBe("Opencode");
+    expect(r.excluded[0]?.why).toMatch(/kept for hard tasks/);
+  });
+
+  it("rests a model after a provider failure, and says until when and why", () => {
+    const now = Date.UTC(2026, 9, 4, 12, 0);
+    const r = route(
+      research,
+      [
+        free("jev-1.13-free", {
+          cooldown: { until: now + 5 * 60_000, reason: "Internal server error" },
+        }),
+        free("big-pickle", { cooldown: { until: now - 1, reason: "over" } }),
+      ],
+      { moneyAllowed: false, now },
+    );
+    expect(r.ranked.map((x) => x.candidate.model)).toEqual(["big-pickle"]);
+    expect(r.excluded.map((e) => e.why)).toEqual([
+      "Opencode · jev-1.13-free: resting until 12:05 UTC after a provider failure (Internal server error).",
+    ]);
+  });
+
+  it("after one provider failure tries no other unproven model of that Leg next; after two, another Leg", () => {
+    const known = free("anthropic/claude-sonnet-4-5");
+    expect(known.profile.prior).toBeUndefined();
+    // One failure: a known model of the same Leg is fine, its unproven ones are not.
+    const one = route(research, [free("big-pickle", { legProviderFailures: 1 }), known], {
+      moneyAllowed: false,
+    });
+    expect(one.ranked[0]?.candidate.model).toBe("anthropic/claude-sonnet-4-5");
+    expect(one.ranked[1]?.reasons).toContain(
+      "Opencode just failed at its provider: not another unproven model of it next",
+    );
+    // Two in a row: the other Leg, though this one has no window to spare.
+    const two = route(task(), [{ ...known, legProviderFailures: 2 }, max("sonnet")], {
+      moneyAllowed: false,
+    });
+    expect(two.ranked[0]?.candidate.legName).toBe("Claude");
+    expect(
+      route(task(), [known, max("sonnet")], { moneyAllowed: false }).ranked[0]?.candidate.legName,
+    ).toBe("Opencode");
+    expect(two.ranked[1]?.reasons).toContain(
+      "2 provider failures in a row on Opencode: another Leg first",
+    );
+  });
+});
