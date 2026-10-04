@@ -14,7 +14,7 @@
     "test": "turbo run test",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "check": "biome check . && turbo run typecheck test"
+    "check": "biome check . && turbo run typecheck test && pnpm --filter @oraknid/daemon test:perf"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",

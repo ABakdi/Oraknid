@@ -444,7 +444,7 @@ Done 2026-10-04 (ADR-045 → As built; Jobs-and-Projects → Ending a job,
 As built). A job may now go from `waiting` back to `verifying` (its end
 steps waiting for the repo question). Tested: `pnpm check`'s lint and
 types green; the web's 109 tests and the daemon's 366 pass, two daemon
-tests (`startup.test.ts`, `faults.test.ts`) and one web test
+tests (`startup.perf.test.ts (run on its own after the suite, `pnpm check` → `test:perf`)`, `faults.test.ts`) and one web test
 (`project-repo.test.tsx`) failed only under load beside another agent's
 runs and pass alone; new: `eye.test.ts` (seven: the Leg's own-check
 answered, `.git` commands refused, a separate repo put back, the

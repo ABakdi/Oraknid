@@ -226,7 +226,8 @@ describe("the form made of a backend's schema", () => {
     );
     expect(hetzner).toContain("fsn1");
     expect(hetzner).not.toContain("eu-west-1");
-  });
+    // Hundreds of S3 fields in jsdom: ~4 s alone, up to 30 s when every package tests at once.
+  }, 60_000);
 
   it("a backend that signs in through a browser: Add only once signed in, with the form's region", async () => {
     form("onedrive");

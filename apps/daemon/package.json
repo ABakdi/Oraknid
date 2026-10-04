@@ -10,7 +10,8 @@
     "dev": "tsx src/cli.ts run",
     "build": "tsdown",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run",
+    "test": "vitest run --exclude '**/*.perf.test.ts'",
+    "test:perf": "vitest run .perf.test.ts",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
