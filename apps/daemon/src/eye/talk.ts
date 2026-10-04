@@ -2,12 +2,16 @@ import {
   chosenOption,
   completeAnswers,
   type EyeMessage,
+  type InboxItem,
   isProduction,
   normalizeQuestions,
   type Question,
   type QuestionAnswer,
   renderAnswers,
+  renderQuestions,
+  type WebPlan,
 } from "@oraknid/contracts";
+import { endsInterview } from "@oraknid/core";
 import { and, asc, desc, eq } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
 import {
@@ -27,8 +31,9 @@ import type { SilkStore } from "../silk/store.ts";
 import { viewOf } from "../workspace/projects.ts";
 import { isSeveral } from "../workspace/repos.ts";
 import type { EyeBrain, EyeTriage } from "./brain.ts";
-import { editWeb } from "./controls.ts";
 import { type EndingDone, requestEnding } from "./ending.ts";
+import { ENOUGH, INTERVIEW_ENDED, ROUND_TITLE } from "./interview.ts";
+import { storeWeb, taskRows } from "./web-store.ts";
 
 // Talking to The Eye (The-Eye → Talking to The Eye, Checkpoint 1 → F1-4):
 // I write; one short reasoning call decides what my message is; this code
@@ -42,6 +47,12 @@ export interface TalkDeps {
   brain: EyeBrain;
   tmpDir: string;
   now?: () => number;
+  /**
+   * The inbox: a message of mine can answer what the job waits on, or end
+   * its interview (after the piano job, 2026-10-04). Without it, open
+   * items are left to the inbox.
+   */
+  inbox?: InboxStore;
   /**
    * New work on an ended job (Jobs-and-Projects → Follow-up jobs): a new
    * job in the same project, starting from this one's branch, started.
@@ -208,7 +219,7 @@ export function talk(d: TalkDeps, jobId: string, text: string, extras: MessageEx
   const job = d.db.select().from(jobs).where(eq(jobs.id, jobId)).get();
   if (!job) throw new Error(`No job ${jobId}.`);
   const id = add(d, jobId, "owner", text, null, extras);
-  respond(d, jobId, text);
+  respond(d, jobId, text, id);
   return id;
 }
 
@@ -297,14 +308,14 @@ export function resumeConversations(d: TalkDeps): number {
       ? d.db.select().from(eyeMessages).where(eq(eyeMessages.id, last.replyTo)).get()
       : null;
     if (to?.itemId) continue;
-    respond(d, jobId, last.text);
+    respond(d, jobId, last.text, last.id);
     n++;
   }
   return n;
 }
 
-function respond(d: TalkDeps, jobId: string, text: string) {
-  void handle(d, jobId, text).catch((error) => {
+function respond(d: TalkDeps, jobId: string, text: string, messageId: string) {
+  void handle(d, jobId, text, messageId).catch((error) => {
     // Fail safe: my words are never lost. They are kept as my decision.
     const entry = d.silk.add({
       jobId,
@@ -330,9 +341,19 @@ function respond(d: TalkDeps, jobId: string, text: string) {
   });
 }
 
-async function handle(d: TalkDeps, jobId: string, text: string) {
+async function handle(d: TalkDeps, jobId: string, text: string, messageId: string) {
   const job = d.db.select().from(jobs).where(eq(jobs.id, jobId)).get();
   if (!job) return;
+  // What the job waits on me for now: my message may answer it (after the piano job, 2026-10-04).
+  const open = ENDED.has(job.state) ? [] : (d.inbox?.list({ jobId, state: "open" }) ?? []);
+  const round = open.find((i) => ROUND_TITLE.test(i.title));
+  // No plan yet: new work I ask for is guidance for the plan, never tasks of its own.
+  const unplanned = !ENDED.has(job.state) && job.webVersion === 0;
+  // "Start now", "enough, the interview is over": over at once, whatever any model thinks.
+  if (endsInterview(text) && unplanned && (round || job.state === "interviewing")) {
+    endInterview(d, jobId, messageId, text, round ?? null);
+    return;
+  }
   const project = d.db.select().from(projects).where(eq(projects.id, job.projectId)).get();
   const all = d.db
     .select()
@@ -379,8 +400,89 @@ async function handle(d: TalkDeps, jobId: string, text: string) {
     silk,
     conversation: talkSoFar,
     message: text,
+    ...(open.length ? { open: openItems(open) } : {}),
+    ...(unplanned ? { unplanned } : {}),
   });
-  await act(d, jobId, job.state, text, verdict);
+  await act(d, jobId, job.state, text, verdict, { messageId, open, unplanned });
+}
+
+/** The items a job waits on, for the triage: each with its id, its questions or its options. */
+function openItems(open: InboxItem[]): string {
+  return open
+    .map((i) => {
+      const what = i.questions?.length
+        ? `\n${renderQuestions(i.questions as Question[])
+            .split("\n")
+            .map((l) => `  ${l}`)
+            .join("\n")}`
+        : i.options.length
+          ? ` Answered with one of: ${i.options.join(", ")}.`
+          : "";
+      return `- [${i.id}] “${i.title}” (${i.kind}${ROUND_TITLE.test(i.title) ? ", an interview round" : ""})${i.detail ? `: ${i.detail.split("\n").filter(Boolean).slice(-1)[0]?.slice(0, 300) ?? ""}` : ""}${what}`;
+    })
+    .join("\n");
+}
+
+/** The Eye's message that asked an item in the conversation, if it did. */
+const askedFor = (db: Db, itemId: string) =>
+  db.select().from(eyeMessages).where(eq(eyeMessages.itemId, itemId)).get() ?? null;
+
+/**
+ * An inbox item answered by my message in the conversation: my words,
+ * verbatim (an approval with the option I chose), and my message recorded
+ * as the answer where The Eye asked it, so nothing is said twice. The job
+ * waiting on it goes on.
+ */
+function answerBy(d: TalkDeps, messageId: string, item: InboxItem, answer: string): boolean {
+  if (!d.inbox) return false;
+  const asked = askedFor(d.db, item.id);
+  if (asked)
+    d.db.update(eyeMessages).set({ replyTo: asked.id }).where(eq(eyeMessages.id, messageId)).run();
+  try {
+    d.inbox.answer(item.id, answer, null, null);
+    return true;
+  } catch {
+    // Answered meanwhile, or withdrawn: nothing waits on it any more.
+    return false;
+  }
+}
+
+/**
+ * The interview ended by my message: the open round is answered with my
+ * words (which say to end it), or, with none open, the next isn't asked.
+ * Planning starts with what's known; what was asked is assumed or left open.
+ */
+function endInterview(
+  d: TalkDeps,
+  jobId: string,
+  messageId: string,
+  text: string,
+  round: InboxItem | null,
+) {
+  const answered = round
+    ? answerBy(d, messageId, round, endsInterview(text) ? text : ENOUGH)
+    : false;
+  if (!answered)
+    d.silk.add({
+      jobId,
+      kind: "decision",
+      title: INTERVIEW_ENDED,
+      body: text,
+      authoredBy: "owner",
+    });
+  add(
+    d,
+    jobId,
+    "eye",
+    "Understood: the interview is over. I'm planning with what I know now; the plan says what I assumed, and you can correct any of it here.",
+    {
+      intent: "instruction",
+      did: [round && answered ? `Ended “${round.title}”` : "Ended the interview"],
+      silkIds: [],
+      taskIds: [],
+      jobId: null,
+    },
+  );
 }
 
 /** What triage must know of the project: its repos when several, its servers by role (ADR-042). */
@@ -411,7 +513,18 @@ function projectFacts(db: Db, row: typeof projects.$inferSelect): string {
   return [repos, srv].filter(Boolean).join("\n");
 }
 
-async function act(d: TalkDeps, jobId: string, jobState: string, text: string, triaged: EyeTriage) {
+async function act(
+  d: TalkDeps,
+  jobId: string,
+  jobState: string,
+  text: string,
+  triaged: EyeTriage,
+  at: { messageId: string; open: InboxItem[]; unplanned: boolean } = {
+    messageId: "",
+    open: [],
+    unplanned: false,
+  },
+) {
   let v = triaged;
   const did: string[] = [];
   const silkIds: string[] = [];
@@ -426,6 +539,36 @@ async function act(d: TalkDeps, jobId: string, jobState: string, text: string, t
   };
   let reply = v.reply;
   let jobRef: string | null = null;
+  // What my message does to what the job waits on: answers it, or ends the interview (after the piano job).
+  const target = v.item ? at.open.find((i) => i.id === v.item?.id) : undefined;
+  if (target && v.item && v.item.does !== "unrelated") {
+    if (v.item.does === "ends-interview" && ROUND_TITLE.test(target.title)) {
+      endInterview(d, jobId, at.messageId, text, target);
+      return;
+    }
+    const answer =
+      target.kind === "approval"
+        ? v.item.option && target.options.includes(v.item.option)
+          ? v.item.option
+          : null
+        : text;
+    if (answer && answerBy(d, at.messageId, target, answer)) {
+      did.push(`Answered “${target.title}” with your message`);
+      add(
+        d,
+        jobId,
+        "eye",
+        reply,
+        { intent: v.intent, did, silkIds, taskIds, jobId: jobRef },
+        { questions: normalizeQuestions(v.questions ?? []) },
+      );
+      return;
+    }
+  }
+  // Still waiting on me: said in one line, the question left where it is.
+  const waiting = at.open[0];
+  if (waiting && !reply.includes(waiting.title))
+    reply = `${reply} I'm still waiting for your answer to “${waiting.title}”.`;
   // Merge and push are Oraknid's own steps at the end, never tasks (after the piano job).
   const ending = v.ending?.merge || v.ending?.push ? v.ending : null;
   if (ending) {
@@ -510,32 +653,29 @@ async function act(d: TalkDeps, jobId: string, jobState: string, text: string, t
         }
         break;
       }
-      if (!v.tasks.length) {
+      // No plan yet: the plan will include it; never tasks that bypass the planner.
+      if (at.unplanned) {
+        keep("decision", `For the plan: ${firstLine(text)}`, v.silk?.body ?? text);
+        did.push("Kept for the plan");
+        break;
+      }
+      const work = await addWork(d, jobId, at.messageId, text, v).catch((e: unknown) => {
+        reply = `${reply} I couldn't plan it into the job just now (${e instanceof Error ? e.message : String(e)}), so I kept it as your decision.`;
+        return null;
+      });
+      if (!work) {
         keep("decision", v.silk?.title ?? firstLine(text), v.silk?.body ?? text);
         did.push("Recorded as your decision");
         break;
       }
-      const before = new Set(
-        d.db
-          .select({ id: tasks.id })
-          .from(tasks)
-          .where(eq(tasks.jobId, jobId))
-          .all()
-          .map((t) => t.id),
-      );
-      const known = new Set(before);
-      editWeb(
-        { db: d.db, bus: d.bus, runner: d.runner, silk: d.silk, tmpDir: d.tmpDir },
-        jobId,
-        v.tasks.map((t) => ({
-          op: "add" as const,
-          ...t,
-          dependsOn: t.dependsOn.filter((x) => known.has(x)),
-        })),
-      );
-      for (const t of d.db.select({ id: tasks.id }).from(tasks).where(eq(tasks.jobId, jobId)).all())
-        if (!before.has(t.id)) taskIds.push(t.id);
-      did.push(v.tasks.length === 1 ? "Added a task" : `Added ${v.tasks.length} tasks`);
+      taskIds.push(...work.added);
+      if (work.added.length)
+        did.push(work.added.length === 1 ? "Added a task" : `Added ${work.added.length} tasks`);
+      if (work.known.length) {
+        did.push("Already in the plan");
+        if (!work.added.length)
+          reply = `That's in the plan already: ${work.known.map((t) => `“${t}”`).join(", ")}.`;
+      }
       break;
     }
     case "stop":
@@ -555,6 +695,94 @@ async function act(d: TalkDeps, jobId: string, jobState: string, text: string, t
     { intent: v.intent, did, silkIds, taskIds, jobId: jobRef },
     { questions: normalizeQuestions(v.questions ?? []) },
   );
+}
+
+/**
+ * New work I asked for on a job with a plan, planned into its Web (after
+ * the piano job, 2026-10-04): a planning call adds it with its
+ * dependencies on the tasks there, never the same work again. Once per
+ * message (its tasks carry the message's key), and what is planned
+ * already isn't added twice. Null when there's nothing to plan.
+ */
+async function addWork(
+  d: TalkDeps,
+  jobId: string,
+  messageId: string,
+  text: string,
+  v: EyeTriage,
+): Promise<{ added: string[]; known: string[] } | null> {
+  const job = d.db.select().from(jobs).where(eq(jobs.id, jobId)).get();
+  if (!job) return null;
+  const prefix = `msg-${messageId.slice(-10).toLowerCase()}-`;
+  const rows = taskRows(d.db, jobId);
+  const mine = rows.filter((t) => t.planKey?.startsWith(prefix));
+  if (mine.length) return { added: mine.map((t) => t.id), known: [] };
+  const live = rows.filter((t) => t.state !== "skipped");
+  const ids = new Set(live.map((t) => t.id));
+  const suggested = v.tasks
+    .map(
+      (t) =>
+        `- ${t.title}: ${t.instructions}${t.dependsOn.length ? ` (after ${t.dependsOn.join(", ")})` : ""}`,
+    )
+    .join("\n");
+  let plan: WebPlan;
+  if (d.brain.extend) {
+    const project = d.db.select().from(projects).where(eq(projects.id, job.projectId)).get();
+    plan = await d.brain.extend({
+      jobId,
+      cwd: job.worktree ?? project?.workspacePath ?? process.cwd(),
+      goal: job.goal,
+      skill: "",
+      silk: d.silk
+        .current(jobId)
+        .filter((e) => e.kind === "decision" || e.kind === "architecture")
+        .slice(-30)
+        .map((e) => `## ${e.title}\n${e.body.slice(0, 600)}`)
+        .join("\n\n"),
+      digest: "",
+      verify: job.verify,
+      request: text,
+      tasks: live.map((t) => ({
+        id: t.id,
+        title: t.title,
+        kind: t.kind,
+        state: t.state,
+        dependsOn: t.dependsOn,
+      })),
+      suggested,
+    });
+  } else {
+    if (!v.tasks.length) return null;
+    plan = {
+      summary: v.reply,
+      tasks: v.tasks.map((t, i) => ({
+        ...t,
+        key: `n${i + 1}`,
+        title: t.title.slice(0, 120),
+        dependsOn: t.dependsOn.filter((x) => ids.has(x)),
+      })),
+      jobVerify: [],
+    };
+  }
+  // New work builds on what is there: with no dependency on The Web at all, its first tasks
+  // come after the work that nothing else needs yet.
+  if (!plan.tasks.some((t) => t.dependsOn.some((x) => ids.has(x)))) {
+    const sinks = live
+      .filter((t) => !live.some((o) => o.dependsOn.includes(t.id)))
+      .map((t) => t.id);
+    const keys = new Set(plan.tasks.map((t) => t.key));
+    plan = {
+      ...plan,
+      tasks: plan.tasks.map((t) =>
+        t.dependsOn.some((x) => keys.has(x)) ? t : { ...t, dependsOn: [...t.dependsOn, ...sinks] },
+      ),
+    };
+  }
+  return storeWeb({ db: d.db, bus: d.bus, silk: d.silk, now: d.now ?? Date.now }, jobId, plan, {
+    keyPrefix: prefix,
+    againstDone: true,
+    title: `Plan, version ${job.webVersion + 1}: ${firstLine(text)}`,
+  });
 }
 
 /** A task that only merges, commits into a branch or pushes: Oraknid's own step, not a task. */

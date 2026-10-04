@@ -339,8 +339,48 @@ function EyeCard() {
         >
           {t("Save")}
         </Button>
+        <InterviewRounds />
       </CardContent>
     </Card>
+  );
+}
+
+/** How many rounds The Eye's interview may take before it plans with what it knows. */
+function InterviewRounds() {
+  const rounds = useLive(() => api.settings.interviewRounds(), {
+    topics: ["overview"],
+    refreshOn: (e) => e.type === "settings.updated",
+  });
+  return (
+    <div className="grid gap-1.5 border-t pt-3 sm:grid-cols-[10rem_1fr] sm:items-center">
+      <Label htmlFor="eye-interview-rounds">{t("Interview")}</Label>
+      <div className="min-w-0 space-y-1">
+        <Select
+          value={String(rounds.data ?? 3)}
+          onValueChange={(v) =>
+            act(() => api.settings.setInterviewRounds({ rounds: Number(v) }), t("Saved."))
+          }
+        >
+          <SelectTrigger id="eye-interview-rounds" className="w-full sm:w-80">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {[1, 2, 3, 4, 5, 6].map((n) => (
+              <SelectItem key={n} value={String(n)}>
+                {n === 1
+                  ? t("At most 1 round of questions")
+                  : t("At most {n} rounds of questions", { n })}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="text-xs text-muted-foreground">
+          {t(
+            "Only what blocks planning is asked, never twice; the rest The Eye decides and says so in its playback. Say “enough, start” any time to end it.",
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

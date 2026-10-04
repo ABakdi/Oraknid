@@ -151,6 +151,7 @@ import {
 import type { EyeDecisions } from "../eye/decisions.ts";
 import { draftAnswer, draftStart, draftTalk, isThinking } from "../eye/draft.ts";
 import { endSteps } from "../eye/ending.ts";
+import { interviewRounds } from "../eye/interview.ts";
 import { cancelLegWork, pauseLegSessions, readLegWork } from "../eye/leg-work.ts";
 import {
   GlobalPolicy,
@@ -183,6 +184,7 @@ import type { Paths } from "../paths.ts";
 import type { Servers } from "../servers/service.ts";
 import {
   followUpKey,
+  INTERVIEW_ROUNDS,
   MAX_RUNNING_JOBS,
   MAX_TASKS_PER_JOB,
   projectPorts,
@@ -402,6 +404,8 @@ const talkDeps = (c: ApiContext) => ({
   brain: c.brain,
   tmpDir: c.tmpDir,
   now: c.now,
+  // My message can answer what the job waits on, or end its interview.
+  inbox: c.inbox,
   followUp: (from: string, goal: string) => followUp(c, from, goal),
   // A project's first job, from my first message there: the project's skills and budget.
   newJob: (projectId: string, goal: string) =>
@@ -1816,6 +1820,24 @@ export const router = {
             topic: "overview",
             jobId: null,
             payload: { maxTasksPerJob: input.max },
+            actor: "owner",
+          });
+        }),
+      ),
+    /** How many rounds The Eye's interview may take (Skills → The interview). */
+    interviewRounds: base
+      .output(z.number().int())
+      .handler(({ context: c }) => interviewRounds(c.jobs.db)),
+    setInterviewRounds: base
+      .input(z.object({ rounds: z.number().int().min(1).max(12) }))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          writeSetting(c.jobs.db, INTERVIEW_ROUNDS, z.number().int().min(1).max(12), input.rounds);
+          c.bus.publish({
+            type: "settings.updated",
+            topic: "overview",
+            jobId: null,
+            payload: { interviewRounds: input.rounds },
             actor: "owner",
           });
         }),

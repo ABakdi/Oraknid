@@ -7,10 +7,10 @@ import {
   normalizeQuestions,
   type ProjectRepo,
   renderQuestions,
-  type WebPlan,
 } from "@oraknid/contracts";
 import {
   decide,
+  freshQuestions,
   type GatedAction,
   readyTasks,
   scopesOverlap,
@@ -19,15 +19,14 @@ import {
   suspicious,
 } from "@oraknid/core";
 import type { Sandbox } from "@oraknid/os";
-import { and, asc, count, eq, gte, inArray } from "drizzle-orm";
+import { and, count, eq, gte, inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "../db/open.ts";
-import { attempts, jobs, projects, steps, taskEdges, tasks } from "../db/schema.ts";
+import { attempts, jobs, projects, steps, tasks } from "../db/schema.ts";
 import type { SideEffects } from "../engine/effects.ts";
 import { AwaitingOwner } from "../engine/effects.ts";
 import type { JobContext, JobProgram } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
-import { newId } from "../ids.ts";
 import type { InboxStore } from "../inbox/store.ts";
 import { sandboxPlan } from "../legs/plan.ts";
 import type { LegRegistry } from "../legs/registry.ts";
@@ -68,12 +67,23 @@ import { MultiTree, multiTreeOf, singleTree, type WorkTree } from "../workspace/
 import { type AttemptJob, runAttempt } from "./attempt.ts";
 import type { EyeBrain } from "./brain.ts";
 import { parseBuiltinCheck, runBuiltinCheck } from "./builtin-checks.ts";
-import { endingKey, JobEndingState, readEnding, requestEnding, runEnding } from "./ending.ts";
+import { endingKey, JobEndingState, readEnding, runEnding } from "./ending.ts";
 import { readInside, renderInputs } from "./inputs.ts";
+import {
+  closeInterview,
+  decidedSoFar,
+  ENOUGH,
+  endsRound,
+  INTERVIEW_DONE,
+  interviewEnded,
+  interviewRounds,
+  interviewSoFar,
+} from "./interview.ts";
 import { ensureLinks } from "./links.ts";
 import { policyFor } from "./policy.ts";
 import { dependentsOf } from "./questions.ts";
 import { runVerify, verifyRefusal } from "./verify.ts";
+import { storeWeb, taskRows } from "./web-store.ts";
 
 export interface EyeDeps {
   db: Db;
@@ -262,8 +272,9 @@ export function eyeProgram(d: EyeDeps): JobProgram {
 
     if (ctx.state() === "draft" || ctx.state() === "interviewing") ctx.setState("planning");
 
-    // ── Plan The Web, once.
-    if (taskRows(d.db, ctx.jobId).length === 0) {
+    // ── Plan The Web, once: through the planner, whatever else wrote to the job before (after the
+    // piano job, 2026-10-04, when tasks from a chat message stood in for a plan that never ran).
+    if (!taskRows(d.db, ctx.jobId).some((t) => t.planKey)) {
       const plan = await ctx.step(
         "plan",
         { goal: job0.goal, skillVersion: job0.skillVersion },
@@ -837,8 +848,7 @@ async function runTask(
   settle();
 }
 
-export const ENOUGH = "Enough, start";
-export const INTERVIEW_DONE = "What I want (interview)";
+export { ENOUGH, INTERVIEW_DONE } from "./interview.ts";
 
 /**
  * The Eye picks the job's skill among the project's (Skills → Skills per
@@ -892,11 +902,25 @@ async function interview(
   if (d.silk.current(job.id).some((e) => e.kind === "decision" && e.title === INTERVIEW_DONE))
     return;
   if (ctx.state() === "draft") ctx.setState("interviewing");
+  const max = interviewRounds(d.db);
   for (let n = 1; ; n++) {
+    // I said to end it in the conversation while no round was open: planning starts with what's known.
+    if (interviewEnded(d.silk, job.id)) {
+      await ctx.step(`interview:${n}:close`, { n }, async () => {
+        closeInterview(d.silk, job.id, {
+          playback: "",
+          fallback: "I ended the interview: The Eye plans with what it knows.",
+        });
+      });
+      return;
+    }
     const answers = d.silk
       .current(job.id)
       .filter((e) => e.kind === "interview-answer")
       .map((e) => e.body);
+    const { asked, draftRounds } = interviewSoFar(d.db, job.id, n);
+    // The rounds are used up: one last call, for the playback and what The Eye assumes.
+    const final = draftRounds + n - 1 >= max;
     // A round kept from before questions had shapes is read in the new shape (ADR-037).
     const round = InterviewRound.parse(
       await ctx.step(`interview:${n}`, { n }, () =>
@@ -906,26 +930,24 @@ async function interview(
           goal: job.goal,
           skill: skillExcerpt(skillBody, "interview ask questions owner", 5000),
           answers,
+          asked,
+          decided: decidedSoFar(d.silk, job.id, asked),
+          round: draftRounds + n,
+          rounds: max,
+          final,
         }),
       ),
     );
-    if (round.done || n > 12) {
+    // Never the same question twice, nor more than five a round: what's left is new, or nothing is.
+    const { fresh } = freshQuestions(normalizeQuestions(round.questions), asked, 5);
+    if (round.done || final || fresh.length === 0 || interviewEnded(d.silk, job.id)) {
       await ctx.step(`interview:${n}:close`, { n }, async () => {
-        d.silk.add({
-          jobId: job.id,
-          kind: "decision",
-          title: INTERVIEW_DONE,
-          body: round.playback || "The interview found nothing more to ask.",
-          authoredBy: "eye",
+        closeInterview(d.silk, job.id, {
+          playback: round.playback,
+          open: round.open,
+          assumptions: round.assumptions ?? [],
+          fallback: "The interview found nothing more to ask.",
         });
-        for (const point of round.open)
-          d.silk.add({
-            jobId: job.id,
-            kind: "issue",
-            title: `Open question: ${point.slice(0, 80)}`,
-            body: point,
-            authoredBy: "eye",
-          });
       });
       return;
     }
@@ -945,15 +967,17 @@ async function interview(
           detail: round.playback ? `**What I understood**\n\n${round.playback}` : "",
           options: [ENOUGH],
           defaultOption: null,
-          questions: round.questions,
+          questions: fresh,
         }),
     );
     const item = d.inbox.get(itemId);
     if (item?.state === "open")
       throw new AwaitingOwner(itemId, `Waiting for my answers to interview round ${n}.`);
     const answer = item?.answer ?? "";
+    // "Enough, start", or the same in my words, in the inbox or in the conversation.
+    const ended = endsRound(answer);
     await ctx.step(`interview:${n}:answer`, { n }, async () => {
-      const qs = round.questions.map((q, i) => `${i + 1}. ${q.prompt}`).join("\n");
+      const qs = fresh.map((q, i) => `${i + 1}. ${q.prompt}`).join("\n");
       // My words, verbatim (Skills → The interview, step 4).
       d.silk.add({
         jobId: job.id,
@@ -962,26 +986,15 @@ async function interview(
         body: `${qs}\n\n**My answer:** ${answer}`,
         authoredBy: "owner",
       });
-      if (answer === ENOUGH) {
-        for (const q of round.questions) {
-          d.silk.add({
-            jobId: job.id,
-            kind: "issue",
-            title: `Open question: ${q.prompt.slice(0, 80)}`,
-            body: `${q.prompt} (left open when I ended the interview)`,
-            authoredBy: "eye",
-          });
-        }
-        d.silk.add({
-          jobId: job.id,
-          kind: "decision",
-          title: INTERVIEW_DONE,
-          body: round.playback || "I ended the interview early.",
-          authoredBy: "eye",
+      if (ended)
+        closeInterview(d.silk, job.id, {
+          playback: round.playback,
+          assumptions: round.assumptions ?? [],
+          unanswered: fresh,
+          fallback: "I ended the interview early.",
         });
-      }
     });
-    if (answer === ENOUGH) return;
+    if (ended) return;
   }
 }
 
@@ -1052,93 +1065,6 @@ function setTask(
       jobId,
       payload: { taskId, to: state, reason, ...extra },
     });
-  });
-}
-
-function taskRows(db: Db, jobId: string) {
-  const rows = db
-    .select()
-    .from(tasks)
-    .where(eq(tasks.jobId, jobId))
-    .orderBy(asc(tasks.position))
-    .all();
-  const edges = db
-    .select({ taskId: taskEdges.taskId, dependsOn: taskEdges.dependsOn })
-    .from(taskEdges)
-    .innerJoin(tasks, eq(tasks.id, taskEdges.taskId))
-    .where(eq(tasks.jobId, jobId))
-    .all();
-  return rows.map((t) => ({
-    ...t,
-    dependsOn: edges.filter((e) => e.taskId === t.id).map((e) => e.dependsOn),
-  }));
-}
-
-/** Turns a plan into tasks of The Web; a replan adds to it and never touches done tasks. */
-function storeWeb(d: EyeDeps, jobId: string, plan: WebPlan) {
-  const job = d.db.select().from(jobs).where(eq(jobs.id, jobId)).get();
-  if (!job) return;
-  const existing = taskRows(d.db, jobId);
-  const keyToId = new Map(
-    existing.filter((t) => t.planKey).map((t) => [t.planKey as string, t.id]),
-  );
-  let position = existing.length;
-  d.bus.atomically(() => {
-    for (const t of plan.tasks) {
-      if (keyToId.has(t.key)) continue;
-      const id = newId(d.now());
-      keyToId.set(t.key, id);
-      d.db
-        .insert(tasks)
-        .values({
-          id,
-          jobId,
-          title: t.title,
-          instructions: t.instructions,
-          kind: t.kind,
-          scope: t.scope,
-          verify: t.verify,
-          requiredCapabilities: t.requiredCapabilities,
-          difficulty: t.difficulty,
-          state: "pending",
-          position: position++,
-          planKey: t.key,
-        })
-        .run();
-    }
-    for (const t of plan.tasks) {
-      for (const dep of t.dependsOn) {
-        const from = keyToId.get(t.key);
-        const to = keyToId.get(dep);
-        if (from && to)
-          d.db
-            .insert(taskEdges)
-            .values({ taskId: from, dependsOn: to })
-            .onConflictDoNothing()
-            .run();
-      }
-    }
-    const verify = [...new Set([...job.verify, ...plan.jobVerify])];
-    // Merging and pushing, as the goal asked: Oraknid's own steps at the end, never tasks.
-    requestEnding(d.db, jobId, plan.ending, "the goal");
-    d.db
-      .update(jobs)
-      .set({ webVersion: job.webVersion + 1, verify })
-      .where(eq(jobs.id, jobId))
-      .run();
-    d.bus.publish({
-      type: "web.updated",
-      topic: `job:${jobId}`,
-      jobId,
-      payload: { version: job.webVersion + 1, added: plan.tasks.length },
-    });
-  });
-  d.silk.add({
-    jobId,
-    kind: "decision",
-    title: job.webVersion === 0 ? "The plan" : `Plan, version ${job.webVersion + 1}`,
-    body: `${plan.summary}\n\n${plan.tasks.map((t) => `- **${t.title}** (${t.kind}, ${t.difficulty})`).join("\n")}`,
-    authoredBy: "eye",
   });
 }
 

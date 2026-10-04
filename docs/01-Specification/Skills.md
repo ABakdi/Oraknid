@@ -67,22 +67,43 @@ Some skills, the canon-driven one first among them, must understand
 the goal from me before any autonomous work. When `interview: true`:
 
 1. The job enters `interviewing`.
-2. The Eye asks the Eye Leg for the first round of questions, using the
-   skill's own interview guidance, the goal and the inputs.
-3. The questions go to the inbox as one **interview round**: a few
-   questions, each shaped `single`, `multi`, `text` or `confirm`, with
-   options and a recommended one where useful
-   ([[ADR-037-Questions-With-Options]]).
-4. I answer them one at a time in the UI ([[Web-UI]] → Questions). My
+2. The Eye asks for the first round of questions on its strongest model
+   ([[The-Eye]] → The Eye Leg), using the skill's own interview
+   guidance, the goal and the inputs.
+3. The questions go to the inbox as one **interview round**: only what
+   truly blocks planning, at most five, each shaped `single`, `multi`,
+   `text` or `confirm`, with options and a recommended one so most can
+   be answered with one click ([[ADR-037-Questions-With-Options]]).
+   Everything else The Eye decides itself as a sensible default: an
+   **assumption**, said in its playback.
+4. I answer them one at a time in the UI ([[Web-UI]] → Questions), or in
+   the conversation ([[The-Eye]] → Talking while a question is open). My
    answers are stored in Silk as `interview-answer` entries: the
    questions, then my answers as a short list, word for word (and
    typed answers verbatim).
 5. The Eye plays back a summary and asks "is this right?". Then it asks
-   the next round, until the Eye Leg judges every point the skill lists
-   as answered or recorded as "decide later".
-6. I can end the interview early with **Enough, start**. Open points
-   are recorded in Silk as open questions.
-7. The job moves to `planning`.
+   the next round, until nothing left blocks planning.
+6. **A few rounds.** An interview takes at most **3 rounds** by default
+   (Settings → The Eye → Interview, 1 to 12; the draft's rounds count).
+   When they are used up, one last call writes the playback and what
+   it assumes, and asks nothing.
+7. **Never the same question twice.** Each round is given every question
+   asked before with my answer (a question I left unanswered is left to
+   The Eye: it decides and says so), and what is already decided (my
+   answers, my instructions, its assumptions). Before a round is
+   opened, Oraknid drops any question that means the same as one asked
+   before (the same words in other order, a reworded prompt, the same
+   telling id like `visual_direction`) or another in the round; a round
+   with nothing new left isn't asked, and the interview ends.
+8. **I can end it any way, at once:** **Enough, start**; an answer in my
+   words like "enough, start", "start now", "that's all"; or the same
+   said in the conversation. Planning starts with what is known. A
+   question of the round with a recommended answer is assumed with it;
+   one without is recorded as an open question.
+9. The job moves to `planning`. The playback, with **What I assumed**,
+   is kept as "What I want (interview)", and each assumption as a
+   decision of The Eye's ("Assumed: …") that I can correct in the
+   conversation; open points as open questions.
 
 Notifications tell me when a round is waiting. The interview survives
 pause, reboot and crash like every other stage.

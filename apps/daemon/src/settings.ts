@@ -46,6 +46,10 @@ export const MAX_RUNNING_JOBS = "jobs.maxRunning";
 /** How many tasks of one job run at once (ADR-016). */
 export const MAX_TASKS_PER_JOB = "jobs.maxTasks";
 
+/** How many rounds an interview may take (Skills → The interview); 3 unless I set it. */
+export const INTERVIEW_ROUNDS = "eye.interviewRounds";
+export const DEFAULT_INTERVIEW_ROUNDS = 3;
+
 /** The branch a follow-up job starts from: the one the job it follows built (Jobs-and-Projects). */
 export const followUpKey = (jobId: string) => `job.startFrom.${jobId}`;
 

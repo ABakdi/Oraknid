@@ -6,6 +6,8 @@ A **job** is one piece of work: a goal in a project. **The Eye** is the part of 
 
 In a project, ask for it in the project's **The Eye** tab: The Eye starts a job, or adds the work to the one running. **New work** is for a first request, a new project, or a draft to keep and start later. The Eye may ask a few questions first, then writes the plan.
 
+The questions come in at most three rounds (change it in **Settings → The Eye → Interview**), only what truly matters for the plan, each with a recommended answer you can take in one click. The Eye never asks the same thing twice; what it doesn't ask, it decides itself and tells you under **What I assumed**, so you can correct it later in the conversation. Say "enough, start", "start now" or "that's all" (in the round, or in the conversation) and it stops asking and plans with what it knows.
+
 Each job works on its own branch, in its own worktree inside your project. Your branch is never touched until the job is merged, by you or by Oraknid at the end when you asked for it. In a project of several repos, the job's folder looks like the project's: each repo it works in is there at its folder, on the job's branch, and its tasks' checks run from that folder (`cd web && npm test`).
 
 ## A job's name
@@ -14,7 +16,7 @@ The Eye names each job by what it is ("Fix the login redirect loop"), with a sen
 
 ## What The Eye does
 
-- **Plans** the goal into small tasks, each with checks that prove it is done.
+- **Plans** the goal into small tasks, each with checks that prove it is done, as a graph: each task waits for the ones it needs (the setup before the features, research before what uses it, integration and tests last), and tasks that don't need each other can run side by side. The same work is never planned twice. The **Workflow** tab draws it. It plans on the strongest model you have, not a cheap one.
 - **Routes** each task to the Leg that fits it best: its strengths, its quota left, how busy your computer is.
 - **Watches** every agent: drift, loops, edits outside the task, tokens burned without progress. It corrects, hands the task to another Leg, or asks you.
 - **Checks** the work. A task is done when its checks pass, not when an agent says so.
@@ -26,6 +28,10 @@ Everything is in its project, in tabs: **The Eye** (one conversation for the who
 ## Talking to The Eye
 
 Write anything in the project's **The Eye** tab: an instruction, a new task, some context, a question, or "stop that". It decides what your message is and acts on it, then tells you what it did.
+
+New work you ask for on a running job is planned into its graph, after the tasks it needs; asking twice doesn't add it twice. Before the job has a plan, what you ask for goes into the plan instead.
+
+When the job is waiting for you (a question, an interview round, an approval), you can simply answer in the conversation: The Eye takes your message as the answer and the job goes on. If you write about something else, it does that and reminds you, in one line, what it's still waiting for.
 
 The Eye also speaks up on its own, once per event and never to narrate: a line when a task is done (what it changed, its checks), a note when a task is left out (and which tasks go with it), when the job is blocked (why, and what it needs from you), when it waits for you (with the question right there), and when you denied something a task needed (what happens next). When the job is done it sums it up in a card: what was built, its branch, where it was merged and pushed, what's left to you, and a link to the result.
 

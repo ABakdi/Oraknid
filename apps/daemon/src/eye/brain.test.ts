@@ -209,6 +209,71 @@ describe("The Eye's brain", () => {
     );
   });
 
+  it("interviews and plans on the strongest model of the pool, never on an unproven free one (after the piano job)", async () => {
+    const seen: { leg: string; model: string }[] = [];
+    const round = `\`\`\`json\n${JSON.stringify({ done: true, playback: "ok", questions: [], open: [] })}\n\`\`\``;
+    const say = (t: { leg: string; model: string; message: string }): Action[] => {
+      seen.push({ leg: t.leg, model: t.model });
+      return [{ say: t.message.startsWith("Plan this job") ? answer([task("t1")]) : round }];
+    };
+    const claude = scriptedLeg(say);
+    const free = scriptedLeg(say);
+    const dir = mkdtempSync(join(tmpdir(), "oraknid-brain-"));
+    daemon = await startDaemon({
+      paths: resolvePaths({ ORAKNID_DATA_DIR: dir, ORAKNID_CONFIG_DIR: dir }),
+      port: 0,
+      dbFile: ":memory:",
+      os: fakeOs({ keychain: true }).os,
+      adapters: {
+        "claude-code": claude.adapter,
+        // An OpenCode Leg with a free model nobody has seen work: rated for medium work.
+        opencode: {
+          ...free.adapter,
+          kind: "opencode",
+          probe: async (...args: Parameters<typeof free.adapter.probe>) => ({
+            ...(await free.adapter.probe(...args)),
+            models: [
+              {
+                model: "big-pickle",
+                displayName: "Big Pickle",
+                effortLevels: [],
+                contextWindow: null,
+              },
+            ],
+          }),
+        },
+      },
+    });
+    await daemon.registry.create({
+      kind: "claude-code",
+      name: "Claude",
+      config: { binary: "claude" },
+    });
+    await daemon.registry.create({
+      kind: "opencode",
+      name: "Opencode",
+      config: {
+        binary: "opencode",
+        package: "@opencode/ai/providers/openai-compatible",
+        models: ["big-pickle"],
+      },
+    });
+    await daemon.health.checkAll();
+    const brain = new PoolLegBrain({
+      registry: daemon.registry,
+      supervisor: daemon.supervisor,
+      pinnedModelId: () => null,
+      pins: () => ({}),
+    });
+    const input = { jobId: "01J9Z3K8W2Q4V6X8Y0A1B2C3D4", cwd: dir, goal: "a piano", skill: "" };
+    await brain.interviewRound({ ...input, answers: [] });
+    await brain.plan({ ...input, silk: "", digest: "", verify: [] });
+    expect(seen).toEqual([
+      { leg: "Claude", model: "opus" },
+      { leg: "Claude", model: "opus" },
+    ]);
+  });
+
   it("asks each kind of decision of its own model (ADR-022)", async () => {
     const { brain, input, models } = await brainWith([answer([task("t1")])], {
       pins: (ids) => ({ planning: ids.haiku ?? null }),

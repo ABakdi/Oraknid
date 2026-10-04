@@ -35,7 +35,7 @@ table is the summary and is kept in step with the contracts.
 | Secrets | `secrets.unlock` | Opens the encrypted-file store when there is no keychain. |
 | Metrics | `metrics.recent` | Samples since a time, up to the last hour. |
 | Notifications | `notifications.get` / `update` / `configureEmail` / `test` / `vapidPublicKey` / `subscribe` / `unsubscribe` | Per-channel switches, SMTP setup (password to the secret store), web push. |
-| Settings | `settings.eyeModels` / `setEyeModels` (the Eye Leg, a model per kind of decision, the shadow planner; ADR-022) · `settings.setEyeLeg` · `maxRunningJobs` / `setMaxRunningJobs` (M3.3) · `maxTasksPerJob` / `setMaxTasksPerJob` (M3.1) · `sameProviderFallback` / `setSameProviderFallback` (ADR-009) · `policies.get` / `update` | |
+| Settings | `settings.eyeModels` / `setEyeModels` (the Eye Leg, a model per kind of decision, the shadow planner; ADR-022) · `settings.setEyeLeg` · `maxRunningJobs` / `setMaxRunningJobs` (M3.3) · `maxTasksPerJob` / `setMaxTasksPerJob` (M3.1) · `interviewRounds` / `setInterviewRounds` (the rounds an interview may take, 1–12, 3 by default; M13.21) · `sameProviderFallback` / `setSameProviderFallback` (ADR-009) · `policies.get` / `update` | |
 | Storage | `storage.usage` / `storage.prune` (M1.9) | |
 | The Nest | `nest.status` / `nest.configure` / `nest.pairAway` (Phase 4) · `nest.register` (Phase 11, [[ADR-031-Public-Nest]]) | Reaching me away from home ([[Nest-Protocol]]). `pairAway` needs the PIN set, returns a link whose keys are in the fragment, and with `full` (and the PIN) gives the device full rights. `register` registers this daemon on a public Nest (with an invite code if it asks one) and connects. All home only. |
 

@@ -6,7 +6,7 @@ import {
   renderAnswers,
   renderQuestions,
 } from "@oraknid/contracts";
-import { skillExcerpt } from "@oraknid/core";
+import { endsInterview, freshQuestions, skillExcerpt } from "@oraknid/core";
 import { asc, eq } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
 import { eyeMessages, jobs, projects } from "../db/schema.ts";
@@ -15,7 +15,14 @@ import { newId } from "../ids.ts";
 import type { SilkStore } from "../silk/store.ts";
 import type { SkillStore } from "../skills/store.ts";
 import type { EyeBrain } from "./brain.ts";
-import { INTERVIEW_DONE, pickJobSkill } from "./program.ts";
+import {
+  closeInterview,
+  decidedSoFar,
+  INTERVIEW_DONE,
+  interviewRounds,
+  interviewSoFar,
+} from "./interview.ts";
+import { pickJobSkill } from "./program.ts";
 
 // The conversation before Start (Jobs-and-Projects → Starting work):
 // with an interviewing skill, The Eye asks its rounds here and my answers
@@ -168,15 +175,18 @@ async function next(d: DraftDeps, jobId: string, text: string | null) {
 
     // My message answers the round The Eye asked last (its last message), verbatim (Skills → The interview).
     const answers = silk.filter((e) => e.kind === "interview-answer");
+    const asked =
+      text === null
+        ? null
+        : d.db
+            .select()
+            .from(eyeMessages)
+            .where(eq(eyeMessages.jobId, jobId))
+            .orderBy(asc(eyeMessages.createdAt))
+            .all()
+            .filter((m) => m.author === "eye")
+            .at(-1);
     if (text !== null) {
-      const asked = d.db
-        .select()
-        .from(eyeMessages)
-        .where(eq(eyeMessages.jobId, jobId))
-        .orderBy(asc(eyeMessages.createdAt))
-        .all()
-        .filter((m) => m.author === "eye")
-        .at(-1);
       const questions = asked?.questions?.length ? renderQuestions(asked.questions) : "";
       d.silk.add({
         jobId,
@@ -186,6 +196,24 @@ async function next(d: DraftDeps, jobId: string, text: string | null) {
         authoredBy: "owner",
       });
     }
+    // "Enough, start", "that's all": the interview is over now; what it asked is assumed or left open.
+    if (text !== null && endsInterview(text)) {
+      closeInterview(d.silk, jobId, {
+        playback: "",
+        unanswered: asked?.questions ?? [],
+        fallback: "I ended the interview: The Eye plans with what it knows.",
+      });
+      say(
+        d,
+        jobId,
+        "eye",
+        "Understood: no more questions. Press **Start** and I'll plan with what I know.",
+      );
+      return;
+    }
+    const so = interviewSoFar(d.db, jobId);
+    const max = interviewRounds(d.db);
+    const final = so.draftRounds >= max;
     const round = await d.brain.interviewRound({
       jobId,
       cwd,
@@ -195,28 +223,29 @@ async function next(d: DraftDeps, jobId: string, text: string | null) {
         .current(jobId)
         .filter((e) => e.kind === "interview-answer")
         .map((e) => e.body),
+      asked: so.asked,
+      decided: decidedSoFar(d.silk, jobId, so.asked),
+      round: so.draftRounds + 1,
+      rounds: max,
+      final,
     });
-    if (round.done) {
-      d.silk.add({
-        jobId,
-        kind: "decision",
-        title: INTERVIEW_DONE,
-        body: round.playback || "The interview found nothing more to ask.",
-        authoredBy: "eye",
+    // Never the same question twice, nor more than five a round.
+    const next = freshQuestions(normalizeQuestions(round.questions), so.asked, 5).fresh;
+    if (round.done || final || next.length === 0) {
+      closeInterview(d.silk, jobId, {
+        playback: round.playback,
+        open: round.open,
+        assumptions: round.assumptions ?? [],
+        fallback: "The interview found nothing more to ask.",
       });
-      for (const point of round.open)
-        d.silk.add({
-          jobId,
-          kind: "issue",
-          title: `Open question: ${point.slice(0, 80)}`,
-          body: point,
-          authoredBy: "eye",
-        });
+      const assumed = round.assumptions?.length
+        ? `**What I assumed** (tell me if any is wrong)\n${round.assumptions.map((a) => `- ${a}`).join("\n")}\n\n`
+        : "";
       say(
         d,
         jobId,
         "eye",
-        `${round.playback ? `**What I understood**\n\n${round.playback}\n\n` : ""}I have what I need. Press **Start** when you're ready.`,
+        `${round.playback ? `**What I understood**\n\n${round.playback}\n\n` : ""}${assumed}I have what I need. Press **Start** when you're ready.`,
       );
       return;
     }
@@ -227,7 +256,7 @@ async function next(d: DraftDeps, jobId: string, text: string | null) {
       [round.playback ? `**What I understood**\n\n${round.playback}` : "", START_HINT]
         .filter(Boolean)
         .join("\n\n"),
-      { questions: normalizeQuestions(round.questions) },
+      { questions: next },
     );
   } catch (error) {
     say(

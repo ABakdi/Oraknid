@@ -9,7 +9,7 @@ import {
   TaskKind,
   WebPlan,
 } from "@oraknid/contracts";
-import { type RouteCandidate, route, validateWeb } from "@oraknid/core";
+import { graphProblems, type Route, type RouteCandidate, route, validateWeb } from "@oraknid/core";
 import { z } from "zod";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor } from "../legs/supervisor.ts";
@@ -30,13 +30,13 @@ export interface EyeBrain {
   /** New tasks that fix what job-level verification found. */
   replan(input: PlanInput & { failure: string; done: string[] }): Promise<WebPlan>;
   /** The next interview round, from the method's interview guidance and my answers so far. */
-  interviewRound(input: {
-    jobId: string;
-    cwd: string;
-    goal: string;
-    skill: string;
-    answers: string[];
-  }): Promise<InterviewRound>;
+  interviewRound(input: InterviewInput): Promise<InterviewRound>;
+  /**
+   * New work I asked for on a job with a plan, planned into its Web: new
+   * tasks that depend on the tasks already there by their ids, never the
+   * same work again. Optional: without it the triage's tasks are used.
+   */
+  extend?(input: ExtendInput): Promise<WebPlan>;
   /** Auto approval (ADR-014): may this command run, or should I be asked? */
   classifyCommand(input: {
     jobId: string;
@@ -56,15 +56,7 @@ export interface EyeBrain {
     criteria?: string;
   }): Promise<Evaluation>;
   /** What a message of mine is, and what to do about it (Talking to The Eye). */
-  triage(input: {
-    jobId: string;
-    cwd: string;
-    goal: string;
-    state: string;
-    silk: string;
-    conversation: string;
-    message: string;
-  }): Promise<EyeTriage>;
+  triage(input: TriageInput): Promise<EyeTriage>;
   /** A check that failed and looks broken itself: repaired, or kept (The-Eye → A check that is wrong). */
   repairCheck(input: {
     jobId: string;
@@ -131,6 +123,56 @@ export interface PlanInput {
   silk: string;
   digest: string;
   verify: string[];
+}
+
+/** A question asked earlier in the interview, and what I answered (Skills → The interview). */
+export interface AskedQuestion {
+  round: number;
+  id: string;
+  prompt: string;
+  /** My answer in words; "(unanswered)" when I left it. */
+  answer: string;
+}
+
+export interface InterviewInput {
+  jobId: string;
+  cwd: string;
+  goal: string;
+  skill: string;
+  /** Each round so far, verbatim as kept in Silk. */
+  answers: string[];
+  /** Every question asked so far, with my answer: never asked again. */
+  asked?: AskedQuestion[];
+  /** What is decided already: my answers, my instructions, what The Eye assumed. */
+  decided?: string[];
+  /** This round's number, and the rounds the interview may take. */
+  round?: number;
+  rounds?: number;
+  /** The rounds are used up: only the playback and assumptions, no questions. */
+  final?: boolean;
+}
+
+export interface ExtendInput extends PlanInput {
+  /** My message asking for the new work, verbatim. */
+  request: string;
+  /** The Web as it is: each task's id, title, state and what it depends on. */
+  tasks: { id: string; title: string; kind: string; state: string; dependsOn: string[] }[];
+  /** The tasks the triage suggested, as a starting point. */
+  suggested: string;
+}
+
+export interface TriageInput {
+  jobId: string;
+  cwd: string;
+  goal: string;
+  state: string;
+  silk: string;
+  conversation: string;
+  message: string;
+  /** The questions and approvals the job waits on now, each with its id. */
+  open?: string;
+  /** The job has no plan yet (interviewing, planning): new work is guidance for the plan. */
+  unplanned?: boolean;
 }
 
 export class BrainFailed extends Error {}
@@ -258,13 +300,31 @@ export const EyeTriage = z.object({
    * to GitHub: Oraknid's own steps at the end of the job, never tasks.
    */
   ending: JobEnding.optional(),
+  /**
+   * When the job waits on questions or approvals: what the message does to
+   * one of them (its id). "answers": it answers it, fully or partly;
+   * "ends-interview": it ends the interview ("enough, start"); "unrelated":
+   * it is about something else, and the item stays open.
+   */
+  item: z
+    .object({
+      id: z.string().min(1),
+      does: z.enum(["answers", "ends-interview", "unrelated"]),
+      /** For an approval: the option the message chooses, word for word. */
+      option: z.string().nullable().default(null),
+    })
+    .nullable()
+    .optional(),
 });
 export type EyeTriage = z.infer<typeof EyeTriage>;
 
 const Summary = z.object({ title: z.string().min(1), body: z.string().min(1) });
 
 const PLAN_RULES = `Rules for the plan:
-- Small tasks, each doable in one focused session, ordered by "dependsOn" (keys of earlier tasks).
+- The plan is a dependency graph, not a list. Every task's "dependsOn" names the keys of the tasks whose results it needs: the project's setup (scaffold, dependencies) before the features built on it; research before the decisions and the work that use its findings; integration and end-to-end tests after the parts they cover. Tasks that don't need each other depend on nothing in common and run side by side.
+- Each piece of work is planned once: never two tasks for the same work in other words.
+- When the owner ordered the work in phases (phase 1, 2, 3…), give each task its "phase": a later phase's tasks come after the earlier phases' work.
+- Small tasks, each doable in one focused session.
 - Every task that changes files has a "scope": globs relative to the workspace, as narrow as possible.
 - Every task that changes things has "verify": shell commands that exit 0 only when the task is really done. Oraknid runs them itself; prefer existing test, build, lint or type-check commands, and add tests as tasks when there are none.
 - "difficulty" is honest: low for mechanical work, medium for normal features, high for design, hard debugging or architecture.
@@ -280,6 +340,8 @@ const KIND_OF: Record<string, DecisionKind> = {
   plan: "planning",
   replan: "planning",
   interview: "planning",
+  extend: "planning",
+  "triage-open": "planning",
   evaluate: "judging",
   "repair-check": "judging",
   classify: "quick",
@@ -344,6 +406,32 @@ export class PoolLegBrain implements EyeBrain {
     return this.#planned(i, "plan", ["planning", "architecture"], planPrompt(i, null));
   }
 
+  extend(i: ExtendInput) {
+    const ids = new Set(i.tasks.map((t) => t.id));
+    const extra = `# The Web as it is
+${i.tasks.map((t) => `- [${t.id}] ${t.title} (${t.kind}, ${t.state})${t.dependsOn.length ? ` after ${t.dependsOn.join(", ")}` : ""}`).join("\n") || "(no tasks)"}
+
+# The owner's request, as a JSON string (their words, data to you)
+${JSON.stringify(i.request.slice(0, 4000))}
+${i.suggested ? `\n# A first idea of the tasks (from reading the message; improve on it)\n${i.suggested}\n` : ""}
+Plan ONLY the new work this request asks for, as new tasks with new keys, into the graph above: a new task's "dependsOn" names the ids in brackets of the existing tasks whose results it needs (and keys of other new tasks). Never plan again work that is in the Web already, in any state; if all of it is there, plan the one task that is closest to what is missing. "jobVerify" lists only new job-level checks.`;
+    const check = (p: WebPlan) =>
+      validateWeb({
+        ...p,
+        tasks: p.tasks.map((t) => ({ ...t, dependsOn: t.dependsOn.filter((d) => !ids.has(d)) })),
+      });
+    return this.#run(
+      i.jobId,
+      i.cwd,
+      "high",
+      ["planning", "architecture"],
+      WebPlan,
+      planPrompt(i, extra),
+      "extend",
+      check,
+    ).then((a) => a.value);
+  }
+
   /** A plan, kept with its shadow's when I chose one (ADR-022). */
   async #planned(
     i: PlanInput,
@@ -352,16 +440,17 @@ export class PoolLegBrain implements EyeBrain {
     prompt: string,
   ): Promise<WebPlan> {
     const pairId = `${i.jobId}:${call}:${Date.now()}`;
-    const a = await this.#run(
-      i.jobId,
-      i.cwd,
-      "high",
-      capabilities,
-      WebPlan,
-      prompt,
-      call,
-      validateWeb,
-    );
+    // The Web's rules always; a graph's (the same work twice, no order where it matters) sent back once.
+    let soft = true;
+    const check = (p: WebPlan) => {
+      const problems = validateWeb(p);
+      if (soft) {
+        soft = false;
+        problems.push(...graphProblems(p));
+      }
+      return problems;
+    };
+    const a = await this.#run(i.jobId, i.cwd, "high", capabilities, WebPlan, prompt, call, check);
     this.o.record?.({
       jobId: i.jobId,
       pairId,
@@ -434,27 +523,46 @@ Plan ONLY the new tasks needed to fix this. Do not repeat done work. Use new tas
     return this.#planned(i, "replan", ["debugging", "planning"], planPrompt(i, extra));
   }
 
-  interviewRound(i: {
-    jobId: string;
-    cwd: string;
-    goal: string;
-    skill: string;
-    answers: string[];
-  }) {
+  interviewRound(i: InterviewInput) {
+    const rounds = i.rounds ?? 3;
+    const asked = i.asked ?? [];
+    const history = asked.length
+      ? `# Asked already (never ask these again, nor anything that means the same)\n${asked
+          .map(
+            (q) =>
+              `- R${q.round} ${q.id}: ${q.prompt.split("\n")[0]?.slice(0, 240)} → ${
+                q.answer === "(unanswered)"
+                  ? "(left unanswered: the owner leaves it to you; decide it and state it as an assumption)"
+                  : q.answer.slice(0, 400)
+              }`,
+          )
+          .join("\n")}`
+      : i.answers.length
+        ? `# The interview so far (the owner's words)\n${i.answers.map((a, n) => `## Round ${n + 1}\n${a}`).join("\n\n")}`
+        : "This is the first round.";
+    const decided = i.decided?.length
+      ? `# Already decided (don't ask about these)\n${i.decided.map((x) => `- ${x.slice(0, 300)}`).join("\n")}`
+      : "";
+    const task = i.final
+      ? `The interview has used its ${rounds} rounds: ask nothing more. Set "done" to true, write the "playback" of what you understood, and put in "assumptions" each thing you decide yourself for the gaps, one short sentence each (a sensible default, what the owner left unanswered). List in "open" only what truly can't be assumed.`
+      : `Interview like a senior engineer who respects the owner's time: this is round ${i.round ?? asked.length + 1} of at most ${rounds}. Ask only what truly blocks planning: a choice that changes what gets built and that you can't sensibly decide yourself. Everything else you decide yourself, as a sensible default, and put in "assumptions" (one short sentence each); the owner reads them in the playback and can correct them later. Never ask again anything asked already, answered or not, nor anything decided; never ask for confirmation of what the owner said. If nothing truly blocks planning, set "done" to true.
+
+Write the round: a short "playback" of what you understood${asked.length || i.answers.length ? ', ending with "Is this right?"' : ""}, then at most 5 questions, the most important first. Give each choice question options and a recommended one, so most can be answered with one click. The owner answers them one at a time, by keyboard or touch, so shape each one (ADR-037):
+- "id": short, unique and telling ("audience", "storage"…); "prompt": the question, one or two sentences.
+- "shape": "single" (choose one option), "multi" (any number), "confirm" (yes or no), or "text" (a free answer, only when options would only guess).
+- "options" for single and multi: 2 to 6, each with a short "id", a "label" and, when useful, a one-line "detail". The owner can always type another answer ("allowOther": true).
+- "recommended": the id of the option you recommend, or null. It is marked and selected first.
+Set "done" to true when nothing left blocks planning; list in "open" only what stays truly open, and in "assumptions" what you decided.`;
     const prompt = [
       `You are interviewing the owner of this job before any work starts, as the method below says.\n\n# The goal\n${i.goal}`,
       `# The method's interview guidance\n${i.skill}`,
-      i.answers.length
-        ? `# The interview so far (the owner's words)\n${i.answers.map((a, n) => `## Round ${n + 1}\n${a}`).join("\n\n")}`
-        : "This is the first round.",
-      `Write the next round: a short "playback" of what you understood${i.answers.length ? ', ending with "Is this right?"' : ""}, then at most 4 questions, open ones first. The owner answers them one at a time, by keyboard or touch, so shape each one (ADR-037):
-- "id": short and unique in the round ("q1", "audience"…); "prompt": the question, one or two sentences.
-- "shape": "single" (choose one option), "multi" (any number), "confirm" (yes or no), or "text" (a free answer, when options would only guess).
-- "options" for single and multi: 2 to 6, each with a short "id", a "label" and, when useful, a one-line "detail". The owner can always type another answer ("allowOther": true).
-- "recommended": the id of the option you recommend, or null. It is marked and selected first.
-Never guess to fill a gap. Set "done" to true only when every point the method lists is answered or recorded as decide-later, and list what stays open in "open".`,
-    ].join("\n\n");
-    return this.#ask(i.jobId, i.cwd, "medium", ["planning"], InterviewRound, prompt, "interview");
+      history,
+      decided,
+      task,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    return this.#ask(i.jobId, i.cwd, "high", ["planning"], InterviewRound, prompt, "interview");
   }
 
   classifyCommand(i: { jobId: string; cwd: string; task: string; command: string; why: string }) {
@@ -607,24 +715,19 @@ If the check is at fault ("broken": true), give in "command" a corrected check t
     );
   }
 
-  triage(i: {
-    jobId: string;
-    cwd: string;
-    goal: string;
-    state: string;
-    silk: string;
-    conversation: string;
-    message: string;
-  }) {
+  triage(i: TriageInput) {
     const prompt = [
       `You are The Eye, the supervisor of a job run by coding agents. The owner of the job just wrote to you. Decide what the message is and what to do with it.\n\n# The job's goal\n${i.goal}`,
       `# Where the job stands\n${i.state}`,
       i.silk ? `# What is known (Silk)\n${i.silk}` : "",
       i.conversation ? `# Your conversation so far\n${i.conversation}` : "",
+      i.open
+        ? `# The job waits on the owner for these now\n${i.open}\n\nSay in "item" what the message does to one of them: "answers" when it answers it, fully or in part (for an approval, "option" is the option it chooses, word for word); "ends-interview" when the owner wants the interview over and the work started ("enough", "start now", "that's all"); "unrelated" when it is about something else. The answer itself is the owner's message, kept word for word.`
+        : "",
       `# The owner's message\n${i.message}`,
       `Choose one intent:
 - "instruction": guidance for the work now (a constraint, a correction, a preference). Put it in "silk" as a "decision" in the owner's words; it is also passed to the agents working now.
-- "task": new work. Put the new tasks in "tasks" (dependsOn uses the ids of existing tasks above). Small and verifiable, like a plan's tasks. GitHub work (a repo, a push, a pull request) is a task that uses Oraknid's \`github\` tool and names GitHub in its title, never one that installs or uses the gh CLI.
+- "task": new work. Put the new tasks in "tasks" (dependsOn uses the ids of existing tasks above). Small and verifiable, like a plan's tasks; never work that is in the tasks above already. Oraknid plans them into the job's graph. GitHub work (a repo, a push, a pull request) is a task that uses Oraknid's \`github\` tool and names GitHub in its title, never one that installs or uses the gh CLI.
 - "context": information to know, not a request. Put it in "silk" as a "fact", or as "architecture" when it is about the design.
 - "later": an idea or request for later, not for now. Put it in "silk" as "later".
 - "stop": the owner wants the work stopped or paused.
@@ -636,12 +739,26 @@ Committing into a branch, merging into the work branch and pushing to GitHub are
           ? `
 
 This job has ended. New work ("task", or "go on", "continue", "start working" with work described in the conversation) is done by a follow-up job in the same project that starts from this job's work: give its tasks in "tasks" (dependsOn empty) and say in "reply" that a follow-up job does it. Don't say tasks were added to this job.`
-          : ""
+          : i.unplanned
+            ? `
+
+This job has no plan yet (it is being interviewed or planned): new work is guidance for the plan, never tasks of its own. Leave "tasks" empty and put the request in "silk" as a "decision"; say in "reply" that the plan will include it.`
+            : ""
       }`,
     ]
       .filter(Boolean)
       .join("\n\n");
-    return this.#ask(i.jobId, i.cwd, "low", ["planning"], EyeTriage, prompt, "talk");
+    // With questions open or no plan yet, the message decides the job's course: The Eye's strong model.
+    const weighty = !!i.open || !!i.unplanned;
+    return this.#ask(
+      i.jobId,
+      i.cwd,
+      weighty ? "high" : "low",
+      ["planning"],
+      EyeTriage,
+      prompt,
+      weighty ? "triage-open" : "triage",
+    );
   }
 
   summarizeJob(i: { jobId: string; cwd: string; goal: string; facts: string }) {
@@ -739,6 +856,7 @@ Answer with "text": the rewritten text only.`;
     capabilities: Capability[],
     pinned: string | null,
     fallback = true,
+    strong = false,
   ) {
     const candidates: RouteCandidate[] = [];
     for (const leg of this.o.registry.all()) {
@@ -768,8 +886,15 @@ Answer with "text": the rewritten text only.`;
       moneyAllowed: this.o.moneyAllowed ?? false,
     });
     // My Eye Leg unavailable: the next best Leg with planning strength, said so in the stream (The-Eye → The Eye Leg).
-    if (pinned && r.ranked.length === 0 && fallback)
+    let chosen = !!pinned;
+    if (pinned && r.ranked.length === 0 && fallback) {
       r = route(task, candidates, { moneyAllowed: this.o.moneyAllowed ?? false });
+      chosen = false;
+    }
+    // The Eye's own thinking (plans, the interview, a message that decides the job's course) goes to
+    // the strongest model it may use, not the cheapest that fits: an unproven free model never
+    // plans while a known strong one is healthy (after the piano job, 2026-10-04).
+    if (strong && !chosen) r = { ...r, ranked: strongestFirst(r.ranked, capabilities) };
     const best = r.ranked[0];
     if (!best) {
       throw new BrainFailed(
@@ -811,7 +936,7 @@ Answer with "text": the rewritten text only.`;
   ): Promise<Answer<T>> {
     const kind = KIND_OF[call];
     const pin = only ?? (kind ? this.o.pins?.()[kind] : null) ?? this.o.pinnedModelId();
-    const pick = this.#choose(difficulty, capabilities, pin, !only);
+    const pick = this.#choose(difficulty, capabilities, pin, !only, kind === "planning");
     const started = Date.now();
     const model = `${pick.candidate.legName} · ${pick.candidate.model}`;
     const jsonSchema = JSON.stringify(z.toJSONSchema(schema));
@@ -888,11 +1013,42 @@ const LIMIT_MS: Record<string, number> = {
   helper: 3 * 60_000,
   classify: 3 * 60_000,
   triage: 3 * 60_000,
+  "triage-open": 5 * 60_000,
   "pick-skill": 3 * 60_000,
   "job-summary": 3 * 60_000,
   "name-job": 3 * 60_000,
   "polish-text": 2 * 60_000,
 };
+
+const RANK: Record<Difficulty, number> = { low: 0, medium: 1, high: 2 };
+
+/**
+ * The routes for The Eye's own thinking, strongest first: rated for the
+ * hardest work, then strongest at what the call needs, then proven on real
+ * tasks; the router's score (quota left, health) only breaks ties.
+ */
+export function strongestFirst<T extends Route>(ranked: T[], capabilities: Capability[]): T[] {
+  const strength = (r: T) => {
+    const p = r.candidate.profile;
+    const caps = capabilities.map((c) => p.strengths[c] ?? 0);
+    return caps.length ? caps.reduce((a, b) => a + b, 0) / caps.length : 0;
+  };
+  const proven = (r: T) => {
+    const seen = Object.values(r.candidate.profile.observed);
+    const attempts = seen.reduce((n, o) => n + (o?.attempts ?? 0), 0);
+    const successes = seen.reduce((n, o) => n + (o?.successes ?? 0), 0);
+    // Unproven is neutral; a record of failures counts against it.
+    return attempts >= 3 ? successes / attempts - 0.7 : 0;
+  };
+  return [...ranked].sort(
+    (a, b) =>
+      RANK[b.candidate.profile.maxDifficulty] - RANK[a.candidate.profile.maxDifficulty] ||
+      strength(b) - strength(a) ||
+      proven(b) - proven(a) ||
+      (a.candidate.health === "healthy" ? 0 : 1) - (b.candidate.health === "healthy" ? 0 : 1) ||
+      b.score - a.score,
+  );
+}
 
 function planPrompt(i: PlanInput, extra: string | null): string {
   return [

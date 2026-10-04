@@ -24,6 +24,16 @@ profile. I can change it any time in Settings, or per job.
   replans, interviews), **judging** (reviews, check repairs) and
   **quick** (command checks, my messages, summaries). Unset, a kind uses
   the Eye Leg, then the pool ([[ADR-022-Eye-Decision-Models]]).
+- **The Eye's own thinking runs on the strongest model it may use**
+  (after the piano job, 2026-10-04). Planning calls (the plan, a replan,
+  the interview, new work planned into The Web) and my message while the
+  job waits on me or has no plan yet go to my chosen model for that kind,
+  else the Eye Leg; with neither, the pool's strongest, not the cheapest
+  that fits as tasks are routed: rated for the hardest work first, then
+  strongest at planning, then proven on real tasks, quota and health
+  breaking ties. An unproven free model never plans while a known strong
+  one (Claude Opus or Sonnet, Gemini Pro) is healthy; it does when it is
+  all there is.
 - A **shadow planner** can also plan every job, in the background,
   never used: the job page shows its plans beside the ones that ran,
   with their measures and how the real ones fared, so I can judge a
@@ -69,8 +79,31 @@ task or sends it back with exactly what is missing, like a failed
 check. If no Leg can review it, the task is accepted and the event says
 it was not reviewed.
 
+**A plan is a graph** (after the piano job, 2026-10-04, when fifteen
+tasks, the same ones twice, had no dependency at all). The prompt asks
+for one: each task names in `dependsOn` the tasks whose results it
+needs: the project's setup before its features, research before the
+work that uses it, integration and end-to-end tests after the parts;
+tasks that don't need each other run side by side; each piece of work
+once; and when I gave phases, each task its `phase`. A plan with the
+same work twice, or several tasks and no dependency at all where order
+plainly matters (setup, research, integration or tests among them), is
+sent back once with the problem said. Before it is stored, Oraknid
+shapes it itself (`shapeWeb`): the same work twice is merged into one
+task (dependencies, scopes and checks joined); each phase's first tasks
+come after the previous phase's last ones; a dependency on a task that
+isn't there, on itself or closing a circle is dropped; and, as the last
+resort, a plan still without any dependency where order matters is
+ordered setup and research, then the work, then integration and tests.
+What it mended is said in the plan's Silk entry. The Workflow tab draws
+the dependencies.
+
+The planner always plans a job once, whatever came before it: tasks
+that didn't come from a plan never stand in for one.
+
 Plans are versioned. A replan never discards done tasks. It adds,
-removes or rewrites pending ones, and the change is shown in the UI.
+removes or rewrites pending ones, and the change is shown in the UI. A
+replan's task that is already in The Web unfinished isn't added again.
 
 The skill shapes the plan. For the canon-driven skill, the first tasks
 are writing the canon, then one phase at a time, matching the skill's
@@ -171,7 +204,7 @@ me in a line:
 | It is | The Eye |
 | :-- | :-- |
 | An instruction for the work now | Records it as my decision in Silk and passes it to every session working on the job at its next turn end, before any check. |
-| New work | Adds tasks to The Web (asked again at Supervised). |
+| New work | Plans it into The Web: one planning call (`extend`, a planning call) gets The Web as it is and my message, and gives new tasks that depend on the tasks there. The Web's rules and shaping apply; a task already there, done or not, isn't added again, and the same message never adds its tasks twice. A new task that depends on nothing there comes after the work nothing else needs yet. Before the job has a plan (interviewing, planning), new work is kept in Silk as guidance for the plan, never tasks of its own. |
 | Context | Records a fact or an architecture note in Silk. |
 | For later | Keeps it in Silk as a note for later, not acted on now. |
 | Stop / pause | Pauses the job at a safe point. |
@@ -181,6 +214,21 @@ Asking for the work to be merged into the work branch or pushed to
 GitHub adds no task: it is the job's ending (Jobs-and-Projects → Ending a
 job), done when the job ends, or at once when it has ended, and said in
 the reply.
+
+**Talking while a question is open** (after the piano job, 2026-10-04,
+when "start now, the interview is over" made tasks and left the round
+open for fifteen minutes). When the job waits on me (an interview round,
+another question, an approval), the triage is given those items with
+their ids and says what my message does to one of them:
+
+| My message | What happens |
+| :-- | :-- |
+| Answers it, fully or in part | The item is answered with my message, word for word (an approval with the option it chooses), recorded as answered by my message where The Eye asked it; the job goes on. |
+| Ends the interview ("enough", "start now", "that's all", "the interview is over") | The round is answered with my words and the interview ends at once: planning starts with what is known. Such words end it without asking any model; with no round open yet, the next round isn't asked. |
+| Something else | Handled as usual; the item stays open and the reply ends with one line: "I'm still waiting for your answer to “…”." |
+
+A question is never left blocking a job after I've made myself clear in
+the conversation.
 
 New work for a job that has ended is kept for later instead. If no Leg
 can think (none healthy, or the call fails), my message is kept as my
