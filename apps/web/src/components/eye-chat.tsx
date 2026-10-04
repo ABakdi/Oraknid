@@ -33,24 +33,38 @@ const INTENT: Record<NonNullable<EyeMessage["action"]>["intent"], string> = {
  * chat. I ask for work here: The Eye passes it to the job running, starts
  * a follow-up when the last one has ended, or a first job; each reply
  * links the job it touched.
+ *
+ * A server's conversation (ADR-049) is the same, through the server: a
+ * question is answered from its state document without a job; work
+ * becomes a job on the server.
  */
 export function EyeChat({
   projectId,
   jobs,
   archived = false,
+  server,
 }: {
-  projectId: string;
+  /** The project; a server's own, null until its first message. */
+  projectId: string | null;
   /** The project's jobs: their live topics, and their titles for the links. */
   jobs: JobView[];
   archived?: boolean;
+  /** The server whose conversation this is (ADR-049). */
+  server?: { id: string; name: string };
 }) {
   const ids = jobs.map((j) => j.id);
-  const messages = useLive(() => api.projects.conversation({ id: projectId }), {
-    topics: ["overview", ...ids.map((id) => `job:${id}`)],
-    refreshOn: (e) =>
-      e.type === "eye.message" || e.type === "eye.replied" || e.type === "job.created",
-    deps: [projectId],
-  });
+  const messages = useLive(
+    () =>
+      server
+        ? api.servers.conversation({ id: server.id })
+        : api.projects.conversation({ id: projectId as string }),
+    {
+      topics: ["overview", ...ids.map((id) => `job:${id}`)],
+      refreshOn: (e) =>
+        e.type === "eye.message" || e.type === "eye.replied" || e.type === "job.created",
+      deps: [projectId, server?.id],
+    },
+  );
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [answering, setAnswering] = useState<string | null>(null);
@@ -72,7 +86,8 @@ export function EyeChat({
     if (!value) return;
     setSending(true);
     try {
-      await api.projects.talk({ id: projectId, text: value });
+      if (server) await api.servers.talk({ id: server.id, text: value });
+      else await api.projects.talk({ id: projectId as string, text: value });
       setText("");
       messages.reload();
     } catch (e) {
@@ -85,7 +100,8 @@ export function EyeChat({
   const answer = async (messageId: string, answers: QuestionAnswer[]) => {
     setAnswering(messageId);
     try {
-      await api.projects.answer({ id: projectId, messageId, answers });
+      if (server) await api.servers.answer({ id: server.id, messageId, answers });
+      else await api.projects.answer({ id: projectId as string, messageId, answers });
       messages.reload();
     } catch (e) {
       toast.error(message(e));
@@ -94,11 +110,16 @@ export function EyeChat({
     }
   };
 
-  const jobLink = (jobId: string, label: string) => {
+  const jobLink = (jobId: string | null, label: string) => {
+    if (!jobId) return null;
     const j = byId.get(jobId);
     return (
       <Link
-        href={jobHref({ id: jobId, projectId, ...(j ? { state: j.state } : {}) })}
+        href={jobHref({
+          id: jobId,
+          projectId: j?.projectId ?? projectId ?? "",
+          ...(j ? { state: j.state } : {}),
+        })}
         className="min-w-0 truncate font-medium text-primary underline-offset-2 hover:underline"
         title={j?.title}
       >
@@ -116,18 +137,27 @@ export function EyeChat({
           <span className="hidden min-w-0 truncate font-normal text-muted-foreground sm:inline">
             {going
               ? t("— talking to “{title}”, running now.", { title: going.title })
-              : jobs.some((j) => j.state !== "draft")
-                ? t("— ask for more: new work starts a follow-up job here.")
-                : t("— ask for work: The Eye starts a job here from your message.")}
+              : server
+                ? t("— ask about {name}, or for work on it: a job goes into the server.", {
+                    name: server.name,
+                  })
+                : jobs.some((j) => j.state !== "draft")
+                  ? t("— ask for more: new work starts a follow-up job here.")
+                  : t("— ask for work: The Eye starts a job here from your message.")}
           </span>
         </div>
         {!messages.data ? (
           <div className="flex-1" />
         ) : !list.length ? (
           <div className="flex flex-1 items-center justify-center px-4 text-center text-sm text-muted-foreground">
-            {t(
-              "Nothing said yet. Ask for work here: The Eye starts a job for it, or passes it to the one running.",
-            )}
+            {server
+              ? t(
+                  "Nothing said yet. Ask what runs on {name}, or for work on it (“install fail2ban”, “why does nginx return 502 for x.com”): The Eye answers from its state document, or sends an agent into the server and tells you what will change first.",
+                  { name: server.name },
+                )
+              : t(
+                  "Nothing said yet. Ask for work here: The Eye starts a job for it, or passes it to the one running.",
+                )}
           </div>
         ) : (
           <div ref={box} className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
@@ -140,7 +170,7 @@ export function EyeChat({
                     <div className="my-2 flex items-center gap-2 text-[11px] text-muted-foreground">
                       <span className="h-px flex-1 bg-border" />
                       <span className="min-w-0 truncate">
-                        {byId.get(m.jobId)?.title ?? t("another job")}
+                        {m.jobId ? (byId.get(m.jobId)?.title ?? t("another job")) : t("no job")}
                       </span>
                       <span className="h-px flex-1 bg-border" />
                     </div>
@@ -150,11 +180,15 @@ export function EyeChat({
                     <EyeReportView
                       message={m}
                       report={reportOf(m) as NonNullable<ReturnType<typeof reportOf>>}
-                      resultHref={jobHref({
-                        id: m.jobId,
-                        projectId,
-                        ...(byId.get(m.jobId) ? { state: byId.get(m.jobId)?.state } : {}),
-                      })}
+                      resultHref={
+                        m.jobId
+                          ? jobHref({
+                              id: m.jobId,
+                              projectId: m.projectId,
+                              ...(byId.get(m.jobId) ? { state: byId.get(m.jobId)?.state } : {}),
+                            })
+                          : ""
+                      }
                     />
                   ) : (
                     <div
@@ -181,7 +215,7 @@ export function EyeChat({
                             ))}
                           </div>
                         ) : null}
-                        {m.author === "eye" ? (
+                        {m.author === "eye" && m.jobId ? (
                           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-xs">
                             {jobLink(m.jobId, byId.get(m.jobId)?.title ?? t("The job"))}
                             {touched
@@ -235,9 +269,11 @@ export function EyeChat({
             placeholder={
               archived
                 ? t("The project is archived: restore it in Settings to ask for work.")
-                : t(
-                    "Ask for work, or tell The Eye anything: an instruction, context, “stop that”, an idea for later…",
-                  )
+                : server
+                  ? t("Ask about {name}, or for work on it…", { name: server.name })
+                  : t(
+                      "Ask for work, or tell The Eye anything: an instruction, context, “stop that”, an idea for later…",
+                    )
             }
             value={text}
             onChange={(e) => setText(e.target.value)}

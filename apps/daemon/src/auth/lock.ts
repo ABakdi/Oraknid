@@ -333,6 +333,10 @@ export const HOME_ONLY = [
   "/cloud/answerRclone",
   // Restarting a container or a service on a server (ADR-043); reading stays open.
   "/servers/restart",
+  // Work on a server, asked in its conversation, and its Production mark (ADR-049).
+  "/servers/talk",
+  "/servers/answer",
+  "/servers/setProduction",
   // GitHub's accounts, a new repository and a project's link (ADR-038, ADR-040); reading stays open.
   "/github/addAccount",
   "/github/removeAccount",

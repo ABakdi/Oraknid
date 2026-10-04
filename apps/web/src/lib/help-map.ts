@@ -144,12 +144,22 @@ export const PAGES: HelpPage[] = [
     path: "/servers/{item}/{tab}",
     item: "a server's id",
     name: "Servers",
-    does: "My servers over SSH: readings, what runs there (Docker, databases, the proxy, traffic, logs), backups, a terminal, the state document.",
+    does: "My servers over SSH: readings, a chat with The Eye that sends agents into the server, its jobs, what runs there (Docker, databases, the proxy, traffic, logs), backups, a terminal, the state document.",
     tabs: [
       {
         id: "overview",
         name: "Overview",
-        does: "oraknid-monitor's readings, live and over 24 hours; its name, description, address; edit or remove it.",
+        does: "oraknid-monitor's readings, live and over 24 hours; its name, description, address; its Production mark; edit or remove it.",
+      },
+      {
+        id: "chat",
+        name: "Chat",
+        does: "A conversation with The Eye about this server: a question is answered from its state document; work (install, configure, fix, find out why) becomes a job on the server, which says what it will change first.",
+      },
+      {
+        id: "jobs",
+        name: "Jobs",
+        does: "The jobs that worked on this server, running and done, and their approvals waiting for me.",
       },
       {
         id: "docker",
@@ -806,6 +816,15 @@ export const CONTROLS: HelpControl[] = [
     name: "Edit (a server)",
     does: "Changes its name, description, address, user or credentials, with Test connection before saving.",
     where: "A server's header",
+  },
+  {
+    id: "server.production",
+    page: "servers",
+    tab: "overview",
+    needsItem: true,
+    name: "Production (a server)",
+    does: "Marks the server production: every job that reaches it asks before any change.",
+    where: "A server's Overview tab",
   },
   {
     id: "server.terminal",

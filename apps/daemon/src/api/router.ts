@@ -87,6 +87,7 @@ import {
   ServerRole,
   ServerSample,
   ServerState,
+  ServerStateVersion,
   ServerTest,
   ServerTestResult,
   ServerTraffic,
@@ -181,6 +182,13 @@ import type { NestLink } from "../nest/link.ts";
 import type { Notifications } from "../notify/notifications.ts";
 import type { Secrets } from "../os/secrets.ts";
 import type { Paths } from "../paths.ts";
+import {
+  ensureServerProject,
+  serverConversation,
+  serverJobsDir,
+  serverOf,
+  talkToServer,
+} from "../servers/server-jobs.ts";
 import type { Servers } from "../servers/service.ts";
 import {
   followUpKey,
@@ -424,6 +432,25 @@ const talkDeps = (c: ApiContext) => ({
   endNow: (id: string) =>
     endSteps({ db: c.jobs.db, bus: c.bus, github: c.github, projects: c.projects }, id),
 });
+
+/** Talking to a server's Eye (ADR-049): talking's deps, and the server's own. */
+const serverTalkDeps = (c: ApiContext) => ({
+  ...talkDeps(c),
+  servers: c.servers,
+  projects: c.projects,
+  dir: serverJobsDir(c.paths.dataDir),
+});
+
+/**
+ * Work on a server is asked from home on a standard device, as every
+ * server action (ADR-049): its own project's conversation is the server's.
+ */
+function awayFromServer(c: ApiContext, projectId: string) {
+  if (c.remote && !c.devices.isFull(c.device) && serverOf(c.jobs.db, projectId))
+    throw new Error(
+      "Work on a server is asked from the computer running Oraknid, or from a device with full rights.",
+    );
+}
 
 const SkillSummary = z.object({
   id: z.string(),
@@ -781,8 +808,14 @@ export const router = {
       .handler(({ context: c, input }) =>
         guard(async () => ({ ...(await projectFrom(c, input)), jobCount: 0 })),
       ),
-    list: base.output(z.array(ProjectView)).handler(({ context: c }) => c.projects.list()),
-    /** One project's view, as `list` gives it (Audit 1 → Q1-15). */
+    /** My projects; with `servers`, the servers' own too (ADR-049), which are hidden otherwise. */
+    list: base
+      .input(z.object({ servers: z.boolean().optional() }).optional())
+      .output(z.array(ProjectView))
+      .handler(({ context: c, input }) =>
+        c.projects.list().filter((p) => input?.servers || !p.serverId),
+      ),
+    /** One project's view, as `list` gives it (Audit 1 → Q1-15); a server's own too. */
     get: base
       .input(z.object({ id: z.string() }))
       .output(ProjectView)
@@ -850,7 +883,10 @@ export const router = {
       .input(z.object({ id: z.string(), text: z.string().min(1).max(8000) }))
       .output(z.object({ id: z.string(), jobId: z.string() }))
       .handler(({ context: c, input }) =>
-        guard(() => talkInProject(talkDeps(c), input.id, input.text.trim())),
+        guard(() => {
+          awayFromServer(c, input.id);
+          return talkInProject(talkDeps(c), input.id, input.text.trim());
+        }),
       ),
     /**
      * My answers to The Eye's questions in the project's conversation
@@ -860,15 +896,16 @@ export const router = {
       .input(z.object({ id: z.string(), messageId: z.string(), answers: QuestionAnswers }))
       .output(z.object({ id: z.string(), jobId: z.string() }))
       .handler(({ context: c, input }) =>
-        guard(() =>
-          answerInProject(
+        guard(() => {
+          awayFromServer(c, input.id);
+          return answerInProject(
             { ...talkDeps(c), inbox: c.inbox },
             input.id,
             input.messageId,
             input.answers,
             c.device,
-          ),
-        ),
+          );
+        }),
       ),
     /**
      * Its GitHub link (ADR-038): the account and repository Oraknid uses for
@@ -1040,6 +1077,59 @@ export const router = {
       .input(z.object({ id: z.string() }))
       .output(z.object({ cleaned: z.boolean() }))
       .handler(({ context: c, input }) => guard(() => c.servers.remove(input.id))),
+    /** Every version of its state document, newest first; the job whose end wrote each (ADR-049). */
+    history: base
+      .input(z.object({ id: z.string() }))
+      .output(z.array(ServerStateVersion))
+      .handler(({ context: c, input }) => guard(() => c.servers.history(input.id))),
+    /** My Production mark on the server itself: every job that reaches it asks before a change (ADR-049). */
+    setProduction: base
+      .input(z.object({ id: z.string(), production: z.boolean() }))
+      .output(ServerView)
+      .handler(({ context: c, input }) =>
+        guard(() => c.servers.setProduction(input.id, input.production)),
+      ),
+    /**
+     * The server's conversation with The Eye (ADR-049): its own project's,
+     * questions answered without a job and its jobs' messages, in order.
+     */
+    conversation: base
+      .input(z.object({ id: z.string() }))
+      .output(z.array(EyeMessage))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          c.servers.row(input.id);
+          return serverConversation(c.jobs.db, input.id);
+        }),
+      ),
+    /**
+     * My message to the server's Eye: to the job going on it; else a
+     * question answered from its state document, or a new server job.
+     */
+    talk: base
+      .input(z.object({ id: z.string(), text: z.string().min(1).max(8000) }))
+      .output(z.object({ id: z.string(), jobId: z.string().nullable(), projectId: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          const r = talkToServer(serverTalkDeps(c), input.id, input.text.trim());
+          return { ...r, projectId: ensureServerProject(serverTalkDeps(c), input.id) };
+        }),
+      ),
+    /** My answers to The Eye's questions in the server's conversation (ADR-037). */
+    answer: base
+      .input(z.object({ id: z.string(), messageId: z.string(), answers: QuestionAnswers }))
+      .output(z.object({ id: z.string(), jobId: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(() =>
+          answerInProject(
+            { ...talkDeps(c), inbox: c.inbox },
+            ensureServerProject(serverTalkDeps(c), input.id),
+            input.messageId,
+            input.answers,
+            c.device,
+          ),
+        ),
+      ),
     ...serverInsightRoutes,
   },
   /** Database backups: plans, runs, keys, Verify, Restore (ADR-044). */

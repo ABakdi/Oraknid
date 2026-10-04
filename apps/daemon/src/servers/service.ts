@@ -1,17 +1,19 @@
 import { mkdirSync } from "node:fs";
-import type {
-  NewServer,
-  ServerPatch,
-  ServerSample,
-  ServerState,
-  ServerTest,
-  ServerTestResult,
-  ServerView,
+import {
+  isProduction,
+  type NewServer,
+  type ServerPatch,
+  type ServerSample,
+  type ServerState,
+  type ServerStateVersion,
+  type ServerTest,
+  type ServerTestResult,
+  type ServerView,
 } from "@oraknid/contracts";
 import { and, asc, desc, eq, lt } from "drizzle-orm";
 import ssh2, { type Client } from "ssh2";
 import type { Db } from "../db/open.ts";
-import { projects, serverSamples, serverStates, servers } from "../db/schema.ts";
+import { jobs, projects, serverSamples, serverStates, servers } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
 import type { EyeBrain } from "../eye/brain.ts";
 import { newId } from "../ids.ts";
@@ -31,6 +33,14 @@ const KEY = (id: string) => `server.${id}.key`;
 const PASSWORD = (id: string) => `server.${id}.password`;
 const PASSPHRASE = (id: string) => `server.${id}.passphrase`;
 const DAY = 24 * 3600_000;
+
+/** A job that had the server, at its end (ADR-049): what it changed goes into the state document. */
+export interface AfterJob {
+  id: string;
+  title: string;
+  /** What it did there, a line each; null when it isn't the server's own job (its tasks may be code). */
+  changes: string[] | null;
+}
 /** How long Test connection waits for the server, and for its answer. */
 const TEST_TIMEOUT_MS = 10_000;
 
@@ -84,12 +94,17 @@ export class Servers {
         .where(eq(serverStates.serverId, r.id))
         .orderBy(desc(serverStates.version))
         .get()?.v ?? 0;
-    const projectIds = this.o.db
-      .select({ id: projects.id, serverIds: projects.serverIds })
+    const all = this.o.db
+      .select({
+        id: projects.id,
+        serverIds: projects.serverIds,
+        serverRoles: projects.serverRoles,
+        serverId: projects.serverId,
+      })
       .from(projects)
-      .all()
-      .filter((p) => p.serverIds.includes(r.id))
-      .map((p) => p.id);
+      .all();
+    // Its own project (ADR-049) is not one of mine that uses it.
+    const mine = all.filter((p) => !p.serverId && p.serverIds.includes(r.id));
     return {
       id: r.id,
       name: r.name,
@@ -106,9 +121,39 @@ export class Servers {
       busy: this.#busy.get(r.id) ?? null,
       stateVersion: version,
       latest: this.#latest.get(r.id) ?? null,
-      projectIds,
+      projectIds: mine.map((p) => p.id),
+      projectId: all.find((p) => p.serverId === r.id)?.id ?? null,
+      production: r.production,
+      productionIn: mine.filter((p) => isProduction(p.serverRoles[r.id])).map((p) => p.id),
       createdAt: r.createdAt,
     };
+  }
+
+  /**
+   * Production (ADR-049): marked on the server itself, or its role in a
+   * project of mine. Every job that reaches it asks before a change.
+   */
+  isProduction(id: string, role?: { role: string; production: boolean | null }): boolean {
+    const r = this.o.db
+      .select({ production: servers.production })
+      .from(servers)
+      .where(eq(servers.id, id))
+      .get();
+    return !!r?.production || isProduction(role);
+  }
+
+  /** My Production mark on the server itself (ADR-049). */
+  setProduction(id: string, production: boolean): ServerView {
+    this.row(id);
+    this.o.db.update(servers).set({ production }).where(eq(servers.id, id)).run();
+    this.o.bus.publish({
+      type: "server.updated",
+      topic: "overview",
+      jobId: null,
+      payload: { id, fields: ["production"], production },
+      actor: "owner",
+    });
+    return this.view(this.row(id));
   }
 
   list(): ServerView[] {
@@ -329,6 +374,17 @@ export class Servers {
     return this.#connect(this.row(id));
   }
 
+  /**
+   * One command on a server over Oraknid's own connection: a job's check
+   * there (ADR-049). Its exit code and output.
+   */
+  async run(id: string, command: string, timeoutMs = 60_000) {
+    const r = this.row(id);
+    if (r.hostKeyOffered)
+      throw new Error("The server's host key changed: accept it on the Servers page first.");
+    return exec(await this.#connect(r), command, { timeoutMs });
+  }
+
   /** A ready server's connection, with oraknid-monitor up to date (ADR-043 reads through it). */
   async monitor(id: string): Promise<Client> {
     const r = this.row(id);
@@ -424,12 +480,20 @@ export class Servers {
     this.o.db.update(servers).set({ monitorHash: MONITOR_HASH }).where(eq(servers.id, id)).run();
   }
 
-  /** Read-only discovery and a new version of the state document. */
-  discover(id: string, since?: string): Promise<ServerState> {
-    return this.#with(id, "discovering", () => this.#document(id, since));
+  /**
+   * Read-only discovery and a new version of the state document; after a
+   * job, naming what it changed (ADR-049). What was read of the server
+   * before is forgotten: the tabs read it again.
+   */
+  discover(id: string, since?: string, job?: AfterJob): Promise<ServerState> {
+    return this.#with(id, "discovering", async () => {
+      const state = await this.#document(id, since, job);
+      this.insight.forget(id);
+      return state;
+    });
   }
 
-  async #document(id: string, since?: string): Promise<ServerState> {
+  async #document(id: string, since?: string, job?: AfterJob): Promise<ServerState> {
     const r = this.row(id);
     const client = await this.#connect(r);
     // What runs there too (ADR-043): containers, databases, the proxy's sites.
@@ -455,18 +519,38 @@ export class Servers {
       // No Leg could write it: the discovery itself, said so.
       body = `# ${r.name}\n\n_The Eye couldn't write this document (${error instanceof Error ? error.message : String(error)}); what discovery found:_\n\n${found}`;
     }
-    return this.#save(id, body, "eye", found);
+    // What the job changed, said in the document whatever The Eye wrote (ADR-049).
+    if (job?.changes && !body.includes(changesHeading(job.title)))
+      body = `${body.trimEnd()}\n\n## ${changesHeading(job.title)} (${new Date(this.#now()).toISOString().slice(0, 10)})\n\n${
+        job.changes.length ? job.changes.map((c) => `- ${c}`).join("\n") : "- It reported none."
+      }\n`;
+    return this.#save(id, body, "eye", found, job?.id ?? null);
   }
 
-  #save(id: string, body: string, source: "eye" | "owner", discovery: string | null): ServerState {
+  #save(
+    id: string,
+    body: string,
+    source: "eye" | "owner",
+    discovery: string | null,
+    jobId: string | null = null,
+  ): ServerState {
     const version = (this.state(id)?.version ?? 0) + 1;
     const createdAt = this.#now();
     this.o.db
       .insert(serverStates)
-      .values({ id: newId(createdAt), serverId: id, version, body, source, discovery, createdAt })
+      .values({
+        id: newId(createdAt),
+        serverId: id,
+        version,
+        body,
+        source,
+        discovery,
+        jobId,
+        createdAt,
+      })
       .run();
-    this.#publish("server.state", { id, version, source });
-    return { version, body, source, createdAt };
+    this.#publish("server.state", { id, version, source, ...(jobId ? { jobId } : {}) });
+    return { version, body, source, jobId, createdAt };
   }
 
   /** My edit of the state document: a version too. */
@@ -489,8 +573,45 @@ export class Servers {
       .all();
     const s = rows[0];
     return s
-      ? { version: s.version, body: s.body, source: s.source, createdAt: s.createdAt }
+      ? {
+          version: s.version,
+          body: s.body,
+          source: s.source,
+          jobId: s.jobId,
+          createdAt: s.createdAt,
+        }
       : null;
+  }
+
+  /** Every version of its state document, newest first, without the bodies (ADR-049). */
+  history(id: string): ServerStateVersion[] {
+    this.row(id);
+    return this.o.db
+      .select({
+        version: serverStates.version,
+        source: serverStates.source,
+        jobId: serverStates.jobId,
+        createdAt: serverStates.createdAt,
+        jobTitle: jobs.title,
+      })
+      .from(serverStates)
+      .leftJoin(jobs, eq(jobs.id, serverStates.jobId))
+      .where(eq(serverStates.serverId, id))
+      .orderBy(desc(serverStates.version))
+      .all();
+  }
+
+  /** The version a job's end wrote, and the one before it (ADR-049). */
+  afterJob(id: string, jobId: string): { before: ServerState | null; after: ServerState } | null {
+    const row = this.o.db
+      .select({ version: serverStates.version })
+      .from(serverStates)
+      .where(and(eq(serverStates.serverId, id), eq(serverStates.jobId, jobId)))
+      .orderBy(desc(serverStates.version))
+      .get();
+    const after = row ? this.state(id, row.version) : null;
+    if (!after) return null;
+    return { before: after.version > 1 ? this.state(id, after.version - 1) : null, after };
   }
 
   /**
@@ -520,14 +641,8 @@ export class Servers {
         throw new Error(`Couldn't open ${r.name}'s key with its passphrase.`);
       privateKey = k.getPrivatePEM();
     }
-    const alias = `oraknid-${
-      r.name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "") || id.slice(-6).toLowerCase()
-    }`;
     return {
-      alias,
+      alias: aliasOf(r),
       name: r.name,
       host: r.host,
       port: r.port,
@@ -569,7 +684,14 @@ export class Servers {
     await this.o.secrets.delete(PASSWORD(id));
     await this.o.secrets.delete(PASSPHRASE(id));
     for (const p of this.o.db.select().from(projects).all())
-      if (p.serverIds.includes(id))
+      if (p.serverId === id)
+        // Its own project (ADR-049) stays hidden, archived, with its jobs' history.
+        this.o.db
+          .update(projects)
+          .set({ archivedAt: p.archivedAt ?? this.#now() })
+          .where(eq(projects.id, p.id))
+          .run();
+      else if (p.serverIds.includes(id))
         this.o.db
           .update(projects)
           .set({ serverIds: p.serverIds.filter((x) => x !== id) })
@@ -654,3 +776,15 @@ export class Servers {
     for (const id of [...this.#clients.keys()]) this.#drop(id);
   }
 }
+
+/** A server's SSH alias in a Leg's config (ADR-026): `oraknid-<its name>`. */
+export const aliasOf = (r: { id: string; name: string }) =>
+  `oraknid-${
+    r.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || r.id.slice(-6).toLowerCase()
+  }`;
+
+/** The heading of what a job changed, in a state document (ADR-049). */
+export const changesHeading = (title: string) => `Changes by job “${title}”`;

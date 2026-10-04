@@ -55,6 +55,11 @@ export const projects = sqliteTable("projects", {
    * moved into its one repo, migration 0031.)
    */
   repos: json<ProjectRepo[]>("repos").notNull().default([]),
+  /**
+   * A server's own project (ADR-049): its conversation and jobs are the
+   * server's, its folder a scratch folder of Oraknid's. Null for mine.
+   */
+  serverId: text("server_id").unique(),
 });
 
 export const skills = sqliteTable(
@@ -98,6 +103,8 @@ export const servers = sqliteTable("servers", {
   monitorHash: text("monitor_hash"),
   lastSeenAt: integer("last_seen_at"),
   error: text("error"),
+  /** Marked production by me: a job that reaches it asks before any change (ADR-049). */
+  production: integer("production", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at").notNull(),
 });
 
@@ -113,6 +120,8 @@ export const serverStates = sqliteTable(
     source: text("source", { enum: ["eye", "owner"] }).notNull(),
     /** The discovery it came from, when The Eye wrote it. */
     discovery: text("discovery"),
+    /** The job whose end wrote it (ADR-049). */
+    jobId: text("job_id"),
     createdAt: integer("created_at").notNull(),
   },
   (t) => [index("server_states_server").on(t.serverId, t.version)],
@@ -402,9 +411,8 @@ export const eyeMessages = sqliteTable(
   "eye_messages",
   {
     id: text("id").primaryKey(),
-    jobId: text("job_id")
-      .notNull()
-      .references(() => jobs.id),
+    /** Null: a server's conversation answered without a job (ADR-049). */
+    jobId: text("job_id").references(() => jobs.id),
     /** The project's conversation is its messages from every job (ADR-034). */
     projectId: text("project_id").notNull().default(""),
     author: text("author", { enum: ["owner", "eye"] }).notNull(),

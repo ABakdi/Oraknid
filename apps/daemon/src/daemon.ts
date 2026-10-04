@@ -69,6 +69,7 @@ import { countActiveJobs, createInhibitController } from "./os/inhibit-controlle
 import { startMetricsLoop } from "./os/metrics-loop.ts";
 import { Secrets } from "./os/secrets.ts";
 import { DEFAULT_HOST, DEFAULT_PORT, isDefaultDataDir, type Paths } from "./paths.ts";
+import { resumeServerConversations, serverJobsDir } from "./servers/server-jobs.ts";
 import { Servers } from "./servers/service.ts";
 import { MAX_RUNNING_JOBS, readSetting } from "./settings.ts";
 import { SilkStore } from "./silk/store.ts";
@@ -611,7 +612,16 @@ export async function startDaemon(options: DaemonOptions) {
   });
 
   // The Eye speaks up in each project's conversation: a task done, the job done, blocked (ADR-045).
-  startEyeReports({ db, bus, inbox, brain, now });
+  startEyeReports({
+    db,
+    bus,
+    inbox,
+    brain,
+    now,
+    // A server job's report: its state document's changes, its backup plans (ADR-049).
+    servers: serverService,
+    backupPlans: (serverId) => backupPlans.plans(serverId),
+  });
   // Jobs named by what they are, and described: what for, then what they did.
   const naming = startJobNaming({
     db,
@@ -783,6 +793,33 @@ export async function startDaemon(options: DaemonOptions) {
     inbox,
     tmpDir: join(paths.dataDir, "tmp"),
     now,
+  });
+  // A server's conversation too (ADR-049): a question no job took is answered now.
+  resumeServerConversations({
+    db,
+    bus,
+    silk,
+    runner,
+    brain,
+    inbox,
+    tmpDir: join(paths.dataDir, "tmp"),
+    now,
+    servers: serverService,
+    projects: projectsService,
+    dir: serverJobsDir(paths.dataDir),
+    newJob: (projectId, goal) =>
+      projectsService.createJob({
+        projectId,
+        goal,
+        inputs: [],
+        autonomy: "standard",
+        allowedLegIds: [],
+        verify: [],
+        unsandboxed: false,
+      }),
+    startJob: async (id) => {
+      await runner.start(id);
+    },
   });
   os.serviceNotifier.ready();
   const stopWatchdog = os.serviceNotifier.startWatchdog();

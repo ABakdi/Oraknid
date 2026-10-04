@@ -66,6 +66,11 @@ export const Project = z.object({
   repos: z.array(ProjectRepo).default([]),
   /** The GitHub link of a project of one repo: its repo's (ADR-038). Null for several repos. */
   github: GitHubLink.nullable().default(null),
+  /**
+   * A server's own project (ADR-049): its jobs are the server's, its folder a
+   * scratch folder of Oraknid's; hidden from the Projects list. Null: a project of mine.
+   */
+  serverId: Id.nullable().default(null),
 });
 export type Project = z.infer<typeof Project>;
 
@@ -471,7 +476,8 @@ export type EyeReport = z.infer<typeof EyeReport>;
 
 export const EyeMessage = z.object({
   id: Id,
-  jobId: Id,
+  /** Null: a server's conversation answered without a job (ADR-049). */
+  jobId: Id.nullable(),
   /** The project's conversation is its messages from every job (ADR-034). */
   projectId: Id,
   author: z.enum(["owner", "eye"]),

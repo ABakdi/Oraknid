@@ -2,7 +2,7 @@ import type { ProjectView } from "@oraknid/contracts";
 import { FolderGit2, FolderOpen, Plus, SquareTerminal } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Redirect, useLocation } from "wouter";
+import { Link, Redirect, useLocation } from "wouter";
 import { ActivityFeed } from "@/components/activity-feed";
 import { LegComparison, TokensChart } from "@/components/charts";
 import { BackButton, Empty, ErrorNote, Loading, PageHeader, Stat } from "@/components/common";
@@ -42,7 +42,8 @@ export function ProjectsPage({
   sub?: string;
 }) {
   const [, go] = useLocation();
-  const projects = useLive(() => api.projects.list(), {
+  // A server's own project opens here too, by its jobs' links; it is never listed (ADR-049).
+  const projects = useLive(() => api.projects.list({ servers: true }), {
     topics: ["overview"],
     refreshOn: (e) => e.type.startsWith("project.") || e.type === "job.created",
   });
@@ -58,8 +59,9 @@ export function ProjectsPage({
       {t("New project")}
     </Button>
   );
-  const all = projects.data ?? [];
-  if (all.length === 0)
+  const everything = projects.data ?? [];
+  const all = everything.filter((p) => !p.serverId);
+  if (all.length === 0 && !everything.some((p) => p.id === id))
     return (
       <div className="space-y-4">
         <PageHeader title={t("Projects")} />
@@ -78,7 +80,7 @@ export function ProjectsPage({
   const archived = all.filter((p) => p.archivedAt);
   const listed = all.filter((p) => showArchived || !p.archivedAt);
   // A project open: its id in the address; on a computer the first one by default.
-  const selected = all.find((p) => p.id === id);
+  const selected = everything.find((p) => p.id === id);
   const shown =
     selected ?? (typeof window !== "undefined" && window.innerWidth >= 768 ? listed[0] : undefined);
   return (
@@ -193,6 +195,15 @@ function ProjectDetail({
       <h2 className="min-w-0 truncate text-lg font-semibold" title={project.name}>
         {project.name}
       </h2>
+      {project.serverId ? (
+        // A server's own project (ADR-049): its place is the server's page.
+        <Link
+          href={`/servers/${project.serverId}/chat`}
+          className="shrink-0 text-xs text-primary underline-offset-2 hover:underline"
+        >
+          {t("Its server")}
+        </Link>
+      ) : null}
       <span
         className="hidden min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground sm:inline"
         title={project.workspacePath}

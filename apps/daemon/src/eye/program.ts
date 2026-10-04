@@ -31,6 +31,8 @@ import type { InboxStore } from "../inbox/store.ts";
 import { sandboxPlan } from "../legs/plan.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor } from "../legs/supervisor.ts";
+import { runServerCheck } from "../servers/checks.ts";
+import { jobServers, serverDigest, serverPlanApproval } from "../servers/server-jobs.ts";
 import type { Servers } from "../servers/service.ts";
 import {
   attemptsFromKey,
@@ -217,8 +219,13 @@ export function eyeProgram(d: EyeDeps): JobProgram {
       trash: join(project.workspacePath, ".oraknid", "trash"),
       projectPath: project.workspacePath,
     };
-    // What a plan needs to know of a project of several repos (ADR-042).
-    const layout = several ? reposLayout(projectView.repos, project.workspacePath) : "";
+    // What a plan needs to know of a project of several repos (ADR-042), or of the server a server job works on (ADR-049).
+    const layout =
+      project.serverId && d.servers
+        ? serverDigest({ servers: d.servers }, project.serverId)
+        : several
+          ? reposLayout(projectView.repos, project.workspacePath)
+          : "";
 
     // A Leg's permission request dies with its session: one still open is stale.
     for (const item of d.inbox.list("open")) {
@@ -330,6 +337,8 @@ export function eyeProgram(d: EyeDeps): JobProgram {
                         policyFor(d.db, job.id, ws.cwd),
                       ),
                     ),
+                  // A check on one of its servers runs there, over Oraknid's own connection (ADR-049).
+                  builtin: (command) => serverCheck(d, job.id, command),
                 },
               )
             : Promise.resolve([]),
@@ -381,19 +390,29 @@ export function eyeProgram(d: EyeDeps): JobProgram {
             : "Every task passed its own checks; the job has no job-level checks.",
           authoredBy: "eye",
         });
-        // Its servers' documents, from a new discovery and what it did (Servers → The state document).
-        const serverIds =
-          d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.serverIds ?? [];
-        for (const id of d.servers ? serverIds : []) {
+        // Its servers' documents, from a new discovery and what it did (Servers → The state document);
+        // a server job's changes named in it (ADR-049).
+        const place = d.db.select().from(projects).where(eq(projects.id, job.projectId)).get();
+        for (const id of d.servers ? (place?.serverIds ?? []) : []) {
           await ctx.step(`server:${id}:after`, null, async () => {
-            const done = taskRows(d.db, job.id)
-              .filter((t) => t.state === "done")
-              .map((t) => `- ${t.title}`)
-              .join("\n");
+            const finished = taskRows(d.db, job.id).filter((t) => t.state === "done");
+            const done = finished.map((t) => `- ${t.title}`).join("\n");
+            const changed = finished
+              .filter((t) => t.kind !== "research" && t.kind !== "plan")
+              .map(
+                (t) =>
+                  `${t.title}${t.verify.length ? ` (checked: ${t.verify.map((v) => `\`${v}\``).join(", ")})` : ""}`,
+              );
             await d.servers
               ?.discover(
                 id,
                 `The job "${job.title}" finished. Its goal: ${job.goal}\nIts tasks:\n${done}`,
+                {
+                  id: job.id,
+                  title: job.title,
+                  // A project's job names its changes only when it is the server's own (its tasks may be code).
+                  changes: place?.serverId === id ? changed : null,
+                },
               )
               .catch(() => null);
             return null;
@@ -661,13 +680,30 @@ async function runTask(
     skillBody: d.skills.version(job.skillId, job.skillVersion)?.body ?? "",
     // Every job may do GitHub work through Oraknid's own tool, judged by its project's link (ADR-038).
     tools:
-      d.tools?.registry.hasBuiltIn("github") && !job.tools.includes("github")
+      d.tools?.registry.hasBuiltIn("github") &&
+      !job.tools.includes("github") &&
+      // A server job's place is its server, with no repo to put on GitHub (ADR-049).
+      !d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.serverId
         ? [...job.tools, "github"]
         : job.tools,
     serverIds:
       d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.serverIds ?? [],
-    serverRoles:
-      d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.serverRoles ?? {},
+    // Each server's role, production also when I marked the server itself (ADR-049).
+    serverRoles: Object.fromEntries(
+      jobServers(d, job.id).map((s) => [
+        s.id,
+        {
+          role:
+            d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.serverRoles[
+              s.id
+            ]?.role ?? "",
+          production: s.production,
+        },
+      ]),
+    ),
+    // The server whose own job this is (ADR-049).
+    serverJob:
+      d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.serverId ?? null,
     // The server I chose or confirmed for this job's work on a server (ADR-042).
     server: readSetting(d.db, jobServerKey(job.id), JobServer, { serverId: null, declined: [] })
       .serverId,
@@ -1012,10 +1048,20 @@ export function renderRound(
     .join("\n\n");
 }
 
-/** Supervised: I approve the plan before work starts, and each replan (Approvals → Autonomy levels). */
+/**
+ * Supervised: I approve the plan before work starts, and each replan
+ * (Approvals → Autonomy levels). A server job's plan that changes the
+ * server is approved too, saying what it will change (ADR-049).
+ */
 async function approvePlanIfSupervised(d: EyeDeps, ctx: JobContext) {
   const job = d.db.select().from(jobs).where(eq(jobs.id, ctx.jobId)).get();
-  if (job?.autonomy !== "supervised") return;
+  if (!job) return;
+  const server = serverPlanApproval(
+    d,
+    job,
+    taskRows(d.db, job.id).filter((t) => t.state !== "done" && t.state !== "skipped"),
+  );
+  if (job.autonomy !== "supervised" && !server) return;
   const version = job.webVersion;
   const summary = d.silk
     .current(job.id)
@@ -1031,9 +1077,15 @@ async function approvePlanIfSupervised(d: EyeDeps, ctx: JobContext) {
       action: "plan.approve",
       payload: { version, tasks: pending.length },
       gated: true,
-      title: version === 1 ? "Approve the plan" : `Approve the plan, version ${version}`,
+      title: server
+        ? `Approve what will change on ${server}${version === 1 ? "" : ` (plan, version ${version})`}`
+        : version === 1
+          ? "Approve the plan"
+          : `Approve the plan, version ${version}`,
       consequences: {
-        approve: "Work starts on these tasks.",
+        approve: server
+          ? `Work starts: these changes are made on ${server}, each command through the approvals.`
+          : "Work starts on these tasks.",
         deny: "Nothing runs and the job stops (blocked): tell The Eye what to change, then resume it.",
       },
       describe: `${summary?.body.split("\n\n")[0] ?? ""}\n\n${pending
@@ -1083,4 +1135,14 @@ function firstLeg(d: EyeDeps) {
   const leg = d.registry.all()[0];
   if (!leg) throw new Error("There are no Legs.");
   return leg;
+}
+
+/** A job-level check on one of the job's servers (ADR-049): run there, or null for any other check. */
+function serverCheck(d: EyeDeps, jobId: string, command: string) {
+  const servers = d.servers;
+  if (!servers) return Promise.resolve(null);
+  return runServerCheck(command, {
+    servers: jobServers(d, jobId),
+    run: (id, remote) => servers.run(id, remote),
+  });
 }

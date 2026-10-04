@@ -253,6 +253,13 @@
       "when": 1791077431457,
       "tag": "0035_job_names",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1791119896252,
+      "tag": "0036_server_jobs",
+      "breakpoints": true
     }
   ]
 }
