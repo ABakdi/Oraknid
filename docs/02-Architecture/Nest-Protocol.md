@@ -78,6 +78,15 @@ in a **sandboxed frame** (an opaque origin): it can't read the loader's
 storage, where the device's keys and token are, and reaches the tunnel
 only through a message port the loader hands it.
 
+When my daemon can't be reached (my computer off or offline), the
+loader says so and keeps retrying: Oraknid runs on my own computer,
+there's nothing to open until it's back, and the page connects as soon
+as it is. On a public Nest (by `/info`) it adds links to the site and
+the guide; a private Nest has neither, so it shows none. A device
+already paired that opens the site stays on the site, whose header
+button reads "Open your Oraknid"; only an old pairing link at `/` is
+sent on to `/app/` (2026-10-04, [[ADR-033-Product-Site]]).
+
 What the browser can't guarantee: the loader itself comes from The
 Nest. A Nest that was broken into could serve a changed loader, and a
 changed loader could lie about itself. The loader is small and its hash

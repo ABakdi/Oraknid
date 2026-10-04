@@ -58,6 +58,14 @@ the canon. Code identifiers are shown in `code`.
 | **oraknid-monitor** | — | The small shell program on a server that Oraknid asks for a reading every 15 seconds over SSH. |
 | **Mail account** | `mailAccount` | An IMAP or POP3 account with SMTP, read and written in Mail; agents reach it through the `email` tool. |
 | **Agent's draft** | — | A mail an agent wrote; sent only when I approve it, unless auto-send is on for its account. |
+| **Workflow** | `web` | What the UI calls a project's Web: its tab showing the tasks of its jobs and how they depend on each other (2026-10-03). In the canon and the code it is The Web. |
+| **Job name** / **job description** | `title` / `description` | A job's few words, like a commit's subject, and one or two sentences: what it's for, and once ended what it did. Given by The Eye's quick model; mine when I rename it (`namedBy`, `describedAs`; 2026-10-04, [[Jobs-and-Projects]]). |
+| **Project repo** | `ProjectRepo` | One git repo of a project, with its name in the project, its folder, its release and work branches and its GitHub link ([[ADR-042-Several-Repos-And-Servers]]). |
+| **Backup plan** | `backupPlan` | One database's backup: what, how (its native dump), when (a schedule), where to (this computer, another server, or cloud storage), how many to keep, and its age key if encrypted. Each run is a **backup run** ([[ADR-044-Backups]]). |
+| **age key** | `backupKey` | A key pair for encrypting backups with age: the public key encrypts, the private key stays in the keychain and is used only to restore or verify. Made or imported in Settings → Backups → Keys. |
+| **Cloud storage** | `cloud` | My storage accounts in Oraknid, seen as one pool, through rclone ([[ADR-046-Cloud-Storage]]). |
+| **Provider** | `cloudProvider` | One storage account in Cloud storage (Google Drive, an S3 bucket, MEGA, any backend rclone supports since 2026-10-04), with its used and free space. |
+| **The pool** | — | One listing of everything across my providers; an upload goes where a rule I set says (Automatic), or to a provider I pick. |
 | **Audit log** | `audit` | The append-only record of every action, decision, approval and side effect. |
 
 Related: [[Vision]] · [[Core-Entities]] · [[Product-Requirements]]

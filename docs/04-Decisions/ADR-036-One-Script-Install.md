@@ -13,14 +13,17 @@ services.
 - **`install.sh` at the repository's root**, run as me (it asks for
   `sudo` only to install missing packages):
   `curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/main/install.sh | sh`
-  or `sh install.sh` from a clone. Options: `--ref <branch>` (`--dev` for `--ref dev`, 2026-10-04),
-  `--dir <path>` (default `~/.local/share/oraknid/app`), `--no-service`,
-  `--uninstall`.
+  or `sh install.sh` from a clone. Options: `--ref <branch>`, `--dev`
+  (for `--ref dev`, 2026-10-04), `--dir <path>` (default
+  `~/.local/share/oraknid/app`), `--from <path or URL>` (another clone,
+  below), `--no-service`, `--uninstall`.
 - It **installs what is missing** with the system's package manager
   (apt, dnf, pacman, zypper, apk; it says what it would run when it
   knows none): git, Node 22.12 or newer (from the distribution, or a
   user-local Node when the distribution's is older), pnpm through
-  corepack, bubblewrap, passt, python3. Then clones or updates,
+  corepack, bubblewrap, passt, python3, and rclone (recommended, for
+  Cloud storage, [[ADR-046-Cloud-Storage]]; when it can't be installed
+  the script only warns, and Cloud storage waits for it). Then clones or updates,
   installs, builds, links `oraknid` into `~/.local/bin`, and runs
   `oraknid doctor`.
 - **The service**, by what the system runs (PID 1, then tools present):

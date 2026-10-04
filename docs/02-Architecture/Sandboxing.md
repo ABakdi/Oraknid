@@ -84,7 +84,9 @@ bwrap --unshare-all --share-net --die-with-parent --new-session \
   are forwarded, reached as localhost inside. Landlock goes inside pasta
   (before it, pasta's user namespace can't map ids); bwrap gives me my
   own uid back inside. Without pasta, the host's network is shared and
-  `oraknid doctor` says so.
+  `oraknid doctor` says so, in words that tell passt missing (install
+  it) from passt installed but unable to make a network here (it needs
+  user namespaces and `/dev/net/tun`), 2026-10-03.
 - A Leg's own server inside (OpenCode's `serve`) gets its port forwarded
   in, from this computer's localhost to the sandbox's localhost only.
   Signing a Leg in keeps this computer's network while it lasts: the

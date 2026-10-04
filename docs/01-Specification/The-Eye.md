@@ -118,31 +118,6 @@ the earliest quota reset, and resumes on its own.
 After each Leg turn The Eye decides what comes next. It doesn't
 wait for me:
 
-In a project of several repos ([[ADR-042-Several-Repos-And-Servers]]),
-both take `--repo <name>` (its name in the project), as
-`oraknid github-branch <branch> --repo web`; without it, the project's
-only repo, or its only linked one.
-
-BR-1 holds: a task is still done only when Oraknid's own run of its
-checks passes; the change of a check is visible, never silent.
-
-￼￼￼Talking to The Eye
-
-Each job has a prompt to The Eye. I write in my words: an instruction,
-a task to add, context, "stop that", "keep this for later". The Eye
-decides what it is (one short reasoning call) and acts, then answers
-me in a line:
-
-BR-1 holds: a task is still done only when Oraknid's own run of its
-checks passes; the change of a check is visible, never silent.
-
-￼￼￼Talking to The Eye
-
-Each job has a prompt to The Eye. I write in my words: an instruction,
-a task to add, context, "stop that", "keep this for later". The Eye
-decides what it is (one short reasoning call) and acts, then answers
-me in a line:
-
 - The Leg stopped with work left → continue prompt (built from the
   task, the verify results and Silk).
 - The Leg asked a question → The Eye answers from Silk if it can. If
@@ -173,6 +148,15 @@ it pass, and sending the Leg after it only burns its time (seen live
   repo, run by the daemon with the account's token, not in the sandbox.
   The Eye knows the project's repo when it looks at a check, and a check
   that relies on `gh`, a token or a git remote for it is broken.
+  A branch check names only branches the repo really has: those the
+  task names, else its work branch, never a word guessed from the text;
+  an old check naming a branch the repo doesn't have is repaired
+  (2026-10-04).
+
+In a project of several repos ([[ADR-042-Several-Repos-And-Servers]]),
+both take `--repo <name>` (its name in the project), as
+`oraknid github-branch <branch> --repo web`; without it, the project's
+only repo, or its only linked one.
 
 BR-1 holds: a task is still done only when Oraknid's own run of its
 checks passes; the change of a check is visible, never silent.

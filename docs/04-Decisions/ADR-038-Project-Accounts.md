@@ -50,6 +50,12 @@ the check repair didn't know the project's repo and kept them.
   visibility, the tool, no gh), and its checks that call gh or read a
   remote become the two above. Once per task.
 - **The check repair knows the repo** and replaces such checks itself.
+- **Branch checks name real branches** (2026-10-04): an
+  `oraknid github-branch` check names only branches the repo really has:
+  those the task names, else its work branch. Never a word guessed from
+  the text ("push dev and main to GitHub" once gave a branch named
+  `to`, and the check could never pass). An old check naming a branch
+  the repo doesn't have is repaired, on a task adapted before too.
 
 *Extended 2026-10-03:* several repos per project, and servers with roles ([[ADR-042-Several-Repos-And-Servers]]).
 

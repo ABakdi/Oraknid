@@ -13,7 +13,7 @@ Set per job. Changeable while the job runs.
 | :-- | :-- |
 | **Supervised** | The plan (The Web) before work starts, each replan, every gated action, and every Leg permission prompt the policy does not auto-approve. |
 | **Standard** (default) | Every gated action, and every Leg permission prompt outside the job's scope or allow list. |
-| **Full** | Only spending above the threshold and irreversible external actions (send, push to a remote, deploy, delete outside the workspace). |
+| **Full** | Only spending above the threshold and irreversible external actions (send, push to a remote, deploy, deleting a branch). A write or delete outside the job's folder isn't asked at any level: it is refused (→ Writing outside its folder). |
 
 **Overrides** (Supervised and Standard only): per job, I can waive a
 specific gate, e.g. "may push to the work branch". A waiver is recorded
@@ -28,7 +28,7 @@ an explicit per-job waiver.
 | `push` | `git push` to any remote; the github tool's push anywhere but the project's linked repo, or a force-push. |
 | `merge` | Merging the work branch into the release branch. |
 | `deploy` | Any deploy script or command declared as deploy. |
-| `delete` | Deleting outside the worktree, or deleting a branch. |
+| `delete` | Deleting a branch (`git branch -D`, `git push --delete`). A Leg's write or delete outside its folder is refused, not asked (2026-10-04, → Writing outside its folder). |
 | `spend` | Any action projected to exceed the money threshold. |
 | `external-write` | Any MCP or API call not declared as a read ([[ADR-021-Tools-Broker]]). |
 | `install` | Installing system packages, or global packages outside the workspace. |

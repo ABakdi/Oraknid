@@ -52,24 +52,27 @@ Eye's conversation sit beside them ([[Chats-and-Helper]]).
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
-│ Oraknid  ◉ live  ☕ awake (1 job)   Inbox (3)   ⌘K  ⚙         │ header
-├──────────┬────────────────────────────────────────────────────┤
-│ New work │                                                    │
-│ Overview │                                                    │
-│ Projects │        main view                                   │
-│ Repos    │                                                    │
-│ Inbox    │                                                    │
-│ Mail     │                                                    │
-│ Legs     │                                                    │
-│ Chats    │                                                    │
-│ Servers  │                                                    │
-│ Terminal │                                                    │
-│ Skills   │                                                    │
-│ Logs     │                                                    │
-│ Docs     │                                                    │
-│ Settings │                                                    │
-└──────────┴────────────────────────────────────────────────────┘
+│ Oraknid  ◉ live  ☕ awake (1 job)  Inbox (3)  ⌘K  ⚙  New work  │ header
+├───────────────┬───────────────────────────────────────────────┤
+│ Overview      │                                               │
+│ Projects      │                                               │
+│ Repos         │        main view                              │
+│ Inbox         │                                               │
+│ Mail          │                                               │
+│ Legs          │                                               │
+│ Chats         │                                               │
+│ Servers       │                                               │
+│ Cloud storage │                                               │
+│ Terminal      │                                               │
+│ Skills        │                                               │
+│ Logs          │                                               │
+│ Docs          │                                               │
+│ Settings      │                                               │
+└───────────────┴───────────────────────────────────────────────┘
 ```
+
+New work is a button in the header, and in More on a phone; Cloud
+storage sits between Servers and Terminal (2026-10-03).
 
 - **Command palette (⌘K / Ctrl+K)**: jump to anything, and run any
   control (pause job, new job, approve…). A job shows its name with its
