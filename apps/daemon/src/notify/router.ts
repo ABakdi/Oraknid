@@ -225,6 +225,27 @@ export function startNotificationRouter(o: {
           itemId: null,
         };
       }
+      case "machine.incident": {
+        // The computer in danger (ADR-050): once per incident, what happens and what Oraknid did.
+        const m = payload as { kind?: string; level?: string; message?: string; did?: string };
+        // Busy with my own work is shown, not sent.
+        if (m.kind === "busy") return null;
+        return {
+          p: {
+            event: "machine.danger",
+            jobId: null,
+            n: {
+              title:
+                m.level === "danger" ? "Your computer is in danger" : "Your computer needs a look",
+              body: [m.message, m.did].filter(Boolean).join(" "),
+              url: url("/"),
+              urgency: m.level === "danger" ? "critical" : "normal",
+              tag: `machine-${m.kind ?? ""}`,
+            },
+          },
+          itemId: null,
+        };
+      }
       case "system.recovered": {
         const s = payload as { jobsResumed?: string[]; effectsNeedingMe?: number };
         return {

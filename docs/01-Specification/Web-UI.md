@@ -132,6 +132,7 @@ storage sits between Servers and Terminal (2026-10-03).
 | **Plan usage** | (2026-10-03, [[ADR-039-Plan-Usage-In-View]]) A row per Claude Code Leg (and any Leg with windows), the one closest to a limit first: each window fullest first, as a bar and a percentage, when it resets, Oraknid's tokens in it, and how old the figures are ("as of 4 min ago"); near (80%) and at (100%) the limit said in words. Fresh figures are asked for every minute while it is open. |
 | **Legs now** | One card per Leg: state (idle / working / waiting / rate-limited / down), the model in use, the current task, context used by the current session. Its windows are in Plan usage. |
 | **Activity stream** | Every Leg's and The Eye's actions as they happen, filterable by job, Leg and kind. Leg output appears as condensed lines that expand. |
+| **Health** | (2026-10-04, [[ADR-050-Parallel-By-Default]]) The computer: all good, needs a look, or in danger; tasks running at once of the most allowed (decided by this computer, or my limit); memory, CPU and swap now; anything wrong (memory and swap, a full disk, the OOM killer, heat, a session running away) with what Oraknid did; the tasks paused to make room. While in danger a red banner says the same on every page. |
 | **Problems** | Errors, drift events, kills, escalations, blocked jobs. Each links to the evidence. |
 | **Resources** | Per Leg and per process: CPU, RAM, GPU and VRAM (local models), disk I/O, network. Sparklines, with the full chart a click away. |
 | **Running now** | (2026-10-03, [[ADR-034-Projects-First]]) Every job going, waiting, paused or queued, across projects: its name and description (2026-10-04), its project, its progress, a queued mark, and Pause or Resume on its row. A job opens in its project's Work tab. `/jobs` comes here. |
@@ -272,7 +273,11 @@ Its page is in tabs, in the address (`/projects/<id>/<tab>`):
   named by its job (a click on the name goes inside it), one after
   another, left to right on a computer, top to bottom on a phone. The
   choice is kept per project on the device. A task opens its drawer.
-  `/projects/<id>/web` (the old address) opens Workflow.
+  `/projects/<id>/web` (the old address) opens Workflow. A ready task
+  that waits says why on its box (2026-10-04, [[ADR-050-Parallel-By-Default]]:
+  "waiting for memory: …", "Claude busy with 3 sessions", "overlaps
+  “X”: both change src/auth"), and the job's header, here and in Work,
+  says "4 tasks running at once · 2 waiting: …".
 - **Work**: the jobs as a timeline, newest first: name and description
   (two lines at most), state, progress, branch, tokens, a queued mark,
   Pause or Resume. Opening one
@@ -716,7 +721,12 @@ In tabs, each one concern in sections; the tab is in the address
 that opened Settings:
 - **General**: this computer (keychain, sandbox, sleep inhibition),
   storage use and pruning, notifications, theme.
-- **Eye & jobs**: The Eye's models, jobs at once, same-provider fallback.
+- **Eye & jobs**: The Eye's models, jobs at once, same-provider fallback,
+  and **Work at once** (2026-10-04, [[ADR-050-Parallel-By-Default]]): tasks
+  at once across all jobs (Automatic, what this computer takes, or a
+  number), heavy tasks at once, the memory to keep free, the CPU above
+  which no new task starts, the disk to keep free, and "Pause work when
+  the computer is busy with my own things".
 - **Security**: the PIN and idle lock ([[ADR-029-App-Lock]]), the
   allow/deny list, the terminal.
 - **Devices & phone**: pairing my phone in one step (a QR code to scan;

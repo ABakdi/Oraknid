@@ -13,7 +13,7 @@ import type { AddressInfo } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { LegKind, MetricsSample } from "@oraknid/contracts";
-import { scrubSecrets } from "@oraknid/core";
+import { type MachineReading, readingOf, scrubSecrets } from "@oraknid/core";
 import { createAntigravityAdapter } from "@oraknid/leg-antigravity";
 import { createClaudeCodeAdapter } from "@oraknid/leg-claude-code";
 import { createOpenAICompatibleAdapter } from "@oraknid/leg-openai-compatible";
@@ -32,7 +32,7 @@ import { Chats } from "./chats/service.ts";
 import { attachCloudRoutes, Downloads } from "./cloud/routes.ts";
 import { Cloud } from "./cloud/service.ts";
 import { closeDatabase, openDatabase } from "./db/open.ts";
-import { jobs as jobsTable } from "./db/schema.ts";
+import { jobs as jobsTable, projects as projectsTable, tasks as tasksTable } from "./db/schema.ts";
 import { SideEffects } from "./engine/effects.ts";
 import { JobStore } from "./engine/jobs.ts";
 import { StepJournal } from "./engine/journal.ts";
@@ -43,6 +43,7 @@ import { forgetJob } from "./eye/attempt.ts";
 import { type EyeBrain, PoolLegBrain } from "./eye/brain.ts";
 import { startBudgetWatch } from "./eye/budgets.ts";
 import { EyeDecisions } from "./eye/decisions.ts";
+import { pauseForRoom } from "./eye/leg-work.ts";
 import { serverAdded } from "./eye/links.ts";
 import { type NamingDeps, startJobNaming } from "./eye/naming.ts";
 import { eyeProgram } from "./eye/program.ts";
@@ -70,9 +71,12 @@ import { countActiveJobs, createInhibitController } from "./os/inhibit-controlle
 import { startMetricsLoop } from "./os/metrics-loop.ts";
 import { Secrets } from "./os/secrets.ts";
 import { DEFAULT_HOST, DEFAULT_PORT, isDefaultDataDir, type Paths } from "./paths.ts";
+import { diskSpace } from "./resources/disks.ts";
+import { startGuard } from "./resources/guard.ts";
+import { Work } from "./resources/work.ts";
 import { resumeServerConversations, serverJobsDir } from "./servers/server-jobs.ts";
 import { Servers } from "./servers/service.ts";
-import { MAX_RUNNING_JOBS, readSetting } from "./settings.ts";
+import { DEFAULT_RUNNING_JOBS, MAX_RUNNING_JOBS, readSetting } from "./settings.ts";
 import { SilkStore } from "./silk/store.ts";
 import { SkillStore } from "./skills/store.ts";
 import { startNightlyBackups } from "./storage/storage.ts";
@@ -101,6 +105,13 @@ export interface DaemonOptions {
   /** OS pieces to replace (tests). */
   os?: Partial<OsDeps>;
   metricsIntervalMs?: number;
+  /** The guard's pace (ADR-050; tests: shorter or never). */
+  guardIntervalMs?: number;
+  /** How long a danger must be gone before its incident closes, and the pace of pauses (tests). */
+  guardClearMs?: number;
+  guardPauseEveryMs?: number;
+  /** The machine as admission and the guard read it (tests give fake readings). */
+  machineReading?: () => MachineReading | null;
   /** Seconds between oraknid-monitor readings (tests: shorter). */
   serverSampleSec?: number;
   /** How often backup plans are looked at (ms; tests). */
@@ -297,6 +308,32 @@ export async function startDaemon(options: DaemonOptions) {
   });
   // The last ten seconds of the machine, for resource-aware scheduling (ADR-016).
   let recentMachine: () => MetricsSample[] = () => [];
+  // Where every job's tasks ask to start: the machine, the Legs and my cap, shared (ADR-050).
+  const work = new Work({
+    db,
+    bus,
+    registry,
+    supervisor,
+    now,
+    reading: () => options.machineReading?.() ?? readingOf(recentMachine(), disks()),
+  });
+  // The data folder's disk and each running job's project's, read at most every 30 s.
+  let diskCache: { at: number; disks: MachineReading["disks"] } = { at: 0, disks: [] };
+  const disks = (): MachineReading["disks"] => {
+    if (now() - diskCache.at < 30_000) return diskCache.disks;
+    const places = [{ label: "the data folder", path: paths.dataDir }];
+    for (const r of work.running()) {
+      const project = db
+        .select({ name: projectsTable.name, path: projectsTable.workspacePath })
+        .from(projectsTable)
+        .innerJoin(jobsTable, eq(jobsTable.projectId, projectsTable.id))
+        .where(eq(jobsTable.id, r.jobId))
+        .get();
+      if (project) places.push({ label: `the project “${project.name}”`, path: project.path });
+    }
+    diskCache = { at: now(), disks: diskSpace(places) };
+    return diskCache.disks;
+  };
   // My servers: SSH with Oraknid's own key, a state document, oraknid-monitor (ADR-026/027).
   const serverService = new Servers({
     db,
@@ -338,7 +375,8 @@ export async function startDaemon(options: DaemonOptions) {
   });
   const runner = new JobRunner({
     // How many jobs run at once; the rest queue by priority (ADR-016).
-    maxRunning: () => readSetting(db, MAX_RUNNING_JOBS, z.number().int().min(1), 2),
+    maxRunning: () =>
+      readSetting(db, MAX_RUNNING_JOBS, z.number().int().min(1), DEFAULT_RUNNING_JOBS),
     jobs: jobsStore,
     journal,
     effects,
@@ -363,6 +401,7 @@ export async function startDaemon(options: DaemonOptions) {
         effects,
         // Set once the metrics loop runs; until then nothing holds work back.
         machine: () => recentMachine(),
+        work,
         legsDir: paths.legs,
         tmpDir: join(paths.dataDir, "tmp"),
         now,
@@ -589,6 +628,35 @@ export async function startDaemon(options: DaemonOptions) {
     return recent;
   };
 
+  // The guard: danger on the machine paused for, and told once per incident (ADR-050).
+  const guard = startGuard({
+    work,
+    bus,
+    now,
+    reading: () => work.d.reading?.() ?? null,
+    lastSample: () => metricsLoop.recent(now() - 10_000).at(-1) ?? null,
+    sessions: () => supervisor.about(),
+    task: (taskId) =>
+      db
+        .select({
+          title: tasksTable.title,
+          kind: tasksTable.kind,
+          verify: tasksTable.verify,
+          instructions: tasksTable.instructions,
+        })
+        .from(tasksTable)
+        .where(eq(tasksTable.id, taskId))
+        .get() ?? null,
+    pause: (jobId, taskId, why) => pauseForRoom(jobId, taskId, why),
+    ...(options.guardIntervalMs ? { intervalMs: options.guardIntervalMs } : {}),
+    ...(options.guardClearMs !== undefined ? { clearMs: options.guardClearMs } : {}),
+    ...(options.guardPauseEveryMs !== undefined ? { pauseEveryMs: options.guardPauseEveryMs } : {}),
+  });
+  // Room may have come back: waiting tasks look again.
+  bus.subscribe((e) => {
+    if (e.type === "machine.recovered" || e.type === "settings.updated") work.wake();
+  });
+
   os.inhibitor.onChange((state) =>
     bus.publish({ type: "system.inhibitor", topic: "overview", jobId: null, payload: state }),
   );
@@ -712,6 +780,8 @@ export async function startDaemon(options: DaemonOptions) {
         service: os.service,
         notifications,
         recentMetrics: metricsLoop.recent,
+        work,
+        machineHealth: () => guard.health(),
         jobs: jobsStore,
         runner,
         registry,
@@ -837,6 +907,7 @@ export async function startDaemon(options: DaemonOptions) {
       stopWatchdog();
       bus.publish({ type: "system.stopping", topic: "overview", jobId: null, payload: null });
       metricsLoop.stop();
+      guard.stop();
       // Nothing may start a run once shutdown begins: timers and watchers go first (Audit 1 → D1-08).
       health.stop();
       clearInterval(mirrorTimer);
@@ -886,6 +957,8 @@ export async function startDaemon(options: DaemonOptions) {
     notifications,
     secrets,
     metricsLoop,
+    work,
+    guard,
     jobs: jobsStore,
     runner,
     registry,

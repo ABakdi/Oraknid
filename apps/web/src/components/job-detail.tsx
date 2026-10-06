@@ -10,6 +10,7 @@ import { JobBudget, JobStats } from "@/components/job-budget";
 import { JobGoal, JobTitle } from "@/components/job-heading";
 import { JobResult } from "@/components/job-result";
 import { JobSettings } from "@/components/job-settings";
+import { TasksAtOnce } from "@/components/machine-health";
 import { OrderDialog } from "@/components/order-dialog";
 import { type PageTab, PageTabs } from "@/components/page-tabs";
 import { PlanComparisonCard } from "@/components/plan-comparison";
@@ -122,6 +123,7 @@ export function JobDetail({ id, sub }: { id: string; sub?: string }) {
                   {j.branch}
                 </code>
               ) : null}
+              <TasksAtOnce tasks={j.tasks} />
               <span>{tokens(j.tokens)} tokens</span>
               {j.startedAt ? <span>{t("started {when}", { when: ago(j.startedAt) })}</span> : null}
             </div>

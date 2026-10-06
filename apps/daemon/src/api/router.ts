@@ -44,6 +44,7 @@ import {
   LegPlanUsage,
   LegView,
   LogSource,
+  MachineHealth,
   MailAccountView,
   MailCompose,
   MailDetected,
@@ -82,6 +83,7 @@ import {
   QuietHours,
   RemovalPreview,
   RemovalResult,
+  ResourceSettings,
   ServerDatabases,
   ServerDocker,
   ServerLogSource,
@@ -190,6 +192,7 @@ import type { NestLink } from "../nest/link.ts";
 import type { Notifications } from "../notify/notifications.ts";
 import type { Secrets } from "../os/secrets.ts";
 import type { Paths } from "../paths.ts";
+import { readResources, type Work, writeResources } from "../resources/work.ts";
 import {
   ensureServerProject,
   serverConversation,
@@ -199,6 +202,7 @@ import {
 } from "../servers/server-jobs.ts";
 import type { Servers } from "../servers/service.ts";
 import {
+  DEFAULT_RUNNING_JOBS,
   followUpKey,
   INTERVIEW_ROUNDS,
   MAX_RUNNING_JOBS,
@@ -255,6 +259,10 @@ export interface ApiContext {
   service: ServiceManager;
   notifications: Notifications;
   recentMetrics: (since: number) => MetricsSample[];
+  /** Where every job's tasks ask to start (ADR-050): why a ready task waits. */
+  work: Work;
+  /** The machine's health as the guard sees it (ADR-050). */
+  machineHealth: () => MachineHealth;
   jobs: JobStore;
   runner: JobRunner;
   registry: LegRegistry;
@@ -551,6 +559,8 @@ function jobView(c: ApiContext, id: string): JobView {
       pinnedModelId: t.pinnedModelId,
       ownerHeld: t.ownerHeld,
       waitingForLegId: legWork.waitFor[t.id] ?? null,
+      waitingReason:
+        t.state === "ready" || t.state === "pending" ? c.work.reasonOf(id, t.id) : null,
       avoidLegIds: [...new Set([...legWork.avoid, ...(legWork.taskAvoid[t.id] ?? [])])],
     }));
   return JobView.parse({
@@ -1962,7 +1972,7 @@ export const router = {
     maxRunningJobs: base
       .output(z.number().int())
       .handler(({ context: c }) =>
-        readSetting(c.jobs.db, MAX_RUNNING_JOBS, z.number().int().min(1), 2),
+        readSetting(c.jobs.db, MAX_RUNNING_JOBS, z.number().int().min(1), DEFAULT_RUNNING_JOBS),
       ),
     setMaxRunningJobs: base
       .input(z.object({ max: z.number().int().min(1).max(20) }))
@@ -1980,17 +1990,17 @@ export const router = {
           c.runner.admit();
         }),
       ),
-    /** How many tasks of one job run at once (ADR-016). */
+    /** How many tasks of one job run at once (ADR-016): null, as many as are admitted (ADR-050). */
     maxTasksPerJob: base
-      .output(z.number().int())
+      .output(z.number().int().nullable())
       .handler(({ context: c }) =>
-        readSetting(c.jobs.db, MAX_TASKS_PER_JOB, z.number().int().min(1), 1),
+        readSetting(c.jobs.db, MAX_TASKS_PER_JOB, z.number().int().min(1).nullable(), null),
       ),
     setMaxTasksPerJob: base
-      .input(z.object({ max: z.number().int().min(1).max(8) }))
+      .input(z.object({ max: z.number().int().min(1).max(16).nullable() }))
       .handler(({ context: c, input }) =>
         guard(() => {
-          writeSetting(c.jobs.db, MAX_TASKS_PER_JOB, z.number().int().min(1), input.max);
+          writeSetting(c.jobs.db, MAX_TASKS_PER_JOB, z.number().int().min(1).nullable(), input.max);
           c.bus.publish({
             type: "settings.updated",
             topic: "overview",
@@ -2000,6 +2010,20 @@ export const router = {
           });
         }),
       ),
+    /** Tasks at once across every job, my thresholds, pausing for my own work (ADR-050). */
+    resources: base.output(ResourceSettings).handler(({ context: c }) => readResources(c.jobs.db)),
+    setResources: base.input(ResourceSettings.partial()).handler(({ context: c, input }) =>
+      guard(() => {
+        writeResources(c.jobs.db, input);
+        c.bus.publish({
+          type: "settings.updated",
+          topic: "overview",
+          jobId: null,
+          payload: { resources: input },
+          actor: "owner",
+        });
+      }),
+    ),
     /** How many rounds The Eye's interview may take (Skills → The interview). */
     interviewRounds: base
       .output(z.number().int())
@@ -2561,6 +2585,10 @@ export const router = {
         if (!s) throw new ORPCError("NOT_FOUND", { message: "No such session." });
         return { ...readSessionLog(s.logFile, input.after), live: s.endedAt === null };
       }),
+  },
+  machine: {
+    /** Danger, what Oraknid did, tasks at once and those paused for room (ADR-050). */
+    health: base.output(MachineHealth).handler(({ context: c }) => c.machineHealth()),
   },
   metrics: {
     recent: base

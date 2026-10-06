@@ -29,6 +29,8 @@ export const NotifyEvent = z.enum([
   "backup.failed",
   /** A new release of Oraknid, once per version (ADR-048). */
   "update.available",
+  /** The machine in danger: memory, swap, disk, a runaway session (ADR-050), once per incident. */
+  "machine.danger",
 ]);
 export type NotifyEvent = z.infer<typeof NotifyEvent>;
 

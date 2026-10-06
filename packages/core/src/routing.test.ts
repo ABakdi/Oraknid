@@ -171,6 +171,21 @@ describe("routing: who is out, and why", () => {
   });
 });
 
+describe("routing: spread across Legs (ADR-050)", () => {
+  it("sends a task to the account with free sessions before the busy one", () => {
+    const busy = claude("sonnet", { sessions: { running: 2, limit: 3 } });
+    const idle = claude("sonnet", {
+      legId: "L3",
+      legModelId: "m-sonnet-2",
+      legName: "Claude (work)",
+      sessions: { running: 0, limit: 3 },
+    });
+    const r = route(task(), [busy, idle], { moneyAllowed: false });
+    expect(r.ranked[0]?.candidate.legName).toBe("Claude (work)");
+    expect(r.ranked[1]?.reasons).toContain("2 of 3 sessions busy on Claude");
+  });
+});
+
 describe("effort", () => {
   it("matches the difficulty, rises with step-ups, and stays within what the model offers", () => {
     expect(chooseEffort(EFFORTS, "low", 0)).toBe("low");

@@ -44,6 +44,7 @@ describe("procfs", () => {
     const p = new ProcFs(f.root, f.sys);
     expect(p.tree(10).sort()).toEqual([10, 11]);
     expect(p.process(10)).toEqual({
+      state: "S",
       cpuTicks: 7,
       rssBytes: 25 * 4096,
       readBytes: 1000,
@@ -60,6 +61,49 @@ describe("procfs", () => {
     expect(s.netTxBytes).toBe(50);
     expect(s.cores).toBe(2);
     expect(s.memTotalBytes - s.memAvailableBytes).toBe(600 * 1024);
+  });
+
+  it("reads swap, the OOM killer's count, load, pressure and throttling (ADR-050)", () => {
+    const f = fakeProc({ parentTicks: 0, childTicks: 0, rx: 0, cpu: [1, 0, 0, 1, 0, 0, 0, 0] });
+    writeFileSync(
+      join(f.root, "meminfo"),
+      "MemTotal: 1000 kB\nMemAvailable: 400 kB\nSwapTotal: 2048 kB\nSwapFree: 1024 kB\n",
+    );
+    writeFileSync(join(f.root, "vmstat"), "pswpin 12\npswpout 3\noom_kill 2\n");
+    writeFileSync(join(f.root, "loadavg"), "3.50 2.00 1.00 2/300 999\n");
+    mkdirSync(join(f.root, "pressure"));
+    writeFileSync(
+      join(f.root, "pressure", "memory"),
+      "some avg10=12.50 avg60=3.00 avg300=1.00 total=1\nfull avg10=4.25 avg60=1.00 avg300=0.00 total=1\n",
+    );
+    writeFileSync(join(f.root, "pressure", "cpu"), "some avg10=30.00 avg60=0 avg300=0 total=1\n");
+    writeFileSync(
+      join(f.root, "pressure", "io"),
+      "some avg10=1.00 avg60=0 avg300=0 total=1\nfull avg10=0.50 avg60=0 avg300=0 total=1\n",
+    );
+    const cpu = mkdtempSync(join(tmpdir(), "oraknid-cpu-"));
+    mkdirSync(join(cpu, "cpu0", "thermal_throttle"), { recursive: true });
+    writeFileSync(join(cpu, "cpu0", "thermal_throttle", "package_throttle_count"), "7\n");
+    const s = new ProcFs(f.root, f.sys, 4096, cpu).system();
+    expect(s).toMatchObject({
+      swapTotalBytes: 2048 * 1024,
+      swapFreeBytes: 1024 * 1024,
+      swapInPages: 12,
+      oomKills: 2,
+      load1: 3.5,
+      pressure: { cpu: 30, memory: 12.5, memoryFull: 4.25, io: 0.5 },
+      thermalThrottles: 7,
+    });
+    // Without PSI or a throttle count: null, never a guess.
+    const bare = new ProcFs(
+      fakeProc({ parentTicks: 0, childTicks: 0, rx: 0, cpu: [1] }).root,
+      f.sys,
+      4096,
+      f.sys,
+    ).system();
+    expect(bare.pressure).toBeNull();
+    expect(bare.thermalThrottles).toBeNull();
+    expect(bare.oomKills).toBeNull();
   });
 });
 
@@ -91,7 +135,12 @@ describe("linux metrics", () => {
     procfs = new ProcFs(second.root, second.sys);
     t = 1000;
     const b = await metrics.sample(watched);
-    expect(b.processes[0]).toMatchObject({ processes: 2, cpuPercent: 75, vramBytes: 512 });
+    expect(b.processes[0]).toMatchObject({
+      processes: 2,
+      cpuPercent: 75,
+      vramBytes: 512,
+      zombies: 0,
+    });
     expect(b.system.netRxBytesPerSec).toBe(1_000_000);
     expect(b.system.cpuPercent).toBe(75);
   });

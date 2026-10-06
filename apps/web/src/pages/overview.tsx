@@ -5,6 +5,7 @@ import { Link } from "wouter";
 import { Sparkline, TokensChart } from "@/components/charts";
 import { Empty, ErrorNote, Loading, PageHeader, Stat, StateBadge } from "@/components/common";
 import { LegAvatar } from "@/components/leg-avatar";
+import { MachineHealthCard } from "@/components/machine-health";
 import { PlanUsageCard } from "@/components/plan-usage";
 import { PauseResume } from "@/components/project-work";
 import { AddLegButtons } from "@/components/setup";
@@ -199,6 +200,7 @@ export function OverviewPage() {
           </CardContent>
         </Card>
         <div className="min-w-0 space-y-4">
+          <MachineHealthCard />
           <Card data-help="overview.problems">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-sm">

@@ -89,6 +89,15 @@ come later), so a money limit only matters once one does.
 - Totals: tokens today, this job, this project. Money if any.
 - Burn charts: tokens over time by Leg, and against each budget line.
 
+## Sessions at once and quota (2026-10-04)
+
+Tasks run in parallel by default ([[ADR-050-Parallel-By-Default]]), so
+one account may run several sessions at once (3 for Claude Code by
+default) and its windows fill faster. Routing spreads tasks across
+Legs and accounts (a Leg with sessions running scores a little lower),
+and the rules above still hold: a scarce window is kept for hard tasks,
+and a job's quota share stops routing to a Leg past it.
+
 ## When everything runs out
 
 When no allowed Leg has quota, the job goes `blocked` with the earliest

@@ -27,7 +27,13 @@ import type { InboxStore } from "../inbox/store.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { MailService } from "../mail/service.ts";
 import type { Servers } from "../servers/service.ts";
-import { MAX_RUNNING_JOBS, MAX_TASKS_PER_JOB, readSetting, writeSetting } from "../settings.ts";
+import {
+  DEFAULT_RUNNING_JOBS,
+  MAX_RUNNING_JOBS,
+  MAX_TASKS_PER_JOB,
+  readSetting,
+  writeSetting,
+} from "../settings.ts";
 import type { SkillStore } from "../skills/store.ts";
 import { TERMINAL_SETTING } from "../term/server.ts";
 import type { ToolRegistry } from "../tools/registry.ts";
@@ -575,8 +581,8 @@ const ACTIONS: Record<string, ActionDef> = {
         result: "Settings read.",
         link: "/settings",
         data: [
-          `Jobs at once: ${readSetting(d.db, MAX_RUNNING_JOBS, z.number().int().min(1), 2)}`,
-          `Tasks at once in a job: ${readSetting(d.db, MAX_TASKS_PER_JOB, z.number().int().min(1), 1)}`,
+          `Jobs at once: ${readSetting(d.db, MAX_RUNNING_JOBS, z.number().int().min(1), DEFAULT_RUNNING_JOBS)}`,
+          `Tasks at once in a job: ${readSetting(d.db, MAX_TASKS_PER_JOB, z.number().int().min(1).nullable(), null) ?? "as many as the computer and the Legs admit"}`,
           `The Eye's models: ${JSON.stringify(d.decisions.models())}`,
           `Same-provider fallback for: ${readSetting(d.db, SAME_PROVIDER_FALLBACK, z.array(z.string()), []).join(", ") || "none"}`,
           `Terminal: ${readSetting(d.db, TERMINAL_SETTING, z.boolean(), false) ? "on" : "off"}`,

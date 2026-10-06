@@ -42,8 +42,16 @@ export function writeSetting<T extends z.ZodType>(
 
 /** How many jobs run at once (ADR-016). */
 export const MAX_RUNNING_JOBS = "jobs.maxRunning";
+/**
+ * Jobs side by side unless I set it: four, since a job's tasks are what
+ * load the machine, and those are admitted by resources across all jobs (ADR-050).
+ */
+export const DEFAULT_RUNNING_JOBS = 4;
 
-/** How many tasks of one job run at once (ADR-016). */
+/**
+ * How many tasks of one job run at once, when I set a limit for one job
+ * (ADR-016); absent, a job runs as many as are admitted (ADR-050).
+ */
 export const MAX_TASKS_PER_JOB = "jobs.maxTasks";
 
 /** How many rounds an interview may take (Skills → The interview); 3 unless I set it. */

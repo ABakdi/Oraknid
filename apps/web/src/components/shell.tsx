@@ -28,6 +28,7 @@ import { toast } from "sonner";
 import { Link, useLocation } from "wouter";
 import { HelpRing } from "@/components/help-ring";
 import { HelperButton } from "@/components/helper";
+import { MachineBanner } from "@/components/machine-health";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -361,6 +362,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </Button>
         </nav>
         <main className="min-w-0 flex-1 overflow-y-auto px-3 pb-24 pt-4 md:px-6 md:pb-8">
+          <MachineBanner />
           {children}
           <HelperButton />
           <HelpRing />

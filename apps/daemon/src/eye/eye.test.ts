@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Budget, JobView, WebPlan } from "@oraknid/contracts";
-import { decide } from "@oraknid/core";
+import { decide, type MachineReading } from "@oraknid/core";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { RouterClient } from "@orpc/server";
@@ -122,6 +122,8 @@ async function eye(
     draft?: boolean;
     /** The machine's memory use, as a share. */
     memory?: () => number;
+    /** The machine as admission and the guard read it (ADR-050). */
+    machine?: () => MachineReading | null;
     /** A skill to run the job with, uploaded first. */
     skill?: string;
     /** Before the job is created (tools, settings). */
@@ -176,14 +178,18 @@ async function eye(
       );
     },
   };
+  const fake = fakeOs({ keychain: true, ...(o.memory ? { memoryUsed: o.memory } : {}) });
   daemon = await startDaemon({
     paths: resolvePaths({ ORAKNID_DATA_DIR: dir, ORAKNID_CONFIG_DIR: dir }),
     port: 0,
     dbFile: ":memory:",
-    os: fakeOs({ keychain: true, ...(o.memory ? { memoryUsed: o.memory } : {}) }).os,
+    os: fake.os,
+    ...(o.machine ? { machineReading: o.machine, guardClearMs: 0, guardPauseEveryMs: 0 } : {}),
     adapters: { "claude-code": leg.adapter },
     brain,
     metricsIntervalMs: 50,
+    // The guard has tests of its own (resources.test.ts).
+    guardIntervalMs: 3_600_000,
     stallCheckMs: 100,
   });
   const api = createORPCClient<RouterClient<Router>>(
@@ -217,7 +223,7 @@ async function eye(
   if (o.sameProviderFallback)
     await api.settings.setSameProviderFallback({ kind: "claude-code", enabled: true });
   if (!o.draft) await api.jobs.start({ id });
-  return { d: daemon, api, id, workspace, leg, plans, legIds, dataDir: dir };
+  return { d: daemon, api, id, workspace, leg, plans, legIds, dataDir: dir, sent: fake.sent };
 }
 
 async function until(
@@ -429,7 +435,7 @@ describe("The Eye, end to end", () => {
     ).rejects.toThrow(/Set up "calendar" in Settings → Tools first/);
   });
 
-  it("waits for memory before starting a session, says why, then goes on (ADR-016)", async () => {
+  it("waits for memory before starting a session, says why, then goes on (ADR-016, ADR-050)", async () => {
     let memory = 0.97;
     const { api, id, d } = await eye(good, {
       plan: { ...HELLO, tasks: [HELLO.tasks[0] as WebPlan["tasks"][number]], jobVerify: [] },
@@ -438,15 +444,15 @@ describe("The Eye, end to end", () => {
     const end = Date.now() + 5000;
     let waiting: unknown;
     while (!waiting && Date.now() < end) {
-      waiting = d.bus
-        .since(0, [`job:${id}`], 500)
-        .find((e) => e.type === "task.waiting-for-leg")?.payload;
+      waiting = d.bus.since(0, [`job:${id}`], 500).find((e) => e.type === "task.waiting")?.payload;
       await new Promise((r) => setTimeout(r, 20));
     }
-    expect(waiting).toMatchObject({
-      reason: "It waits for room: the machine is out of memory (97% used).",
-    });
-    expect((await api.jobs.get({ id })).tasks[0]?.state).not.toBe("done");
+    // 3% of 16 GB is free: not enough for a session's 0.6 GB, even as the only task.
+    const reason = "waiting for memory: 0.5 GB free, it may need 0.6 GB";
+    expect(waiting).toMatchObject({ reason });
+    const task0 = (await api.jobs.get({ id })).tasks[0];
+    expect(task0?.state).not.toBe("done");
+    expect(task0?.waitingReason).toBe(reason);
     memory = 0.5;
     expect((await until(api, id, ["completed", "blocked"], 15_000)).state).toBe("completed");
   }, 30_000);
@@ -1650,7 +1656,14 @@ describe("my controls (M1.8 API)", () => {
         task(t) === "Write bye.sh"
           ? [{ write: "bye.sh", content: "echo bye\n" }, { say: "DONE" }]
           : good(t),
-      { plan: TWO, autonomy: "supervised" },
+      {
+        plan: TWO,
+        autonomy: "supervised",
+        // One at a time, so the order is what decides (side by side they'd start together, ADR-050).
+        setup: async (api) => {
+          await api.settings.setResources({ tasksAtOnce: 1 });
+        },
+      },
     );
     await openItem(api, "Approve the plan");
     const [a, b] = (await api.jobs.get({ id })).tasks;
@@ -2329,8 +2342,15 @@ describe("an attempt's recorded outcome survives a crash (Audit 1 → D1-12)", (
 describe("several jobs share a Leg (ADR-016)", () => {
   it("lets a task wait for a busy Leg without blocking its job, then run", async () => {
     let hang = true;
-    const { api, id, d } = await eye((t) =>
-      task(t) === "Write hello.sh" && hang && t.session === 1 ? [{ hang: true }] : good(t),
+    const { api, id, d } = await eye(
+      (t) => (task(t) === "Write hello.sh" && hang && t.session === 1 ? [{ hang: true }] : good(t)),
+      // One session at a time on the Leg, as a local model's.
+      {
+        setup: async (api) => {
+          for (const leg of await api.legs.list())
+            await api.legs.update({ id: leg.id, maxSessions: 1 });
+        },
+      },
     );
     const end = Date.now() + 5000;
     while ((await api.jobs.get({ id })).tasks[0]?.state !== "running" && Date.now() < end)
@@ -2348,13 +2368,15 @@ describe("several jobs share a Leg (ADR-016)", () => {
     await api.jobs.start({ id: second.id });
     const end2 = Date.now() + 5000;
     while (
-      !d.bus.since(0, [`job:${second.id}`], 500).some((e) => e.type === "task.waiting-for-leg") &&
+      !d.bus.since(0, [`job:${second.id}`], 500).some((e) => e.type === "task.waiting") &&
       Date.now() < end2
     )
       await new Promise((r) => setTimeout(r, 20));
     const waiting = await api.jobs.get({ id: second.id });
     expect(waiting.state).toBe("running");
     expect(waiting.tasks[0]?.state).not.toBe("running");
+    // It says why: the Leg is busy (ADR-050).
+    expect(waiting.tasks[0]?.waitingReason).toBe("Claude A busy with 1 session");
     hang = false;
     await api.jobs.pause({ id });
     await api.jobs.resume({ id });
@@ -3110,4 +3132,171 @@ describe("the piano job, replayed (after 2026-10-04)", () => {
     );
     expect(job.tasks.map((t) => t.title)).toEqual(["Write hello.sh", "Test hello.sh"]);
   });
+});
+
+// ── Parallel by default, admitted by resources (ADR-050) ───────────────
+
+const GB = 1024 ** 3;
+/** An 8-core, 16 GB machine; `free` is the share of memory available. */
+const machineAt = (free: number, more: Partial<MachineReading> = {}): MachineReading => ({
+  cores: 8,
+  cpu: 0.1,
+  memoryTotal: 16 * GB,
+  memoryAvailable: free * 16 * GB,
+  swapTotal: 8 * GB,
+  swapUsed: 0,
+  swapInPerSec: 0,
+  load1: 1,
+  pressure: null,
+  disks: [],
+  oomKills: 0,
+  thermalThrottles: null,
+  ownRss: 0,
+  ownCpu: 0,
+  ...more,
+});
+
+const FOUR = ["Draw the logo", "Translate the readme", "Count the stars", "List the planets"];
+/** Four tasks that need nothing of each other, each its own file. */
+const FOUR_PLAN: WebPlan = {
+  summary: "Four files, side by side.",
+  tasks: FOUR.map((title, i) => {
+    const f = `${"abcd"[i]}.txt`;
+    return {
+      key: `t${i}`,
+      title,
+      instructions: `Create ${f}.`,
+      kind: "implement" as const,
+      dependsOn: [],
+      scope: [f],
+      verify: [`test -f ${f}`],
+      requiredCapabilities: ["implementation" as const],
+      difficulty: "low" as const,
+    };
+  }),
+  jobVerify: [],
+};
+const writes =
+  (before: () => Action[]) =>
+  (t: TurnContext): Action[] => {
+    const i = FOUR.indexOf(task(t));
+    if (i < 0) return [{ say: "?" }];
+    const f = `${"abcd"[i]}.txt`;
+    return [...before(), { write: f, content: "x\n" }, { say: "DONE" }];
+  };
+
+/** The most sessions of a job that ran at the same time. */
+function mostAtOnce(d: Daemon, jobId: string) {
+  const s = d.db.select().from(sessions).where(eq(sessions.jobId, jobId)).all();
+  const edges = s.flatMap((x) => [
+    { at: x.startedAt, n: 1 },
+    { at: x.endedAt ?? Number.MAX_SAFE_INTEGER, n: -1 },
+  ]);
+  edges.sort((a, b) => a.at - b.at || a.n - b.n);
+  let now = 0;
+  let most = 0;
+  for (const e of edges) {
+    now += e.n;
+    most = Math.max(most, now);
+  }
+  return most;
+}
+
+async function eventually<T>(f: () => Promise<T | null | undefined | false>, ms = 8000) {
+  const end = Date.now() + ms;
+  for (;;) {
+    const v = await f();
+    if (v) return v;
+    if (Date.now() > end) throw new Error("not in time");
+    await new Promise((r) => setTimeout(r, 25));
+  }
+}
+
+describe("parallel by default, admitted by resources (ADR-050)", () => {
+  it("runs four independent tasks at once, with nothing set", async () => {
+    const { api, id, d } = await eye(
+      writes(() => [{ run: "sleep 2" }]),
+      { plan: FOUR_PLAN, legs: ["Claude A", "Claude B"], machine: () => machineAt(0.6) },
+    );
+    const job = await until(api, id, ["completed", "blocked"], 30_000);
+    expect(job.state, job.blockedReason ?? "").toBe("completed");
+    expect(mostAtOnce(d, id)).toBe(4);
+    // Each in its own worktree, merged back into the job's branch.
+    for (const f of ["a.txt", "b.txt", "c.txt", "d.txt"])
+      expect(existsSync(join(job.worktree as string, f))).toBe(true);
+    const health = await api.machine.health();
+    expect(health).toMatchObject({ state: "ok", limit: 6, limitIsAuto: true });
+  }, 40_000);
+
+  it("starts only what memory admits, and says why the others wait", async () => {
+    // 4 GB free: two sessions' 0.6 GB each still leave 15%; a third would not.
+    const { api, id, d } = await eye(
+      writes(() => [{ run: "sleep 4" }]),
+      { plan: FOUR_PLAN, legs: ["Claude A", "Claude B"], machine: () => machineAt(0.25) },
+    );
+    const view = await eventually(async () => {
+      const j = await api.jobs.get({ id });
+      const waiting = j.tasks.filter((t) => t.waitingReason);
+      return j.tasks.filter((t) => t.state === "running").length === 2 && waiting.length === 2
+        ? j
+        : null;
+    });
+    for (const t of view.tasks.filter((x) => x.waitingReason))
+      expect(t.waitingReason).toMatch(/^waiting for memory: \d\.\d GB free, it may need 0\.6 GB$/);
+    const job = await until(api, id, ["completed", "blocked"], 40_000);
+    expect(job.state, job.blockedReason ?? "").toBe("completed");
+    expect(mostAtOnce(d, id)).toBe(2);
+    expect(job.tasks.every((t) => t.waitingReason === null)).toBe(true);
+  }, 60_000);
+
+  it("pauses a task when the machine is in danger, tells me once, and resumes it after", async () => {
+    let reading = machineAt(0.6);
+    let hang = true;
+    const two: WebPlan = { ...FOUR_PLAN, tasks: FOUR_PLAN.tasks.slice(0, 2) };
+    const { api, id, d, sent } = await eye((t) => (hang ? [{ hang: true }] : writes(() => [])(t)), {
+      plan: two,
+      machine: () => reading,
+    });
+    await eventually(async () =>
+      (await api.jobs.get({ id })).tasks.every((t) => t.state === "running"),
+    );
+    // Memory nearly gone while the computer swaps.
+    reading = machineAt(0.04, { swapInPerSec: 2 * 1024 ** 2, cpu: 0.5 });
+    await d.guard.tick();
+    const paused = await eventually(async () =>
+      (await api.jobs.get({ id })).tasks.find((t) => t.waitingReason?.startsWith("paused")),
+    );
+    expect(paused.state).toBe("ready");
+    expect(paused.waitingReason).toMatch(
+      /^paused to make room, waiting for the computer to recover: memory is nearly full \(96% used, 0\.6 GB left\), and the computer is swapping$/,
+    );
+    const told = () => sent.filter((s) => s.n.title === "Your computer is in danger");
+    await eventually(async () => told().length > 0);
+    expect(told()[0]?.n.body).toBe(
+      `Memory is nearly full (96% used, 0.6 GB left), and the computer is swapping. Paused “${paused.title}” to free memory; it resumes when memory is back.`,
+    );
+    expect(await api.machine.health()).toMatchObject({
+      state: "danger",
+      incidents: [{ kind: "memory", level: "danger" }],
+    });
+    // Still in danger a few looks later: no second notice.
+    await d.guard.tick();
+    await d.guard.tick();
+    await new Promise((r) => setTimeout(r, 200));
+    expect(told()).toHaveLength(1);
+
+    // Memory back: the incident closes, the paused work starts again and the job ends.
+    hang = false;
+    reading = machineAt(0.6);
+    await d.guard.tick();
+    expect((await api.machine.health()).state).toBe("ok");
+    await api.jobs.pause({ id });
+    await api.jobs.resume({ id });
+    const job = await until(api, id, ["completed", "blocked"], 20_000);
+    expect(job.state, job.blockedReason ?? "").toBe("completed");
+    expect(told()).toHaveLength(1);
+    expect(d.bus.since(0, ["overview"], 1000).some((e) => e.type === "machine.recovered")).toBe(
+      true,
+    );
+  }, 60_000);
 });

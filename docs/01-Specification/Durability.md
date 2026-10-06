@@ -76,6 +76,13 @@ at the next start, and the next attempt builds its handoff from that
 session's log. A message to The Eye left without a reply is handled at
 the next start. Shutdown stops every timer first and starts no new run.
 
+**Paused for room** (2026-10-04, [[ADR-050-Parallel-By-Default]]): when
+the computer is in danger, Oraknid pauses one running task the same
+way, at a safe point with a checkpoint and a handoff, while its job
+goes on; it isn't a failed attempt, and the task starts again by itself
+from its handoff once the danger has passed. The pause is in memory:
+after a restart the task is simply ready and is admitted like any other.
+
 ## Watchdog
 
 - systemd restarts the daemon if it dies (`Restart=always`), and

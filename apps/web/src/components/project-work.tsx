@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { Empty, StateBadge } from "@/components/common";
 import { JobDetail } from "@/components/job-detail";
+import { TasksAtOnce } from "@/components/machine-health";
 import { ACTIVE, legName, TaskDrawer, useModelName, useTaskDrawer } from "@/components/task-drawer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -166,6 +167,9 @@ export function ProjectWorkflow({
                   {drilled.title}
                 </span>
                 <StateBadge state={drilled.state} className="shrink-0" />
+                <span className="hidden min-w-0 text-xs text-muted-foreground sm:inline-flex">
+                  <TasksAtOnce tasks={drilled.tasks} />
+                </span>
                 <Link
                   href={jobHref(drilled)}
                   className="hidden shrink-0 px-2 text-xs text-primary underline-offset-2 hover:underline sm:inline"

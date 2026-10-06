@@ -17,6 +17,8 @@ export const ProcessMetrics = z.object({
   readBytesPerSec: z.number().nonnegative(),
   writeBytesPerSec: z.number().nonnegative(),
   vramBytes: z.number().int().nonnegative(),
+  /** Defunct processes in its tree, waiting to be reaped (a zombie storm, ADR-050). */
+  zombies: z.number().int().nonnegative().optional(),
 });
 export type ProcessMetrics = z.infer<typeof ProcessMetrics>;
 
@@ -41,6 +43,27 @@ export const SystemMetrics = z.object({
   diskWriteBytesPerSec: z.number().nonnegative(),
   netRxBytesPerSec: z.number().nonnegative(),
   netTxBytesPerSec: z.number().nonnegative(),
+  // What the machine's safety needs besides (ADR-050); absent where /proc can't tell.
+  swapTotalBytes: z.number().int().nonnegative().optional(),
+  swapUsedBytes: z.number().int().nonnegative().optional(),
+  /** Pages read back from swap, as bytes a second: thrashing when it stays high. */
+  swapInBytesPerSec: z.number().nonnegative().optional(),
+  /** The one-minute load average. */
+  load1: z.number().nonnegative().optional(),
+  /** Pressure stall information, avg10 in percent (/proc/pressure), null without PSI. */
+  pressure: z
+    .object({
+      cpu: z.number().nonnegative(),
+      memory: z.number().nonnegative(),
+      memoryFull: z.number().nonnegative(),
+      io: z.number().nonnegative(),
+    })
+    .nullable()
+    .optional(),
+  /** Processes the kernel's OOM killer ended since boot (/proc/vmstat oom_kill). */
+  oomKills: z.number().int().nonnegative().nullable().optional(),
+  /** Times the CPU was throttled for heat since boot, when the kernel tells. */
+  thermalThrottles: z.number().int().nonnegative().nullable().optional(),
 });
 export type SystemMetrics = z.infer<typeof SystemMetrics>;
 

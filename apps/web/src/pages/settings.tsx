@@ -106,6 +106,7 @@ export function SettingsPage({ tab }: { tab?: string }) {
           </Section>
           <Section help="settings.jobs" title={t("Running jobs")}>
             <JobsLimitCard />
+            <WorkAtOnceCard />
             <FallbackCard />
           </Section>
         </>,
@@ -397,6 +398,7 @@ const EVENTS: [NotifyEvent, string][] = [
   ["security", "Wrong PINs, a device unpaired"],
   ["backup.failed", "A backup failed"],
   ["update.available", "A new version of Oraknid"],
+  ["machine.danger", "The computer in danger"],
 ];
 const DEFAULTS: Record<NotifyEvent, Route> = {
   approval: { desktop: true, push: true, email: "after-15-min" },
@@ -411,6 +413,7 @@ const DEFAULTS: Record<NotifyEvent, Route> = {
   security: { desktop: true, push: true, email: "now" },
   "backup.failed": { desktop: true, push: true, email: "now" },
   "update.available": { desktop: true, push: true, email: "never" },
+  "machine.danger": { desktop: true, push: true, email: "never" },
 };
 
 function NotificationsCard() {
@@ -687,7 +690,7 @@ function JobsLimitCard() {
       </CardHeader>
       <CardContent className="flex flex-wrap items-center gap-3">
         <Select
-          value={String(max.data ?? 2)}
+          value={String(max.data ?? 4)}
           onValueChange={(v) =>
             act(
               () => api.settings.setMaxRunningJobs({ max: Number(v) }),
@@ -711,10 +714,10 @@ function JobsLimitCard() {
           </SelectContent>
         </Select>
         <Select
-          value={String(tasks.data ?? 1)}
+          value={tasks.data == null ? "auto" : String(tasks.data)}
           onValueChange={(v) =>
             act(
-              () => api.settings.setMaxTasksPerJob({ max: Number(v) }),
+              () => api.settings.setMaxTasksPerJob({ max: v === "auto" ? null : Number(v) }),
               t("Saved; it applies to the next tasks."),
             )
           }
@@ -727,6 +730,7 @@ function JobsLimitCard() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="auto">{t("A job runs what is admitted")}</SelectItem>
             {[1, 2, 3, 4].map((n) => (
               <SelectItem key={n} value={String(n)}>
                 {n === 1 ? t("1 task at a time in a job") : t("{n} tasks at once in a job", { n })}
@@ -736,9 +740,149 @@ function JobsLimitCard() {
         </Select>
         <p className="w-full text-xs text-muted-foreground">
           {t(
-            "Tasks of one job run together only when they touch different files; each works in its own worktree and is merged, then checked again.",
+            "Tasks that need nothing of each other run together by default, each in its own worktree, merged and checked again; only tasks that change the same files wait for each other.",
           )}
         </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+const GB = 1024 ** 3;
+
+/**
+ * Parallel by default, admitted by resources (ADR-050): how many tasks at
+ * once across all jobs, the thresholds that hold work back, and whether my
+ * own work on the computer pauses Oraknid's.
+ */
+function WorkAtOnceCard() {
+  const r = useLive(() => api.settings.resources(), {
+    topics: ["overview"],
+    refreshOn: (e) => e.type === "settings.updated",
+  });
+  if (!r.data) return null;
+  const s = r.data;
+  const th = {
+    minFreeMemory: 0.15,
+    maxCpu: 0.85,
+    minFreeDiskBytes: 2 * GB,
+    heavyAtOnce: 1,
+    ...s.thresholds,
+  };
+  const save = (patch: Parameters<typeof api.settings.setResources>[0]) =>
+    act(() => api.settings.setResources(patch), t("Saved; it applies to the next tasks."));
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("Work at once")}</CardTitle>
+        <CardDescription>
+          {t(
+            "Every task that can run starts at once, as long as this computer has room, its Legs have sessions free and you allow it. A heavy task (a build, an install, a test suite) never runs beside another. When memory runs out Oraknid pauses its newest or heaviest task and tells you; it starts again by itself once there is room.",
+          )}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1">
+          <Label>{t("Tasks at once, across all jobs")}</Label>
+          <Select
+            value={String(s.tasksAtOnce)}
+            onValueChange={(v) => save({ tasksAtOnce: v === "auto" ? "auto" : Number(v) })}
+          >
+            <SelectTrigger data-help="settings.work-at-once" aria-label={t("Tasks at once")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">{t("Automatic: what this computer takes")}</SelectItem>
+              {[1, 2, 3, 4, 6, 8, 12].map((n) => (
+                <SelectItem key={n} value={String(n)}>
+                  {n === 1 ? t("1 task at a time") : t("{n} tasks at once", { n })}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label>{t("Heavy tasks at once")}</Label>
+          <Select
+            value={String(th.heavyAtOnce)}
+            onValueChange={(v) => save({ thresholds: { heavyAtOnce: Number(v) } })}
+          >
+            <SelectTrigger aria-label={t("Heavy tasks at once")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[1, 2, 3, 4].map((n) => (
+                <SelectItem key={n} value={String(n)}>
+                  {String(n)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label>{t("Keep this much memory free")}</Label>
+          <Select
+            value={String(Math.round(th.minFreeMemory * 100))}
+            onValueChange={(v) => save({ thresholds: { minFreeMemory: Number(v) / 100 } })}
+          >
+            <SelectTrigger aria-label={t("Keep this much memory free")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[10, 15, 20, 25, 30, 40].map((n) => (
+                <SelectItem key={n} value={String(n)}>
+                  {`${n}%`}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label>{t("No new task above this CPU use")}</Label>
+          <Select
+            value={String(Math.round(th.maxCpu * 100))}
+            onValueChange={(v) => save({ thresholds: { maxCpu: Number(v) / 100 } })}
+          >
+            <SelectTrigger aria-label={t("No new task above this CPU use")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[50, 60, 70, 80, 85, 90, 95].map((n) => (
+                <SelectItem key={n} value={String(n)}>
+                  {`${n}%`}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label>{t("Keep this much disk free")}</Label>
+          <Select
+            value={String(Math.round(th.minFreeDiskBytes / GB))}
+            onValueChange={(v) => save({ thresholds: { minFreeDiskBytes: Number(v) * GB } })}
+          >
+            <SelectTrigger aria-label={t("Keep this much disk free")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[1, 2, 5, 10, 20].map((n) => (
+                <SelectItem key={n} value={String(n)}>
+                  {`${n} GB`}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2 self-end">
+          <Switch
+            id="pause-for-my-work"
+            checked={s.pauseForMyWork}
+            onCheckedChange={(on) => save({ pauseForMyWork: on })}
+          />
+          <Label htmlFor="pause-for-my-work">
+            {t("Pause work when the computer is busy with my own things")}
+          </Label>
+        </div>
       </CardContent>
     </Card>
   );

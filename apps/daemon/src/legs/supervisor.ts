@@ -66,6 +66,10 @@ interface Live {
   legId: string;
   label: string;
   session: LegSession;
+  jobId: string | null;
+  taskId: string | null;
+  /** When it last said anything: a CPU pegged with nothing said is running away (ADR-050). */
+  lastEventAt: number;
 }
 
 /**
@@ -203,6 +207,9 @@ export class LegSupervisor {
       legId: leg.id,
       label: `${leg.name} · ${model.displayName}`,
       session: supervised,
+      jobId: req.jobId,
+      taskId: req.taskId,
+      lastEventAt: this.#now(),
     });
     this.#publish(req, leg.id, "session.started", {
       sessionId: id,
@@ -243,6 +250,8 @@ export class LegSupervisor {
         const line = JSON.stringify({ at: this.#now(), ...e });
         appendFileSync(logFile, `${this.o.scrub ? this.o.scrub(line) : line}\n`);
         this.#recordPid(id, session);
+        const live = this.#live.get(id);
+        if (live) live.lastEventAt = this.#now();
         switch (e.type) {
           case "text.delta":
             // Coalesced: the activity stream gets lines, not tokens (Realtime-Transport).
@@ -341,6 +350,16 @@ export class LegSupervisor {
 
   live(): string[] {
     return [...this.#live.keys()];
+  }
+
+  /** The sessions running now: whose task each is, and when each last said anything (ADR-050). */
+  about(): { id: string; jobId: string | null; taskId: string | null; lastEventAt: number }[] {
+    return [...this.#live.values()].map((l) => ({
+      id: l.id,
+      jobId: l.jobId,
+      taskId: l.taskId,
+      lastEventAt: l.lastEventAt,
+    }));
   }
 
   async killAll() {
