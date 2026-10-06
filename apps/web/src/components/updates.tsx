@@ -116,12 +116,17 @@ export function UpdateNotice() {
   );
 }
 
+/** What runs: the version and, installed by the script, its commit (dev updates keep the version). */
+export function buildOf(v: UpdatesView): string {
+  return v.install.mode === "script" ? `${v.version}@${v.install.commit}` : v.version;
+}
+
 export interface UpdatesPanelProps {
   view: UpdatesView;
   checking?: boolean;
   /** The daemon doesn't answer: it is restarting. */
   restarting?: boolean;
-  /** The version this page was loaded from: a newer one needs a reload. */
+  /** What this page was loaded from (`buildOf`): another one needs a reload. */
   pageVersion?: string;
   onCheck?: () => void;
   onUpdate?: () => void;
@@ -357,7 +362,8 @@ function RunBlock({
                 target: run.target,
               })
             : t("The update to {target} failed.", { target: run.target });
-  const stale = run.state === "succeeded" && pageVersion && pageVersion !== v.version;
+  // Dev updates keep the version: the commit tells the page is older too.
+  const stale = run.state === "succeeded" && !!pageVersion && pageVersion !== buildOf(v);
   return (
     <section
       className={cn(
@@ -417,7 +423,7 @@ export function UpdatesCard() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new load replaces the polled view
   useEffect(() => setPolled(null), [s.data]);
   const v = polled ?? s.data;
-  if (v && pageVersion.current === undefined) pageVersion.current = v.version;
+  if (v && pageVersion.current === undefined) pageVersion.current = buildOf(v);
   const following = v?.run?.state === "running";
 
   useEffect(() => {

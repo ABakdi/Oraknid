@@ -1,6 +1,7 @@
 import type { CloudTransfer, Event, MetricsSample, ServerFrame } from "@oraknid/contracts";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { auth } from "./api";
+import { checkFresh, watchFresh } from "./fresh";
 import { unlock } from "./lock";
 import { RemoteSocket, remote } from "./remote";
 
@@ -38,6 +39,7 @@ class Live {
   #timer: ReturnType<typeof setTimeout> | undefined;
   /** Bumped on "snapshot-needed": data hooks reload everything. */
   epoch = 0;
+  #wasLive = false;
 
   start() {
     // Locked, nothing to listen to (ADR-029).
@@ -49,6 +51,10 @@ class Live {
     const ws = (t ? new RemoteSocket(t, session) : new WebSocket(url)) as WebSocket;
     this.#ws = ws;
     ws.onopen = () => {
+      // Back after a drop: the daemon may have restarted on a new build (an update).
+      if (this.#wasLive) void checkFresh();
+      this.#wasLive = true;
+      watchFresh();
       this.#retry = 0;
       this.#setStatus("live");
       const topics = [...this.#topics.keys()];

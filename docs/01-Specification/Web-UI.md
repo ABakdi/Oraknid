@@ -778,7 +778,10 @@ that opened Settings:
   and go on after the restart). Then the update's progress, its log as
   it is written, "Oraknid is restarting…" while the daemon doesn't
   answer, and the end: "Updated to v0.2.0" with **Reload the page**, or
-  that it failed and went back to the version before. Away from home,
+  that it failed and went back to the version before. Any other page
+  left open learns of the new build when it reconnects or is shown
+  again: out of sight it reloads, in front of me it says "Oraknid was
+  updated" with **Reload**. Away from home,
   Update now needs a device with full rights; the button says why it is
   greyed out.
 

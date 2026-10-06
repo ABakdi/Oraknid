@@ -1,7 +1,7 @@
 import type { UpdateRun, UpdatesView } from "@oraknid/contracts";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { UpdateBadge, UpdatesPanel, updateLabel } from "./updates";
+import { buildOf, UpdateBadge, UpdatesPanel, updateLabel } from "./updates";
 
 // Oraknid's own updates in the UI (ADR-048): the sidebar's word and Settings → About & updates.
 
@@ -218,7 +218,7 @@ describe("Settings → About & updates (ADR-048)", () => {
           version: "0.2.0",
           run: run({ state: "succeeded", toVersion: "0.2.0", exitCode: 0, finishedAt: NOW }),
         })}
-        pageVersion="0.1.0"
+        pageVersion={buildOf(view())}
         onReload={onReload}
         now={NOW}
       />,
@@ -226,6 +226,19 @@ describe("Settings → About & updates (ADR-048)", () => {
     expect(r.getByText("Updated to v0.2.0")).toBeTruthy();
     fireEvent.click(r.getByText("Reload the page"));
     expect(onReload).toHaveBeenCalled();
+  });
+
+  it("a dev update keeps the version, and the page still offers its reload", () => {
+    const before = view({ install: script("dev") });
+    const after = view({
+      install: { ...script("dev"), commit: "2".repeat(40) },
+      run: run({ state: "succeeded", toVersion: "0.1.0", exitCode: 0, finishedAt: NOW }),
+    });
+    expect(buildOf(before)).not.toBe(buildOf(after));
+    const r = render(<UpdatesPanel view={after} pageVersion={buildOf(before)} now={NOW} />);
+    expect(r.getByText("Reload the page")).toBeTruthy();
+    r.rerender(<UpdatesPanel view={after} pageVersion={buildOf(after)} now={NOW} />);
+    expect(r.queryByText("Reload the page")).toBeNull();
   });
 
   it("an update that failed and went back says so", () => {

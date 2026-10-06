@@ -114,7 +114,13 @@ only real releases do.
   (`UpdateNotice`), Settings → **About & updates** (`UpdatesCard`),
   which polls the status every 2 s while an update runs, says "Oraknid
   is restarting…" while it doesn't answer, and offers **Reload the page**
-  once the version changed.
+  once the version or, installed by the script, the commit changed (a dev
+  update keeps the version). Every page, wherever it is open, checks
+  the build the daemon serves when its live socket comes back and when
+  its tab is shown again (`lib/fresh.ts`, the entry script's hashed
+  name): a page out of sight reloads by itself, one in front of me
+  offers **Reload** ("Oraknid was updated"). Away from home the loader
+  brings the app, so this check is skipped there.
 - Tested (no network, nothing of the owner's touched): `updates.test.ts`
   (semver; stable and dev with drafts and pre-releases; new work on dev;
   a clone; an install from before the record; checks on their own only when installed; the ETag and a 304;
