@@ -56,7 +56,12 @@ sends back what fails, like a failed check.
 
 - **Built-in:** the canon-driven skill (`docs/skill.md`, shipped as `skills/canon-driven-development.md` with front matter), as
   the first built-in and the default; `email-triage` (Phase 6): read,
-  sort, draft, send what I approve, log, with the email tool.
+  sort, draft, send what I approve, log, with the email tool;
+  `server-work` (2026-10-04, [[ADR-049-Server-Chat-And-Server-Jobs]]):
+  a server job's method, no interview: look first, say what will
+  change, change carefully (a copy of a configuration before editing
+  it, tested before it is loaded), check on the server, list what
+  changed.
 - **Uploaded:** mine, pasted or from a `.md` file. I can view, edit (in
   the UI, with preview), version and delete them. A job pins the version it started with.
   Editing a skill never changes a running job.

@@ -111,6 +111,21 @@ from then on (BR-15). A page of the project's own linked GitHub repo
 raw files) isn't outside content and doesn't count: an agent looking at
 the piano repo's page made its push to that same repo ask me.
 
+### Commands on a server (2026-10-04, [[ADR-049-Server-Chat-And-Server-Jobs]])
+A command that reaches one of the job's servers is judged as what runs
+there. `ssh <alias> '…'`, with nothing after it on the line, is judged
+by this policy without its `sudo`: root on the server is the server's
+business, never refused as root on this computer, and the never-allowed
+list still holds (a `shutdown`, a local `| sudo tee` after the ssh).
+On a **production** server (my mark on it, or its role in the project)
+anything that doesn't only read asks me, at any autonomy, whatever my
+rules allow; `scp` and `rsync` to it always ask. What only reads is a
+fixed list: `systemctl status` and `is-active`, `journalctl`, `docker ps`
+and `logs`, `nginx -t`, `cat`, `tail`, `grep`… with no `>` into a file.
+A server job's plan that changes its server waits for my approval
+before work starts (Supervised's plan approval, at Standard too; at
+Full only on production).
+
 ## The inbox
 
 One list for every approval and question across all jobs, newest and

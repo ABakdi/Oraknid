@@ -96,6 +96,7 @@ in part). Next: those runs, then Later.
 - [[ADR-047-Releases]] — v0.1.0: semantic versions, a tag and a GitHub pre-release with a pinned install script; `main` follows the releases
 - [[ADR-051-Oraknid-Over-MCP]] — proposed (Phase 14): Oraknid as an MCP server; connected clients with rights I give; long jobs started, followed and steered from any agent; GitHub, mail and servers without secrets
 - [[ADR-048-Updates]] — updates from inside Oraknid: install.sh records what it installed; Oraknid checks GitHub on its channel (dev: pre-releases and new work on dev; stable: releases) and updates in one click, the database copied first, a failed update rolled back
+- [[ADR-049-Server-Chat-And-Server-Jobs]] — a chat on each server: The Eye answers from its state document or sends an agent into it as a server job (the server's own hidden project), says what will change first, runs its checks on the server, asks before any change on production, and writes the job's changes into the state document
 - [[ADR-043-Server-Insight]] · [[ADR-044-Backups]] — Phase 13: Docker, databases, the proxy, traffic and logs of a server; scheduled, encrypted database backups
 - [[ADR-042-Several-Repos-And-Servers]] — Phase 13: a project of several repos, each committed and pushed on its own; servers with roles, picked by name and confirmed
 - [[ADR-041-Docs-And-A-Guiding-Helper]] — Phase 13: the guide inside Oraknid, and a helper that knows it, my data and the screens, and shows me where things are

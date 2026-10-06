@@ -133,6 +133,7 @@ export function projectConversation(db: Db, projectId: string): EyeMessage[] {
       .filter((j) => j.state !== "draft")
       .map((j) => j.id),
   );
+  // A server's conversation has messages no job took: questions answered from what is known (ADR-049).
   const all = (
     db
       .select()
@@ -140,7 +141,9 @@ export function projectConversation(db: Db, projectId: string): EyeMessage[] {
       .where(eq(eyeMessages.projectId, projectId))
       .orderBy(asc(eyeMessages.createdAt), asc(eyeMessages.id))
       .all() as EyeMessage[]
-  ).filter((m) => started.has(m.jobId));
+  )
+    // A server's conversation has messages no job took: questions answered from what is known (ADR-049).
+    .filter((m) => m.jobId === null || started.has(m.jobId));
   const hidden = new Set<string>();
   for (const [i, m] of all.entries()) {
     if (!m.action?.did.includes(PASSED)) continue;
@@ -254,6 +257,8 @@ export function answerInProject(
   const questions = a.message.questions as Question[];
   const answers = completeAnswers(questions, given);
   const text = renderAnswers(questions, answers);
+  const jobId = a.message.jobId;
+  if (!jobId) throw new Error("Answer it in your next message.");
   if (a.message.itemId) {
     // An item's own option, chosen through the question that says what each does (ADR-045).
     const item = d.inbox.get(a.message.itemId);
@@ -261,12 +266,9 @@ export function answerInProject(
     if (chosen) d.inbox.answer(a.message.itemId, chosen, deviceId, null);
     else d.inbox.answer(a.message.itemId, text, deviceId, answers);
     const id = recordAnswer(d, a.message.itemId) ?? "";
-    return { id, jobId: a.message.jobId };
+    return { id, jobId };
   }
-  return {
-    id: talk(d, a.message.jobId, text, { answers, replyTo: messageId }),
-    jobId: a.message.jobId,
-  };
+  return { id: talk(d, jobId, text, { answers, replyTo: messageId }), jobId };
 }
 
 /**
@@ -279,7 +281,7 @@ export function recordAnswer(
   itemId: string,
 ): string | null {
   const m = d.db.select().from(eyeMessages).where(eq(eyeMessages.itemId, itemId)).get();
-  if (!m) return null;
+  if (!m?.jobId) return null;
   const a = asked(d.db, m.id);
   if (!a || a.answered) return null;
   const item = d.db.select().from(inboxItems).where(eq(inboxItems.id, itemId)).get();
@@ -301,6 +303,8 @@ export function resumeConversations(d: TalkDeps): number {
     .selectDistinct({ jobId: eyeMessages.jobId })
     .from(eyeMessages)
     .all()) {
+    // A server's messages no job took are its own to pick up (servers/server-jobs.ts).
+    if (!jobId) continue;
     const last = conversation(d.db, jobId).at(-1);
     if (last?.author !== "owner") continue;
     // My answer to a question a job waits on goes to that job, not to The Eye's triage.
@@ -840,17 +844,33 @@ export function addMessage(
   return add(d, jobId, author, text, action, extras);
 }
 
+/**
+ * A message in a project's conversation that no job took (ADR-049): a
+ * server's question answered from what is known. Returns its id.
+ */
+export function addProjectMessage(
+  d: Pick<TalkDeps, "db" | "bus" | "now">,
+  projectId: string,
+  author: "owner" | "eye",
+  text: string,
+  action: EyeMessage["action"],
+): string {
+  return add(d, null, author, text, action, {}, projectId);
+}
+
 function add(
   d: Pick<TalkDeps, "db" | "bus" | "now">,
-  jobId: string,
+  jobId: string | null,
   author: "owner" | "eye",
   text: string,
   action: EyeMessage["action"],
   extras: MessageExtras = {},
+  inProject = "",
 ): string {
   const id = newId((d.now ?? Date.now)());
-  const projectId =
-    d.db.select({ p: jobs.projectId }).from(jobs).where(eq(jobs.id, jobId)).get()?.p ?? "";
+  const projectId = jobId
+    ? (d.db.select({ p: jobs.projectId }).from(jobs).where(eq(jobs.id, jobId)).get()?.p ?? "")
+    : inProject;
   d.bus.atomically(() => {
     d.db
       .insert(eyeMessages)
@@ -870,10 +890,11 @@ function add(
       .run();
     d.bus.publish({
       type: author === "owner" ? "eye.message" : "eye.replied",
-      topic: `job:${jobId}`,
+      topic: jobId ? `job:${jobId}` : "overview",
       jobId,
       payload: {
         id,
+        ...(jobId ? {} : { projectId }),
         text: text.slice(0, 200),
         ...(action ? { intent: action.intent, did: action.did } : {}),
       },

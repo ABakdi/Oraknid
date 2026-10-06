@@ -101,8 +101,14 @@ export const ServerView = z.object({
   busy: z.string().nullable(),
   stateVersion: z.number().int(),
   latest: ServerSample.nullable(),
-  /** Projects that may use it. */
+  /** Projects that may use it (its own server project left out). */
   projectIds: z.array(Id),
+  /** Its own project, for its conversation and its jobs (ADR-049); null until the first. */
+  projectId: Id.nullable().default(null),
+  /** Marked production on the server itself: every job that reaches it asks before a change (ADR-049). */
+  production: z.boolean().default(false),
+  /** The projects where its role makes it production (ADR-042). */
+  productionIn: z.array(Id).default([]),
   createdAt: Timestamp,
 });
 export type ServerView = z.infer<typeof ServerView>;
@@ -111,6 +117,15 @@ export const ServerState = z.object({
   version: z.number().int(),
   body: z.string(),
   source: z.enum(["eye", "owner"]),
+  /** The job whose end wrote it from a new discovery (ADR-049). */
+  jobId: Id.nullable().default(null),
   createdAt: Timestamp,
 });
 export type ServerState = z.infer<typeof ServerState>;
+
+/** A version of a state document in its history, without its body (ADR-049). */
+export const ServerStateVersion = ServerState.omit({ body: true }).extend({
+  /** The job's title, when a job's end wrote it. */
+  jobTitle: z.string().nullable().default(null),
+});
+export type ServerStateVersion = z.infer<typeof ServerStateVersion>;

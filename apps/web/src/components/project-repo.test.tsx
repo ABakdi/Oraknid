@@ -48,6 +48,7 @@ const SITE: ProjectView = {
   },
   repos: [repo("api", link("site-api", false)), repo("web", link("site"))],
   github: null,
+  serverId: null,
   jobCount: 0,
 };
 
