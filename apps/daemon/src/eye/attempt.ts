@@ -56,6 +56,7 @@ import { jobHomeDir, scratchFor } from "../legs/job-home.ts";
 import { sandboxPlan } from "../legs/plan.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor, Supervised } from "../legs/supervisor.ts";
+import { legSessionLimit } from "../resources/work.ts";
 import type { Servers } from "../servers/service.ts";
 import { readSetting } from "../settings.ts";
 import { handoffFromLog } from "../silk/handoff.ts";
@@ -158,7 +159,7 @@ export type AttemptOutcome =
   | { kind: "owner-held" }
   | { kind: "cancel-job"; reason: string }
   /** Its Leg was paused, or its work in the job cancelled: stopped at a safe point, the job goes on. */
-  | { kind: "leg-stopped"; how: "pause" | "cancel"; reason: string };
+  | { kind: "leg-stopped"; how: "pause" | "cancel" | "room"; reason: string };
 
 /** Ladder steps that end the attempt, and why. */
 class EndAttempt extends Error {
@@ -312,7 +313,12 @@ export async function runAttempt(
     if (why) machineBusy = why;
     return !why;
   };
-  let routed = route(routeTask, candidates.filter(free), routeOptions);
+  // Each candidate knows how busy its Leg is: tasks side by side spread across Legs (ADR-050).
+  const withSessions = (c: RouteCandidate): RouteCandidate => ({
+    ...c,
+    sessions: { running: d.supervisor.busy(c.legId), limit: legLimit(d, c.legId) },
+  });
+  let routed = route(routeTask, candidates.filter(free).map(withSessions), routeOptions);
   let saidWaiting: string | null = null;
   while (!routed.ranked[0] && route(routeTask, candidates, routeOptions).ranked[0]) {
     const reason = machineBusy
@@ -329,7 +335,7 @@ export async function runAttempt(
     }
     machineBusy = null;
     await pause(1000, signal);
-    routed = route(routeTask, candidates.filter(free), routeOptions);
+    routed = route(routeTask, candidates.filter(free).map(withSessions), routeOptions);
   }
   const pick = routed.ranked[0];
   if (!pick) {
@@ -1465,7 +1471,7 @@ export async function runAttempt(
       try {
         await ws.tree.checkpoint(
           `refs/oraknid/${job.id}/${taskId}/${attemptNo}-stopped`,
-          `oraknid: ${task.title} stopped (${byLeg.how} of ${byLeg.legName})`,
+          `oraknid: ${task.title} stopped (${byLeg.how === "room" ? "paused for room" : `${byLeg.how} of ${byLeg.legName}`})`,
         );
       } catch {}
     }
@@ -1524,11 +1530,8 @@ function safeStrayed(tree: WorkTree): { folder: string; problem: string }[] {
   }
 }
 
-/** A Leg's limit of task sessions at once: its own setting, else one (ADR-016). */
-function legLimit(d: AttemptDeps, legId: string): number {
-  const n = (d.registry.require(legId).config as { maxSessions?: unknown }).maxSessions;
-  return typeof n === "number" && n >= 1 ? n : 1;
-}
+/** A Leg's limit of task sessions at once: its own setting, else its kind's (ADR-050). */
+const legLimit = (d: AttemptDeps, legId: string) => legSessionLimit(d.registry, legId);
 
 /** Waits, or throws as soon as the attempt is stopped. */
 function pause(ms: number, signal: AbortSignal): Promise<void> {

@@ -7,6 +7,7 @@ import {
   planMeasures,
   readyTasks,
   sameTask,
+  scopeConflict,
   scopesOverlap,
   shapeWeb,
   validateWeb,
@@ -99,6 +100,26 @@ describe("scopes that may overlap (ADR-016)", () => {
     expect(scopesOverlap([], ["a"])).toBe(true);
     expect(scopesOverlap(["src/a*.ts"], ["src/b.ts"])).toBe(true);
     expect(scopesOverlap(["./docs/x.md"], ["docs/x.md"])).toBe(true);
+  });
+
+  it("tells a tight overlap from a loose one, so broad scopes don't run everything in a row (ADR-050)", () => {
+    const kind = (a: string[], b: string[]) => scopeConflict(a, b).kind;
+    expect(kind(["src/auth/**"], ["src/billing/**"])).toBe("none");
+    // The same file, or one folder deep enough to be one piece of work: they wait for each other.
+    expect(scopeConflict(["package.json"], ["package.json"])).toEqual({
+      kind: "tight",
+      where: "package.json",
+    });
+    expect(scopeConflict(["src/auth/**"], ["src/auth/login.ts"])).toEqual({
+      kind: "tight",
+      where: "src/auth",
+    });
+    // Broad scopes meet only loosely: side by side in their own worktrees, merged after.
+    expect(kind(["src/**"], ["src/auth/login.ts"])).toBe("loose");
+    expect(kind(["src/**"], ["src/**"])).toBe("loose");
+    expect(kind(["**/*.ts"], ["docs/**"])).toBe("loose");
+    expect(kind(["src"], ["src/a.ts"])).toBe("loose");
+    expect(kind([], ["a"])).toBe("loose");
   });
 });
 

@@ -7,17 +7,23 @@ import { readSetting, writeSetting } from "../settings.ts";
 // their tasks wait for it; cancelling a Leg's work in a job ends its sessions
 // there and its tasks go on without it.
 
-/** Why an attempt was stopped while its job goes on. */
+/**
+ * Why an attempt was stopped while its job goes on: its Leg paused, its
+ * Leg's work cancelled, or the machine short of room (ADR-050), when
+ * `said` tells why.
+ */
 export class LegStop extends Error {
   constructor(
-    readonly how: "pause" | "cancel",
+    readonly how: "pause" | "cancel" | "room",
     readonly legId: string,
     readonly legName: string,
+    said?: string,
   ) {
     super(
-      how === "pause"
-        ? `${legName} was paused; the task waits for it.`
-        : `${legName}'s work in this job was cancelled; the task goes on without it.`,
+      said ??
+        (how === "pause"
+          ? `${legName} was paused; the task waits for it.`
+          : `${legName}'s work in this job was cancelled; the task goes on without it.`),
     );
   }
 }
@@ -77,6 +83,24 @@ const running = new Set<Running>();
 export function trackAttempt(r: Running): () => void {
   running.add(r);
   return () => running.delete(r);
+}
+
+/** The attempts running now, each with its Leg: which admitted tasks already hold a session. */
+export function attemptsNow(): { jobId: string; taskId: string; legId: string }[] {
+  return [...running].map((r) => ({ jobId: r.jobId, taskId: r.taskId, legId: r.legId }));
+}
+
+/**
+ * Pauses one task's attempt to make room on the machine (ADR-050): at a
+ * safe point, its work kept on a checkpoint with a handoff, the task back
+ * to ready; it starts again once there is room. False when it wasn't
+ * running. Resolves once stopped.
+ */
+export async function pauseForRoom(jobId: string, taskId: string, why: string) {
+  const hit = [...running].filter((r) => r.jobId === jobId && r.taskId === taskId);
+  for (const r of hit) r.stop(new LegStop("room", r.legId, "", why));
+  await Promise.allSettled(hit.map((r) => r.ended));
+  return hit.length > 0;
 }
 
 /**

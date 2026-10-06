@@ -86,9 +86,9 @@ export function fakeOs(
           system: {
             cpuPercent: 1,
             cores: 4,
-            // Half the memory, unless a test says otherwise (share of 1000).
-            memoryUsedBytes: Math.round((opts.memoryUsed?.() ?? 0.5) * 1000),
-            memoryTotalBytes: 1000,
+            // Half of 16 GB, unless a test says otherwise (a share).
+            memoryUsedBytes: Math.round((opts.memoryUsed?.() ?? 0.5) * 16 * 1024 ** 3),
+            memoryTotalBytes: 16 * 1024 ** 3,
             diskReadBytesPerSec: 0,
             diskWriteBytesPerSec: 0,
             netRxBytesPerSec: 0,

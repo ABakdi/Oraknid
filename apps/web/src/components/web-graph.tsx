@@ -196,6 +196,7 @@ const TaskCard = memo(({ data, targetPosition, sourcePosition }: NodeProps<TaskN
     <button
       type="button"
       onClick={() => data.onOpen(task.id)}
+      title={task.waitingReason ? `${task.title}\n${task.waitingReason}` : undefined}
       data-handoff={handoff ? "true" : undefined}
       className={cn(
         "flex h-[76px] w-[220px] flex-col justify-between rounded-lg border bg-card px-2.5 py-2 text-left shadow-sm transition-shadow hover:shadow-md",
@@ -215,6 +216,12 @@ const TaskCard = memo(({ data, targetPosition, sourcePosition }: NodeProps<TaskN
         ) : null}
         <StateBadge state={task.state} className="h-4 px-1 text-[10px]" />
         {leg ? <span className="truncate text-[10px] text-muted-foreground">{leg}</span> : null}
+        {!leg && task.waitingReason ? (
+          // Why it is ready and not running yet (ADR-050).
+          <span className="truncate text-[10px] text-muted-foreground" data-testid="waiting-reason">
+            {task.waitingReason}
+          </span>
+        ) : null}
         {task.attemptCount > 1 ? (
           <span className="ml-auto text-[10px] text-muted-foreground">×{task.attemptCount}</span>
         ) : null}

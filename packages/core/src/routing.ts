@@ -25,6 +25,8 @@ export interface RouteCandidate {
   cooldown?: { until: number; reason: string } | null;
   /** Provider failures in a row on its Leg, none since a turn went through (M13.22). */
   legProviderFailures?: number;
+  /** Its Leg's task sessions running now and its limit: work spreads across Legs (ADR-050). */
+  sessions?: { running: number; limit: number };
 }
 
 export interface RouteTask {
@@ -231,6 +233,12 @@ export function route(task: RouteTask, candidates: RouteCandidate[], o: RouteOpt
       reasons.push(
         `${c.legName} just failed at its provider: not another unproven model of it next`,
       );
+    }
+
+    // Tasks side by side spread across Legs and accounts: a busier Leg scores a little lower (ADR-050).
+    if (c.sessions && c.sessions.running > 0) {
+      score -= (c.sessions.running / Math.max(1, c.sessions.limit)) * 1.5;
+      reasons.push(`${c.sessions.running} of ${c.sessions.limit} sessions busy on ${c.legName}`);
     }
 
     const effort = chooseEffort(c.effortLevels, task.difficulty, task.stepUp);

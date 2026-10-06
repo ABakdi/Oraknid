@@ -126,6 +126,38 @@ describe("notification routing", () => {
     expect(sent[0]?.n.url).toMatch(/\/settings\/about$/);
   });
 
+  it("tells me the computer is in danger, through quiet hours, but not that it is busy with my work (ADR-050)", async () => {
+    const { d, sent } = await start();
+    const h = new Date().getHours();
+    const pad = (n: number) => String(n % 24).padStart(2, "0");
+    d.notifications.update({ quietHours: { from: `${pad(h)}:00`, to: `${pad(h + 1)}:00` } });
+    d.bus.publish({
+      type: "machine.incident",
+      topic: "overview",
+      jobId: null,
+      payload: {
+        kind: "memory",
+        level: "danger",
+        message: "Memory is nearly full (96% used, 0.6 GB left), and the computer is swapping.",
+        did: "Paused “Build the API” to free memory; it resumes when memory is back.",
+      },
+    });
+    d.bus.publish({
+      type: "machine.incident",
+      topic: "overview",
+      jobId: null,
+      payload: { kind: "busy", level: "warning", message: "Busy with your own work.", did: null },
+    });
+    await wait(20);
+    expect(sent.map((s) => s.channel)).toEqual(["desktop"]);
+    expect(sent[0]?.n).toMatchObject({
+      title: "Your computer is in danger",
+      body: "Memory is nearly full (96% used, 0.6 GB left), and the computer is swapping. Paused “Build the API” to free memory; it resumes when memory is back.",
+      urgency: "critical",
+      tag: "machine-memory",
+    });
+  });
+
   it("follows my changes to the routing table", async () => {
     const { d, sent } = await start();
     d.notifications.update({

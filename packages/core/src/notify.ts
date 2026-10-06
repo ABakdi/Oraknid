@@ -15,6 +15,7 @@ export const DEFAULT_ROUTES: Record<NotifyEvent, Route> = {
   security: { desktop: true, push: true, email: "now" },
   "backup.failed": { desktop: true, push: true, email: "now" },
   "update.available": { desktop: true, push: true, email: "never" },
+  "machine.danger": { desktop: true, push: true, email: "never" },
 };
 
 export const routeFor = (event: NotifyEvent, mine: Partial<Record<NotifyEvent, Route>>): Route =>
@@ -34,6 +35,9 @@ export function inQuietHours(q: QuietHours | null, at: Date): boolean {
   return from <= to ? now >= from && now < to : now >= from || now < to;
 }
 
-/** Quiet hours hold everything except approvals for running jobs. */
+/** Quiet hours hold everything except security, the machine in danger, and approvals for running jobs. */
 export const heldByQuietHours = (event: NotifyEvent, jobRunning: boolean, quiet: boolean) =>
-  quiet && event !== "security" && !(event === "approval" && jobRunning);
+  quiet &&
+  event !== "security" &&
+  event !== "machine.danger" &&
+  !(event === "approval" && jobRunning);

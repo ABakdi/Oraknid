@@ -9,11 +9,13 @@ import {
   renderQuestions,
 } from "@oraknid/contracts";
 import {
+  canRunSideBySide,
   decide,
   freshQuestions,
   type GatedAction,
+  readingOf,
   readyTasks,
-  scopesOverlap,
+  scopeConflict,
   skillChecks,
   skillExcerpt,
   suspicious,
@@ -31,6 +33,7 @@ import type { InboxStore } from "../inbox/store.ts";
 import { sandboxPlan } from "../legs/plan.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor } from "../legs/supervisor.ts";
+import { Work } from "../resources/work.ts";
 import type { Servers } from "../servers/service.ts";
 import {
   attemptsFromKey,
@@ -107,6 +110,8 @@ export interface EyeDeps {
   projects?: Projects;
   /** Recent metrics, for resource-aware scheduling (ADR-016). */
   machine?: () => MetricsSample[];
+  /** Where every job's tasks ask to start (ADR-050); the daemon's, shared by all jobs. */
+  work?: Work;
   legsDir: string;
   tmpDir: string;
   now: () => number;
@@ -430,67 +435,154 @@ export function eyeProgram(d: EyeDeps): JobProgram {
   };
 }
 
-/** Runs ready tasks one at a time (BR-19) until none is left or the job must stop. */
+/**
+ * Runs ready tasks until none is left or the job must stop: in parallel by
+ * default (ADR-050), every ready task whose scope can't tightly overlap a
+ * running one's, as the machine, the Legs and my cap admit; the rest wait,
+ * each saying why.
+ */
 async function runTasks(d: EyeDeps, ctx: JobContext, where: Where, parallel = false) {
+  const work = workOf(d);
   const running = new Map<string, Promise<void>>();
+  // A plan that is a chain works in the job's own tree, one task after another, as always.
+  let inPlace: string | null = null;
   // Written by the running tasks' callbacks.
   const run: { failure: { error: unknown } | null; cancelled: boolean } = {
     failure: null,
     cancelled: false,
   };
-  for (;;) {
-    const job = d.db.select().from(jobs).where(eq(jobs.id, ctx.jobId)).get();
-    if (!job) return;
-    const all = taskRows(d.db, ctx.jobId);
-    const unfinished = all.filter((t) => t.state !== "done" && t.state !== "skipped");
-    if (unfinished.length === 0 && running.size === 0) return;
-    const ready = readyTasks(
-      all.filter((t) => !t.ownerHeld && t.state !== "failed" && t.state !== "paused"),
-    ).filter((t) => !running.has(t.id));
-    if (ready.length === 0 && running.size > 0) {
-      await Promise.race(running.values());
+  try {
+    for (;;) {
+      if (ctx.signal.aborted && running.size === 0)
+        throw ctx.signal.reason ?? new Error("Stopped.");
+      const job = d.db.select().from(jobs).where(eq(jobs.id, ctx.jobId)).get();
+      if (!job) return;
+      const all = taskRows(d.db, ctx.jobId);
+      const unfinished = all.filter((t) => t.state !== "done" && t.state !== "skipped");
+      if (unfinished.length === 0 && running.size === 0) return;
+      const ready = readyTasks(
+        all.filter((t) => !t.ownerHeld && t.state !== "failed" && t.state !== "paused"),
+      ).filter((t) => !running.has(t.id));
+      // A task no longer ready no longer waits for anything.
+      const readyIds = new Set(ready.map((t) => t.id));
+      for (const t of all) if (!readyIds.has(t.id)) work.clear(job.id, t.id);
+      if (ready.length === 0 && running.size > 0) {
+        await Promise.race(running.values());
+        if (run.cancelled) {
+          await Promise.allSettled(running.values());
+          return;
+        }
+        continue;
+      }
+      if (ready.length === 0) {
+        if (run.failure) throw run.failure.error;
+        const held = unfinished.filter((t) => t.ownerHeld).map((t) => t.title);
+        throw new Error(
+          held.length
+            ? `Waiting for tasks I took over: ${held.join(", ")}. Hand them back to continue.`
+            : `No task can start: ${unfinished.map((t) => `${t.title} (${t.state})`).join(", ")}.`,
+        );
+      }
+      // My limit for one job, if I set one; otherwise only the machine's, the Legs' and mine for all.
+      const perJob = readSetting(d.db, MAX_TASKS_PER_JOB, z.number().int().min(1).nullable(), null);
+      // Tasks that could ever run side by side each get a worktree of their own (ADR-016).
+      const own = parallel && canRunSideBySide(all);
+      let waiting = 0;
+      for (const t of ready) {
+        if (run.failure || ctx.signal.aborted) break;
+        const req = {
+          jobId: job.id,
+          jobTitle: job.title,
+          taskId: t.id,
+          title: t.title,
+          cost: work.costOf(t),
+          priority: job.priority,
+          allowedLegIds: job.allowedLegIds,
+        };
+        const wait = (reason: string) => {
+          work.waitFor(req, reason);
+          waiting++;
+        };
+        const inTree = inPlace && running.has(inPlace) ? all.find((x) => x.id === inPlace) : null;
+        if (inTree) {
+          wait(`waits for “${inTree.title}”, which works in the job's own folder`);
+          continue;
+        }
+        if (!own && running.size > 0) {
+          wait(
+            parallel
+              ? "the plan is a chain: its tasks run one after another"
+              : "this folder isn't a git repository, so its tasks run one at a time",
+          );
+          continue;
+        }
+        // The planner's scopes: a tight overlap waits, a loose one runs beside in its own worktree.
+        const overlap = all
+          .filter((x) => running.has(x.id))
+          .map((x) => ({ x, c: scopeConflict(x.scope, t.scope) }))
+          .find((o) => o.c.kind === "tight");
+        if (overlap) {
+          wait(`overlaps “${overlap.x.title}”: both change ${overlap.c.where}`);
+          continue;
+        }
+        if (perJob !== null && running.size >= perJob) {
+          wait(`${running.size} of this job's tasks run at once, the most I allowed in one job`);
+          continue;
+        }
+        const admitted = work.tryStart(req);
+        if (!admitted.ok) {
+          waiting++;
+          continue;
+        }
+        if (!own) inPlace = t.id;
+        const p = runTask(d, ctx, job, t, where, own)
+          .then((r) => {
+            if (r === "cancelled") run.cancelled = true;
+          })
+          .catch((error) => {
+            run.failure ??= { error };
+          })
+          .finally(() => {
+            admitted.release();
+            running.delete(t.id);
+            if (inPlace === t.id) inPlace = null;
+          });
+        running.set(t.id, p);
+      }
+      if (running.size === 0) {
+        if (run.failure) throw run.failure.error;
+        if (ctx.signal.aborted) throw ctx.signal.reason ?? new Error("Stopped.");
+        if (!waiting) return;
+      }
+      // A task ending, room coming back, or a setting changing: look again.
+      await Promise.race([...running.values(), ...(waiting ? [work.changed(2000)] : [])]);
       if (run.cancelled) {
         await Promise.allSettled(running.values());
         return;
       }
-      continue;
     }
-    if (ready.length === 0) {
-      if (run.failure) throw run.failure.error;
-      const held = unfinished.filter((t) => t.ownerHeld).map((t) => t.title);
-      throw new Error(
-        held.length
-          ? `Waiting for tasks I took over: ${held.join(", ")}. Hand them back to continue.`
-          : `No task can start: ${unfinished.map((t) => `${t.title} (${t.state})`).join(", ")}.`,
-      );
-    }
-    // Tasks side by side (ADR-016): as many as the per-job limit allows, whose scopes can't overlap.
-    const limit = parallel ? tasksAtOnce(d) : 1;
-    for (const t of ready) {
-      if (running.size >= limit || run.failure) break;
-      if (running.has(t.id)) continue;
-      const others = all.filter((x) => running.has(x.id));
-      if (others.some((x) => scopesOverlap(x.scope, t.scope))) continue;
-      const p = runTask(d, ctx, job, t, where, limit > 1)
-        .then((r) => {
-          if (r === "cancelled") run.cancelled = true;
-        })
-        .catch((error) => {
-          run.failure ??= { error };
-        })
-        .finally(() => running.delete(t.id));
-      running.set(t.id, p);
-    }
-    if (running.size === 0) {
-      if (run.failure) throw run.failure.error;
-      return;
-    }
-    await Promise.race(running.values());
-    if (run.cancelled) {
-      await Promise.allSettled(running.values());
-      return;
-    }
+  } finally {
+    work.forgetJob(ctx.jobId);
   }
+}
+
+/** The work every job's tasks ask before starting (ADR-050); one of its own when none is given. */
+const ownWork = new WeakMap<EyeDeps, Work>();
+function workOf(d: EyeDeps): Work {
+  if (d.work) return d.work;
+  let w = ownWork.get(d);
+  if (!w) {
+    w = new Work({
+      db: d.db,
+      bus: d.bus,
+      registry: d.registry,
+      supervisor: d.supervisor,
+      now: d.now,
+      reading: () => (d.machine ? readingOf(d.machine()) : null),
+    });
+    ownWork.set(d, w);
+  }
+  return w;
 }
 
 /** Merges of one job happen one at a time. */
@@ -586,11 +678,6 @@ async function mergeTask(
     merged.push({ g, before });
   }
   return { ok: true, undo };
-}
-
-/** How many tasks of one job run at once (ADR-016); one by default. */
-function tasksAtOnce(d: EyeDeps): number {
-  return readSetting(d.db, MAX_TASKS_PER_JOB, z.number().int().min(1), 1);
 }
 
 /** One attempt at one task, applied; in parallel, in its own worktree and merged after (ADR-016). */

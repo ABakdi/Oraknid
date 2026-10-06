@@ -180,6 +180,8 @@ export const TaskView = Task.extend({
   waitingForLegId: z.string().nullable().default(null),
   /** Legs it doesn't use any more: their work in the job, or on it, was cancelled. */
   avoidLegIds: z.array(z.string()).default([]),
+  /** Why it is ready and not running yet (ADR-050): "waiting for memory", "overlaps “X”". */
+  waitingReason: z.string().nullable().default(null),
 });
 export type TaskView = z.infer<typeof TaskView>;
 

@@ -138,6 +138,79 @@ export function scopesOverlap(a: string[], b: string[]): boolean {
   return ra.some((x) => rb.some((y) => within(x, y) || within(y, x)));
 }
 
+/**
+ * Could two tasks of this plan ever run at once: neither needing the
+ * other, even through others? A chain can't; its tasks work in the job's
+ * own tree one after another, as one task at a time always did. Done
+ * tasks count, so a job that ran tasks side by side keeps doing so.
+ */
+export function canRunSideBySide(tasks: { id: string; dependsOn: string[] }[]): boolean {
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const before = new Map<string, Set<string>>();
+  const ancestors = (id: string, seen = new Set<string>()): Set<string> => {
+    const known = before.get(id);
+    if (known) return known;
+    const out = new Set<string>();
+    if (seen.has(id)) return out;
+    seen.add(id);
+    for (const d of byId.get(id)?.dependsOn ?? []) {
+      out.add(d);
+      for (const a of ancestors(d, seen)) out.add(a);
+    }
+    before.set(id, out);
+    return out;
+  };
+  for (let i = 0; i < tasks.length; i++)
+    for (let j = i + 1; j < tasks.length; j++) {
+      const a = tasks[i] as { id: string };
+      const b = tasks[j] as { id: string };
+      if (!ancestors(a.id).has(b.id) && !ancestors(b.id).has(a.id)) return true;
+    }
+  return false;
+}
+
+/**
+ * How two tasks' scopes conflict (ADR-050): "none" when they can't touch
+ * the same file; "tight" when both name the same file or the same folder
+ * two levels down or deeper (`src/auth/**` and `src/auth/login.ts`):
+ * they wait for each other; "loose" when they meet only through a broad
+ * scope (the whole repo, a top folder like `src/**`, `**\/*.ts`): they run
+ * side by side, each in its own worktree, and a conflict at the merge is
+ * redone on top of the newer work. A broad scope says little of what a
+ * task will really change; serialising every task on it would make every
+ * plan run one task at a time.
+ */
+export function scopeConflict(
+  a: string[],
+  b: string[],
+): { kind: "none" | "loose" | "tight"; where: string | null } {
+  if (!scopesOverlap(a, b)) return { kind: "none", where: null };
+  const roots = (globs: string[]) =>
+    globs.map((g) => {
+      const parts: string[] = [];
+      let exact = true;
+      for (const seg of g.replace(/^\.\//, "").split("/").filter(Boolean)) {
+        if (/[*?[{]/.test(seg)) {
+          exact = false;
+          break;
+        }
+        parts.push(seg);
+      }
+      return { parts, exact };
+    });
+  const within = (x: string[], y: string[]) =>
+    x.length <= y.length && x.every((s, i) => s === y[i]);
+  for (const x of roots(a))
+    for (const y of roots(b)) {
+      if (!within(x.parts, y.parts) && !within(y.parts, x.parts)) continue;
+      const outer = x.parts.length <= y.parts.length ? x : y;
+      // The same file named by both, or a folder deep enough to be one piece of work.
+      if ((x.exact && y.exact && x.parts.length === y.parts.length) || outer.parts.length >= 2)
+        return { kind: "tight", where: outer.parts.join("/") };
+    }
+  return { kind: "loose", where: null };
+}
+
 /** What a plan looks like, to compare The Eye's models on the same job (ADR-022). */
 export function planMeasures(plan: WebPlan): PlanMeasures {
   const tasks = plan.tasks;
