@@ -95,6 +95,29 @@ goes, a clone? Now (M13.19):
   `files.folders` and `files.makeFolder` are home only for a standard
   device, like `createFrom`.
 
+## Changed (2026-10-04): Archiving and deleting say what goes
+Archive and Delete were two buttons at the foot of Settings: archive
+hid the project, delete removed Oraknid's records and left everything
+else, and neither said so. A project is the place; leaving it must be
+as clear as making it. Now (M13.23, [[Jobs-and-Projects]] → Archiving
+and deleting a project):
+- **Easy to find**: the project's **…** menu in its header and on its
+  card, and Settings. Archived projects have their own section.
+- **I choose what goes**, in a dialog: Delete always removes Oraknid's
+  records, and the folder and each linked GitHub repo when I tick them,
+  typing the name to confirm; Archive may archive the GitHub repos and
+  delete the folder, but only when nothing would be lost, and Unarchive
+  puts both back (the folder cloned from GitHub in the same layout).
+- **Each step is said**, done or not and why; a permission GitHub
+  refuses is named with where to grant it.
+- As built: `workspace/removal.ts` (`ProjectRemoval`: `preview`,
+  `delete`, `archive`, `unarchive`; `folderRefusal`, `folderSize`,
+  `repoLoss`), `GitHub.scopes` / `ownership` / `deleteRepo` /
+  `setArchived` / `remoteHeads`, migration 0036 (`projects.archived_with`),
+  `components/project-removal.tsx` and `components/project-list.tsx`.
+  `projects.archive` and `projects.removalPreview` became home only for a
+  standard device, like `delete`.
+
 ## Consequences
 - Migration: `eye_messages` gains `project_id`, filled from each
   message's job; the project budget is a setting per project.

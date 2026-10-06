@@ -51,6 +51,7 @@ the canon. Code identifiers are shown in `code`.
 | **Follow-up job** | — | A job started from new work I ask for on an ended job: same project and choices, its branch from the ended job's branch. |
 | **Decision model** | `eyeModels` | A Leg model pinned for one kind of Eye call: planning, judging or quick. The **shadow** plans too, never used, to compare. |
 | **Tool** | `tool` | An MCP server a skill can require, run by the daemon's broker; a Leg reaches it only through the broker. |
+| **Connected client** | `client` | Another agent (Claude Code, Claude Desktop, OpenCode…) that uses Oraknid over MCP, paired with rights I give and revocable (planned, [[ADR-051-Oraknid-Over-MCP]]). |
 | **Chat** | `chat` | A free conversation with one of my models, which may read attached projects and research the web. |
 | **Helper** | `helper` | The floating chat that does things in Oraknid for me through its own API. |
 | **Server** | `server` | A machine of mine Oraknid reaches over SSH with its own key. |

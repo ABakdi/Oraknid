@@ -66,6 +66,16 @@ its latest commits, branches and open pull requests, Browse the code
 (into Repos, ADR-040) and Open on GitHub, with the card to link, change
 or unlink it below. Settings keeps the project's servers.
 
+## Changed (2026-10-04): a linked repo archived or deleted on my request
+Deleting or archiving a repo stays outside what The Eye does on its own;
+but when I delete or archive a project I may tick its linked GitHub
+repos, and Oraknid archives (PATCH `archived`) or deletes them with the
+link's account, only when that account owns the repo (its own, or an
+organisation it administers). Deleting needs the token's `delete_repo`
+permission; GitHub's 403 is said with where to grant it. A repo deleted
+loses its link ([[Jobs-and-Projects]] → Archiving and deleting a
+project, [[ADR-034-Projects-First]] → Changed).
+
 ## Consequences
 - ADR-023's "one account at a time" ends: several tokens, each named by
   its account.

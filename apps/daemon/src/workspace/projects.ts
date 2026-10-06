@@ -17,6 +17,7 @@ import {
   type NewJob,
   type NewProject,
   type NewProjectRepo,
+  type ProjectArchivedWith,
   type ProjectRepo,
   type ProjectRepoPatch,
   ServerRole,
@@ -342,15 +343,19 @@ export class Projects {
 
   /** One of its jobs is going: its repos stay as they are until it ends. */
   #busy(id: string) {
+    return this.activeJobs(id).length > 0;
+  }
+
+  /** Its jobs going now (running, paused, queued…), not drafts nor ended ones. */
+  activeJobs(id: string) {
     return this.db
-      .select({ state: jobs.state })
+      .select({ id: jobs.id, title: jobs.title, state: jobs.state })
       .from(jobs)
       .where(eq(jobs.projectId, id))
       .all()
-      .some((j) => (ACTIVE_JOB_STATES as readonly string[]).includes(j.state));
+      .filter((j) => (ACTIVE_JOB_STATES as readonly string[]).includes(j.state));
   }
 
-  /** Archived: hidden from the lists, kept for stats (Core-Entities → Project). */
   /** Every row of these jobs; their tasks' edges first. */
   #deleteJobs(ids: string[]) {
     const taskIds = this.db
@@ -535,19 +540,27 @@ export class Projects {
     });
   }
 
-  setArchived(id: string, archived: boolean) {
-    this.require(id);
+  /**
+   * Archived: hidden from the lists, kept for stats (Core-Entities →
+   * Project), with a note of what archiving did (repos archived on GitHub,
+   * its folder deleted) for unarchiving; or back in the list.
+   */
+  setArchived(id: string, archived: boolean, archivedWith: ProjectArchivedWith | null = null) {
+    const before = this.require(id);
     this.bus.atomically(() => {
       this.db
         .update(projects)
-        .set({ archivedAt: archived ? this.now() : null })
+        .set({
+          archivedAt: archived ? (before.archivedAt ?? this.now()) : null,
+          archivedWith: archived ? archivedWith : null,
+        })
         .where(eq(projects.id, id))
         .run();
       this.bus.publish({
         type: archived ? "project.archived" : "project.restored",
         topic: "overview",
         jobId: null,
-        payload: { id },
+        payload: { id, name: before.name, ...(archived && archivedWith ? archivedWith : {}) },
         actor: "owner",
       });
     });
@@ -556,9 +569,18 @@ export class Projects {
   /**
    * Deleted on my request: the project and its jobs leave Oraknid with their
    * history (tasks, sessions, Silk, inbox, events, logs). My folder, the
-   * job branches and worktrees in it are left as they are.
+   * job branches and worktrees in it are left as they are, unless I chose
+   * to delete them too (`removed` says what else went, for the audit log).
    */
-  remove(id: string, logsDir: string) {
+  remove(
+    id: string,
+    logsDir: string,
+    removed: {
+      folderDeleted?: string | null;
+      githubDeleted?: string[];
+      steps?: { kind: string; target: string; status: string }[];
+    } = {},
+  ) {
     const project = this.require(id);
     const mine = this.db.select().from(jobs).where(eq(jobs.projectId, id)).all();
     const busy = mine.find((j) => (ACTIVE_JOB_STATES as readonly string[]).includes(j.state));
@@ -592,7 +614,15 @@ export class Projects {
         type: "project.deleted",
         topic: "overview",
         jobId: null,
-        payload: { id, name: project.name, jobs: ids.length },
+        payload: {
+          id,
+          name: project.name,
+          jobs: ids.length,
+          records: true,
+          folderDeleted: removed.folderDeleted ?? null,
+          githubDeleted: removed.githubDeleted ?? [],
+          ...(removed.steps ? { steps: removed.steps } : {}),
+        },
         actor: "owner",
       });
     });

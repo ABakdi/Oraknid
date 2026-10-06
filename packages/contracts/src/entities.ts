@@ -44,6 +44,18 @@ export type ServerRole = z.infer<typeof ServerRole>;
 export const isProduction = (r: { role: string; production: boolean | null } | null | undefined) =>
   r?.production ?? /^(production|prod)$/i.test(r?.role.trim() ?? "");
 
+/**
+ * What archiving a project did besides hiding it (Jobs-and-Projects →
+ * Archiving and deleting a project), so unarchiving knows what to undo:
+ * the GitHub repos it archived (owner/name), and whether it deleted the
+ * project's folder (cloned back from its repos' GitHub links).
+ */
+export const ProjectArchivedWith = z.object({
+  githubArchived: z.array(z.string()).default([]),
+  folderDeleted: z.boolean().default(false),
+});
+export type ProjectArchivedWith = z.infer<typeof ProjectArchivedWith>;
+
 export const Project = z.object({
   id: Id,
   name: z.string().min(1),
@@ -53,6 +65,8 @@ export const Project = z.object({
   workBranch: z.string().min(1),
   createdAt: Timestamp,
   archivedAt: Timestamp.nullable(),
+  /** What archiving it did: repos archived on GitHub, its folder deleted (null when nothing). */
+  archivedWith: ProjectArchivedWith.nullish(),
   /** The skills its jobs may use (Skills → Skills per project). Empty: the default. */
   skillIds: z.array(Id).default([]),
   /** The servers its jobs may use (Servers → Servers in projects). */

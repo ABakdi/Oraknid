@@ -412,6 +412,108 @@ export class GitHub {
     return { number: r.number, url: r.html_url };
   }
 
+  /**
+   * The scopes of an account's token, as GitHub says them for a classic
+   * token (`x-oauth-scopes`); null for a fine-grained one, which says none.
+   */
+  async scopes(login: string): Promise<string[] | null> {
+    const res = await this.#request("/user", {}, await this.#token(login), login);
+    const header = res.headers.get("x-oauth-scopes");
+    if (header === null) return null;
+    return header
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  /**
+   * Whether an account owns a repo (its own, or an organisation's it
+   * administers), and whether it is archived. Deleting and archiving a
+   * repo are only done on one it owns.
+   */
+  async ownership(
+    fullName: string,
+    login: string,
+  ): Promise<{ owned: boolean; archived: boolean; url: string }> {
+    const r = await this.#call<{
+      owner: { login: string; type?: string };
+      archived?: boolean;
+      html_url: string;
+      permissions?: { admin?: boolean };
+    }>(`/repos/${fullName}`, {}, await this.#token(login));
+    const own = r.owner.login.toLowerCase() === login.toLowerCase();
+    const org = r.owner.type === "Organization" && !!r.permissions?.admin;
+    return { owned: own || org, archived: !!r.archived, url: r.html_url };
+  }
+
+  /**
+   * Deletes a repo on GitHub with an account's token. A token without the
+   * delete_repo permission is refused by GitHub with a 403: said plainly,
+   * with how to grant it.
+   */
+  async deleteRepo(fullName: string, login: string): Promise<void> {
+    try {
+      await this.#request(`/repos/${fullName}`, { method: "DELETE" }, await this.#token(login));
+    } catch (e) {
+      if (e instanceof GitHubError && e.status === 403)
+        throw new GitHubError(
+          `GitHub refused to delete ${fullName}: the token of ${login} hasn't the permission to delete repositories. Grant it on github.com → Settings → Developer settings → Personal access tokens: tick delete_repo for a classic token, or give a fine-grained one Administration: Read and write on ${fullName}; then paste the token again in Settings → Connections → GitHub.`,
+          403,
+        );
+      if (e instanceof GitHubError && e.status === 404)
+        throw new GitHubError(
+          `GitHub has no repo ${fullName}, or ${login}'s token can't see it.`,
+          404,
+        );
+      throw e;
+    } finally {
+      this.forget();
+    }
+  }
+
+  /** Archives a repo on GitHub (read-only there), or makes it writable again. */
+  async setArchived(fullName: string, archived: boolean, login: string): Promise<void> {
+    try {
+      await this.#request(
+        `/repos/${fullName}`,
+        { method: "PATCH", body: JSON.stringify({ archived }) },
+        await this.#token(login),
+      );
+    } catch (e) {
+      if (e instanceof GitHubError && e.status === 403)
+        throw new GitHubError(
+          `GitHub refused to ${archived ? "archive" : "unarchive"} ${fullName}: the token of ${login} hasn't the permission to change the repository's settings. Grant it on github.com → Settings → Developer settings → Personal access tokens: tick repo for a classic token, or give a fine-grained one Administration: Read and write on ${fullName}; then paste the token again in Settings → Connections → GitHub.`,
+          403,
+        );
+      if (e instanceof GitHubError && e.status === 404)
+        throw new GitHubError(
+          `GitHub has no repo ${fullName}, or ${login}'s token can't see it.`,
+          404,
+        );
+      throw e;
+    } finally {
+      this.forget();
+    }
+  }
+
+  /** The branches of a GitHub repo and their commits (git ls-remote, the token through GIT_ASKPASS). */
+  async remoteHeads(fullName: string, login: string): Promise<string[]> {
+    const token = await this.#token(login);
+    const r = withAskpass(token, (env) =>
+      spawnSync("git", ["ls-remote", "--heads", "--", this.cloneUrl(fullName)], {
+        encoding: "utf8",
+        timeout: 2 * 60_000,
+        env,
+      }),
+    );
+    if (r.status !== 0)
+      throw new Error(`git ls-remote failed: ${scrub(r.stderr || r.stdout || "", token).trim()}`);
+    return r.stdout
+      .split("\n")
+      .map((l) => l.split("\t")[0] ?? "")
+      .filter((sha) => /^[0-9a-f]{40,64}$/.test(sha));
+  }
+
   /** The clone URL of a repo. */
   cloneUrl(fullName: string): string {
     return `${this.#web}/${fullName}.git`;
