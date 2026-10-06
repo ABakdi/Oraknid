@@ -227,7 +227,24 @@ an "Archived" mark when it is, and the same **…** menu after New work.
 Its page is in tabs, in the address (`/projects/<id>/<tab>`):
 
 - **The Eye**: the project's one conversation with The Eye, filling the
-  page like a chat. I ask for work here; The Eye passes it to the job
+  page, read like a terminal's transcript (M13.25, 2026-10-04): one
+  column at full width, message after message, no bubbles. My prompts
+  are marked with a "›" and a left rule, slightly emphasised; The Eye's
+  replies are markdown under them, what it did in a muted monospace
+  line; its thinking (The-Eye → Thinking out loud) is a monospace row,
+  live while it runs (a spinner, "Planning the work…", its time and
+  model, what it writes in a short box that follows it) and folded to
+  one line once it ends ("Planned 9 tasks in 41 s · Claude · Opus —
+  show"); three or more quick judgements in a row (commands judged) are
+  one line, opened on demand; the agents working now are a line each at
+  the end (task, last tool or line, model, time). Beside it, a slim rail
+  of my prompts, a dot and their first words each, the one being read
+  lit (IntersectionObserver); a click scrolls to it. On a phone the rail
+  is a "N prompts" button opening the same list in a sheet. While The
+  Eye thinks, a bar over the composer says what it is doing, with
+  **Stop**; with text written it offers **Stop and redo with this** or
+  **Add as context**, the one my words suggest chosen, and Enter sends
+  that way; the composer stays usable. I ask for work here; The Eye passes it to the job
   running, starts a follow-up when the last has ended, or a first job
   ([[The-Eye]] → Talking to The Eye). Each reply links the job it
   touched (and the follow-up it started); a line marks where the

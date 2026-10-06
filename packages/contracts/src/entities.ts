@@ -438,7 +438,17 @@ export type SessionView = z.infer<typeof SessionView>;
 /** A readable line of a session's log: text is joined, tools are summarised. */
 export const SessionLogEntry = z.object({
   at: Timestamp,
-  kind: z.enum(["text", "tool", "result", "permission", "question", "turn", "end"]),
+  kind: z.enum([
+    "text",
+    /** The model's reasoning, where its Leg streams it (M13.25). */
+    "thinking",
+    "tool",
+    "result",
+    "permission",
+    "question",
+    "turn",
+    "end",
+  ]),
   text: z.string(),
   tool: z.string().optional(),
   ok: z.boolean().optional(),
@@ -458,6 +468,41 @@ export type SessionLogPage = z.infer<typeof SessionLogPage>;
 /** What The Eye made of a message of mine. */
 export const EyeIntent = z.enum(["instruction", "task", "context", "later", "stop", "question"]);
 export type EyeIntent = z.infer<typeof EyeIntent>;
+
+/**
+ * One of The Eye's reasoning calls, shown in the conversation while it
+ * thinks and after (M13.25, The-Eye → Thinking out loud). Its id is the
+ * Leg session's: what it wrote is that session's log.
+ */
+export const EyeThought = z.object({
+  id: z.string(),
+  jobId: Id,
+  /** The call: "plan", "interview", "triage"… */
+  call: z.string(),
+  /** What it is doing, in words: "Planning the work". */
+  purpose: z.string(),
+  /** "Claude · Opus". */
+  model: z.string(),
+  startedAt: Timestamp,
+  endedAt: Timestamp.nullable(),
+  outcome: z.enum(["thinking", "done", "failed", "stopped", "redone", "lost"]),
+  /** What came of it, in a line, once it ended: "Planned 9 tasks". */
+  summary: z.string().nullable(),
+  /** A call run again with a message of mine (Stop and redo). */
+  again: z.boolean(),
+  /** Whether I can stop it or have it think again: The Eye's own thinking, not a quick judgement. */
+  interruptible: z.boolean(),
+});
+export type EyeThought = z.infer<typeof EyeThought>;
+
+/**
+ * What a message of mine does while The Eye is thinking (M13.25): "redo"
+ * stops the thinking and has it think again with my message; "context"
+ * adds it for what comes next without stopping; "auto" chooses: a message
+ * that corrects what is being thought redoes, anything else is added.
+ */
+export const TalkMode = z.enum(["auto", "redo", "context"]);
+export type TalkMode = z.infer<typeof TalkMode>;
 
 /**
  * What The Eye says on its own in the project's conversation (ADR-045):

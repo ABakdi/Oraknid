@@ -67,7 +67,7 @@ import { type Projects, viewOf } from "../workspace/projects.ts";
 import { isSeveral } from "../workspace/repos.ts";
 import { MultiTree, multiTreeOf, singleTree, type WorkTree } from "../workspace/tree.ts";
 import { type AttemptJob, runAttempt } from "./attempt.ts";
-import type { EyeBrain } from "./brain.ts";
+import { BrainStopped, type EyeBrain } from "./brain.ts";
 import { parseBuiltinCheck, runBuiltinCheck } from "./builtin-checks.ts";
 import { endingKey, JobEndingState, readEnding, runEnding } from "./ending.ts";
 import { readInside, renderInputs } from "./inputs.ts";
@@ -909,6 +909,7 @@ export async function pickJobSkill(
       skills: offered.map((x) => ({ id: x.id, name: x.name, description: x.description })),
     });
   } catch (error) {
+    if (error instanceof BrainStopped) throw error;
     pick.reason = `no Leg could choose (${error instanceof Error ? error.message : String(error)}), so the project's first`;
   }
   const chosen = d.skills.latest(pick.skillId) ?? offered[0];

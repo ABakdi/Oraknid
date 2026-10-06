@@ -15,6 +15,8 @@ export type Action =
   | { write: string; content: string }
   | { run: string }
   | { say: string }
+  /** Reasoning streamed before the answer, as a thinking model's (M13.25). */
+  | { think: string }
   | { rateLimit: QuotaReport }
   /** Keep the turn open until interrupted or killed. */
   | { hang: true }
@@ -148,6 +150,8 @@ export function scriptedLeg(
               ok: r.status === 0,
               output: `${r.stdout}${r.stderr}`,
             });
+          } else if ("think" in a) {
+            events.push({ type: "thinking.delta", text: a.think });
           } else if ("say" in a) {
             text += a.say;
             events.push({ type: "text.delta", text: a.say });

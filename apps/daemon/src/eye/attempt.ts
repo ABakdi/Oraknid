@@ -73,7 +73,7 @@ import type { GitHub } from "../workspace/github.ts";
 import { githubLinkOf, githubLinksOf } from "../workspace/github-tool.ts";
 import type { WorkTree } from "../workspace/tree.ts";
 import { waitForAnswer } from "./approvals.ts";
-import type { CheckRepair, EyeBrain } from "./brain.ts";
+import { BrainStopped, type CheckRepair, type EyeBrain } from "./brain.ts";
 import { runBuiltinCheck } from "./builtin-checks.ts";
 import { giveToLeg, LegStop, legLimits, stopWaiting, trackAttempt } from "./leg-work.ts";
 
@@ -1340,7 +1340,9 @@ export async function runAttempt(
                   : null;
               })(),
             });
-          } catch {
+          } catch (error) {
+            // I stopped The Eye's thinking (M13.25): the job pauses here.
+            if (error instanceof BrainStopped) throw error;
             break;
           }
           event("task.check-reviewed", {
@@ -1399,6 +1401,8 @@ export async function runAttempt(
               observed.falseClaim = "said it was done, but the review found work missing";
           }
         } catch (error) {
+          // I stopped The Eye's thinking (M13.25): the job pauses here, to review it on resume.
+          if (error instanceof BrainStopped) throw error;
           // No Leg could review it: accepted as before, and said so.
           event("task.evaluated", {
             accepted: true,

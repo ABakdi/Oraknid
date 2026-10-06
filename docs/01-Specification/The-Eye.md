@@ -238,6 +238,48 @@ can think (none healthy, or the call fails), my message is kept as my
 decision and passed on anyway: my words are never lost. The
 conversation is kept with the job and shown on its page.
 
+### Thinking out loud (2026-10-04, M13.25)
+
+The conversation never sits silent while The Eye thinks or the agents
+work. Each reasoning call of a job (the interview, the plan, a replan,
+new work planned into The Web, reading my message, a review, a check
+looked at, the method chosen, a command judged, the summary, the name)
+is shown in it as it runs: what it is doing in words ("Planning the
+work…", "Reading your answer…"), its model, the time so far, and what
+the model writes as it comes — its reasoning where the Leg streams it
+(Claude Code's thinking), its text, the files it reads. When it ends it
+folds to one line saying what came of it ("Planned 9 tasks in 41 s ·
+Claude · Opus"), which opens again to what it thought. A shadow plan
+(ADR-022) is never shown.
+
+A thought is the call's Leg session: what it wrote is the session's log
+(`sessions.log`), streamed as `session.text` and `session.thinking`
+(coalesced, four a second) on the job's topic; `eye.thinking.started`
+and `eye.thinking.ended` say when it starts and what it came to
+(`EyeThought`: call, purpose, model, times, outcome, summary). The list
+(`projects.thinking`, `jobs.thinking`) comes from the job's Eye
+sessions, so a call from before a restart is there, a call cut by a
+crash said as such. The agents at work show as a compact line per
+running task: its title, its last tool or line, its model, its time.
+
+**Stepping in.** While The Eye thinks I can:
+
+| I | What happens |
+| :-- | :-- |
+| Press **Stop** | The call ends now (its Leg session is ended). A call of the job's own steps (the plan, a replan, the interview, a review, a check looked at, the method chosen) pauses the job first: the call isn't recorded, so on resume it is thought again, with anything I said meanwhile. Reading my message just ends; nothing is kept from it. Said in one line. |
+| Write a message that corrects it ("no, use Postgres", "that's wrong", "actually, one page") | **Stop and redo with this**: the call's session is ended and the call runs again with my words in its prompt, which win where they differ from the rest; my words are kept as my decision in Silk ("My correction: …") and passed to the agents working now. One line says so; the message isn't read again as a new one. |
+| Write anything else ("also add dark mode") | **Add as context**: nothing is stopped; my message is read as usual (the triage above), and it is added to the job's next call that plans or judges (and to a retry of the one running). |
+
+Which one a message does is chosen from its words (`correctsThinking`,
+packages/core: a message that starts by correcting — "no", "wait",
+"actually", "don't", "that's wrong" — or says "instead of", "use X
+instead", "I meant"), shown before I send it, and mine to change. Only
+The Eye's own thinking can be stopped or redone, never a quick judgement
+in passing (a command judged, a name). A crash during a redo loses
+nothing: the call is a step not yet recorded, so it runs again, and my
+correction is in Silk; a message whose reading was stopped to think
+again is read again after a restart.
+
 ### The Eye speaks up ([[ADR-045-The-Eye-Speaks-Up]])
 
 The Eye also writes in the project's conversation on its own, one

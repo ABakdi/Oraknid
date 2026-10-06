@@ -227,6 +227,14 @@ function Line({ e }: { e: SessionLogEntry }) {
           <Markdown text={e.text} className="min-w-0 flex-1 font-sans text-[13px]" />
         </div>
       );
+    case "thinking":
+      // The model's reasoning, where its Leg streams it (M13.25).
+      return (
+        <div className="my-2 whitespace-pre-wrap font-sans text-[13px] italic text-muted-foreground [overflow-wrap:anywhere]">
+          {time}
+          {e.text}
+        </div>
+      );
     case "tool":
       return (
         <div className="mt-2 whitespace-pre-wrap [overflow-wrap:anywhere]">
@@ -274,7 +282,7 @@ function join(xs: SessionLogEntry[], more: SessionLogEntry[]): SessionLogEntry[]
   const out = xs.slice();
   for (const e of more) {
     const last = out.at(-1);
-    if (e.kind === "text" && last?.kind === "text")
+    if ((e.kind === "text" || e.kind === "thinking") && last?.kind === e.kind)
       out[out.length - 1] = { ...last, text: last.text + e.text };
     else out.push(e);
   }

@@ -13,6 +13,14 @@ globalThis.ResizeObserver ??= class {
   disconnect() {}
 };
 Element.prototype.scrollIntoView ??= () => {};
+globalThis.IntersectionObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+  takeRecords() {
+    return [];
+  }
+} as unknown as typeof IntersectionObserver;
 
 const now = Date.now();
 const SERVER: ServerView = {
@@ -139,6 +147,8 @@ vi.mock("@/lib/api", () => ({
       },
       setProduction: async () => SERVER,
     },
+    projects: { thinking: async () => [], stopThinking: async () => ({ stopped: 0 }) },
+    sessions: { list: async () => [], log: async () => [] },
     jobs: { list: async () => [JOB] },
     inbox: { list: async () => [ITEM], answer: async () => ({}) },
     settings: { terminal: async () => false },

@@ -226,10 +226,14 @@ export class LegSupervisor {
     logFile: string,
   ): AsyncGenerator<LegEvent> {
     let text = "";
+    let thinking = "";
     let textTimer: NodeJS.Timeout | undefined;
     const flushText = () => {
       clearTimeout(textTimer);
       textTimer = undefined;
+      if (thinking)
+        this.#publish(req, legId, "session.thinking", { sessionId: id, text: thinking });
+      thinking = "";
       if (!text) return;
       this.#publish(req, legId, "session.text", { sessionId: id, text });
       text = "";
@@ -243,6 +247,11 @@ export class LegSupervisor {
           case "text.delta":
             // Coalesced: the activity stream gets lines, not tokens (Realtime-Transport).
             text += e.text;
+            textTimer ??= setTimeout(flushText, 250);
+            break;
+          case "thinking.delta":
+            // Coalesced like text: what The Eye is thinking, shown as it comes (M13.25).
+            thinking += e.text;
             textTimer ??= setTimeout(flushText, 250);
             break;
           case "usage":
