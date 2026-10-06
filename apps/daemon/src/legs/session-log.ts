@@ -54,7 +54,8 @@ export function readSessionLog(
     const entry = toEntry(e);
     if (!entry) continue;
     const prev = entries.at(-1);
-    if (entry.kind === "text" && prev?.kind === "text") prev.text += entry.text;
+    if ((entry.kind === "text" || entry.kind === "thinking") && prev?.kind === entry.kind)
+      prev.text += entry.text;
     else entries.push(entry);
   }
   return { entries, next: after + lastNl + 1 };
@@ -65,6 +66,8 @@ function toEntry(e: Record<string, unknown>): SessionLogEntry | null {
   switch (e.type) {
     case "text.delta":
       return { at, kind: "text", text: String(e.text ?? "") };
+    case "thinking.delta":
+      return { at, kind: "thinking", text: String(e.text ?? "") };
     case "tool.called":
       return {
         at,

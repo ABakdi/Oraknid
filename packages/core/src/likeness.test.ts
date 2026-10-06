@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { endsInterview, freshQuestions, sameMeaning } from "./likeness.ts";
+import { correctsThinking, endsInterview, freshQuestions, sameMeaning } from "./likeness.ts";
 
 // The piano job's interview (2026-10-04): what it asked again, in its own words.
 describe("telling the same question from a new one", () => {
@@ -75,5 +75,32 @@ describe("ending the interview in my words", () => {
       "Yes",
     ])
       expect(endsInterview(no), no).toBe(false);
+  });
+});
+
+describe("a message that corrects The Eye's thinking (M13.25)", () => {
+  it("hears a correction, and adds anything else as context", () => {
+    for (const yes of [
+      "no, use Postgres",
+      "No. One page only.",
+      "that's wrong",
+      "Actually, make it a CLI",
+      "wait, the API is GraphQL",
+      "use Postgres instead",
+      "You misunderstood: it's for teachers",
+      "don't use Redux",
+      "Instead of React, Svelte",
+      "not that, the other repo",
+    ])
+      expect(correctsThinking(yes), yes).toBe(true);
+    for (const no of [
+      "also add dark mode",
+      "The API key is in .env",
+      "make the buttons bigger",
+      "Yes",
+      "what are you planning?",
+      "",
+    ])
+      expect(correctsThinking(no), no).toBe(false);
   });
 });

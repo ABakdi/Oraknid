@@ -1,3 +1,4 @@
+import type { TalkMode } from "@oraknid/contracts";
 import {
   chosenOption,
   completeAnswers,
@@ -11,7 +12,7 @@ import {
   renderQuestions,
   type WebPlan,
 } from "@oraknid/contracts";
-import { endsInterview } from "@oraknid/core";
+import { correctsThinking, endsInterview } from "@oraknid/core";
 import { and, asc, desc, eq } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
 import {
@@ -33,6 +34,7 @@ import { isSeveral } from "../workspace/repos.ts";
 import type { EyeBrain, EyeTriage } from "./brain.ts";
 import { type EndingDone, requestEnding } from "./ending.ts";
 import { ENOUGH, INTERVIEW_ENDED, ROUND_TITLE } from "./interview.ts";
+import { BrainStopped, type EyeThinking, PROGRAM_CALLS } from "./thinking.ts";
 import { storeWeb, taskRows } from "./web-store.ts";
 
 // Talking to The Eye (The-Eye → Talking to The Eye, Checkpoint 1 → F1-4):
@@ -71,6 +73,8 @@ export interface TalkDeps {
    * → Ending a job): Oraknid's own steps, never a task. Returns what it did.
    */
   endNow?: (jobId: string) => Promise<EndingDone>;
+  /** What The Eye is thinking now (M13.25): a message of mine can stop it or add to it. */
+  thinking?: EyeThinking;
 }
 
 const ENDED = new Set(["completed", "cancelled"]);
@@ -180,11 +184,12 @@ export async function talkInProject(
   projectId: string,
   text: string,
   extras: MessageExtras = {},
+  mode: TalkMode = "context",
 ): Promise<{ id: string; jobId: string }> {
   const project = d.db.select().from(projects).where(eq(projects.id, projectId)).get();
   if (!project) throw new Error(`No project ${projectId}.`);
   const target = projectTarget(d.db, projectId);
-  if (target) return { id: talk(d, target.id, text, extras), jobId: target.id };
+  if (target) return { id: talk(d, target.id, text, extras, mode), jobId: target.id };
   if (project.archivedAt) throw new Error("The project is archived: restore it to ask for work.");
   if (!d.newJob || !d.startJob) throw new Error("New work can't start from here.");
   const jobId = d.newJob(projectId, text);
@@ -215,12 +220,104 @@ export async function talkInProject(
  * Records my message and lets The Eye handle it in the background; its
  * reply arrives as an `eye.replied` event. Returns my message's id.
  */
-export function talk(d: TalkDeps, jobId: string, text: string, extras: MessageExtras = {}): string {
+export function talk(
+  d: TalkDeps,
+  jobId: string,
+  text: string,
+  extras: MessageExtras = {},
+  /** While The Eye thinks (M13.25): "context" by default, as before; the page sends "auto". */
+  mode: TalkMode = "context",
+): string {
   const job = d.db.select().from(jobs).where(eq(jobs.id, jobId)).get();
   if (!job) throw new Error(`No job ${jobId}.`);
+  // While The Eye thinks about this job (The-Eye → Thinking out loud): a message that corrects
+  // it stops the thinking and has it think again with my words; anything else is read as
+  // usual, and added for the job's next call that plans or judges.
+  const busy =
+    d.thinking && !extras.answers ? d.thinking.running([jobId]).filter((t) => t.interruptible) : [];
+  const redo = busy.length > 0 && (mode === "redo" || (mode === "auto" && correctsThinking(text)));
   const id = add(d, jobId, "owner", text, null, extras);
+  if (redo && rethink(d, jobId, job.state, text)) return id;
+  if (busy.length) d.thinking?.note(jobId, text);
   respond(d, jobId, text, id);
   return id;
+}
+
+/** Said when The Eye stopped to think again with my words: a crash after it answers the message before. */
+const RETHINK = "Thinking again with your message";
+
+/**
+ * My correction while The Eye thinks (M13.25): what it is thinking is
+ * stopped and thought again with my words in its prompt; my words are kept
+ * as my decision (a crash reruns the call, which reads them there) and
+ * passed to the agents working now. False when nothing was thinking any
+ * more: the message is then read as any other.
+ */
+function rethink(d: TalkDeps, jobId: string, jobState: string, text: string): boolean {
+  const hit = d.thinking?.interrupt(jobId, { kind: "redo", text }) ?? [];
+  if (!hit.length) return false;
+  const entry = d.silk.add({
+    jobId,
+    kind: "decision",
+    title: `My correction: ${firstLine(text)}`,
+    body: text,
+    authoredBy: "owner",
+  });
+  const did = ["Stopped The Eye's thinking", RETHINK, "Recorded as your decision"];
+  if (RUNNING.has(jobState)) {
+    tellRunning(jobId, text);
+    did.push("Passed to the agents working now");
+  }
+  const what = hit.map((t) => t.purpose.charAt(0).toLowerCase() + t.purpose.slice(1)).join(", ");
+  add(d, jobId, "eye", `Stopped ${what}: thinking again with what you said.`, {
+    intent: "instruction",
+    did,
+    silkIds: [entry.id],
+    taskIds: [],
+    jobId: null,
+  });
+  return true;
+}
+
+/**
+ * Stop: what The Eye is thinking about these jobs now ends (M13.25). A
+ * job's own step (a plan, the interview, a review) pauses the job first, so
+ * the call is a safe point and is thought again on resume; reading my
+ * message just ends. Returns how many calls it stopped.
+ */
+export function stopThinking(d: TalkDeps, jobIds: string[]): number {
+  let n = 0;
+  for (const jobId of jobIds) {
+    const running = (d.thinking?.running([jobId]) ?? []).filter((t) => t.interruptible);
+    if (!running.length) continue;
+    const pauses = running.some((t) => PROGRAM_CALLS.has(t.call));
+    if (pauses)
+      void d.runner
+        .pause(jobId, "Paused because I stopped The Eye's thinking. Resume to have it think again.")
+        .catch(() => {});
+    const hit = d.thinking?.interrupt(jobId, { kind: "stop" }) ?? [];
+    if (!hit.length) continue;
+    n += hit.length;
+    const what = hit.map((t) => t.purpose.charAt(0).toLowerCase() + t.purpose.slice(1)).join(", ");
+    add(
+      d,
+      jobId,
+      "eye",
+      pauses
+        ? `Stopped ${what}, as you asked. The job is paused: resume it and I'll think again, with anything you tell me here.`
+        : `Stopped ${what}, as you asked.`,
+      {
+        intent: "stop",
+        did: pauses
+          ? ["Stopped The Eye's thinking", "Paused the job"]
+          : ["Stopped The Eye's thinking"],
+        silkIds: [],
+        taskIds: [],
+        jobId: null,
+      },
+    );
+  }
+  return n;
 }
 
 /** The message whose questions I answer, and whether I answered them already. */
@@ -301,7 +398,17 @@ export function resumeConversations(d: TalkDeps): number {
     .selectDistinct({ jobId: eyeMessages.jobId })
     .from(eyeMessages)
     .all()) {
-    const last = conversation(d.db, jobId).at(-1);
+    const list = conversation(d.db, jobId);
+    let k = list.length - 1;
+    // Stopped to think again with my words (M13.25): what it was reading before is still to answer.
+    while (
+      k >= 1 &&
+      list[k]?.author === "eye" &&
+      list[k]?.action?.did.includes(RETHINK) &&
+      list[k - 1]?.author === "owner"
+    )
+      k -= 2;
+    const last = list[k];
     if (last?.author !== "owner") continue;
     // My answer to a question a job waits on goes to that job, not to The Eye's triage.
     const to = last.replyTo
@@ -316,6 +423,8 @@ export function resumeConversations(d: TalkDeps): number {
 
 function respond(d: TalkDeps, jobId: string, text: string, messageId: string) {
   void handle(d, jobId, text, messageId).catch((error) => {
+    // I stopped it: said once where I stopped it, nothing kept (M13.25).
+    if (error instanceof BrainStopped) return;
     // Fail safe: my words are never lost. They are kept as my decision.
     const entry = d.silk.add({
       jobId,
@@ -660,6 +769,7 @@ async function act(
         break;
       }
       const work = await addWork(d, jobId, at.messageId, text, v).catch((e: unknown) => {
+        if (e instanceof BrainStopped) throw e;
         reply = `${reply} I couldn't plan it into the job just now (${e instanceof Error ? e.message : String(e)}), so I kept it as your decision.`;
         return null;
       });

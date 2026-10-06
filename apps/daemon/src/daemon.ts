@@ -48,6 +48,7 @@ import { type NamingDeps, startJobNaming } from "./eye/naming.ts";
 import { eyeProgram } from "./eye/program.ts";
 import { startEyeReports } from "./eye/reports.ts";
 import { forgetGuidance, recordAnswer, resumeConversations } from "./eye/talk.ts";
+import { EyeThinking } from "./eye/thinking.ts";
 import { Helper } from "./helper/service.ts";
 import { isLocalRequest } from "./http/guard.ts";
 import { requestIds, tagConsoleWithRequestIds } from "./http/request-id.ts";
@@ -252,6 +253,8 @@ export async function startDaemon(options: DaemonOptions) {
   const chats = new Chats({ db, bus, registry, supervisor, dataDir: paths.dataDir, now });
   // A model per kind of decision, and the shadow planner (ADR-022).
   const decisions = new EyeDecisions(db, bus, now);
+  // The Eye thinking out loud in the conversation, stopped or redone by me (M13.25).
+  const thinking = new EyeThinking({ db, bus, now });
   const brain =
     options.brain ??
     new PoolLegBrain({
@@ -267,6 +270,7 @@ export async function startDaemon(options: DaemonOptions) {
           jobId,
           payload: { call, model },
         }),
+      thinking,
     });
   // My answer to "import my edits?" goes back to Silk.
   bus.subscribe((e) => {
@@ -723,6 +727,7 @@ export async function startDaemon(options: DaemonOptions) {
         devices,
         updates,
         brain,
+        thinking,
         openPath:
           options.openPath ??
           ((path) => spawn("xdg-open", [path], { detached: true, stdio: "ignore" }).unref()),
@@ -781,6 +786,7 @@ export async function startDaemon(options: DaemonOptions) {
     runner,
     brain,
     inbox,
+    thinking,
     tmpDir: join(paths.dataDir, "tmp"),
     now,
   });
@@ -864,6 +870,7 @@ export async function startDaemon(options: DaemonOptions) {
     effects,
     recovery,
     naming,
+    thinking,
     close,
   };
 }

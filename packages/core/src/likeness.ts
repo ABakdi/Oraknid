@@ -105,3 +105,21 @@ export function endsInterview(text: string): boolean {
   if (STRONG_END.test(t)) return true;
   return WEAK_END.test(t.replace(/\s+/g, " "));
 }
+
+const CORRECTION_START =
+  /^(?:no\b|nope\b|nah\b|wait\b|stop\b|hold on\b|hang on\b|actually\b|instead\b|rather\b|not (?:that|this|like that|so)\b|don'?t\b|do not\b|never\b|wrong\b|that'?s (?:wrong|not (?:it|right|what))|this is (?:wrong|not)|you'?re wrong|you got it wrong|scratch that|forget (?:that|it|about)|cancel that|undo that|redo\b|rethink\b|change of plan|correction\b)/i;
+const CORRECTION_ANYWHERE =
+  /\b(?:that'?s (?:wrong|not (?:it|right|what i (?:want|meant|asked)))|is wrong|you misunderstood|misread|i (?:meant|said)\b|not what i (?:want|meant|asked)|use [\w.+#-]+(?: [\w.+#-]+)? instead|instead of\b|rather than\b|don'?t use\b|do not use\b|stop (?:planning|thinking|that)|start over|think again|plan again|redo (?:it|that|the plan))/i;
+
+/**
+ * A message that corrects what The Eye is thinking right now ("no, use
+ * Postgres", "that's wrong", "actually, one page only") rather than adding
+ * to it (The-Eye → Thinking out loud, M13.25): sent while it thinks, it
+ * stops the thinking and has it think again with my words. Anything else
+ * ("also add dark mode", "the API key is in .env") is added as context.
+ */
+export function correctsThinking(text: string): boolean {
+  const t = text.trim().replace(/\s+/g, " ");
+  if (!t) return false;
+  return CORRECTION_START.test(t) || CORRECTION_ANYWHERE.test(t);
+}

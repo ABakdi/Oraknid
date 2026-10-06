@@ -72,6 +72,8 @@ export type SessionEnd = "completed" | "killed" | "crashed" | "rate-limited";
 export type LegEvent =
   | { type: "turn.started" }
   | { type: "text.delta"; text: string }
+  /** The model's reasoning as it streams, where the Leg shows it (M13.25); never part of the answer. */
+  | { type: "thinking.delta"; text: string }
   | { type: "tool.called"; id: string; tool: string; input: Record<string, unknown> }
   | { type: "tool.result"; id: string; ok: boolean; output: string }
   | { type: "question"; text: string }

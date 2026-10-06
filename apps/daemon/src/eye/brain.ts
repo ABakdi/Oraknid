@@ -13,6 +13,9 @@ import { graphProblems, type Route, type RouteCandidate, route, validateWeb } fr
 import { z } from "zod";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor } from "../legs/supervisor.ts";
+import { BrainStopped, type EyeThinking, summaryOf, type Thinking } from "./thinking.ts";
+
+export { BrainStopped };
 
 /**
  * The Eye's reasoning (ADR-008). Deterministic code decides; these calls
@@ -389,6 +392,18 @@ export interface PoolLegBrainOptions {
   /** Which model answered a call, for the job's events. */
   answered?: (jobId: string, call: string, model: string) => void;
   moneyAllowed?: boolean;
+  /** A job's calls shown as they think, and stopped or redone by me (M13.25). */
+  thinking?: EyeThinking;
+}
+
+/** The calls that read what I added while The Eye was thinking (M13.25): the ones that plan or judge. */
+const READS_NOTES = new Set(["plan", "replan", "extend", "interview", "evaluate", "repair-check"]);
+
+/** Thrown out of a session I interrupted to think again with my words. */
+class Rethink extends Error {
+  constructor(readonly words: string) {
+    super("Thinking again with what the owner said.");
+  }
 }
 
 interface Answer<T> {
@@ -476,6 +491,7 @@ Plan ONLY the new work this request asks for, as new tasks with new keys, into t
         call,
         validateWeb,
         shadow,
+        true,
       )
         .then((b) =>
           this.o.record?.({
@@ -933,20 +949,63 @@ Answer with "text": the rewritten text only.`;
     /** Rules beyond the schema (e.g. The Web's): problems in words, empty when fine. */
     check: (value: T) => string[] = () => [],
     only?: string,
+    /** Not shown in the conversation: a shadow plan (ADR-022). */
+    quiet = false,
   ): Promise<Answer<T>> {
     const kind = KIND_OF[call];
     const pin = only ?? (kind ? this.o.pins?.()[kind] : null) ?? this.o.pinnedModelId();
     const pick = this.#choose(difficulty, capabilities, pin, !only, kind === "planning");
     const started = Date.now();
+    const shown = !quiet && jobId ? this.o.thinking : undefined;
+    // What I added while The Eye was thinking, for this call (M13.25).
+    const said = shown && READS_NOTES.has(call) ? shown.takeNotes(jobId) : [];
+    // Stopped to think again with my words: a new session, its prompt with them (M13.25).
+    for (let again = 0; ; again++) {
+      try {
+        return await this.#session(
+          { jobId, cwd, schema, prompt, call, check, only, quiet, pick, started },
+          said,
+          again > 0,
+          shown,
+        );
+      } catch (error) {
+        if (!(error instanceof Rethink) || again >= 5) throw error;
+        said.push(error.words);
+      }
+    }
+  }
+
+  /** One Leg session of a call; shown while it thinks, ended early when I interrupt it. */
+  async #session<T>(
+    c: {
+      jobId: string;
+      cwd: string;
+      schema: z.ZodType<T>;
+      prompt: string;
+      call: string;
+      check: (value: T) => string[];
+      only: string | undefined;
+      quiet: boolean;
+      pick: Route;
+      started: number;
+    },
+    said: string[],
+    again: boolean,
+    shown: EyeThinking | undefined,
+  ): Promise<Answer<T>> {
+    const { jobId, cwd, schema, call, check, only, pick, started } = c;
     const model = `${pick.candidate.legName} · ${pick.candidate.model}`;
     const jsonSchema = JSON.stringify(z.toJSONSchema(schema));
+    const prompt = said.length
+      ? `${c.prompt}\n\n# What the owner said while you were thinking (their words; where they differ from the above, they win)\n${said.map((s) => `- ${JSON.stringify(s.slice(0, 4000))}`).join("\n")}`
+      : c.prompt;
     const session = await this.o.supervisor.start({
       legId: pick.candidate.legId,
       legModelId: pick.candidate.legModelId,
       effort: pick.effort,
       jobId: jobId || null,
       taskId: null,
-      attemptId: `eye:${call}`,
+      attemptId: `eye:${call}${c.quiet ? ":shadow" : ""}`,
       cwd,
       systemPrompt:
         "You are The Eye's reasoning step in Oraknid. You may read files in the workspace, but you change nothing: every edit or command will be refused. Answer with one JSON object only.",
@@ -958,6 +1017,21 @@ Answer with "text": the rewritten text only.`;
           ? { allow: true }
           : { allow: false, message: "The Eye's reasoning step only reads; it changes nothing." },
     });
+    // Shown in the job's conversation while it thinks (M13.25); its text is the session's log.
+    const thought: Thinking | undefined = shown?.begin({
+      id: session.id,
+      jobId,
+      call,
+      model,
+      again,
+    });
+    // Stopped by me, or to think again with my words: its session ends now.
+    thought?.onInterrupt(() => void this.o.supervisor.close(session, "stopped").catch(() => {}));
+    const interrupted = () => {
+      const i = thought?.interruption;
+      if (!i) return null;
+      return i.kind === "redo" ? new Rethink(i.text) : new BrainStopped();
+    };
     // One iterator for the whole conversation: leaving a for-await would close the stream.
     const events = session.events[Symbol.asyncIterator]();
     // A call that hangs doesn't hold its caller forever: its session is killed past its limit.
@@ -971,10 +1045,12 @@ Answer with "text": the rewritten text only.`;
     try {
       let lastError = "";
       for (let tries = 0; tries < 2; tries++) {
-        let text = "";
+        let text: string | null = null;
         for (let next = await events.next(); !next.done; next = await events.next()) {
           const e = next.value;
           if (e.type === "turn.ended") {
+            const stop = interrupted();
+            if (stop) throw stop;
             if (e.reason !== "completed")
               throw new BrainFailed(
                 `The Eye's reasoning on ${pick.candidate.legName} stopped: ${e.error ?? e.reason}.`,
@@ -983,24 +1059,55 @@ Answer with "text": the rewritten text only.`;
             break;
           }
         }
+        const stop = interrupted();
+        if (stop) throw stop;
         if (timedOut)
           throw new BrainFailed(
             `The Eye's reasoning on ${pick.candidate.legName} took longer than ${Math.round(limitMs / 60_000)} min and was stopped.`,
+          );
+        if (text === null)
+          throw new BrainFailed(
+            `The Eye's reasoning on ${pick.candidate.legName} ended before it answered.`,
           );
         const parsed = parseJson(text, schema);
         const problems = parsed.ok ? check(parsed.value) : [];
         if (parsed.ok && problems.length === 0) {
           if (!only && jobId) this.o.answered?.(jobId, call, model);
+          if (thought) shown?.end(thought, "done", summaryOf(call, parsed.value));
           return { value: parsed.value, model, ms: Date.now() - started, firstTry: tries === 0 };
         }
         lastError = parsed.ok ? problems.join(" ") : parsed.error;
+        // What I added meanwhile goes with the correction (M13.25).
+        const added = thought && READS_NOTES.has(call) ? (shown?.takeNotes(jobId) ?? []) : [];
         await session.session.send(
-          `That answer was not valid: ${lastError}\nReply again with only the corrected \`\`\`json block.`,
+          `That answer was not valid: ${lastError}\nReply again with only the corrected \`\`\`json block.${
+            added.length
+              ? `\n\nThe owner said meanwhile (their words; where they differ from the above, they win):\n${added.map((s) => `- ${JSON.stringify(s.slice(0, 4000))}`).join("\n")}`
+              : ""
+          }`,
         );
       }
       throw new BrainFailed(
         `The Eye's reasoning gave no valid answer twice (${call}): ${lastError}`,
       );
+    } catch (error) {
+      if (thought)
+        shown?.end(
+          thought,
+          error instanceof Rethink
+            ? "redone"
+            : error instanceof BrainStopped
+              ? "stopped"
+              : "failed",
+          error instanceof Rethink
+            ? "Stopped to think again with what you said"
+            : error instanceof BrainStopped
+              ? "Stopped, as you asked"
+              : error instanceof Error
+                ? error.message
+                : String(error),
+        );
+      throw error;
     } finally {
       clearTimeout(timer);
       await this.o.supervisor.close(session);
