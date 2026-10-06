@@ -55,6 +55,7 @@ A server's page has tabs for what runs there, each read only while you look at i
 - **Databases**: PostgreSQL, MySQL or MariaDB, MongoDB and Redis, whether they run as services or in containers: version, state, port, and size when it can be read.
 - **Proxy & traffic**: nginx, Caddy, Traefik or HAProxy, its sites and where they send requests, its certificates and when they end (red two weeks before), its config check; then the last 15 minutes of requests, status codes, top paths and clients, and connections per port.
 - **Logs**: a service's, a container's or the proxy's log, followed live while the tab is open, or searched.
+- **Chat** and **Jobs**: ask The Eye about the server, or for work on it (below).
 - **Backups**, a **Terminal** on the server, and its **State document**.
 
 When something can't be read, the tab says why and what to do (for Docker, add the server's user to the `docker` group; for the proxy's logs, to `adm`): Oraknid never asks for root to look. **Restart** on a container, a database or the proxy asks you first, and every restart is in the audit log. The helper can read all of it too ("what's unhealthy on my VPS?").
@@ -62,6 +63,14 @@ When something can't be read, the tab says why and what to do (for Docker, add t
 Give a server to a project, with a **role** there (testing, staging, production…: a word of yours, set next to it in the project's Settings), and that project's jobs can reach it by name (`ssh <alias>`), with its state document in mind. A server can have a different role in each project.
 
 When work needs a server, say which: "deploy to staging", or "on vps-2". The Eye finds it by its role or its name and only asks you to confirm ("Deploy to production, vps-2?"). If you don't say, it asks with your servers, the project's by role first, then **Add a new server**, which sends you to the add dialog and asks again as soon as it's added. **Production** (a role named so, or one you mark) is always confirmed, even when it's the only server. Your choice is kept for the job and saved to the project with its role. Anything that changes the server goes through your approvals, and the document is brought up to date after.
+
+### A chat on each server
+
+A server's **Chat** tab is a conversation with The Eye about that server. Ask about it ("what runs on it?", "which node does it have?") and The Eye answers from its state document and readings, without starting anything. Ask for work ("install fail2ban", "why does nginx return 502 for x.com", "rotate the logs of app y", "upgrade node on this box") and The Eye sends an agent into the server: a **server job**, planned like any job, a small one in a single task.
+
+Before anything changes, The Eye tells you what will change and waits: **Approve what will change on vps** in the chat and the inbox (at Full autonomy it goes on, except on production). An investigation that only looks starts at once. Every command on the server goes through your approvals as usual; on a server marked **Production** (the switch on its Overview, or its role in a project) every change asks you, whatever the autonomy. The job's checks run on the server itself ("is fail2ban active?").
+
+When it's done, Oraknid reads the server again and writes a new version of its state document, ending with **Changes by job “…”**; The Eye reports in the chat what was done, with what changed in the document. The **Jobs** tab lists the server's jobs, running and done, and what they wait on from you; the **State document** tab keeps every version, each saying which job wrote it. Asking for work on a server and the Production switch need the computer running Oraknid, or a device with full rights.
 
 A server's databases can be backed up on a schedule, encrypted, to this computer or another server: see [Backups](/docs/backups.html).
 

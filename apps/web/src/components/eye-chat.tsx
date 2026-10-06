@@ -1,11 +1,21 @@
-import type { EyeMessage, JobView, QuestionAnswer } from "@oraknid/contracts";
-import { Eye, SendHorizontal } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import type { EyeMessage, EyeThought, JobView, QuestionAnswer } from "@oraknid/contracts";
+import { correctsThinking } from "@oraknid/core";
+import { Eye, SendHorizontal, Square } from "lucide-react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import { Markdown } from "@/components/common";
 import { EyeReportView, reportOf } from "@/components/eye-report";
+import { ThoughtBlock, ThoughtGroup, WorkingNow } from "@/components/eye-thought";
 import { QuestionsForm } from "@/components/questions";
+import {
+  jumpTo,
+  PromptJump,
+  PromptLine,
+  PromptRail,
+  promptTitle,
+  useActivePrompt,
+} from "@/components/transcript";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,53 +37,158 @@ const INTENT: Record<NonNullable<EyeMessage["action"]>["intent"], string> = {
   report: "Report",
 };
 
+/** One row of the transcript: a message, a thought, or thoughts in a row that ended. */
+export type TranscriptItem =
+  | { kind: "message"; at: number; message: EyeMessage }
+  | { kind: "thought"; at: number; thought: EyeThought }
+  | { kind: "thoughts"; at: number; thoughts: EyeThought[] };
+
 /**
- * The project's conversation with The Eye (ADR-034): one for the whole
- * project, its messages from every job in order, filling the tab like a
- * chat. I ask for work here: The Eye passes it to the job running, starts
- * a follow-up when the last one has ended, or a first job; each reply
- * links the job it touched.
+ * The conversation in order (M13.25): messages and The Eye's thoughts by
+ * time; three or more thoughts in a row that ended (commands judged,
+ * reviews) folded into one line.
+ */
+export function transcript(messages: EyeMessage[], thoughts: EyeThought[]): TranscriptItem[] {
+  const merged: (
+    | { kind: "message"; at: number; message: EyeMessage }
+    | { kind: "thought"; at: number; thought: EyeThought }
+  )[] = [
+    ...messages.map((m) => ({ kind: "message" as const, at: m.createdAt, message: m })),
+    ...thoughts.map((th) => ({ kind: "thought" as const, at: th.startedAt, thought: th })),
+  ];
+  // Stable: a message and a thought at the same moment keep the message first.
+  merged.sort((a, b) => a.at - b.at || (a.kind === b.kind ? 0 : a.kind === "message" ? -1 : 1));
+  const out: TranscriptItem[] = [];
+  let run: EyeThought[] = [];
+  const flush = () => {
+    if (run.length >= 3) out.push({ kind: "thoughts", at: run[0]?.startedAt ?? 0, thoughts: run });
+    else for (const th of run) out.push({ kind: "thought", at: th.startedAt, thought: th });
+    run = [];
+  };
+  for (const item of merged) {
+    if (
+      item.kind === "thought" &&
+      item.thought.outcome !== "thinking" &&
+      !item.thought.interruptible
+    ) {
+      run.push(item.thought);
+      continue;
+    }
+    flush();
+    out.push(item);
+  }
+  flush();
+  return out;
+}
+
+/**
+ * The project's conversation with The Eye (ADR-034), read like a terminal's
+ * transcript (M13.25): one column, my prompts marked, its replies, its
+ * thinking live then folded, the agents' work as compact lines; a rail of
+ * my prompts beside it. I ask for work here: The Eye passes it to the job
+ * running, starts a follow-up when the last one has ended, or a first job;
+ * each reply links the job it touched. While it thinks I can stop it, or
+ * send a message that has it think again or is added for what comes next.
+ *
+ * A server's conversation (ADR-049) is the same, through the server: a
+ * question is answered from its state document without a job; work
+ * becomes a job on the server.
  */
 export function EyeChat({
   projectId,
   jobs,
   archived = false,
+  server,
 }: {
-  projectId: string;
+  /** The project; a server's own, null until its first message. */
+  projectId: string | null;
   /** The project's jobs: their live topics, and their titles for the links. */
   jobs: JobView[];
   archived?: boolean;
+  /** The server whose conversation this is (ADR-049). */
+  server?: { id: string; name: string };
 }) {
   const ids = jobs.map((j) => j.id);
-  const messages = useLive(() => api.projects.conversation({ id: projectId }), {
-    topics: ["overview", ...ids.map((id) => `job:${id}`)],
-    refreshOn: (e) =>
-      e.type === "eye.message" || e.type === "eye.replied" || e.type === "job.created",
-    deps: [projectId],
-  });
+  const topics = ["overview", ...ids.map((id) => `job:${id}`)];
+  const messages = useLive(
+    () =>
+      server
+        ? api.servers.conversation({ id: server.id })
+        : api.projects.conversation({ id: projectId as string }),
+    {
+      topics,
+      refreshOn: (e) =>
+        e.type === "eye.message" || e.type === "eye.replied" || e.type === "job.created",
+      deps: [projectId, server?.id],
+    },
+  );
+  const thinking = useLive(
+    () => (projectId ? api.projects.thinking({ id: projectId }) : Promise.resolve([])),
+    {
+      topics,
+      refreshOn: (e) => e.type === "eye.thinking.started" || e.type === "eye.thinking.ended",
+      deps: [projectId],
+    },
+  );
+  // A job new to the project: what it thinks is read again once its topic is followed, so a
+  // thought that started before then is shown.
+  const jobKey = ids.join(",");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reload when the project's jobs change
+  useEffect(() => {
+    thinking.reload();
+    messages.reload();
+  }, [jobKey]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  /** How my message goes while The Eye thinks, when I chose; else guessed from my words. */
+  const [picked, setPicked] = useState<"redo" | "context" | null>(null);
   const [answering, setAnswering] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const list = messages.data ?? [];
+  const thoughts = thinking.data ?? [];
+  const items = transcript(list, thoughts);
   // The questions I answered already: my answer names the message it answers (ADR-037).
   const replied = new Set(list.map((m) => m.replyTo).filter(Boolean));
-  const thinking = list.at(-1)?.author === "owner";
+  const busy = thoughts.filter((th) => th.outcome === "thinking" && th.interruptible);
+  // Read before any thought is shown (a stand-in brain, the first instant): said in a line.
+  const reading =
+    list.at(-1)?.author === "owner" && !thoughts.some((th) => th.outcome === "thinking");
   const byId = new Map(jobs.map((j) => [j.id, j]));
-  const going = jobs.filter((j) => !["draft", "completed", "cancelled"].includes(j.state)).at(-1);
+  const going = jobs.filter((j) => !["draft", "completed", "cancelled"].includes(j.state));
+  const current = going.at(-1);
+  const prompts = list
+    .filter((m) => m.author === "owner")
+    .map((m) => ({ id: m.id, title: promptTitle(m.text) }));
+  const [active, setActive] = useActivePrompt(
+    box,
+    prompts.map((p) => p.id),
+  );
+  const mode = picked ?? (correctsThinking(text) ? "redo" : "context");
+  const jump = (id: string) => {
+    setActive(id);
+    jumpTo(id);
+  };
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll when a message arrives
+  // biome-ignore lint/correctness/useExhaustiveDependencies: follow the newest row as it arrives
   useEffect(() => {
     if (box.current) box.current.scrollTop = box.current.scrollHeight;
-  }, [list.length]);
+  }, [items.length]);
 
   const send = async () => {
     const value = text.trim();
     if (!value) return;
     setSending(true);
     try {
-      await api.projects.talk({ id: projectId, text: value });
+      if (server) await api.servers.talk({ id: server.id, text: value });
+      else
+        await api.projects.talk({
+          id: projectId as string,
+          text: value,
+          mode: busy.length ? mode : "auto",
+        });
       setText("");
+      setPicked(null);
       messages.reload();
     } catch (e) {
       toast.error(message(e));
@@ -82,10 +197,24 @@ export function EyeChat({
     }
   };
 
+  const stop = async () => {
+    setStopping(true);
+    try {
+      if (projectId) await api.projects.stopThinking({ id: projectId });
+      thinking.reload();
+      messages.reload();
+    } catch (e) {
+      toast.error(message(e));
+    } finally {
+      setStopping(false);
+    }
+  };
+
   const answer = async (messageId: string, answers: QuestionAnswer[]) => {
     setAnswering(messageId);
     try {
-      await api.projects.answer({ id: projectId, messageId, answers });
+      if (server) await api.servers.answer({ id: server.id, messageId, answers });
+      else await api.projects.answer({ id: projectId as string, messageId, answers });
       messages.reload();
     } catch (e) {
       toast.error(message(e));
@@ -94,16 +223,80 @@ export function EyeChat({
     }
   };
 
-  const jobLink = (jobId: string, label: string) => {
+  const jobLink = (jobId: string | null, label: string) => {
+    if (!jobId) return null;
     const j = byId.get(jobId);
     return (
       <Link
-        href={jobHref({ id: jobId, projectId, ...(j ? { state: j.state } : {}) })}
+        href={jobHref({
+          id: jobId,
+          projectId: j?.projectId ?? projectId ?? "",
+          ...(j ? { state: j.state } : {}),
+        })}
         className="min-w-0 truncate font-medium text-primary underline-offset-2 hover:underline"
         title={j?.title}
       >
         {label}
       </Link>
+    );
+  };
+
+  const row = (m: EyeMessage) => {
+    const report = reportOf(m);
+    if (report)
+      // The Eye speaking up on its own (ADR-045).
+      return (
+        <EyeReportView
+          message={m}
+          report={report}
+          resultHref={
+            m.jobId
+              ? jobHref({
+                  id: m.jobId,
+                  projectId: m.projectId,
+                  ...(byId.get(m.jobId) ? { state: byId.get(m.jobId)?.state } : {}),
+                })
+              : ""
+          }
+        />
+      );
+    if (m.author === "owner")
+      return (
+        <PromptLine id={m.id} active={m.id === active} meta={ago(m.createdAt)}>
+          {m.answers ? (
+            <Markdown text={m.text} className="font-normal" />
+          ) : (
+            <div className="whitespace-pre-wrap">{m.text}</div>
+          )}
+        </PromptLine>
+      );
+    const touched = m.action?.jobId && m.action.jobId !== m.jobId ? m.action.jobId : null;
+    return (
+      <div data-testid="reply" className="min-w-0 pl-4 text-sm">
+        <Markdown text={m.text} />
+        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+          {m.action ? (
+            <>
+              <Badge variant="outline" className="h-5 text-[10px]">
+                {t(INTENT[m.action.intent])}
+              </Badge>
+              {m.action.did.map((x) => (
+                <span key={x} className="font-mono text-[11px]">
+                  · {t(x)}
+                </span>
+              ))}
+            </>
+          ) : null}
+          {m.jobId ? jobLink(m.jobId, byId.get(m.jobId)?.title ?? t("The job")) : null}
+          {touched
+            ? jobLink(
+                touched,
+                t("Open “{title}”", { title: byId.get(touched)?.title ?? t("the new job") }),
+              )
+            : null}
+          <span className="text-[10px]">{ago(m.createdAt)}</span>
+        </div>
+      </div>
     );
   };
 
@@ -113,120 +306,148 @@ export function EyeChat({
         <div className="flex min-w-0 items-center gap-2 text-sm font-medium">
           <Eye className="size-4 shrink-0 text-primary" />
           {t("The Eye")}
-          <span className="hidden min-w-0 truncate font-normal text-muted-foreground sm:inline">
-            {going
-              ? t("— talking to “{title}”, running now.", { title: going.title })
-              : jobs.some((j) => j.state !== "draft")
-                ? t("— ask for more: new work starts a follow-up job here.")
-                : t("— ask for work: The Eye starts a job here from your message.")}
+          <span className="hidden min-w-0 flex-1 truncate font-normal text-muted-foreground sm:inline">
+            {current
+              ? t("— talking to “{title}”, running now.", { title: current.title })
+              : server
+                ? t("— ask about {name}, or for work on it: a job goes into the server.", {
+                    name: server.name,
+                  })
+                : jobs.some((j) => j.state !== "draft")
+                  ? t("— ask for more: new work starts a follow-up job here.")
+                  : t("— ask for work: The Eye starts a job here from your message.")}
           </span>
+          <span className="flex-1 sm:hidden" />
+          <PromptJump prompts={prompts} active={active} onJump={jump} />
         </div>
         {!messages.data ? (
           <div className="flex-1" />
-        ) : !list.length ? (
+        ) : !list.length && !thoughts.length ? (
           <div className="flex flex-1 items-center justify-center px-4 text-center text-sm text-muted-foreground">
-            {t(
-              "Nothing said yet. Ask for work here: The Eye starts a job for it, or passes it to the one running.",
-            )}
+            {server
+              ? t(
+                  "Nothing said yet. Ask what runs on {name}, or for work on it (“install fail2ban”, “why does nginx return 502 for x.com”): The Eye answers from its state document, or sends an agent into the server and tells you what will change first.",
+                  { name: server.name },
+                )
+              : t(
+                  "Nothing said yet. Ask for work here: The Eye starts a job for it, or passes it to the one running.",
+                )}
           </div>
         ) : (
-          <div ref={box} className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-            {list.map((m, i) => {
-              const prev = list[i - 1];
-              const touched = m.action?.jobId && m.action.jobId !== m.jobId ? m.action.jobId : null;
-              return (
-                <div key={m.id}>
-                  {prev && prev.jobId !== m.jobId ? (
-                    <div className="my-2 flex items-center gap-2 text-[11px] text-muted-foreground">
-                      <span className="h-px flex-1 bg-border" />
-                      <span className="min-w-0 truncate">
-                        {byId.get(m.jobId)?.title ?? t("another job")}
-                      </span>
-                      <span className="h-px flex-1 bg-border" />
-                    </div>
-                  ) : null}
-                  {reportOf(m) ? (
-                    // The Eye speaking up on its own (ADR-045).
-                    <EyeReportView
-                      message={m}
-                      report={reportOf(m) as NonNullable<ReturnType<typeof reportOf>>}
-                      resultHref={jobHref({
-                        id: m.jobId,
-                        projectId,
-                        ...(byId.get(m.jobId) ? { state: byId.get(m.jobId)?.state } : {}),
-                      })}
-                    />
-                  ) : (
-                    <div
-                      className={cn("flex", m.author === "owner" ? "justify-end" : "justify-start")}
-                    >
-                      <div
-                        className={cn(
-                          "min-w-0 max-w-[85%] rounded-lg px-3 py-2 text-sm [overflow-wrap:anywhere]",
-                          m.author === "owner" ? "bg-primary text-primary-foreground" : "bg-muted",
-                        )}
-                      >
-                        {m.author === "owner" && !m.answers ? (
-                          <div className="whitespace-pre-wrap">{m.text}</div>
-                        ) : (
-                          <Markdown text={m.text} />
-                        )}
-                        {m.action ? (
-                          <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-                            <Badge variant="outline" className="h-5 text-[10px]">
-                              {t(INTENT[m.action.intent])}
-                            </Badge>
-                            {m.action.did.map((x) => (
-                              <span key={x}>· {t(x)}</span>
-                            ))}
-                          </div>
-                        ) : null}
-                        {m.author === "eye" ? (
-                          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-xs">
-                            {jobLink(m.jobId, byId.get(m.jobId)?.title ?? t("The job"))}
-                            {touched
-                              ? jobLink(
-                                  touched,
-                                  t("Open “{title}”", {
-                                    title: byId.get(touched)?.title ?? t("the new job"),
-                                  }),
-                                )
-                              : null}
-                          </div>
-                        ) : null}
-                        <div
-                          className={cn(
-                            "mt-0.5 text-[10px]",
-                            m.author === "owner"
-                              ? "text-primary-foreground/70"
-                              : "text-muted-foreground",
-                          )}
-                        >
-                          {ago(m.createdAt)}
-                        </div>
+          <div className="flex min-h-0 flex-1 gap-3">
+            <div
+              ref={box}
+              data-testid="transcript"
+              className="min-h-0 min-w-0 flex-1 space-y-2.5 overflow-y-auto pr-1"
+            >
+              {items.map((item, i) => {
+                const jobOf = (x: TranscriptItem) =>
+                  x.kind === "message"
+                    ? x.message.jobId
+                    : x.kind === "thought"
+                      ? x.thought.jobId
+                      : x.thoughts[0]?.jobId;
+                const prev = items[i - 1];
+                const key =
+                  item.kind === "message"
+                    ? item.message.id
+                    : item.kind === "thought"
+                      ? item.thought.id
+                      : `g-${item.thoughts[0]?.id}`;
+                return (
+                  <Fragment key={key}>
+                    {prev && jobOf(prev) !== jobOf(item) && item.kind === "message" ? (
+                      <div className="my-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+                        <span className="h-px flex-1 bg-border" />
+                        <span className="min-w-0 truncate">
+                          {jobOf(item)
+                            ? (byId.get(jobOf(item) ?? "")?.title ?? t("another job"))
+                            : t("no job")}
+                        </span>
+                        <span className="h-px flex-1 bg-border" />
                       </div>
-                    </div>
-                  )}
-                  {m.questions?.length && !replied.has(m.id) ? (
-                    <div className="mt-1.5 max-w-full md:max-w-[85%]">
-                      <QuestionsForm
-                        questions={m.questions}
-                        busy={answering === m.id}
-                        disabled={archived}
-                        onSubmit={(a) => answer(m.id, a)}
-                      />
-                    </div>
-                  ) : null}
+                    ) : null}
+                    {item.kind === "thought" ? (
+                      <ThoughtBlock thought={item.thought} />
+                    ) : item.kind === "thoughts" ? (
+                      <ThoughtGroup thoughts={item.thoughts} />
+                    ) : (
+                      <div>
+                        {row(item.message)}
+                        {item.message.questions?.length && !replied.has(item.message.id) ? (
+                          <div className="mt-1.5 max-w-full pl-4 md:max-w-[85%]">
+                            <QuestionsForm
+                              questions={item.message.questions}
+                              busy={answering === item.message.id}
+                              disabled={archived}
+                              onSubmit={(a) => answer(item.message.id, a)}
+                            />
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                  </Fragment>
+                );
+              })}
+              {reading ? (
+                <div className="animate-pulse pl-4 font-mono text-xs text-muted-foreground">
+                  {t("The Eye is reading your message…")}
                 </div>
-              );
-            })}
-            {thinking ? (
-              <div className="animate-pulse text-xs text-muted-foreground">
-                {t("The Eye is thinking about it…")}
-              </div>
-            ) : null}
+              ) : null}
+              <WorkingNow jobIds={going.map((j) => j.id)} />
+            </div>
+            <PromptRail prompts={prompts} active={active} onJump={jump} />
           </div>
         )}
+        {busy.length ? (
+          <div
+            data-testid="thinking-bar"
+            className="flex min-w-0 flex-wrap items-center gap-2 rounded-md border border-dashed px-2 py-1 text-xs text-muted-foreground"
+          >
+            <span className="min-w-0 truncate font-mono">
+              {t("The Eye is {what}…", {
+                what: (busy[0]?.purpose ?? "").replace(/^./, (c) => c.toLowerCase()),
+              })}
+            </span>
+            {text.trim() ? (
+              <fieldset className="flex overflow-hidden rounded border">
+                <legend className="sr-only">{t("What your message does")}</legend>
+                {(["redo", "context"] as const).map((m) => (
+                  <label
+                    key={m}
+                    className={cn(
+                      "cursor-pointer px-2 py-0.5 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring",
+                      mode === m ? "bg-primary text-primary-foreground" : "hover:bg-muted",
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name={`eye-send-mode-${projectId ?? server?.id}`}
+                      className="sr-only"
+                      checked={mode === m}
+                      onChange={() => setPicked(m)}
+                    />
+                    {m === "redo" ? t("Stop and redo with this") : t("Add as context")}
+                  </label>
+                ))}
+              </fieldset>
+            ) : (
+              <span className="hidden sm:inline">
+                {t("Write to correct it or add to it, or stop it.")}
+              </span>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              className="ml-auto h-6 gap-1 px-2 text-xs"
+              disabled={stopping}
+              onClick={stop}
+            >
+              <Square className="size-3 fill-current" />
+              {t("Stop")}
+            </Button>
+          </div>
+        ) : null}
         <div className="flex items-end gap-2">
           <Textarea
             rows={3}
@@ -235,9 +456,15 @@ export function EyeChat({
             placeholder={
               archived
                 ? t("The project is archived: restore it in Settings to ask for work.")
-                : t(
-                    "Ask for work, or tell The Eye anything: an instruction, context, “stop that”, an idea for later…",
-                  )
+                : busy.length
+                  ? t(
+                      "The Eye is thinking: correct it (“no, use Postgres”) or add to it; Enter sends.",
+                    )
+                  : server
+                    ? t("Ask about {name}, or for work on it…", { name: server.name })
+                    : t(
+                        "Ask for work, or tell The Eye anything: an instruction, context, “stop that”, an idea for later…",
+                      )
             }
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -254,7 +481,13 @@ export function EyeChat({
             size="icon"
             disabled={sending || !text.trim() || archived}
             onClick={send}
-            aria-label={t("Send")}
+            aria-label={
+              busy.length
+                ? mode === "redo"
+                  ? t("Stop and redo with this")
+                  : t("Add as context")
+                : t("Send")
+            }
           >
             <SendHorizontal className="size-4" />
           </Button>

@@ -27,7 +27,9 @@ interface LegSession {
 // permissions = SessionStart.onPermission(req) => Promise<{ allow: true } | { allow: false; message }>
 ```
 
-**Normalized events:** `turn.started`, `text.delta`, `tool.called`,
+**Normalized events:** `turn.started`, `text.delta`, `thinking.delta`
+(the model's reasoning where the Leg streams it, Claude Code's thinking;
+never part of the answer, M13.25), `tool.called`,
 `tool.result`, `question` (the Leg asked me something),
 `permission.requested` (with the decision), `usage`, `rate_limit`,
 `turn.ended` (`completed` · `interrupted` · `error` · `max_turns` ·

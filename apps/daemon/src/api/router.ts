@@ -12,6 +12,7 @@ import {
   Event,
   EyeMessage,
   EyeModels,
+  EyeThought,
   FolderList,
   FolderListInput,
   FoundAgent,
@@ -93,6 +94,7 @@ import {
   ServerRole,
   ServerSample,
   ServerState,
+  ServerStateVersion,
   ServerTest,
   ServerTestResult,
   ServerTraffic,
@@ -104,6 +106,7 @@ import {
   SilkKind,
   StorageUsage,
   SystemStatus,
+  TalkMode,
   type TaskView,
   TextPolish,
   ToolView,
@@ -171,9 +174,11 @@ import {
   answerInProject,
   conversation,
   projectConversation,
+  stopThinking,
   talk,
   talkInProject,
 } from "../eye/talk.ts";
+import type { EyeThinking } from "../eye/thinking.ts";
 import type { Helper } from "../helper/service.ts";
 import { currentRequestId } from "../http/request-id.ts";
 import type { InboxStore } from "../inbox/store.ts";
@@ -188,6 +193,13 @@ import type { Notifications } from "../notify/notifications.ts";
 import type { Secrets } from "../os/secrets.ts";
 import type { Paths } from "../paths.ts";
 import { readResources, type Work, writeResources } from "../resources/work.ts";
+import {
+  ensureServerProject,
+  serverConversation,
+  serverJobsDir,
+  serverOf,
+  talkToServer,
+} from "../servers/server-jobs.ts";
 import type { Servers } from "../servers/service.ts";
 import {
   DEFAULT_RUNNING_JOBS,
@@ -290,6 +302,8 @@ export interface ApiContext {
   /** Oraknid's own updates (ADR-048). */
   updates: Updates;
   brain: EyeBrain;
+  /** What The Eye is thinking now, and what it thought (M13.25). */
+  thinking?: EyeThinking;
   /** Opens a folder on this machine (xdg-open). */
   openPath: (path: string) => void;
   tmpDir: string;
@@ -420,6 +434,15 @@ async function followUp(c: ApiContext, fromId: string, goal: string): Promise<st
 }
 
 /** What talking to The Eye needs, from a job or from its project (ADR-034). */
+/** A project's jobs, by id. */
+const projectJobIds = (c: ApiContext, projectId: string) =>
+  c.jobs.db
+    .select({ id: jobsTable.id })
+    .from(jobsTable)
+    .where(eq(jobsTable.projectId, projectId))
+    .all()
+    .map((j) => j.id);
+
 const talkDeps = (c: ApiContext) => ({
   db: c.jobs.db,
   bus: c.bus,
@@ -447,7 +470,27 @@ const talkDeps = (c: ApiContext) => ({
   },
   endNow: (id: string) =>
     endSteps({ db: c.jobs.db, bus: c.bus, github: c.github, projects: c.projects }, id),
+  ...(c.thinking ? { thinking: c.thinking } : {}),
 });
+
+/** Talking to a server's Eye (ADR-049): talking's deps, and the server's own. */
+const serverTalkDeps = (c: ApiContext) => ({
+  ...talkDeps(c),
+  servers: c.servers,
+  projects: c.projects,
+  dir: serverJobsDir(c.paths.dataDir),
+});
+
+/**
+ * Work on a server is asked from home on a standard device, as every
+ * server action (ADR-049): its own project's conversation is the server's.
+ */
+function awayFromServer(c: ApiContext, projectId: string) {
+  if (c.remote && !c.devices.isFull(c.device) && serverOf(c.jobs.db, projectId))
+    throw new Error(
+      "Work on a server is asked from the computer running Oraknid, or from a device with full rights.",
+    );
+}
 
 const SkillSummary = z.object({
   id: z.string(),
@@ -807,8 +850,14 @@ export const router = {
       .handler(({ context: c, input }) =>
         guard(async () => ({ ...(await projectFrom(c, input)), jobCount: 0 })),
       ),
-    list: base.output(z.array(ProjectView)).handler(({ context: c }) => c.projects.list()),
-    /** One project's view, as `list` gives it (Audit 1 → Q1-15). */
+    /** My projects; with `servers`, the servers' own too (ADR-049), which are hidden otherwise. */
+    list: base
+      .input(z.object({ servers: z.boolean().optional() }).optional())
+      .output(z.array(ProjectView))
+      .handler(({ context: c, input }) =>
+        c.projects.list().filter((p) => input?.servers || !p.serverId),
+      ),
+    /** One project's view, as `list` gives it (Audit 1 → Q1-15); a server's own too. */
     get: base
       .input(z.object({ id: z.string() }))
       .output(ProjectView)
@@ -873,10 +922,50 @@ export const router = {
      * newest ended one (new work starts a follow-up), else a new job from it.
      */
     talk: base
-      .input(z.object({ id: z.string(), text: z.string().min(1).max(8000) }))
+      .input(
+        z.object({
+          id: z.string(),
+          text: z.string().min(1).max(8000),
+          /** While The Eye thinks (M13.25): stop and redo with it, add it, or let Oraknid choose. */
+          mode: TalkMode.optional(),
+        }),
+      )
       .output(z.object({ id: z.string(), jobId: z.string() }))
       .handler(({ context: c, input }) =>
-        guard(() => talkInProject(talkDeps(c), input.id, input.text.trim())),
+        guard(() => {
+          awayFromServer(c, input.id);
+          return talkInProject(
+            talkDeps(c),
+            input.id,
+            input.text.trim(),
+            {},
+            input.mode ?? "context",
+          );
+        }),
+      ),
+    /**
+     * What The Eye thought and is thinking in the project (M13.25): each
+     * reasoning call of its jobs, oldest first; what it wrote is its
+     * session's log (`sessions.log`).
+     */
+    thinking: base
+      .input(z.object({ id: z.string() }))
+      .output(z.array(EyeThought))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          c.projects.require(input.id);
+          return c.thinking?.list(projectJobIds(c, input.id)) ?? [];
+        }),
+      ),
+    /** Stop: what The Eye is thinking in the project ends now (M13.25). */
+    stopThinking: base
+      .input(z.object({ id: z.string() }))
+      .output(z.object({ stopped: z.number().int().nonnegative() }))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          c.projects.require(input.id);
+          return { stopped: stopThinking(talkDeps(c), projectJobIds(c, input.id)) };
+        }),
       ),
     /**
      * My answers to The Eye's questions in the project's conversation
@@ -886,15 +975,16 @@ export const router = {
       .input(z.object({ id: z.string(), messageId: z.string(), answers: QuestionAnswers }))
       .output(z.object({ id: z.string(), jobId: z.string() }))
       .handler(({ context: c, input }) =>
-        guard(() =>
-          answerInProject(
+        guard(() => {
+          awayFromServer(c, input.id);
+          return answerInProject(
             { ...talkDeps(c), inbox: c.inbox },
             input.id,
             input.messageId,
             input.answers,
             c.device,
-          ),
-        ),
+          );
+        }),
       ),
     /**
      * Its GitHub link (ADR-038): the account and repository Oraknid uses for
@@ -1083,6 +1173,59 @@ export const router = {
       .input(z.object({ id: z.string() }))
       .output(z.object({ cleaned: z.boolean() }))
       .handler(({ context: c, input }) => guard(() => c.servers.remove(input.id))),
+    /** Every version of its state document, newest first; the job whose end wrote each (ADR-049). */
+    history: base
+      .input(z.object({ id: z.string() }))
+      .output(z.array(ServerStateVersion))
+      .handler(({ context: c, input }) => guard(() => c.servers.history(input.id))),
+    /** My Production mark on the server itself: every job that reaches it asks before a change (ADR-049). */
+    setProduction: base
+      .input(z.object({ id: z.string(), production: z.boolean() }))
+      .output(ServerView)
+      .handler(({ context: c, input }) =>
+        guard(() => c.servers.setProduction(input.id, input.production)),
+      ),
+    /**
+     * The server's conversation with The Eye (ADR-049): its own project's,
+     * questions answered without a job and its jobs' messages, in order.
+     */
+    conversation: base
+      .input(z.object({ id: z.string() }))
+      .output(z.array(EyeMessage))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          c.servers.row(input.id);
+          return serverConversation(c.jobs.db, input.id);
+        }),
+      ),
+    /**
+     * My message to the server's Eye: to the job going on it; else a
+     * question answered from its state document, or a new server job.
+     */
+    talk: base
+      .input(z.object({ id: z.string(), text: z.string().min(1).max(8000) }))
+      .output(z.object({ id: z.string(), jobId: z.string().nullable(), projectId: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          const r = talkToServer(serverTalkDeps(c), input.id, input.text.trim());
+          return { ...r, projectId: ensureServerProject(serverTalkDeps(c), input.id) };
+        }),
+      ),
+    /** My answers to The Eye's questions in the server's conversation (ADR-037). */
+    answer: base
+      .input(z.object({ id: z.string(), messageId: z.string(), answers: QuestionAnswers }))
+      .output(z.object({ id: z.string(), jobId: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(() =>
+          answerInProject(
+            { ...talkDeps(c), inbox: c.inbox },
+            ensureServerProject(serverTalkDeps(c), input.id),
+            input.messageId,
+            input.answers,
+            c.device,
+          ),
+        ),
+      ),
     ...serverInsightRoutes,
   },
   /** Database backups: plans, runs, keys, Verify, Restore (ADR-044). */
@@ -2009,12 +2152,26 @@ export const router = {
     ),
     /** Talking to The Eye (Checkpoint 1 → F1-4): its reply arrives as `eye.replied`. */
     talk: base
-      .input(z.object({ id: z.string(), text: z.string().min(1).max(8000) }))
+      .input(
+        z.object({ id: z.string(), text: z.string().min(1).max(8000), mode: TalkMode.optional() }),
+      )
       .output(z.object({ id: z.string() }))
       .handler(({ context: c, input }) =>
         guard(() => ({
-          id: talk(talkDeps(c), input.id, input.text.trim()),
+          id: talk(talkDeps(c), input.id, input.text.trim(), {}, input.mode ?? "context"),
         })),
+      ),
+    /** What The Eye thought and is thinking in this job (M13.25). */
+    thinking: base
+      .input(z.object({ id: z.string() }))
+      .output(z.array(EyeThought))
+      .handler(({ context: c, input }) => c.thinking?.list([input.id]) ?? []),
+    /** Stop: what The Eye is thinking in this job ends now (M13.25). */
+    stopThinking: base
+      .input(z.object({ id: z.string() }))
+      .output(z.object({ stopped: z.number().int().nonnegative() }))
+      .handler(({ context: c, input }) =>
+        guard(() => ({ stopped: stopThinking(talkDeps(c), [input.id]) })),
       ),
     /** A draft's options, changed as I go (New work page). */
     updateDraft: base

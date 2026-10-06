@@ -57,6 +57,8 @@ import { sandboxPlan } from "../legs/plan.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor, Supervised } from "../legs/supervisor.ts";
 import { legSessionLimit } from "../resources/work.ts";
+import { runServerCheck } from "../servers/checks.ts";
+import { type JobServerRef, serverVerdict } from "../servers/remote.ts";
 import type { Servers } from "../servers/service.ts";
 import { readSetting } from "../settings.ts";
 import { handoffFromLog } from "../silk/handoff.ts";
@@ -72,7 +74,7 @@ import type { GitHub } from "../workspace/github.ts";
 import { githubLinkOf, githubLinksOf } from "../workspace/github-tool.ts";
 import type { WorkTree } from "../workspace/tree.ts";
 import { waitForAnswer } from "./approvals.ts";
-import type { CheckRepair, EyeBrain } from "./brain.ts";
+import { BrainStopped, type CheckRepair, type EyeBrain } from "./brain.ts";
 import { runBuiltinCheck } from "./builtin-checks.ts";
 import { giveToLeg, LegStop, legLimits, stopWaiting, trackAttempt } from "./leg-work.ts";
 
@@ -140,6 +142,8 @@ export interface AttemptJob {
   serverRoles?: Record<string, { role: string; production: boolean | null }>;
   /** The server I chose or confirmed for its work on a server, "none", or not asked yet (ADR-042). */
   server?: string | null;
+  /** The server whose own job this is: its place is the server, not a repo (ADR-049). */
+  serverJob?: string | null;
   /** A project of several repos, as a Leg must know it (ADR-042). */
   layout?: string;
   /** Its project's ports on this computer its sandboxes may reach (Sandboxing → network). */
@@ -556,7 +560,10 @@ export async function runAttempt(
       if (judged) declared.set(r.tool, judged);
       policy.mcp = declared;
     }
-    const first = decide(r, policy);
+    // A command on one of the job's servers is judged as what runs there; production asks (ADR-049).
+    const first =
+      (r.command && servers.length ? serverVerdict(r.command, servers, policy) : null) ??
+      decide(r, policy);
     const fetches =
       (r.tool === "WebFetch" && !ownRepoPage(fetchedUrl(r), githubLinksOf(d.db, job.id))) ||
       r.tool === "WebSearch" ||
@@ -697,9 +704,10 @@ export async function runAttempt(
     return [
       built.text,
       job.layout ? `# The repos\n\n${job.layout}` : "",
-      GIT_TEXT,
+      // A server job's place is its server: no repo, no GitHub (ADR-049).
+      job.serverJob ? "" : GIT_TEXT,
       serversText,
-      githubText(),
+      job.serverJob ? "" : githubText(),
     ]
       .filter(Boolean)
       .join("\n\n");
@@ -814,6 +822,8 @@ export async function runAttempt(
    */
   let serversText = "";
   let serversReady = false;
+  /** The job's servers as its commands name them, production marked (ADR-049). */
+  const servers: JobServerRef[] = [];
   const prepareServers = async () => {
     if (serversReady) return;
     serversReady = true;
@@ -843,6 +853,7 @@ export async function runAttempt(
           `Host ${s.alias}\n  HostName ${s.host}\n  Port ${s.port}\n  User ${s.user}\n  IdentityFile ${keyFile}\n  IdentitiesOnly yes\n  StrictHostKeyChecking yes\n  UserKnownHostsFile ${join(ssh, "oraknid_known_hosts")}`,
         );
         if (s.knownHost) known.push(s.knownHost);
+        servers.push({ id, name: s.name, alias: s.alias, production: isProduction(r) });
         docs.push(`## ${s.name}${role}${prod}${chosen} — \`ssh ${s.alias}\`\n\n${s.state}`);
       } catch (error) {
         let name = "a server";
@@ -857,7 +868,14 @@ export async function runAttempt(
     writeFileSync(join(ssh, "config"), `${config.join("\n\n")}\n`, { mode: 0o600 });
     writeFileSync(join(ssh, "oraknid_known_hosts"), `${known.join("\n")}\n`, { mode: 0o600 });
     const named = job.server && job.server !== "none" ? job.serverIds.includes(job.server) : false;
-    serversText = `# Servers this job may use\n\nReach each with its alias (\`ssh <alias>\`, \`scp\`, \`rsync\`). Read its state document first: it says what runs there and what must not break. Change only what the task needs; anything else on the server is not yours.${named ? " Work meant for a server (a deploy) goes to the one marked as this job's, and to no other." : ""}\n\n${docs.join("\n\n")}`;
+    // ssh reads its config from the account's home, never $HOME: the alias is named with -F (ADR-049).
+    const cfg = join(ssh, "config");
+    const own = job.serverJob ? servers.find((x) => x.id === job.serverJob) : undefined;
+    serversText = `# Servers this job may use\n\nReach each with its alias (\`ssh <alias>\`, \`scp\`, \`rsync\`). Read its state document first: it says what runs there and what must not break. Change only what the task needs; anything else on the server is not yours.${named ? " Work meant for a server (a deploy) goes to the one marked as this job's, and to no other." : ""}\n\nThe aliases are in \`${cfg}\`, which ssh reads only when it is named: \`ssh -F <that file> <alias> '<command>'\` (\`scp -F\` and \`rsync -e "ssh -F …"\` the same way). Put the command run there in one pair of quotes with nothing after it on the line, \`sudo -n\` inside them when it needs root. Every command on a server goes through Oraknid's approvals; on a production server every change asks the owner first.${
+      own
+        ? `\n\n**This job's place is the server ${own.name}** (\`${own.alias}\`), not a repo: the workspace is a scratch folder for notes and scripts, and the work is done on the server. When the task is done, list in your last message what you changed on the server, a line each.`
+        : ""
+    }\n\n${docs.join("\n\n")}`;
   };
 
   const openSession = async (prompt: string) => {
@@ -1257,6 +1275,7 @@ export async function runAttempt(
               job.localPorts ?? [],
               job.id,
             );
+        await prepareServers();
         const check = () =>
           runVerify(task.verify, ws.cwd, plan, {
             signal,
@@ -1264,7 +1283,18 @@ export async function runAttempt(
               verifyRefusal(
                 decide({ tool: "Bash", command, path: null }, policyFor(d.db, job.id, ws.cwd)),
               ),
-            builtin: (command) =>
+            builtin: async (command) =>
+              // A check on one of the job's servers runs there, over Oraknid's connection (ADR-049).
+              (servers.length && d.servers
+                ? await runServerCheck(command, {
+                    servers,
+                    run: (id, remote) => (d.servers as Servers).run(id, remote),
+                    refuse: (c) => {
+                      const v = serverVerdict(c, servers, policyFor(d.db, job.id, ws.cwd));
+                      return v ? verifyRefusal(v) : null;
+                    },
+                  })
+                : null) ??
               runBuiltinCheck(command, {
                 ...(d.github ? { github: d.github } : {}),
                 link: githubLinkOf(d.db, job.id),
@@ -1316,7 +1346,9 @@ export async function runAttempt(
                   : null;
               })(),
             });
-          } catch {
+          } catch (error) {
+            // I stopped The Eye's thinking (M13.25): the job pauses here.
+            if (error instanceof BrainStopped) throw error;
             break;
           }
           event("task.check-reviewed", {
@@ -1375,6 +1407,8 @@ export async function runAttempt(
               observed.falseClaim = "said it was done, but the review found work missing";
           }
         } catch (error) {
+          // I stopped The Eye's thinking (M13.25): the job pauses here, to review it on resume.
+          if (error instanceof BrainStopped) throw error;
           // No Leg could review it: accepted as before, and said so.
           event("task.evaluated", {
             accepted: true,

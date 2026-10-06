@@ -24,6 +24,7 @@ const SITE: ProjectView = {
   workBranch: "dev",
   createdAt: 1,
   archivedAt: null,
+  serverId: null,
   archivedWith: null,
   skillIds: [],
   serverIds: [],

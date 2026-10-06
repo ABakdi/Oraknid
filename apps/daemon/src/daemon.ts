@@ -49,6 +49,7 @@ import { type NamingDeps, startJobNaming } from "./eye/naming.ts";
 import { eyeProgram } from "./eye/program.ts";
 import { startEyeReports } from "./eye/reports.ts";
 import { forgetGuidance, recordAnswer, resumeConversations } from "./eye/talk.ts";
+import { EyeThinking } from "./eye/thinking.ts";
 import { Helper } from "./helper/service.ts";
 import { isLocalRequest } from "./http/guard.ts";
 import { requestIds, tagConsoleWithRequestIds } from "./http/request-id.ts";
@@ -73,6 +74,7 @@ import { DEFAULT_HOST, DEFAULT_PORT, isDefaultDataDir, type Paths } from "./path
 import { diskSpace } from "./resources/disks.ts";
 import { startGuard } from "./resources/guard.ts";
 import { Work } from "./resources/work.ts";
+import { resumeServerConversations, serverJobsDir } from "./servers/server-jobs.ts";
 import { Servers } from "./servers/service.ts";
 import { DEFAULT_RUNNING_JOBS, MAX_RUNNING_JOBS, readSetting } from "./settings.ts";
 import { SilkStore } from "./silk/store.ts";
@@ -263,6 +265,8 @@ export async function startDaemon(options: DaemonOptions) {
   const chats = new Chats({ db, bus, registry, supervisor, dataDir: paths.dataDir, now });
   // A model per kind of decision, and the shadow planner (ADR-022).
   const decisions = new EyeDecisions(db, bus, now);
+  // The Eye thinking out loud in the conversation, stopped or redone by me (M13.25).
+  const thinking = new EyeThinking({ db, bus, now });
   const brain =
     options.brain ??
     new PoolLegBrain({
@@ -278,6 +282,7 @@ export async function startDaemon(options: DaemonOptions) {
           jobId,
           payload: { call, model },
         }),
+      thinking,
     });
   // My answer to "import my edits?" goes back to Silk.
   bus.subscribe((e) => {
@@ -679,7 +684,16 @@ export async function startDaemon(options: DaemonOptions) {
   });
 
   // The Eye speaks up in each project's conversation: a task done, the job done, blocked (ADR-045).
-  startEyeReports({ db, bus, inbox, brain, now });
+  startEyeReports({
+    db,
+    bus,
+    inbox,
+    brain,
+    now,
+    // A server job's report: its state document's changes, its backup plans (ADR-049).
+    servers: serverService,
+    backupPlans: (serverId) => backupPlans.plans(serverId),
+  });
   // Jobs named by what they are, and described: what for, then what they did.
   const naming = startJobNaming({
     db,
@@ -793,6 +807,7 @@ export async function startDaemon(options: DaemonOptions) {
         devices,
         updates,
         brain,
+        thinking,
         openPath:
           options.openPath ??
           ((path) => spawn("xdg-open", [path], { detached: true, stdio: "ignore" }).unref()),
@@ -851,8 +866,36 @@ export async function startDaemon(options: DaemonOptions) {
     runner,
     brain,
     inbox,
+    thinking,
     tmpDir: join(paths.dataDir, "tmp"),
     now,
+  });
+  // A server's conversation too (ADR-049): a question no job took is answered now.
+  resumeServerConversations({
+    db,
+    bus,
+    silk,
+    runner,
+    brain,
+    inbox,
+    tmpDir: join(paths.dataDir, "tmp"),
+    now,
+    servers: serverService,
+    projects: projectsService,
+    dir: serverJobsDir(paths.dataDir),
+    newJob: (projectId, goal) =>
+      projectsService.createJob({
+        projectId,
+        goal,
+        inputs: [],
+        autonomy: "standard",
+        allowedLegIds: [],
+        verify: [],
+        unsandboxed: false,
+      }),
+    startJob: async (id) => {
+      await runner.start(id);
+    },
   });
   os.serviceNotifier.ready();
   const stopWatchdog = os.serviceNotifier.startWatchdog();
@@ -937,6 +980,7 @@ export async function startDaemon(options: DaemonOptions) {
     effects,
     recovery,
     naming,
+    thinking,
     close,
   };
 }

@@ -30,6 +30,9 @@ const SERVER: ServerView = {
   stateVersion: 1,
   latest: null,
   projectIds: [],
+  projectId: null,
+  production: false,
+  productionIn: [],
   createdAt: now,
 };
 
@@ -65,6 +68,7 @@ vi.mock("@/lib/api", () => ({
     servers: {
       list: fn("list", () => [SERVER]),
       samples: fn("samples", () => []),
+      history: fn("history", () => []),
       state: fn("state", () => ({ version: 1, body: "# vps", source: "eye", createdAt: now })),
       docker: fn("docker", () => ({
         at: now,
@@ -220,11 +224,13 @@ async function open(path: string) {
 }
 
 describe("a server's tabs (ADR-043)", { timeout: 30_000 }, () => {
-  it("has Overview, Docker, Databases, Proxy & traffic, Logs, Backups, Terminal and State document", async () => {
+  it("has Overview, Chat, Jobs, Docker, Databases, Proxy & traffic, Logs, Backups, Terminal and State document", async () => {
     await open("/servers/S1");
     const tabs = await screen.findAllByRole("tab");
     expect(tabs.map((x) => x.textContent)).toEqual([
       "Overview",
+      "Chat",
+      "Jobs",
       "Docker",
       "Databases",
       "Proxy & traffic",

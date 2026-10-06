@@ -7,7 +7,7 @@ durable step engine runs on the same database ([[ADR-003-Job-Execution-Engine]])
 
 | Table | Holds |
 | :-- | :-- |
-| `projects` | Workspaces, with their skills and servers (`skill_ids`, `server_ids`). |
+| `projects` | Workspaces, with their skills and servers (`skill_ids`, `server_ids`); a server's own project names it (`server_id`, migration 0037, [[ADR-049-Server-Chat-And-Server-Jobs]]). |
 | `jobs`, `tasks`, `task_edges` | The work. The Web's version is a number on the job (`web_version`), raised at every plan change. |
 | `attempts`, `sessions` | Who tried what, native session IDs, end reasons, usage totals. |
 | `legs`, `leg_models` | The pool. Capability profiles and quota windows are JSON on `leg_models` (per model) and `legs` (account-wide), with `limited_until` on the Leg. |
@@ -15,7 +15,7 @@ durable step engine runs on the same database ([[ADR-003-Job-Execution-Engine]])
 | `silk_mirror` | What Oraknid last wrote to each mirror file (hash), and the open import question. |
 | `skills` | The library: one row per skill and version. |
 | `inbox_items` | Approvals and questions. |
-| `eye_messages` | My conversation with The Eye per job, with what it did about each message (migration 0012). |
+| `eye_messages` | My conversation with The Eye per job, with what it did about each message (migration 0012); in a server's conversation, a question answered without a job has no job (migration 0037). |
 | `eye_plans` | Every plan and its shadow's, to compare ([[ADR-022-Eye-Decision-Models]]). |
 | `steps` | The step journal: `(job_id, step_key)` PK, status, input hash, output. |
 | `side_effects` | The outbox with idempotency keys. |
@@ -24,7 +24,7 @@ durable step engine runs on the same database ([[ADR-003-Job-Execution-Engine]])
 | `settings` | One JSON value per key: limits, policies, The Eye's models, the PIN's hash, device rights, a project's local ports… ([[Data-Map]] → Settings keys). |
 | `tools` | MCP servers for skills ([[ADR-021-Tools-Broker]]). |
 | `chats`, `chat_messages`, `helper_messages` | Chats and the helper ([[Chats-and-Helper]]). |
-| `servers`, `server_states`, `server_samples` | My servers, their state documents, oraknid-monitor's readings ([[Servers]]). |
+| `servers`, `server_states`, `server_samples` | My servers (with my Production mark), their state documents (each with the job whose end wrote it), oraknid-monitor's readings ([[Servers]]). |
 | `mail_accounts`, `mail_folders`, `mail_messages`, `mail_drafts`, `mail_image_senders`, `mail_pop_uidls` | Mail ([[ADR-032-Email]]). |
 
 Git checkpoints are refs in the repository, not rows ([[Sandboxing]]).

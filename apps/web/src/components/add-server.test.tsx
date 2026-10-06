@@ -56,6 +56,9 @@ const SERVER = {
   stateVersion: 1,
   latest: null,
   projectIds: [],
+  projectId: null,
+  production: false,
+  productionIn: [],
   createdAt: 1,
 } as ServerView;
 

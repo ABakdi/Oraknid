@@ -239,6 +239,48 @@ can think (none healthy, or the call fails), my message is kept as my
 decision and passed on anyway: my words are never lost. The
 conversation is kept with the job and shown on its page.
 
+### Thinking out loud (2026-10-04, M13.25)
+
+The conversation never sits silent while The Eye thinks or the agents
+work. Each reasoning call of a job (the interview, the plan, a replan,
+new work planned into The Web, reading my message, a review, a check
+looked at, the method chosen, a command judged, the summary, the name)
+is shown in it as it runs: what it is doing in words ("Planning the
+work…", "Reading your answer…"), its model, the time so far, and what
+the model writes as it comes — its reasoning where the Leg streams it
+(Claude Code's thinking), its text, the files it reads. When it ends it
+folds to one line saying what came of it ("Planned 9 tasks in 41 s ·
+Claude · Opus"), which opens again to what it thought. A shadow plan
+(ADR-022) is never shown.
+
+A thought is the call's Leg session: what it wrote is the session's log
+(`sessions.log`), streamed as `session.text` and `session.thinking`
+(coalesced, four a second) on the job's topic; `eye.thinking.started`
+and `eye.thinking.ended` say when it starts and what it came to
+(`EyeThought`: call, purpose, model, times, outcome, summary). The list
+(`projects.thinking`, `jobs.thinking`) comes from the job's Eye
+sessions, so a call from before a restart is there, a call cut by a
+crash said as such. The agents at work show as a compact line per
+running task: its title, its last tool or line, its model, its time.
+
+**Stepping in.** While The Eye thinks I can:
+
+| I | What happens |
+| :-- | :-- |
+| Press **Stop** | The call ends now (its Leg session is ended). A call of the job's own steps (the plan, a replan, the interview, a review, a check looked at, the method chosen) pauses the job first: the call isn't recorded, so on resume it is thought again, with anything I said meanwhile. Reading my message just ends; nothing is kept from it. Said in one line. |
+| Write a message that corrects it ("no, use Postgres", "that's wrong", "actually, one page") | **Stop and redo with this**: the call's session is ended and the call runs again with my words in its prompt, which win where they differ from the rest; my words are kept as my decision in Silk ("My correction: …") and passed to the agents working now. One line says so; the message isn't read again as a new one. |
+| Write anything else ("also add dark mode") | **Add as context**: nothing is stopped; my message is read as usual (the triage above), and it is added to the job's next call that plans or judges (and to a retry of the one running). |
+
+Which one a message does is chosen from its words (`correctsThinking`,
+packages/core: a message that starts by correcting — "no", "wait",
+"actually", "don't", "that's wrong" — or says "instead of", "use X
+instead", "I meant"), shown before I send it, and mine to change. Only
+The Eye's own thinking can be stopped or redone, never a quick judgement
+in passing (a command judged, a name). A crash during a redo loses
+nothing: the call is a step not yet recorded, so it runs again, and my
+correction is in Silk; a message whose reading was stopped to think
+again is read again after a restart.
+
 ### The Eye speaks up ([[ADR-045-The-Eye-Speaks-Up]])
 
 The Eye also writes in the project's conversation on its own, one
@@ -321,6 +363,39 @@ asked once in the project's conversation ([[ADR-038-Project-Accounts]],
 Triage is told the project's repos when there are several and its
 servers with their roles, so a deploy task names in its title the server
 or role I named.
+
+## A server's conversation (2026-10-04, [[ADR-049-Server-Chat-And-Server-Jobs]])
+
+Each server has a conversation with The Eye, its page's **Chat** tab:
+the conversation of the server's own project, hidden from the Projects
+list. With a job going on the server, my message goes to it as in a
+project (Talking to The Eye). With none, one call on the quick model
+(`serverTalk`) reads my message with the server's state document,
+oraknid-monitor's last reading and what runs there:
+
+- a **question** they answer is answered in the conversation, with no
+  job ("Answered from the state document"); what they don't show is
+  said, never guessed;
+- **work**, or a question that needs looking on the server, starts a
+  **server job** in the server's project: its goal my request made
+  precise, the server already its server (nothing asked), the
+  **server-work** method, no interview. The Eye says so in one line, and
+  that it will say what changes before anything does.
+
+A server job is planned like any job, told that its place is the server
+(`ssh <alias> …`), with the state document; a small job is one task, a
+task that only looks is research. Its checks on the server are written
+`ssh <alias> <command that reads>` and run by Oraknid itself over its
+own connection. Before work starts, a plan that changes the server waits
+for my approval, **"Approve what will change on <server>"**, listing
+each task and what it may change, unless the job is at Full autonomy on
+a server that isn't production; each new version of the plan asks again.
+Production asks before any change it makes on the server, at any
+autonomy ([[Servers]] → A server's chat and its jobs).
+
+When it ends, The Eye's report of the job (The Eye speaks up) says what
+was done, the state document's new version with its diff from the one
+before, and the server's backup plans to look at when its data changed.
 
 ## Evaluation
 

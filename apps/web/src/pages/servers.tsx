@@ -14,8 +14,10 @@ import {
   ServerLogsTab,
   ServerProxyTab,
 } from "@/components/server-insight";
+import { ServerChatTab, ServerJobsTab } from "@/components/server-jobs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { api, message } from "@/lib/api";
 import { ago, bytes } from "@/lib/format";
@@ -36,7 +38,8 @@ export function ServersPage({ id, tab }: { id?: string; tab?: string }) {
   const [, go] = useLocation();
   const servers = useLive(() => api.servers.list(), {
     topics: ["overview"],
-    refreshOn: (e) => e.type.startsWith("server."),
+    // Its own project is made with its first message (ADR-049).
+    refreshOn: (e) => e.type.startsWith("server.") || e.type === "project.created",
   });
   // `/servers?add=1`: The Eye's link when it waits for a new server (ADR-042).
   const [adding, setAdding] = useState(
@@ -188,6 +191,9 @@ function ServerDetail({ s, tab }: { s: ServerView; tab?: string }) {
           {s.busy ??
             (s.error ? t("unreachable") : s.setup === "ready" ? t("ready") : t("not set up"))}
         </Badge>
+        {s.production || s.productionIn.length ? (
+          <Badge variant="destructive">{t("production")}</Badge>
+        ) : null}
         <span className="truncate font-mono text-xs text-muted-foreground">
           {s.user}@{s.host}
           {s.port !== 22 ? `:${s.port}` : ""}
@@ -277,6 +283,32 @@ function ServerDetail({ s, tab }: { s: ServerView; tab?: string }) {
             ? t("Seen {when}.", { when: ago(s.lastSeenAt) })
             : ""}
       </div>
+      {/* My mark on the server itself (ADR-049): a job that reaches it asks before any change. */}
+      <div className="flex max-w-xl items-start gap-3" data-help="server.production">
+        <Switch
+          checked={s.production}
+          onCheckedChange={(v) =>
+            act(
+              api.servers.setProduction({ id: s.id, production: v }),
+              v ? t("Marked production.") : t("No longer marked production."),
+            )
+          }
+          aria-label={t("Production")}
+        />
+        <span className="space-y-0.5">
+          <span className="block font-medium">{t("Production")}</span>
+          <span className="block text-xs text-muted-foreground">
+            {s.productionIn.length && !s.production
+              ? t(
+                  "Production in {n} project(s) already. Marked here, every job that reaches it asks before any change, in every project and in its own chat.",
+                  { n: s.productionIn.length },
+                )
+              : t(
+                  "What runs there is live: every job that reaches it asks before any change, in every project and in its own chat.",
+                )}
+          </span>
+        </span>
+      </div>
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="ghost" className="gap-1 text-destructive" onClick={remove}>
           <Trash2 className="size-3.5" />
@@ -298,6 +330,14 @@ function ServerDetail({ s, tab }: { s: ServerView; tab?: string }) {
         </div>
       ),
     },
+    // A conversation with The Eye about the server, and agents sent into it (ADR-049).
+    {
+      id: "chat",
+      label: t("Chat"),
+      fill: true,
+      content: () => <ServerChatTab server={s} />,
+    },
+    { id: "jobs", label: t("Jobs"), content: () => <ServerJobsTab server={s} /> },
     ...(ready
       ? [
           { id: "docker", label: t("Docker"), content: () => <ServerDockerTab server={s} /> },
@@ -444,13 +484,21 @@ function Readings({ id, latest }: { id: string; latest: ServerSample | null }) {
 }
 
 function StateDocument({ id }: { id: string }) {
-  const doc = useLive(() => api.servers.state({ id }), {
+  // A version of before, when I pick one from its history (ADR-049).
+  const [version, setVersion] = useState<number | null>(null);
+  const doc = useLive(() => api.servers.state(version === null ? { id } : { id, version }), {
+    topics: ["overview"],
+    refreshOn: (e) => e.type === "server.state",
+    deps: [id, version],
+  });
+  const history = useLive(() => api.servers.history({ id }), {
     topics: ["overview"],
     refreshOn: (e) => e.type === "server.state",
     deps: [id],
   });
   const [editing, setEditing] = useState<string | null>(null);
   if (!doc.data) return null;
+  const versions = history.data ?? [];
   return (
     <div className="space-y-2 rounded-md border p-3">
       <div className="flex items-center gap-2">
@@ -460,7 +508,31 @@ function StateDocument({ id }: { id: string }) {
           {ago(doc.data.createdAt)}
         </Badge>
         <span className="flex-1" />
-        {editing === null ? (
+        {versions.length > 1 ? (
+          <select
+            className="h-8 max-w-56 truncate rounded-md border bg-background px-2 text-xs"
+            value={version ?? ""}
+            onChange={(e) => {
+              setEditing(null);
+              setVersion(e.target.value ? Number(e.target.value) : null);
+            }}
+            aria-label={t("Version")}
+          >
+            <option value="">{t("The latest")}</option>
+            {versions.map((v) => (
+              <option key={v.version} value={v.version}>
+                {`v${v.version} · ${
+                  v.jobTitle
+                    ? t("after “{title}”", { title: v.jobTitle })
+                    : v.source === "eye"
+                      ? t("by The Eye")
+                      : t("by you")
+                } · ${ago(v.createdAt)}`}
+              </option>
+            ))}
+          </select>
+        ) : null}
+        {version !== null ? null : editing === null ? (
           <Button size="sm" variant="ghost" onClick={() => setEditing(doc.data?.body ?? "")}>
             {t("Edit")}
           </Button>

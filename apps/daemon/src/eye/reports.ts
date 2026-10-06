@@ -11,6 +11,8 @@ import type { Db } from "../db/open.ts";
 import { eyeMessages, jobs, tasks } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
 import type { InboxStore } from "../inbox/store.ts";
+import { serverOf, stateDiff } from "../servers/server-jobs.ts";
+import type { Servers } from "../servers/service.ts";
 import { jobResult } from "../workspace/result.ts";
 import type { EyeBrain } from "./brain.ts";
 import { readEnding } from "./ending.ts";
@@ -28,6 +30,10 @@ export interface ReportDeps {
   inbox: InboxStore;
   brain?: EyeBrain;
   now: () => number;
+  /** My servers: a server job's report shows what changed in its state document (ADR-049). */
+  servers?: Servers;
+  /** The backup plans of a server, named in a server job's report when its data changed. */
+  backupPlans?: (serverId: string) => Promise<{ name: string }[]>;
 }
 
 type Payload = Record<string, unknown>;
@@ -282,7 +288,9 @@ export async function jobDone(d: ReportDeps, jobId: string) {
   if (ending?.merged) facts.push({ label: "Merged into", value: ending.merged.into, href: null });
   for (const p of ending?.pushed ?? [])
     facts.push({ label: "Pushed", value: `${p.branch} → ${p.repo}`, href: p.url });
-  if (result && !result.merged && result.commits.length && !ending?.merged)
+  // A server job's place is its server (ADR-049): nothing to merge, its state document to show.
+  const serverId = serverOf(d.db, job.projectId);
+  if (result && !result.merged && result.commits.length && !ending?.merged && !serverId)
     todo.push(`Merge it into ${result.into}: the Merge button on the result.`);
   for (const problem of ending?.problems ?? []) todo.push(problem);
   if (!job.verify.length) todo.push("No job-level check ran: try the result by hand.");
@@ -314,5 +322,48 @@ export async function jobDone(d: ReportDeps, jobId: string) {
       // The facts alone say it well enough.
     }
   }
+  if (serverId && d.servers) summary += await serverChanges(d, serverId, jobId, facts, todo);
   say(d, jobId, summary, report("job-done", { facts, todo }));
+}
+
+/**
+ * What a server job changed in its server's state document (ADR-049): the
+ * version its end wrote, the diff from the one before, and the backup plans
+ * to look at when the data changed. The text to add to the report.
+ */
+async function serverChanges(
+  d: ReportDeps,
+  serverId: string,
+  jobId: string,
+  facts: EyeReport["facts"],
+  todo: string[],
+): Promise<string> {
+  const servers = d.servers as Servers;
+  let name = "the server";
+  try {
+    name = servers.row(serverId).name;
+  } catch {
+    return "";
+  }
+  const v = servers.afterJob(serverId, jobId);
+  if (!v) {
+    todo.push(`${name}'s state document wasn't updated: press Discover again on its page.`);
+    return "";
+  }
+  facts.push({
+    label: "State document",
+    value: `${name} · version ${v.after.version}`,
+    href: `/servers/${serverId}/state`,
+  });
+  const diff = stateDiff(v.before?.body ?? "", v.after.body);
+  if (!diff) return `\n\n${name}'s state document is the same as before.`;
+  if (/\b(postgres|mysql|mariadb|mongo|redis|sqlite|database)/i.test(diff) && d.backupPlans) {
+    const plans = await d.backupPlans(serverId).catch(() => []);
+    if (plans.length)
+      todo.push(
+        `Its data changed: check the backup plans of ${name} still back up what they should (${plans.map((p) => p.name).join(", ")}).`,
+      );
+  }
+  const shown = diff.length > 6000 ? `${diff.slice(0, 6000)}\n…` : diff;
+  return `\n\nWhat changed in ${name}'s state document (version ${v.after.version}):\n\n\`\`\`diff\n${shown}\n\`\`\``;
 }

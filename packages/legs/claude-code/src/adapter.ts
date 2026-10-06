@@ -334,7 +334,10 @@ export function createClaudeCodeAdapter(deps: { query?: QueryFn } = {}): LegAdap
             if (m.subtype === "init") nativeId = m.session_id;
             return;
           case "stream_event": {
-            const e = m.event as { type: string; delta?: { type: string; text?: string } };
+            const e = m.event as {
+              type: string;
+              delta?: { type: string; text?: string; thinking?: string };
+            };
             if (
               e.type === "content_block_delta" &&
               e.delta?.type === "text_delta" &&
@@ -342,6 +345,13 @@ export function createClaudeCodeAdapter(deps: { query?: QueryFn } = {}): LegAdap
             ) {
               turnText += e.delta.text;
               events.push({ type: "text.delta", text: e.delta.text });
+            } else if (
+              e.type === "content_block_delta" &&
+              e.delta?.type === "thinking_delta" &&
+              e.delta.thinking
+            ) {
+              // Its reasoning, shown while The Eye thinks (M13.25); never part of the answer.
+              events.push({ type: "thinking.delta", text: e.delta.thinking });
             }
             return;
           }

@@ -228,7 +228,24 @@ an "Archived" mark when it is, and the same **…** menu after New work.
 Its page is in tabs, in the address (`/projects/<id>/<tab>`):
 
 - **The Eye**: the project's one conversation with The Eye, filling the
-  page like a chat. I ask for work here; The Eye passes it to the job
+  page, read like a terminal's transcript (M13.25, 2026-10-04): one
+  column at full width, message after message, no bubbles. My prompts
+  are marked with a "›" and a left rule, slightly emphasised; The Eye's
+  replies are markdown under them, what it did in a muted monospace
+  line; its thinking (The-Eye → Thinking out loud) is a monospace row,
+  live while it runs (a spinner, "Planning the work…", its time and
+  model, what it writes in a short box that follows it) and folded to
+  one line once it ends ("Planned 9 tasks in 41 s · Claude · Opus —
+  show"); three or more quick judgements in a row (commands judged) are
+  one line, opened on demand; the agents working now are a line each at
+  the end (task, last tool or line, model, time). Beside it, a slim rail
+  of my prompts, a dot and their first words each, the one being read
+  lit (IntersectionObserver); a click scrolls to it. On a phone the rail
+  is a "N prompts" button opening the same list in a sheet. While The
+  Eye thinks, a bar over the composer says what it is doing, with
+  **Stop**; with text written it offers **Stop and redo with this** or
+  **Add as context**, the one my words suggest chosen, and Enter sends
+  that way; the composer stays usable. I ask for work here; The Eye passes it to the job
   running, starts a follow-up when the last has ended, or a first job
   ([[The-Eye]] → Talking to The Eye). Each reply links the job it
   touched (and the follow-up it started); a line marks where the
@@ -453,7 +470,14 @@ oraknid-monitor's readings live and over 24 hours, services and ports;
 add, discover again, edit the document, edit its name and description,
 open a terminal, remove. A server's page is in tabs
 ([[ADR-043-Server-Insight]]): **Overview** (the readings, then what was
-About), **Docker** (containers by compose project, each with Logs and
+About, with a **Production** switch: every job that reaches it asks
+before any change), **Chat** (2026-10-04, [[ADR-049-Server-Chat-And-Server-Jobs]]:
+The Eye's conversation about the server, the same chat as a project's
+The Eye tab; a question answered without a job, work sent into the
+server as a job, each reply linking the job it started), **Jobs** (the
+jobs that worked on the server as Work rows, newest first, opened in the
+server's project's Work tab, and above them what they wait on from me),
+**Docker** (containers by compose project, each with Logs and
 Restart; images, volumes and networks folded), **Databases**, **Proxy &
 traffic** (sites, certificates, the config check, then the last 15
 minutes of traffic as bars, status tiles and top lists), **Logs** (a log
@@ -463,7 +487,9 @@ by default, a filter while following, a search on the server when not),
 and those keeping their backups on it, each with its backups, and New
 backup plan with the databases found on it to pick from, or one
 described), **Terminal** (one shell, opened with a click) and **State
-document**. Each part shows when it was read and a Refresh; what it
+document** (its versions to pick from, each "after “<job>”" when a job's
+end wrote it). A server marked production, on its page or in a project,
+has a red **production** badge in its header. Each part shows when it was read and a Refresh; what it
 couldn't read is in a yellow box with why. On a phone everything is a
 list that wraps, nothing scrolls sideways.
 

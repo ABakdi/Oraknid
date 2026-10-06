@@ -666,7 +666,8 @@ function guide(c: z.infer<typeof HelperContext>): string {
 
 /** Oraknid now, for the helper: what it may refer to, by id. */
 async function state(d: HelperDeps): Promise<string> {
-  const projects = d.projects.list().filter((p) => !p.archivedAt);
+  // A server's own project (ADR-049) is the server's, not one of mine.
+  const projects = d.projects.list().filter((p) => !p.archivedAt && !p.serverId);
   const recent = d.db.select().from(jobs).orderBy(desc(jobs.createdAt)).limit(12).all();
   const legs = d.registry.all();
   const open = d.db.select().from(inboxItems).where(eq(inboxItems.state, "open")).all().length;

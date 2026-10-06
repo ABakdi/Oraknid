@@ -4,7 +4,9 @@
 them, what is on them (a state document kept up to date), how they are
 doing (oraknid-monitor), and a terminal into them.
 **Is not:** a configuration manager. Oraknid changes a server only when
-a job I started does so, through its approvals.
+a job I started does so, through its approvals: a job of a project that
+has the server, or one I asked for in the server's own chat
+([[ADR-049-Server-Chat-And-Server-Jobs]]).
 
 ## Adding a server
 
@@ -73,7 +75,8 @@ connection until I accept it again. Then, with my click:
    they printed.
 3. **The state document**: The Eye writes what the server is and what
    is on it, from my description and the discovery, in markdown. I can
-   read it and edit it; each version is kept.
+   read it and edit it; each version is kept, with the job whose end wrote it
+   (the State document tab lists them, `servers.history`).
 4. **oraknid-monitor** is installed (below).
 
 ## The state document
@@ -85,7 +88,10 @@ updated:
 
 - when I press **Discover again**;
 - after every job that had the server, from a new discovery and what
-  the job changed;
+  the job changed; a server job's version ends with **Changes by job
+  “…”**, the tasks that changed something and the checks that proved
+  them, and The Eye's report of the job shows the diff from the version
+  before (below);
 - by my own edits.
 
 ## Servers in projects
@@ -106,7 +112,59 @@ have a different role in each project. A job's sessions get each
 server's role with its state document, production said loud, and the
 one The Eye chose for the job marked as the server for its work. Which
 server a deploy goes to, and when production is confirmed:
-[[The-Eye]] → A project's repos and servers.
+[[The-Eye]] → A project's repos and servers. A server I marked
+production on its own page is production in every project
+([[ADR-049-Server-Chat-And-Server-Jobs]]).
+
+## A server's chat and its jobs (2026-10-04, [[ADR-049-Server-Chat-And-Server-Jobs]])
+
+Each server has a project of its own, made with its first message and
+hidden from the Projects list: its folder a scratch folder of Oraknid's
+(`<data>/server-jobs/<server id>`), the server its one server, the
+built-in **server-work** method its skill. Its conversation is the
+server's **Chat** tab; its jobs are the server's **Jobs** tab, and are
+jobs like any other (Silk, Workflow, inbox, notifications), opened in
+that project's Work tab.
+
+In the **Chat** tab I write to The Eye about the server:
+
+- With a job going on the server, my message goes to it, as in a project.
+- A **question** its state document and readings answer ("what runs on
+  it?", "which node does it have?") is answered there, without a job.
+- **Work** ("install fail2ban", "rotate the logs of app y", "upgrade
+  node on this box"), or a question that needs looking on the server
+  ("why does nginx return 502 for x.com"), becomes a **server job**: its
+  goal my request made precise, this server its server.
+
+A server job is planned like any job (a small one is one task); a task
+that only looks is research and changes nothing. Its sessions get the
+state document, the server's role and production, and the way in of
+Servers in projects; they are told the work is on the server, the
+folder only for notes. Before anything changes, **the plan says what
+will change and waits for my approval** ("Approve what will change on
+vps"), unless the job runs at Full autonomy on a server that isn't
+production; a job that only looks starts at once.
+
+**Checks on the server**: a check written `ssh <alias> <command>` runs
+on the server, run by Oraknid over its own connection with the pinned
+host key (`ssh oraknid-vps systemctl is-active fail2ban`). A check only
+reads; on production one that could change something is refused.
+
+**Commands on a server** go through the approvals like every command,
+judged as what runs there: in `ssh <alias> '…'` with nothing after it
+on the line, `sudo` is the server's business and is not refused as
+root on this computer; what is never allowed stays refused.
+**Production** — my **Production** mark on the server's Overview, or
+its role in a project — asks before anything that doesn't only read,
+at any autonomy, in every project and in its own chat; `scp` and
+`rsync` to it always ask.
+
+When the job ends, a new discovery writes the next version of the state
+document (above), what was read of the server is read again, and The
+Eye reports in the Chat what was done, with the version, its diff, and
+the backup plans to look at when its data changed. Away from home,
+asking for work on a server and the Production mark are home only for
+a device without full rights, like every server action.
 
 ## oraknid-monitor
 
@@ -121,9 +179,10 @@ with the last 24 hours as charts. Removing a server removes the program.
 ## What runs there ([[ADR-043-Server-Insight]])
 
 A ready server's page is in tabs: **Overview** (the readings, its name,
-description and address, edit, remove), **Docker**, **Databases**,
-**Proxy & traffic**, **Logs**, **Backups** ([[ADR-044-Backups]]),
-**Terminal** and **State document**. oraknid-monitor reads each part
+description and address, its Production mark, edit, remove), **Chat**
+and **Jobs** ([[ADR-049-Server-Chat-And-Server-Jobs]]), **Docker**,
+**Databases**, **Proxy & traffic**, **Logs**, **Backups**
+([[ADR-044-Backups]]), **Terminal** and **State document**. oraknid-monitor reads each part
 only while its tab is open (and again every 30 s to 2 min while the page
 is in sight; **Refresh** reads it now), over the same SSH connection; the
 daemon keeps a reading 20 seconds so the tabs and the helper share it,
@@ -224,4 +283,4 @@ minutes. A Redis restore puts the file in place and stops Redis without
 saving; a container is started again. Restoring is never an agent's
 ([[Security]] → Backups).
 
-Related: [[ADR-026-Servers]] · [[ADR-027-Oraknid-Monitor]] · [[ADR-028-Terminal]] · [[ADR-043-Server-Insight]] · [[ADR-044-Backups]] · [[Security]] · [[Web-UI]]
+Related: [[ADR-026-Servers]] · [[ADR-027-Oraknid-Monitor]] · [[ADR-028-Terminal]] · [[ADR-043-Server-Insight]] · [[ADR-044-Backups]] · [[ADR-049-Server-Chat-And-Server-Jobs]] · [[Security]] · [[Web-UI]]
