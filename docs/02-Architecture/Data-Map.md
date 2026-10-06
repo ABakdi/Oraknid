@@ -48,7 +48,9 @@ no row.
 
 | Key | Holds |
 | :-- | :-- |
-| `jobs.maxRunning`, `jobs.maxTasks` | Jobs at once, tasks at once in a job ([[ADR-016-Parallel-Work]]). |
+| `jobs.maxRunning`, `jobs.maxTasks` | Jobs at once (4 unless set), tasks at once in one job (absent: as many as are admitted) ([[ADR-016-Parallel-Work]], [[ADR-050-Parallel-By-Default]]). |
+| `work.resources` | Tasks at once across all jobs (`"auto"` or a number), my thresholds, pausing for my own work ([[ADR-050-Parallel-By-Default]]). |
+| `work.costs` | What each class of task (`kind:heavy|light`) was seen to take at peak: memory and CPU, a moving average over its sessions ([[ADR-050-Parallel-By-Default]]). |
 | `fallback.sameProvider` | Same-provider fallback ([[ADR-009-Multiple-Accounts-Per-Provider]]). |
 | `eye.legModelId`, `eye.models` | The Eye's Leg model; the pins per kind of decision and the shadow ([[ADR-022-Eye-Decision-Models]]). |
 | `policy.global`, `policy.project.<project>` | Command rules, globally and per project ([[Security]]). |

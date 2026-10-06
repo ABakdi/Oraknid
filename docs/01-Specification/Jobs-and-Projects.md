@@ -333,18 +333,45 @@ is on the Overview. An old `/jobs/<id>` link opens the job there.
 ## Several jobs (Phase 3)
 
 At most the set number of jobs run at once (Settings → Jobs at once,
-2 by default). Starting or resuming one past the limit queues it: its
+4 by default). Starting or resuming one past the limit queues it: its
 state stays, a badge says it waits, and it starts when a running job
 ends, pauses or waits for me. Queued jobs go by priority (high, normal,
-low), then by age. A Leg runs one task session at a time unless I allow
-more on its card; a task whose Legs are all busy waits for one, its job
-still running ([[ADR-016-Parallel-Work]]).
+low), then by age. A Leg runs its own number of task sessions at once
+(3 for Claude Code, 2 for OpenCode and Antigravity, 1 for a local model
+server, changeable on its card); a task whose Legs are all busy waits
+for one, its job still running ([[ADR-016-Parallel-Work]]).
 
-Inside a job, tasks run one at a time unless I allow more (Settings →
-Tasks at once in a job). Then tasks that touch different files run
-together, each in a worktree of its own, and each is merged into the
-job branch when verified and checked again there; one that conflicts or
-fails once merged is redone on top of the newer work.
+**Parallel by default** (2026-10-04, [[ADR-050-Parallel-By-Default]]).
+Every ready task starts at once whose dependencies are done and whose
+scope can't tightly overlap a running task's, while the computer has
+room, its Legs have sessions free and I allow it (Settings → Work at
+once: *Automatic*, what this computer takes, or a number across all
+jobs; a limit for one job is optional). Tasks that could run side by
+side each work in a worktree of their own, and each is merged into the
+job branch when verified and checked again there; one that conflicts
+or fails once merged is redone on top of the newer work. Two tasks that
+name the same file, or the same folder two levels down, wait for each
+other; tasks that meet only through a broad scope (`src/**`) run side
+by side. A plan that is a chain works in the job's own folder, one task
+after another. A ready task that waits says why, on its box and in the
+job's header ("4 tasks running at once · 2 waiting: waiting for
+memory: 2.1 GB free, it may need 2.6 GB"; "Claude busy with 3
+sessions"; "overlaps “Write the login page”: both change src/auth").
+
+**The computer comes first.** Before each task starts, Oraknid checks
+the machine: memory left after what the task may need (15% kept free),
+memory pressure, CPU (no further task above 85%), disk (2 GB free on
+the data folder and the project), and a heavy task (a build, an
+install, a test suite) never beside another heavy one. While tasks run
+it watches for danger: memory nearly gone while swapping, thrashing,
+an overloaded CPU, a full disk, the OOM killer, heat, one of its own
+sessions running away (memory growing without end, a fork bomb, a CPU
+pegged for minutes with nothing said, zombies). In danger nothing new
+starts and it pauses its newest or heaviest task at a safe point,
+which starts again by itself once there is room; it tells me once per
+incident what is happening and what it did, and never touches my own
+processes. With **Pause work when the computer is busy with my own
+things** on, my own load holds and pauses its work too.
 
 ## Ending a job
 

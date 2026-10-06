@@ -71,4 +71,18 @@ job side by side.
   a task's "worktree" is a folder of worktrees, one per repo it touches,
   and its merge is all or nothing across them.
 
+## Changed (2026-10-04, [[ADR-050-Parallel-By-Default]])
+- Tasks side by side are **on by default**: no per-job limit unless I
+  set one; every ready task starts as the machine, the Legs and my cap
+  across all jobs admit. Jobs at once default to 4.
+- A Leg's sessions at once default by kind: 3 for Claude Code, 2 for
+  OpenCode and Antigravity, 1 for a local model server.
+- Scopes overlap *tightly* (same file, same folder two levels down:
+  they wait) or *loosely* (only through a broad glob: side by side in
+  worktrees, merged after).
+- A plan that is a chain runs in the job's own tree; one where two
+  tasks could ever run at once gives every task a worktree.
+- The fixed resource rule above is replaced by admission and a guard
+  with settings.
+
 Related: [[Phase-3-Parallelism]] · [[ADR-003-Job-Execution-Engine]] · [[Sandboxing]] · [[Business-Rules]]

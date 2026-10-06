@@ -84,7 +84,8 @@ tasks, the same ones twice, had no dependency at all). The prompt asks
 for one: each task names in `dependsOn` the tasks whose results it
 needs: the project's setup before its features, research before the
 work that uses it, integration and end-to-end tests after the parts;
-tasks that don't need each other run side by side; each piece of work
+tasks that don't need each other run side by side (at once, by
+default, as the computer and the Legs admit: [[ADR-050-Parallel-By-Default]]); each piece of work
 once; and when I gave phases, each task its `phase`. A plan with the
 same work twice, or several tasks and no dependency at all where order
 plainly matters (setup, research, integration or tests among them), is

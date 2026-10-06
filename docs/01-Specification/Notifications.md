@@ -31,9 +31,10 @@ Settings → Notifications.
 | Security: the 5th wrong PIN on a device, a device unpaired by ten ([[ADR-029-App-Lock]]) | ✓ | ✓ | ✓ |
 | A backup failed, with its error in words ([[ADR-044-Backups]]) | ✓ | ✓ | ✓ |
 | A new version of Oraknid, once per release on my channel ([[ADR-048-Updates]]) | ✓ | ✓ | — |
+| The computer in danger (`machine.danger`): memory and swap, a full disk, the OOM killer, heat, a session running away; once per incident, with what Oraknid did ([[ADR-050-Parallel-By-Default]]) | ✓ | ✓ | — |
 
 I can change every cell. **Quiet hours** hold everything except
-approvals for running jobs and security alerts. Repeated events are grouped
+approvals for running jobs, security alerts and the computer in danger. Repeated events are grouped
 ("3 approvals waiting").
 
 ## Content
