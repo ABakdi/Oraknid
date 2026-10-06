@@ -113,6 +113,14 @@ export function EyeChat({
     refreshOn: (e) => e.type === "eye.thinking.started" || e.type === "eye.thinking.ended",
     deps: [projectId],
   });
+  // A job new to the project: what it thinks is read again once its topic is followed, so a
+  // thought that started before then is shown.
+  const jobKey = ids.join(",");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reload when the project's jobs change
+  useEffect(() => {
+    thinking.reload();
+    messages.reload();
+  }, [jobKey]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
