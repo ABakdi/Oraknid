@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SessionStart } from "@oraknid/leg-sdk";
 import { legContract, readUntil } from "@oraknid/leg-sdk/contract";
-import { createBwrapSandbox } from "@oraknid/os";
+import { createBwrapSandbox, sandboxForTests } from "@oraknid/os";
 import { afterAll, describe, expect, it } from "vitest";
 import { createOpenAICompatibleAdapter } from "./adapter.ts";
 import { fakeServer } from "./fake-server.ts";
@@ -23,7 +23,8 @@ function workspace() {
   return { root, work, home };
 }
 
-const sandbox = createBwrapSandbox();
+// The real sandbox where it works; a CI runner without one runs the commands as they are.
+const { sandbox, isolated } = sandboxForTests(createBwrapSandbox());
 
 function startFor(baseUrl: string, over: Partial<SessionStart> = {}): SessionStart {
   const w = workspace();
@@ -164,18 +165,21 @@ describe("tools stay inside the workspace", () => {
     ).rejects.toThrow(/not found/);
   });
 
-  it("runs commands in the sandbox, which cannot see outside the workspace", async () => {
-    const w = workspace();
-    writeFileSync(join(w.root, "secret"), "do not read");
-    const c = ctx(w.work, w.home);
-    expect(await runTool(c, "run_command", { command: "echo hi > out.txt && cat out.txt" })).toBe(
-      "hi\n[exit 0]",
-    );
-    expect(readFileSync(join(w.work, "out.txt"), "utf8")).toBe("hi\n");
-    const leak = await runTool(c, "run_command", { command: `cat ${join(w.root, "secret")}` });
-    expect(leak).not.toContain("do not read");
-    expect(leak).toMatch(/\[exit 1\]$/);
-  });
+  it.runIf(isolated)(
+    "runs commands in the sandbox, which cannot see outside the workspace",
+    async () => {
+      const w = workspace();
+      writeFileSync(join(w.root, "secret"), "do not read");
+      const c = ctx(w.work, w.home);
+      expect(await runTool(c, "run_command", { command: "echo hi > out.txt && cat out.txt" })).toBe(
+        "hi\n[exit 0]",
+      );
+      expect(readFileSync(join(w.work, "out.txt"), "utf8")).toBe("hi\n");
+      const leak = await runTool(c, "run_command", { command: `cat ${join(w.root, "secret")}` });
+      expect(leak).not.toContain("do not read");
+      expect(leak).toMatch(/\[exit 1\]$/);
+    },
+  );
 
   it("searches file contents", async () => {
     const w = workspace();

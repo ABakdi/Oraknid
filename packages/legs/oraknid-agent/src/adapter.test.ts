@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LegEvent, SessionStart } from "@oraknid/leg-sdk";
 import { legContract, readUntil } from "@oraknid/leg-sdk/contract";
-import { createBwrapSandbox } from "@oraknid/os";
+import { createBwrapSandbox, sandboxForTests } from "@oraknid/os";
 import { afterAll, describe, expect, it } from "vitest";
 import { createOraknidAgentAdapter } from "./adapter.ts";
 import {
@@ -41,7 +41,8 @@ function workspace() {
   return { root, work, home };
 }
 
-const sandbox = createBwrapSandbox();
+// The real sandbox where it works; a CI runner without one runs the commands as they are.
+const { sandbox, isolated } = sandboxForTests(createBwrapSandbox());
 const PATH = "/usr/local/bin:/usr/bin:/bin";
 
 function startFor(

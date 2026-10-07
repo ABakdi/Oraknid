@@ -1,12 +1,13 @@
 import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createBwrapSandbox } from "@oraknid/os";
+import { createBwrapSandbox, sandboxForTests } from "@oraknid/os";
 import { describe, expect, it } from "vitest";
 import { readStep, stepSchema, toJsonMessages } from "./json-mode.ts";
 import { htmlToText, inside, permissionFor, runTool, type ToolContext } from "./tools.ts";
 
-const sandbox = createBwrapSandbox();
+// The real sandbox where it works; a CI runner without one runs the commands as they are.
+const { sandbox, isolated } = sandboxForTests(createBwrapSandbox());
 
 function ctx(): ToolContext & { root: string } {
   const root = mkdtempSync(join(tmpdir(), "oraknid-agent-tools-"));
@@ -105,15 +106,18 @@ describe("oraknid-agent tools", () => {
     expect((await runTool(c, "grep", { pattern: "absent" })).output).toBe("No matches for absent.");
   });
 
-  it("runs bash in the sandbox, which can't see outside the workspace", async () => {
-    const c = ctx();
-    writeFileSync(join(c.root, "secret"), "do not read");
-    const ok = await runTool(c, "bash", { command: "echo hi" });
-    expect(ok).toEqual({ ok: true, output: "hi\n[exit 0]" });
-    const leak = await runTool(c, "bash", { command: `cat ${join(c.root, "secret")}` });
-    expect(leak.ok).toBe(false);
-    expect(leak.output).not.toContain("do not read");
-  });
+  it.runIf(isolated)(
+    "runs bash in the sandbox, which can't see outside the workspace",
+    async () => {
+      const c = ctx();
+      writeFileSync(join(c.root, "secret"), "do not read");
+      const ok = await runTool(c, "bash", { command: "echo hi" });
+      expect(ok).toEqual({ ok: true, output: "hi\n[exit 0]" });
+      const leak = await runTool(c, "bash", { command: `cat ${join(c.root, "secret")}` });
+      expect(leak.ok).toBe(false);
+      expect(leak.output).not.toContain("do not read");
+    },
+  );
 
   it("keeps a todo list", async () => {
     const c = ctx();

@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createBwrapSandbox } from "@oraknid/os";
+import { createBwrapSandbox, sandboxForTests } from "@oraknid/os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeDatabase, type Db, openDatabase } from "../db/open.ts";
 import { jobs } from "../db/schema.ts";
@@ -139,6 +139,9 @@ describe("projects", () => {
   });
 });
 
+// The real sandbox where it works; a CI runner without one runs the commands as they are.
+const testSandbox = sandboxForTests(createBwrapSandbox());
+
 describe("verifier (BR-1)", () => {
   const plan = () => {
     const root = folder();
@@ -149,7 +152,7 @@ describe("verifier (BR-1)", () => {
     return {
       work,
       plan: {
-        sandbox: createBwrapSandbox(),
+        sandbox: testSandbox.sandbox,
         home,
         writable: [],
         readonly: [],
@@ -169,7 +172,7 @@ describe("verifier (BR-1)", () => {
     expect(results[1]?.signature).toMatch(/^[0-9a-f]{16}$/);
   });
 
-  it("cannot reach outside the worktree", async () => {
+  it.runIf(testSandbox.isolated)("cannot reach outside the worktree", async () => {
     const { work, plan: p } = plan();
     const outside = join(work, "..", "outside.txt");
     // Inside, parent folders of bound paths are a throwaway filesystem: the write may "work" there,

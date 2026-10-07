@@ -49,3 +49,32 @@ export function withLocalPorts(sandbox: Sandbox, ports: number[]): Sandbox {
       sandbox.wrap({ ...spec, localPorts: [...new Set([...(spec.localPorts ?? []), ...ports])] }),
   };
 }
+
+/**
+ * For tests on a machine whose sandbox doesn't work (a CI runner without
+ * user namespaces): the command runs as it is, in its folder, with its
+ * variables. What tests isolation itself must skip there (`isolated`).
+ */
+export function sandboxForTests(real: Sandbox): { sandbox: Sandbox; isolated: boolean } {
+  if (process.env.ORAKNID_TEST_NO_SANDBOX !== "1" && real.status().available)
+    return { sandbox: real, isolated: true };
+  return {
+    isolated: false,
+    sandbox: {
+      status: () => ({ available: true, detail: "no sandbox (tests on a machine without one)" }),
+      wrap: (spec) => ({
+        command: "env",
+        args: [
+          "-i",
+          ...Object.entries({ ...spec.env, HOME: spec.home }).map(([k, v]) => `${k}=${v}`),
+          "sh",
+          "-c",
+          'cd "$0" && exec "$@"',
+          spec.cwd,
+          spec.command,
+          ...spec.args,
+        ],
+      }),
+    },
+  };
+}
