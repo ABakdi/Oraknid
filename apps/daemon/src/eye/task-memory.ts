@@ -67,7 +67,13 @@ const EMPTY: TaskMemory = {
 };
 
 /** The kinds the memory is folded from. */
-const KINDS: AttemptEventKind[] = ["GateDecision", "Signal", "QuestionAsked", "QuestionAnswered"];
+const KINDS: AttemptEventKind[] = [
+  "GateDecision",
+  "ActionResult",
+  "Signal",
+  "QuestionAsked",
+  "QuestionAnswered",
+];
 /** A bound on the fold: a task's last this many of those events. */
 const FOLD_LIMIT = 5000;
 
@@ -120,6 +126,10 @@ export function readTaskMemory(db: Db, taskId: string): TaskMemory {
         if (g.endsRow) watch.allowed("t");
         break;
       }
+      // An action that ran ends the row, whoever let it run (the Leg's own classifier too).
+      case "ActionResult":
+        if (e.data.ok) watch.allowed("t");
+        break;
       case "Signal":
         if (e.data.kind === "untrusted" && m.untrusted === null) m.untrusted = e.data.evidence;
         break;

@@ -965,9 +965,15 @@ export function createGate(c: GateContext) {
       asked.length = 0;
     },
 
-    /** An action's result came back (ADR-056 §1): in the log. */
+    /**
+     * An action's result came back (ADR-056 §1): one that ran ends the stuck
+     * row, also when Claude Code's hook left it to its own classifier, whose
+     * "allow" Oraknid only sees here (stage 2's limit). A failed result says
+     * nothing: a refusal comes back as one.
+     */
     ran(actionId: string, ok: boolean) {
       log.append("ActionResult", { actionId, ok });
+      if (ok) endRow();
     },
   };
 }
