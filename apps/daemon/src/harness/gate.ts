@@ -257,6 +257,11 @@ export function createGate(c: GateContext) {
   /** A command in its plain form (`ssh <alias>` alone, ADR-049): how what I let run is matched. */
   const plain = (command: string) =>
     servers.length ? plainServerCheck(command.trim(), aliases()) : command.trim();
+  /** An action as the after-the-fact audit matches it to a decision made before it ran. */
+  const actionKey = (r: PermissionRequest) =>
+    r.command ? `$ ${plain(r.command)}` : `${r.path ?? r.tool}`;
+  /** What the Gate decided in this attempt before it ran: not audited again after. */
+  const decidedHere = new Set<string>();
 
   const markUntrusted = (reason: string) => {
     if (untrusted) return;
@@ -655,6 +660,7 @@ export function createGate(c: GateContext) {
   const decideAction = async (a: GateAction): Promise<GateDecision> => {
     const r = a.request;
     const hook = a.source === "hook";
+    decidedHere.add(actionKey(r));
     // The broker judges every call to a job's tool: the Leg's own ask for it passes (ADR-021).
     if (isBrokered(r.tool, brokered)) {
       record(r, {
@@ -964,6 +970,34 @@ export function createGate(c: GateContext) {
         log.append("QuestionAnswered", { itemId, answer: null, withdrawn: true });
       }
       asked.length = 0;
+    },
+
+    /**
+     * An action the Leg ran without asking (it has no inline gate, ADR-056
+     * §2): read by the same rules after the fact — never the judge, never
+     * asked, never counted toward the stuck rule — and written to the log.
+     * What the rules would have refused or asked me is a forbidden action
+     * for the drift ladder (D7). A read, or what was decided before it ran,
+     * isn't audited again.
+     */
+    async afterTheFact(r: PermissionRequest): Promise<"allow" | "forbidden" | null> {
+      if (isRead(r.tool) || decidedHere.has(actionKey(r))) return null;
+      if (!r.command && !r.path) return null;
+      decidedHere.add(actionKey(r));
+      const { first } = await rulesOf(r);
+      const forbidden = first.verdict === "deny" || first.verdict === "ask";
+      const reason = forbidden
+        ? `ran without being asked: ${first.reason}`
+        : `ran without being asked; the rules ${first.verdict === "judge" ? "leave it to the judge" : "allow it"}: ${first.reason}`;
+      record(r, { source: "audit", by: "rule", verdict: forbidden ? "deny" : "allow", reason });
+      audit(r, { verdict: forbidden ? "block" : "allow", layer: "rules", reason });
+      if (!forbidden) return "allow";
+      c.on.forbidden(`ran \`${(r.command ?? r.path ?? r.tool).slice(0, 200)}\` (${first.reason})`);
+      c.on.event("task.audited", {
+        command: (r.command ?? r.path ?? r.tool).slice(0, 300),
+        reason: first.reason,
+      });
+      return "forbidden";
     },
 
     /**

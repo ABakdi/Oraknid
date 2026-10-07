@@ -32,7 +32,8 @@ export interface AttemptEventData {
   ActionRequested: { id: string; tool: string; input: string };
   GateDecision: {
     actionId: string;
-    source: "prompt" | "hook" | "mcp" | "owner" | "leg";
+    /** `audit`: a Leg without an inline gate ran it, read after the fact (ADR-056 §2). */
+    source: "prompt" | "hook" | "mcp" | "owner" | "leg" | "audit";
     tool: string;
     /** The action in its plain form, short. */
     action: string;

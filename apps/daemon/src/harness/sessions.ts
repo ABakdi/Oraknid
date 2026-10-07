@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { HANDOFF_REQUEST, type RouteCandidate } from "@oraknid/core";
 import {
+  asRequest,
   type Capabilities,
   capabilitiesOf,
   type LegEvent,
@@ -92,14 +93,20 @@ export function createSessionManager(s: SessionSpec) {
   const logEvent = recordEvents(trail, gate.ran);
   /** Commands waiting for their result, by tool call id. */
   const pending = new Map<string, string>();
+  /** Audits after the fact still being read (no inline gate): settled before a turn is decided. */
+  const audits: Promise<unknown>[] = [];
 
   /** What every turn's events tell the log, the Gate and the drift monitors. */
   const watch = (e: LegEvent) => {
     const observed = st.observed;
     observed.lastActivityAt = d.now();
     logEvent(e);
-    if (e.type === "tool.called" && typeof e.input.command === "string")
-      pending.set(e.id, e.input.command);
+    if (e.type === "tool.called") {
+      if (typeof e.input.command === "string") pending.set(e.id, e.input.command);
+      // No inline gate: what it ran is read by the Gate's rules after the fact, and feeds drift.
+      if (!caps.inlineGate)
+        audits.push(gate.afterTheFact(asRequest(e.tool, e.input)).catch(() => null));
+    }
     if (e.type === "tool.result" && pending.has(e.id)) {
       observed.commands.push({
         command: pending.get(e.id) as string,
@@ -120,6 +127,7 @@ export function createSessionManager(s: SessionSpec) {
   const nextTurnEnd = async (ms: number, onEvent?: (e: LegEvent) => void) => {
     if (!session) throw new Error("no session");
     const end = await turnEndOf(session, signal, ms, onEvent);
+    if (end && audits.length) await Promise.all(audits.splice(0));
     return end;
   };
 

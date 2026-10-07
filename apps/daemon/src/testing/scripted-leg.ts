@@ -31,7 +31,9 @@ export type Action =
   /** A command Claude Code's own auto mode refused before it ran, Oraknid never asked (ADR-053). */
   | { legDenies: { command: string; reason: string } }
   /** The turn ends unfinished: cut short, or at the Leg's own limit of steps in a turn. */
-  | { endTurn: "interrupted" | "max_turns" };
+  | { endTurn: "interrupted" | "max_turns" }
+  /** A command the Leg runs without asking, as headless agy runs what its settings allow (nothing really runs). */
+  | { runUnasked: string };
 
 export interface TurnContext {
   leg: string;
@@ -196,6 +198,16 @@ export function scriptedLeg(
               ok: r.status === 0,
               output: `${r.stdout}${r.stderr}`,
             });
+          } else if ("runUnasked" in a) {
+            // Headless agy's way (ADR-020): what its settings allow runs, Oraknid never asked.
+            const id = `u${Math.random()}`;
+            events.push({
+              type: "tool.called",
+              id,
+              tool: "run_command",
+              input: { CommandLine: a.runUnasked },
+            });
+            events.push({ type: "tool.result", id, ok: true, output: "" });
           } else if ("think" in a) {
             events.push({ type: "thinking.delta", text: a.think });
           } else if ("say" in a) {

@@ -49,6 +49,46 @@ const logOf = (h: Harness, jobId: string) => {
 };
 
 describe("sessions by the Leg's capabilities, each fallback declared (ADR-056 §2)", () => {
+  it("no inline gate: what it ran unasked is audited after the fact and corrected (D7)", async () => {
+    const leg = scriptedLeg(
+      (t) =>
+        t.turn === 1
+          ? [
+              { runUnasked: "sudo rm -rf /var/www" },
+              { write: "parser.js", content: "x\n" },
+              { say: "DONE" },
+            ]
+          : [{ say: "DONE" }],
+      { declares: { inlineGate: false } },
+    );
+    rig = await harness({ legs: [{ kind: "antigravity", name: "Agy", leg }], plan: PLAN });
+    const { id } = await rig.repoJob("A parser");
+    const done = await rig.ended(id);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+    const audited = logOf(rig, id).filter(
+      (e) => e.kind === "GateDecision" && e.data.source === "audit",
+    );
+    expect(audited).toMatchObject([
+      { data: { verdict: "deny", by: "rule", action: "sudo rm -rf /var/www" } },
+    ]);
+    expect(rig.events(id, "task.drift")).toMatchObject([{ code: "D7", step: "correct" }]);
+    expect(leg.log[1]?.message).toMatch(/sudo rm -rf \/var\/www/);
+  }, 60_000);
+
+  it("the same Leg with an inline gate: nothing is audited after the fact", async () => {
+    const leg = scriptedLeg(() => [
+      { runUnasked: "ls" },
+      { write: "parser.js", content: "x\n" },
+      { say: "DONE" },
+    ]);
+    rig = await harness({ legs: [{ kind: "antigravity", name: "Agy", leg }], plan: PLAN });
+    const { id } = await rig.repoJob("A parser");
+    expect((await rig.ended(id)).state).toBe("completed");
+    expect(
+      logOf(rig, id).filter((e) => e.kind === "GateDecision" && e.data.source === "audit"),
+    ).toEqual([]);
+  }, 60_000);
+
   it("no stop hook in its probe: the session gets none, and the checks run after the turn", async () => {
     // It would hold its turn for the checks if it were given the hook.
     const leg = scriptedLeg(() => [{ write: "parser.js", content: "x\n" }, { say: "DONE" }], {

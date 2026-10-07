@@ -70,7 +70,7 @@ export function handoffFromAttempt(log: AttemptLog, attemptId: string): string {
     );
   const refused = log
     .attempt(attemptId, { kinds: ["GateDecision"], limit: 100 })
-    .filter((e) => e.data.verdict === "deny")
+    .filter((e) => e.data.verdict === "deny" && e.data.source !== "audit")
     .slice(-10);
   if (refused.length)
     parts.push(
