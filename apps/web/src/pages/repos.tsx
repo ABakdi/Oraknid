@@ -110,7 +110,7 @@ const via =
   };
 type G = typeof api.github;
 type H = typeof api.hosts;
-const rapi = {
+export const rapi = {
   repoInfo: via<Parameters<G["repoInfo"]>[0], Awaited<ReturnType<G["repoInfo"]>>>(
     (i) => api.github.repoInfo(i),
     (i) => api.hosts.repoInfo(i),

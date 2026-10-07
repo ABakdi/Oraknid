@@ -44,11 +44,19 @@ export function ProjectGitHubCard({
     topics: ["overview"],
     refreshOn: (e) => e.type.startsWith("github."),
   });
+  // GitLab, Gitea and Forgejo accounts too (ADR-062), as `host!login`.
+  const hostAccounts = useLive(() => api.hosts.accounts({}), {
+    topics: ["overview"],
+    refreshOn: (e) => e.type.startsWith("githost."),
+  });
   const [editing, setEditing] = useState(false);
   const { confirm, dialog } = useConfirm();
   const link = repo ? repo.github : project.github;
   if (!accounts.data) return <Loading rows={1} />;
-  const logins = accounts.data.map((a) => a.login).filter(Boolean);
+  const logins = [
+    ...accounts.data.map((a) => a.login).filter(Boolean),
+    ...(hostAccounts.data ?? []).map((a) => accountKey(a.host, a.login)),
+  ];
   const unlink = async () => {
     if (
       !(await confirm(
@@ -92,9 +100,12 @@ export function ProjectGitHubCard({
               {link.visibility === "public" ? t("Public") : t("Private")}
             </Badge>
             {!link.ready ? <Badge variant="secondary">{t("to be created")}</Badge> : null}
+            {link.host ? <Badge variant="outline">{link.host}</Badge> : null}
             <span className="text-xs text-muted-foreground">
               {t("through {account}", { account: link.account })}
-              {logins.includes(link.account) ? "" : ` — ${t("an account Oraknid no longer has")}`}
+              {logins.includes(accountKey(link.host, link.account))
+                ? ""
+                : ` — ${t("an account Oraknid no longer has")}`}
             </span>
             <span className="flex-1" />
             <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
@@ -148,9 +159,11 @@ function LinkForm({
   onDone: () => void;
 }) {
   const link = repo ? repo.github : project.github;
-  const [account, setAccount] = useState(link?.account ?? logins[0] ?? "");
+  const [account, setAccount] = useState(
+    link ? accountKey(link.host, link.account) : (logins[0] ?? ""),
+  );
   const [origin, setOrigin] = useState<"new" | "existing">(link?.origin ?? "new");
-  const [owner, setOwner] = useState(link?.owner ?? logins[0] ?? "");
+  const [owner, setOwner] = useState(link?.owner ?? splitAccount(logins[0] ?? "").login);
   // A repo of several is named after the project and itself: site-api.
   const [name, setName] = useState(
     link?.name ??
@@ -163,8 +176,10 @@ function LinkForm({
   const save = async () => {
     setBusy(true);
     try {
+      const { host, login } = splitAccount(account);
       const input: GitHubLinkInput = {
-        account,
+        ...(host ? { host } : {}),
+        account: login,
         owner: owner.trim(),
         name: name.trim(),
         visibility,
@@ -196,7 +211,7 @@ function LinkForm({
         <Select
           value={account}
           onValueChange={(v) => {
-            if (owner === account) setOwner(v);
+            if (owner === splitAccount(account).login) setOwner(splitAccount(v).login);
             setAccount(v);
           }}
         >
@@ -206,7 +221,7 @@ function LinkForm({
           <SelectContent>
             {logins.map((l) => (
               <SelectItem key={l} value={l}>
-                {l}
+                {splitAccount(l).host ? `${splitAccount(l).login} · ${splitAccount(l).host}` : l}
               </SelectItem>
             ))}
           </SelectContent>
@@ -263,3 +278,12 @@ function LinkForm({
     </form>
   );
 }
+
+/** An account as the picker holds it: GitHub's by login, another host's as `host!login` (ADR-062). */
+const accountKey = (host: string | undefined, login: string) => (host ? `${host}!${login}` : login);
+const splitAccount = (key: string) => {
+  const i = key.indexOf("!");
+  return i < 0
+    ? { host: undefined, login: key }
+    : { host: key.slice(0, i), login: key.slice(i + 1) };
+};

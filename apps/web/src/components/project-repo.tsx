@@ -40,7 +40,7 @@ import { api, message } from "@/lib/api";
 import { ago } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { useLive } from "@/lib/live";
-import { repoHref } from "@/pages/repos";
+import { ownerKey, rapi, repoHref } from "@/pages/repos";
 
 /** A project of several repos (ADR-042): more than one, or one in a folder of the project's. */
 export const isSeveral = (repos: ProjectRepo[] | undefined) =>
@@ -496,19 +496,20 @@ function AddRepo({
 }
 
 function RepoNow({ link }: { link: GitHubLink }) {
-  const ref = { owner: link.owner, name: link.name, account: link.account };
-  const deps = [link.owner, link.name, link.account];
-  const info = useLive(() => api.github.repoInfo(ref), { topics: [], deps });
+  // A link on GitLab, Gitea or Forgejo is read through its host (ADR-062).
+  const ref = { owner: ownerKey(link.host, link.owner), name: link.name, account: link.account };
+  const deps = [link.host, link.owner, link.name, link.account];
+  const info = useLive(() => rapi.repoInfo(ref), { topics: [], deps });
   const branch = info.data?.defaultBranch;
   const commits = useLive(
     () =>
       branch
-        ? api.github.commits({ ...ref, branch, page: 1 })
+        ? rapi.commits({ ...ref, branch, page: 1 })
         : Promise.resolve({ items: [], page: 1, next: false }),
     { topics: [], deps: [...deps, branch] },
   );
-  const branches = useLive(() => api.github.branches({ ...ref, page: 1 }), { topics: [], deps });
-  const pulls = useLive(() => api.github.pulls({ ...ref, state: "open", page: 1 }), {
+  const branches = useLive(() => rapi.branches({ ...ref, page: 1 }), { topics: [], deps });
+  const pulls = useLive(() => rapi.pulls({ ...ref, state: "open", page: 1 }), {
     topics: [],
     deps,
   });
@@ -533,7 +534,7 @@ function RepoNow({ link }: { link: GitHubLink }) {
         ) : null}
         <div className="flex flex-wrap gap-2">
           <Button asChild size="sm">
-            <Link href={repoHref.base(repo.owner, repo.name)}>{t("Browse the code")}</Link>
+            <Link href={repoHref.base(ref.owner, repo.name)}>{t("Browse the code")}</Link>
           </Button>
           <Button asChild size="sm" variant="outline">
             <a href={repo.url} target="_blank" rel="noreferrer">
@@ -560,7 +561,7 @@ function RepoNow({ link }: { link: GitHubLink }) {
               {commits.data.items.slice(0, 6).map((c) => (
                 <li key={c.sha}>
                   <Link
-                    href={repoHref.commits(repo.owner, repo.name, repo.defaultBranch, c.sha)}
+                    href={repoHref.commits(ref.owner, repo.name, repo.defaultBranch, c.sha)}
                     className="flex min-w-0 items-baseline gap-3 px-3 py-2 text-sm hover:bg-muted"
                   >
                     <code className="shrink-0 text-xs text-muted-foreground">
@@ -586,7 +587,7 @@ function RepoNow({ link }: { link: GitHubLink }) {
               <ul className="flex flex-wrap gap-1.5">
                 {branches.data.items.map((b) => (
                   <li key={b.name}>
-                    <Link href={repoHref.code(repo.owner, repo.name, b.name)}>
+                    <Link href={repoHref.code(ref.owner, repo.name, b.name)}>
                       <Badge variant={b.name === repo.defaultBranch ? "default" : "outline"}>
                         {b.name}
                       </Badge>
@@ -614,7 +615,7 @@ function RepoNow({ link }: { link: GitHubLink }) {
                   {pulls.data.items.slice(0, 5).map((p) => (
                     <li key={p.number} className="min-w-0 text-sm">
                       <Link
-                        href={repoHref.pulls(repo.owner, repo.name, "open", p.number)}
+                        href={repoHref.pulls(ref.owner, repo.name, "open", p.number)}
                         className="block truncate hover:underline"
                       >
                         #{p.number} {p.title}
