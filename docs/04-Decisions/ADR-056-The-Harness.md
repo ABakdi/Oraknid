@@ -188,6 +188,60 @@ Behaviour pinned, the map's bugs fixed one commit each; nothing moved yet.
   (`@oraknid/contracts` → `sensitive.ts`), read by the rules, the policy
   and The Eye.
 
+## As built (stage 2, 2026-10-07)
+The Gate extracted; code moved, behaviour kept, except where one path
+diverged from the others (below, a commit and a test each).
+- **`gateStep`** (`packages/core/src/harness/gate.ts`), pure: the facts
+  (source, the rules' verdict, whether it is layer 1's own block, the
+  grants that apply, the judge's verdict once asked, the autonomy) to
+  `allow | deny | ask | judge`, with `by` (rule, grant, judge, owner,
+  leg), the grant's scope, the audit line, and whether and on which
+  layer it counts toward the stuck rule. Table-tested.
+- **`createGate`** (`apps/daemon/src/harness/gate.ts`), one per attempt:
+  `decide({source: prompt|hook|mcp, request})`, and `check(command,
+  local|server)` for a check's command (synchronous: the verifier's
+  refusal; no layer 1, which reads an agent's commands; never asked,
+  never counted). It reads the facts (the rules once per action; the
+  plan for a removal it names; a `shape:` rule at Careful; the judge),
+  writes the audit log, counts blocks, and asks me. `asPermission` and
+  `asPreTool` translate its decision for the Leg's prompt and Claude
+  Code's hook; `attempt.ts` keeps only those adapters (2,973 → 2,165
+  lines, a ceiling in `harness/architecture.test.ts`).
+- **Grants** are first-class (`Grant{kind, scope, match, reason, at}`):
+  what I let run once is a `once` grant kept in the task's memory until
+  it is used (old "allow once" rows are read as grants); "all like this"
+  stays with the job (its waivers and `shape:` rules, read by the
+  rules); a removal the plan names makes layer 1's own block mine to
+  allow, once. Refusals (D8) are kept with the task.
+- **The stuck count lives in the Gate**: rules, judge, the Leg's own
+  classifier and my refusals in one row. A block that can't be held for
+  my answer is a pending stuck question, raised by the Gate at the
+  agent's next action (or taken at the turn's end).
+- **One `askOwner(kind, item)`** opens every question of an attempt
+  (plan change, stuck, approval, what the agent needs, keeps going
+  wrong), records it in the task's memory for withdrawal and counts the
+  attempt as waiting on me. The hook's deferral to the permission prompt
+  is the Gate's own.
+- **Changed where paths diverged**, each with its test:
+  1. The hook's third block in a row on a file tool reset the row and
+     asked nothing; the prompt asked. Now asked at the next action
+     (`harness/gate.test.ts`).
+  2. A refused call of a job's tool was keyed `tool:null`: one Deny
+     refused every later call of that tool, each counted as a gate
+     bypass. Keyed by its arguments now (`gate.test.ts`, core).
+  3. My refusals didn't count toward the stuck rule. They do, asked at
+     the next action (`gate.test.ts`).
+  4. A job that ended left its cancelled tasks' memory for ever. Cleared
+     when the job completes or is cancelled (`harness/stage2.test.ts`).
+  And the rules run once per action: the prompt ran layer 1 twice when
+  a once-grant was waiting.
+- **Limits**: the hook's "allow" leaves the action to Claude Code's
+  classifier and doesn't end the stuck row (an action that ran is only
+  seen in its result; stage 3's log); a check's command isn't read by
+  layer 1; "all like this" is kept on the job row, not as a grant row;
+  the judge's verdict cache and the stuck counts in memory are still
+  module-level (keyed per task, cleared with it).
+
 ## Consequences
 - More files, each small, each with its own tests; the bugs of the last
   two days become cases in a table.
