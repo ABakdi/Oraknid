@@ -28,15 +28,24 @@ function git(cwd: string, ...args: string[]): string {
   return r.stdout.trim();
 }
 
-/** A stand-in install.sh: records how it was called, checks out what it was asked for. */
+/**
+ * A stand-in install.sh: records how it was called, checks out what it was
+ * asked for, and builds a daemon that loads, or not when the version has a
+ * BROKEN file (one that builds but doesn't start).
+ */
 const fakeScript = (exit: number) => `#!/bin/sh
 REF="$2"; DIR="$4"; FROM="$6"
 echo "$*" >>"$DIR/../calls.log"
+build() {
+	mkdir -p "$DIR/apps/daemon/dist"
+	if [ -f "$DIR/BROKEN" ]; then echo 'process.exit(1)'; else echo ''; fi >"$DIR/apps/daemon/dist/cli.mjs"
+}
 case "$REF" in
-????????????????????????????????????????) git -C "$DIR" checkout -q --detach "$REF"; exit 0 ;;
+????????????????????????????????????????) git -C "$DIR" checkout -q --detach "$REF"; build; exit 0 ;;
 esac
 git -C "$DIR" fetch -q "$FROM" "$REF" || exit 4
 git -C "$DIR" checkout -q --detach FETCH_HEAD
+build
 v="$(sed -n 's/^  "version": "\\(.*\\)",$/\\1/p' "$DIR/package.json")"
 f="$(printf '%s' "$FROM" | sed 's/"/\\\\"/g')"
 printf '{"ref":"%s","channel":"stable","commit":"%s","version":"%s","installedAt":"x","from":"%s","service":true}\\n' "$REF" "$(git -C "$DIR" rev-parse HEAD)" "$v" "$f" >"$DIR/${RECORD_FILE}"
@@ -73,7 +82,13 @@ function origin(root: string, o: { knowsGui?: boolean } = {}) {
   writeFileSync(join(dir, "NEW"), "new work\n");
   git(dir, "add", "-A");
   git(dir, "commit", "-q", "-m", "New work on dev");
-  return { dir, c1, c2, c3, dev: git(dir, "rev-parse", "HEAD") };
+  const dev = git(dir, "rev-parse", "HEAD");
+  // v0.4.0 builds but doesn't start (as dev did on 2026-10-07: a package missing), off v0.2.0.
+  git(dir, "checkout", "-q", "-b", "broken", c2);
+  writeFileSync(join(dir, "BROKEN"), "\n");
+  commit("0.4.0", 0);
+  git(dir, "checkout", "-q", "dev");
+  return { dir, c1, c2, c3, dev };
 }
 
 /** install.sh's own functions, run in a shell: fetch_source, then write_record. */
@@ -184,6 +199,9 @@ describe("the update script (ADR-048)", () => {
         service: true,
       }),
     );
+    // The service's `oraknid status`: it answers.
+    mkdirSync(join(root, ".local", "bin"), { recursive: true });
+    writeFileSync(join(root, ".local", "bin", "oraknid"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
     const data = join(root, "data");
     const launcher: Launcher = {
       run: () => ({ status: 1, stderr: "" }),
@@ -208,7 +226,8 @@ describe("the update script (ADR-048)", () => {
         now: Date.now,
         launcher,
         underSystemd: false,
-        env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: root, ...GIT_ENV },
+        // HOME last: the stand-in `oraknid`, never mine.
+        env: { ...GIT_ENV, PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: root },
       });
       return readRun(data, join(data, "logs"), { now: Date.now });
     };
@@ -242,6 +261,18 @@ describe("the update script (ADR-048)", () => {
     ]);
     expect(git(app, "rev-parse", "HEAD")).toBe(o.c1);
     expect(record(app)).toMatchObject({ ref: "v0.1.0", version: "0.1.0", commit: o.c1 });
+  });
+
+  it("goes back when the new version builds but doesn't start", () => {
+    const { o, app, update, calls } = installed();
+    const run = update("v0.4.0");
+    expect(run).toMatchObject({ state: "rolled-back", exitCode: 70, toVersion: null });
+    expect(calls()).toEqual([
+      `--ref v0.4.0 --dir ${app} --from ${o.dir}`,
+      `--ref ${o.c1} --dir ${app} --from ${o.dir}`,
+    ]);
+    expect(git(app, "rev-parse", "HEAD")).toBe(o.c1);
+    expect(run?.log.join("\n")).toContain("The new version doesn't start.");
   });
 
   it("changes nothing, and builds nothing again, when it can't get the new version", () => {

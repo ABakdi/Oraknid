@@ -169,6 +169,24 @@ restart_by_hand() {
 	"$HOME/.local/bin/oraknid" start || true
 }
 
+# The new build has to start, not only build (v0.2.0's dev builds didn't: a missing package): it
+# loads, and the service answers within a minute. Else it counts as failed and goes back.
+starts() {
+	if ! node "$APP/apps/daemon/dist/cli.mjs" --version >/dev/null; then
+		say "The new build doesn't load."
+		return 1
+	fi
+	[ -n "$NO_SERVICE" ] && return 0
+	i=0
+	while [ "$i" -lt 30 ]; do
+		"$HOME/.local/bin/oraknid" status >/dev/null 2>&1 && return 0
+		i=$((i + 1))
+		sleep 2
+	done
+	say "The service didn't answer within a minute."
+	return 1
+}
+
 say "Updating Oraknid $FROMV ($PREV) to $REF"
 cp "$APP/.oraknid-install.json" "$U/install-before.json" 2>/dev/null || true
 if git -C "$APP" fetch --quiet "$FROM" "$REF" && git -C "$APP" show FETCH_HEAD:install.sh >"$U/install.sh.new"; then
@@ -185,7 +203,9 @@ sh "$U/install.sh" --ref "$REF" --dir "$APP" --from "$FROM" $NO_SERVICE $GUI
 code=$?
 if [ "$code" = 0 ]; then
 	restart_by_hand
-	finish succeeded 0
+	if starts; then finish succeeded 0; fi
+	say "The new version doesn't start."
+	code=70
 fi
 say "The update stopped (exit $code)."
 if [ "$(git -C "$APP" rev-parse HEAD 2>/dev/null)" = "$PREV" ]; then

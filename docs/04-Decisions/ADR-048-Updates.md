@@ -57,6 +57,11 @@ only real releases do.
   it has without fetching) and the record is put back. If nothing was
   changed (no network, a missing package without a terminal for sudo),
   it only says it failed.
+- **Built is not enough: it has to start.** After install.sh, the new
+  daemon must load (`cli.mjs --version`) and, with the service, answer
+  `oraknid status` within a minute; else the update counts as failed and
+  goes back, as above (2026-10-07: a dev build missing a package said
+  "succeeded" and left the daemon restarting in a loop).
 - **Running jobs**: Update now is refused while jobs run unless I confirm,
   and says how many. They lose nothing: the daemon's shutdown stops each
   at a safe point and keeps its state, and recovery resumes it at the

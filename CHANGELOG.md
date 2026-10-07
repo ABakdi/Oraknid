@@ -3,6 +3,18 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.2.1 — 2026-10-07 (pre-release)
+
+Fixes. If your Oraknid stopped answering after updating to a dev build
+of 0.2.0 ("Failed to fetch" at the lock screen), install again from the
+script: `curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/dev/install.sh | sh -s -- --dev`
+(your data and settings stay).
+
+- **Startup:** the daemon lists every package Oraknid's own agent uses, so an installed daemon starts. A test checks it.
+- **Updates:** an update whose new version builds but doesn't start is rolled back, not reported as succeeded.
+- **Antigravity:** signing an Antigravity Leg in again shows the link; its earlier sign-in is kept if the new one doesn't finish.
+- **The service:** its PATH keeps each folder once across updates.
+
 ## 0.2.0 — 2026-10-07 (pre-release)
 
 Phase 15, agents that deliver (started), and the rest of Phase 13.
