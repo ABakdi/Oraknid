@@ -13,7 +13,8 @@ import { createClaudeCodeAdapter } from "./adapter.ts";
 const live = process.env.ORAKNID_LIVE_CLAUDE === "1";
 
 describe.runIf(live)("Claude Code, for real (sandboxed)", () => {
-  const binary = realpathSync(join(homedir(), ".local/bin/claude"));
+  // A skipped describe's body still runs when tests are collected: no binary is looked up then.
+  const binary = live ? realpathSync(join(homedir(), ".local/bin/claude")) : "claude";
   const configDir = join(homedir(), ".claude");
   const leg = {
     id: "live",
