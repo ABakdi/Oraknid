@@ -1,3 +1,4 @@
+import { oraknidOwn } from "./harness.ts";
 import { inScope } from "./web.ts";
 
 // Drift detectors D1–D8 and the escalation ladder (docs/01-Specification/Drift-Control.md).
@@ -52,7 +53,8 @@ export interface Observed {
 export function detect(o: Observed, now: number, t: DriftThresholds = DEFAULT_THRESHOLDS): Drift[] {
   const found: Drift[] = [];
 
-  const outside = o.changedPaths.filter((p) => !p.startsWith(".oraknid/") && !inScope(p, o.scope));
+  // Oraknid's own files (its folder, the handoff note it asked for) are never drift (ADR-052).
+  const outside = o.changedPaths.filter((p) => !oraknidOwn(p) && !inScope(p, o.scope));
   if (outside.length)
     found.push({
       code: "D1",

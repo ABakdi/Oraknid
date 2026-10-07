@@ -354,6 +354,24 @@ export function shapeWeb(
       return false;
     });
 
+  // Chains of crumbs: small steps on the same place, one after another, are one task (ADR-052 §1).
+  const merged = mergeCrumbs(kept);
+  if (merged.length) {
+    for (const m of merged) {
+      for (const k of m.from) into.set(k, m.into);
+      notes.push(
+        `${m.from.length + 1} small steps one after another on the same place are one task: "${m.title}".`,
+      );
+    }
+    const gone = new Set(merged.flatMap((m) => m.from));
+    for (let i = kept.length - 1; i >= 0; i--)
+      if (gone.has((kept[i] as Planned).key)) kept.splice(i, 1);
+    for (const t of kept)
+      t.dependsOn = [...new Set(t.dependsOn.map((d) => into.get(d) ?? d))].filter(
+        (d) => d !== t.key,
+      );
+  }
+
   // Phases in order: a phase's first tasks come after the previous phase's last ones.
   const phases = [...new Set(kept.map((t) => t.phase).filter((p): p is number => !!p))].sort(
     (a, b) => a - b,
@@ -409,4 +427,70 @@ export function shapeWeb(
     t.dependsOn = ok;
   }
   return { plan: shaped, notes };
+}
+
+const NOTES = /(?:^|\/)notes\/|\.(?:md|txt)$/i;
+const RANK_OF = { low: 0, medium: 1, high: 2 } as const;
+
+/** Two tasks work on the same place: their scopes can meet, or both only write notes. */
+const samePlace = (a: Planned, b: Planned) =>
+  scopesOverlap(a.scope, b.scope) ||
+  (a.scope.every((g) => NOTES.test(g)) && b.scope.every((g) => NOTES.test(g)));
+
+/**
+ * Chains of crumbs (ADR-052 §1, after the misahaty job of 2026-10-06, when one
+ * `docker compose down` became eight tasks): three or more small tasks (not
+ * rated high), each the only one after the one before and needing nothing
+ * else, on the same place and in the same phase, are one task: its steps in
+ * order, their scopes, checks and capabilities joined. Mutates the chain's
+ * first task; returns each merge: the first task's key, the keys merged into
+ * it, and its new title.
+ */
+export function mergeCrumbs(tasks: Planned[]): { into: string; from: string[]; title: string }[] {
+  const byKey = new Map(tasks.map((t) => [t.key, t]));
+  const after = new Map<string, string[]>();
+  for (const t of tasks)
+    for (const d of t.dependsOn) after.set(d, [...(after.get(d) ?? []), t.key]);
+  const small = (t: Planned) => t.difficulty !== "high" && t.kind !== "external";
+  /** The task that follows `a` as a crumb, if one does. */
+  const next = (a: Planned): Planned | null => {
+    const followers = after.get(a.key) ?? [];
+    if (followers.length !== 1) return null;
+    const b = byKey.get(followers[0] as string);
+    if (!b) return null;
+    if (b.dependsOn.length !== 1 || !small(a) || !small(b)) return null;
+    if ((a.phase ?? null) !== (b.phase ?? null) || !samePlace(a, b)) return null;
+    return b;
+  };
+  const inChain = new Set<string>();
+  for (const t of tasks) {
+    const b = next(t);
+    if (b) inChain.add(b.key);
+  }
+  const out: { into: string; from: string[]; title: string }[] = [];
+  for (const first of tasks) {
+    if (inChain.has(first.key)) continue;
+    const chain = [first];
+    for (let b = next(first); b && !chain.includes(b); b = next(b)) chain.push(b);
+    if (chain.length < 3) continue;
+    const rest = chain.slice(1);
+    const lower = (s: string) => `${s.charAt(0).toLowerCase()}${s.slice(1)}`;
+    const joined = `${first.title}, then ${rest.map((t) => lower(t.title)).join(", then ")}`;
+    const title = joined.length <= 100 ? joined : `${first.title} (and ${rest.length} more steps)`;
+    const changes = chain.find((t) => CHANGES_FILES.has(t.kind));
+    first.instructions = `Do these steps in one session, in order; plan them your own way.\n\n${chain
+      .map((t, i) => `${i + 1}. **${t.title}**\n${t.instructions.trim()}`)
+      .join("\n\n")}`;
+    first.title = title;
+    first.kind = changes?.kind ?? first.kind;
+    first.scope = [...new Set(chain.flatMap((t) => t.scope))];
+    first.verify = [...new Set(chain.flatMap((t) => t.verify))];
+    first.requiredCapabilities = [...new Set(chain.flatMap((t) => t.requiredCapabilities))];
+    first.difficulty = chain.reduce(
+      (d, t) => (RANK_OF[t.difficulty] > RANK_OF[d] ? t.difficulty : d),
+      first.difficulty,
+    );
+    out.push({ into: first.key, from: rest.map((t) => t.key), title });
+  }
+  return out;
 }

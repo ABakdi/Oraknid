@@ -40,6 +40,8 @@ export interface TurnContext {
   session: number;
   /** The session's HOME (a job's own home on the Leg), when sandboxed. */
   home: string | null;
+  /** The native session this one continues, when Oraknid resumed one (ADR-052 §1). */
+  resumeFrom: string | null;
 }
 
 /**
@@ -50,7 +52,12 @@ export interface TurnContext {
 export function scriptedLeg(
   script: (t: TurnContext) => Action[],
   /** Another kind of Leg, with other models (M13.22: a stand-in OpenCode with free models). */
-  o: { kind?: LegKind; models?: string[] } = {},
+  o: {
+    kind?: LegKind;
+    models?: string[];
+    /** Its sessions have native ids and can be resumed, as Claude Code's are (ADR-052 §1). */
+    resumable?: boolean;
+  } = {},
 ) {
   const log: TurnContext[] = [];
   /** What each `ask` was answered. */
@@ -112,6 +119,7 @@ export function scriptedLeg(
           turn,
           session,
           home: s.sandbox?.home ?? null,
+          resumeFrom: s.resumeFrom,
         };
         log.push(ctx);
         let text = "";
@@ -221,7 +229,8 @@ export function scriptedLeg(
       };
       void send(s.prompt);
       return {
-        nativeSessionId: () => null,
+        nativeSessionId: () =>
+          o.resumable ? (s.resumeFrom ?? `${s.leg.name}-session-${session}`) : null,
         pid: () => null,
         send,
         events: () => events,

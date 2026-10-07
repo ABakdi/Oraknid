@@ -81,6 +81,13 @@ describe("Antigravity adapter", () => {
       quotaError("RESOURCE_EXHAUSTED: quota exceeded, resets in 60s")?.resetsAt,
     ).toBeGreaterThan(Date.now());
     expect(quotaError("HTTP 429 Too Many Requests")).toEqual({ resetsAt: null });
+    // The quota that sank a job on 2026-10-06: kept for its 51 hours, not 15 minutes (ADR-052).
+    const at = Date.now();
+    const r = quotaError(
+      "Individual quota reached for Gemini 3 Pro. Resets in 51h49m11s.",
+    )?.resetsAt;
+    expect((r ?? 0) - at).toBeGreaterThanOrEqual((51 * 3600 + 49 * 60 + 11) * 1000 - 50);
+    expect((r ?? 0) - at).toBeLessThan((51 * 3600 + 49 * 60 + 12) * 1000);
     expect(quotaError("invalid model selection")).toBeNull();
   });
 

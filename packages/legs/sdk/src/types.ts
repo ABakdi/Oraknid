@@ -115,6 +115,14 @@ export interface SessionStart {
   credential: string | null;
   onPermission: (request: PermissionRequest) => Promise<PermissionDecision>;
   /**
+   * The task's checks in the loop (ADR-052 §2): asked when the agent is about
+   * to end its turn. A reason keeps it working (the checks' failure, said to
+   * it); null lets it stop. Adapters that can hold a turn open (Claude Code's
+   * Stop hook) call it; the others ignore it, and their prompt asks the agent
+   * to run the checks itself.
+   */
+  onStop?: (lastMessage: string) => Promise<string | null>;
+  /**
    * MCP servers this session gets, by name (ADR-021): each is Oraknid's
    * bridge to a tool the daemon runs. Their calls are judged by the
    * broker, so the Leg-level permission for them is allowed.

@@ -274,6 +274,30 @@ describe("The Eye's brain", () => {
     ]);
   });
 
+  it("judges on the strongest model too: a check repaired, a review (ADR-052 §5)", async () => {
+    // One answer that reads as either: a repair, and a review.
+    const both = `\`\`\`json\n${JSON.stringify({ broken: true, command: "test -f a", reason: "a quote", accepted: true, missing: [] })}\n\`\`\``;
+    const { brain, input, models } = await brainWith([both]);
+    await brain.repairCheck({
+      jobId: input.jobId,
+      cwd: input.cwd,
+      task: { title: "t", instructions: "x" },
+      command: 'test -f "a',
+      output: "Syntax error: Unterminated quoted string",
+      hint: "the shell can't parse it",
+      report: "",
+    });
+    await brain.evaluate({
+      jobId: input.jobId,
+      cwd: input.cwd,
+      task: { title: "t", instructions: "x", kind: "research" },
+      report: "done",
+      changes: "",
+    });
+    // Not the cheapest that fits a medium call (Sonnet): the strongest allowed.
+    expect(models).toEqual(["opus", "opus"]);
+  });
+
   it("asks each kind of decision of its own model (ADR-022)", async () => {
     const { brain, input, models } = await brainWith([answer([task("t1")])], {
       pins: (ids) => ({ planning: ids.haiku ?? null }),

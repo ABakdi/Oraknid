@@ -74,6 +74,49 @@ describe("Claude Code adapter", () => {
     await s.kill();
   });
 
+  it("runs the task's checks as a Stop hook: blocks the end while they fail, three times at most (ADR-052)", async () => {
+    const seen: { options: Options[] } = { options: [] };
+    const asked: string[] = [];
+    let failing = 5;
+    const s = await createClaudeCodeAdapter({ query: fakeQuery("reply", seen) }).start(
+      start({
+        onStop: async (last) => {
+          asked.push(last);
+          return failing-- > 0 ? "`pnpm test` failed: expected 2 to be 3" : null;
+        },
+      }),
+    );
+    const hook = seen.options[0]?.hooks?.Stop?.[0]?.hooks[0];
+    expect(hook).toBeTypeOf("function");
+    const stop = (n: number) =>
+      (hook as NonNullable<typeof hook>)(
+        {
+          hook_event_name: "Stop",
+          stop_hook_active: n > 0,
+          last_assistant_message: "DONE",
+          session_id: "s",
+          transcript_path: "/tmp/t",
+          cwd: "/tmp/work",
+        } as never,
+        undefined,
+        { signal: new AbortController().signal },
+      );
+    expect(await stop(0)).toEqual({
+      decision: "block",
+      reason: "`pnpm test` failed: expected 2 to be 3",
+    });
+    expect(await stop(1)).toMatchObject({ decision: "block" });
+    expect(await stop(2)).toMatchObject({ decision: "block" });
+    // The fourth time it may end: The Eye's own run of the checks judges after.
+    expect(await stop(3)).toEqual({});
+    expect(asked).toEqual(["DONE", "DONE", "DONE"]);
+    // Without checks there is no hook.
+    const plain: { options: Options[] } = { options: [] };
+    await createClaudeCodeAdapter({ query: fakeQuery("reply", plain) }).start(start());
+    expect(plain.options[0]?.hooks).toBeUndefined();
+    await s.kill();
+  });
+
   it("reads usage from the result, including the context window", async () => {
     const s = await createClaudeCodeAdapter({ query: fakeQuery("reply") }).start(start());
     await readUntil(s, (e) => e.type === "turn.ended");

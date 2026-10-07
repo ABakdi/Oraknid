@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { PolicyVerdict } from "@oraknid/core";
+import { brokenCheckHint, type PolicyVerdict } from "@oraknid/core";
 import type { SandboxPlan } from "@oraknid/leg-sdk";
 
 export interface VerifyResult {
@@ -146,15 +146,9 @@ export function signatureOf(command: string, output: string): string {
  */
 export function looksBroken(r: VerifyResult): string | null {
   if (r.ok) return null;
-  const out = r.output.replace(ANSI, "");
-  const missing = /(?:^|\s)([\w.+-]+): (?:command )?not found/m.exec(out);
-  if (r.exitCode === 127 && missing) return `\`${missing[1]}\` isn't installed where checks run`;
-  if (
-    r.exitCode === 2 &&
-    /^usage:|invalid option|unrecognized option|illegal option|unknown option/im.test(out)
-  )
-    return "a program in it refused its own arguments";
-  return null;
+  // A check Oraknid refused to run is the policy's, not a broken one.
+  if (r.exitCode === null && r.output.startsWith("Oraknid did not run this check")) return null;
+  return brokenCheckHint(r.exitCode, r.output);
 }
 
 /** What the policy says about a check: refused when never allowed, or gated (it would need me). */

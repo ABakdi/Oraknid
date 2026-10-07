@@ -90,7 +90,7 @@ export function buildContextPack(p: PackInput): Pack {
     p.task.instructions,
     `**You may change only:** ${p.task.scope.length ? p.task.scope.join(", ") : "(nothing — this task changes no files)"}`,
     p.task.verify.length
-      ? `**It is done when these pass (Oraknid runs them itself):**\n${p.task.verify
+      ? `**It is done when these checks pass. Run them yourself as you work and keep going until they pass; Oraknid runs them again after you finish:**\n${p.task.verify
           .map((v) =>
             OWN_CHECK.test(v)
               ? `- \`${v}\` — Oraknid's own check of GitHub, run after you finish; there is no \`oraknid\` command for you, so don't run it`

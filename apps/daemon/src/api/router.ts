@@ -202,6 +202,7 @@ import {
 } from "../servers/server-jobs.ts";
 import type { Servers } from "../servers/service.ts";
 import {
+  CLAUDE_SHARE,
   DEFAULT_RUNNING_JOBS,
   followUpKey,
   INTERVIEW_ROUNDS,
@@ -2006,6 +2007,26 @@ export const router = {
             topic: "overview",
             jobId: null,
             payload: { maxTasksPerJob: input.max },
+            actor: "owner",
+          });
+        }),
+      ),
+    /** Every job's Claude share when its tasks climb (ADR-052 §3): null, as needed. */
+    claudeShare: base
+      .output(z.number().nullable())
+      .handler(({ context: c }) =>
+        readSetting(c.jobs.db, CLAUDE_SHARE, z.number().min(0).max(1).nullable(), null),
+      ),
+    setClaudeShare: base
+      .input(z.object({ share: z.number().min(0).max(1).nullable() }))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          writeSetting(c.jobs.db, CLAUDE_SHARE, z.number().min(0).max(1).nullable(), input.share);
+          c.bus.publish({
+            type: "settings.updated",
+            topic: "overview",
+            jobId: null,
+            payload: { claudeShare: input.share },
             actor: "owner",
           });
         }),
