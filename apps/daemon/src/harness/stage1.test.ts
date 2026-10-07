@@ -1,11 +1,13 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { WebPlan } from "@oraknid/contracts";
+import { ALL_LOCKFILES, LOCKFILES, type WebPlan } from "@oraknid/contracts";
+import { decide } from "@oraknid/core";
+import { rules } from "@oraknid/guard";
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import { attempts, sessions } from "../db/schema.ts";
-import { forgetJobVerdicts, heldFor } from "../eye/auto-mode.ts";
+import { forgetJobVerdicts, guardContext, heldFor } from "../eye/auto-mode.ts";
 import { type Harness, harness, waitFor } from "../testing/harness-rig.ts";
 import { scriptedLeg, type TurnContext } from "../testing/scripted-leg.ts";
 
@@ -696,4 +698,56 @@ describe("a turn that didn't finish isn't judged as one that did (bug 14)", () =
     ]);
     expect(leg.log[1]?.message).toMatch(/reached its limit of steps[\s\S]*test -f parser\.js/);
   }, 60_000);
+});
+
+describe("one list of credential files, one of lockfiles (bug 15)", () => {
+  const read = (path: string, scratch: string[] = []) =>
+    decide(
+      { tool: "Read", command: null, path },
+      { worktree: "/work", scratch, autonomy: "auto", waived: new Set() },
+    ).verdict;
+  const cat = async (path: string) =>
+    (await rules(`cat ${path}`, { workspace: "/work", sshConfig: "/jobs/j/home/.ssh/config" }))
+      .verdict;
+
+  it("the rules and the policy refuse the same credential files, and let the job's own ssh setup be read", async () => {
+    for (const path of [
+      "/home/me/.ssh/id_ed25519",
+      "/home/me/.ssh/known_hosts",
+      "/home/me/.ssh/config",
+      "/home/me/.aws/credentials",
+      "/home/me/.aws/sso/cache/token.json",
+      "/home/me/.config/gcloud/credentials.db",
+      "/home/me/.azure/accessTokens.json",
+      "/work/.env",
+      "/home/me/.kube/config",
+    ]) {
+      expect([path, read(path)]).toEqual([path, "deny"]);
+      expect([path, await cat(path)]).toEqual([path, "block"]);
+    }
+    for (const path of ["/work/.env.example", "/work/src/config.ts"]) {
+      expect([path, read(path)]).toEqual([path, "allow"]);
+      expect([path, await cat(path)]).not.toEqual([path, "block"]);
+    }
+    // The job's own ssh config and pinned host keys are Oraknid's, not a secret read.
+    expect(read("/jobs/j/home/.ssh/config", ["/jobs/j/home"])).toBe("allow");
+    expect(read("/jobs/j/home/.ssh/oraknid_known_hosts", ["/jobs/j/home"])).toBe("allow");
+    expect(read("/jobs/j/home/.ssh/oraknid-vps-one", ["/jobs/j/home"])).toBe("deny");
+  });
+
+  it("the guard knows every lockfile The Eye looks for", () => {
+    const dir = mkdtempSync(join(tmpdir(), "oraknid-locks-"));
+    for (const f of ALL_LOCKFILES) writeFileSync(join(dir, f), "");
+    const ctx = guardContext({
+      cwd: dir,
+      scratch: [],
+      home: dir,
+      servers: [],
+      sshConfig: null,
+      taskText: "",
+      verify: [],
+    });
+    expect(ctx.lockfiles?.sort()).toEqual([...ALL_LOCKFILES].sort());
+    expect(new Set(Object.values(LOCKFILES).flat())).toEqual(new Set(ALL_LOCKFILES));
+  });
 });

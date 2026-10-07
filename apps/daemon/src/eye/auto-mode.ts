@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { ALL_LOCKFILES } from "@oraknid/contracts";
 import type { Layer1Verdict } from "@oraknid/core";
 import {
   type GuardContext,
@@ -74,22 +75,6 @@ const REGISTRIES = [
   "nodejs.org",
 ];
 
-const LOCKFILES = [
-  "package-lock.json",
-  "npm-shrinkwrap.json",
-  "pnpm-lock.yaml",
-  "yarn.lock",
-  "bun.lockb",
-  "bun.lock",
-  "uv.lock",
-  "poetry.lock",
-  "Pipfile.lock",
-  "Gemfile.lock",
-  "composer.lock",
-  "go.sum",
-  "Cargo.lock",
-];
-
 /** What the guard knows of a job's attempt; read once per attempt, cheap to rebuild. */
 export function guardContext(i: {
   cwd: string;
@@ -116,7 +101,7 @@ export function guardContext(i: {
     taskText: i.taskText,
     knownHosts: REGISTRIES,
     projectScripts: scripts,
-    lockfiles: LOCKFILES.filter((f) => existsSync(join(i.cwd, f))),
+    lockfiles: ALL_LOCKFILES.filter((f) => existsSync(join(i.cwd, f))),
     verify: i.verify,
   };
 }

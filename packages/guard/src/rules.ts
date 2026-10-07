@@ -1,4 +1,5 @@
 import { posix } from "node:path";
+import { isSensitivePath, LOCKFILES } from "@oraknid/contracts";
 import { initParser, type Parsed, type Part, parseCommand, parserReady } from "./parse.ts";
 import { readsOnlyProgram, urlHosts } from "./readonly.ts";
 import { safetyNet } from "./safety-net.ts";
@@ -109,39 +110,10 @@ const TOOL_COMMANDS: Record<string, RegExp> = {
   deno: /^(test|lint|fmt|check|task)$/,
 };
 
-const LOCKFILES: Record<string, string[]> = {
-  npm: ["package-lock.json", "npm-shrinkwrap.json"],
-  pnpm: ["pnpm-lock.yaml"],
-  yarn: ["yarn.lock"],
-  bun: ["bun.lockb", "bun.lock"],
-  uv: ["uv.lock"],
-  poetry: ["poetry.lock"],
-  pipenv: ["Pipfile.lock"],
-  bundle: ["Gemfile.lock"],
-  composer: ["composer.lock"],
-  go: ["go.sum"],
-  cargo: ["Cargo.lock"],
-};
-
 const DB_CLIENTS =
   /\b(psql|mysql|mariadb|sqlite3|sqlcmd|clickhouse-client|clickhouse|cockroach|mongosh|mongo|cqlsh|duckdb)\b/;
 const DESTROYS_SQL =
   /\b(drop\s+(table|database|schema|index|view|user|role|owned|materialized\s+view)|truncate(\s+table)?\s+[\w"`.]+)/i;
-
-/** Paths whose reading is reading a credential. */
-const SENSITIVE = [
-  /(^|\/)\.env(\.(?!example\b|sample\b|template\b|dist\b|defaults\b)[\w-]+)?$/,
-  /(^|\/)\.ssh(\/|$)/,
-  /(^|\/)\.aws\/(credentials|config)$/,
-  /(^|\/)\.aws(\/|$)/,
-  /(^|\/)\.gnupg(\/|$)/,
-  /(^|\/)\.(netrc|pgpass|git-credentials|pypirc)$/,
-  /(^|\/)\.docker\/config\.json$/,
-  /(^|\/)\.kube\/config$/,
-  /(^|\/)\.config\/(gh\/hosts\.yml|gcloud)(\/|$)/,
-  /(^|\/)id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$/,
-  /(^|\/)\.azure(\/|$)/,
-];
 
 /** Deploy tools, and the arguments that send them to production. */
 const DEPLOYS =
@@ -360,7 +332,7 @@ function sensitiveArg(p: Part, ctx: GuardContext): string | null {
     const value = raw.includes("=") && raw.startsWith("-") ? raw.slice(raw.indexOf("=") + 1) : raw;
     if (ctx.sshConfig && (value === ctx.sshConfig || value.endsWith("/oraknid_known_hosts")))
       continue;
-    if (SENSITIVE.some((re) => re.test(value))) return value;
+    if (isSensitivePath(value)) return value;
   }
   return null;
 }
