@@ -231,9 +231,6 @@ class EndAttempt extends Error {
   }
 }
 
-/** Kinds of Leg that can continue a session of theirs (ADR-052 §1: a retry resumes it). */
-const RESUMES = new Set(["claude-code", "opencode", "antigravity"]);
-
 const SEVERITY: DriftCode[] = ["D8", "D7", "D1", "D4", "D3", "D2", "D6", "D5"];
 const PREFIX: Record<TaskKind, string> = {
   plan: "docs",
@@ -550,13 +547,14 @@ export async function runAttempt(
 
   // The same model again (the top of the ladder, a stop, a step up in effort): its own session
   // is resumed with what happened, not a fresh one that finds everything again (ADR-052 §1).
-  // Never after its work was rolled back (a kill), and only where the Leg can resume.
+  // Never after its work was rolled back (a kill), and only where the Leg can resume: what its
+  // probe found, never a list of kinds here; never probed, a fresh session with the handoff.
   const resumeFrom =
     before &&
     before.legModelId === leg.legModelId &&
     before.outcome !== "succeeded" &&
     !(before.escalations as string[]).some((e) => e.endsWith(":kill")) &&
-    RESUMES.has(d.registry.require(leg.legId).kind)
+    d.registry.features(leg.legId)?.resume === true
       ? (d.db
           .select({ native: sessions.nativeSessionId })
           .from(sessions)

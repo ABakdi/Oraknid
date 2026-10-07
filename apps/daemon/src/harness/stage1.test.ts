@@ -172,3 +172,45 @@ describe("the task's checks reach the session (bug 3)", () => {
     expect(leg.log[0]?.checks).toEqual(["test -f parser.js"]);
   }, 60_000);
 });
+
+describe("a session resumed by what its agent can do (bug 4)", () => {
+  /** Runs the parser task until it hangs, pauses and resumes the job; the sessions it had. */
+  async function pausedOnce(kind: "oraknid-agent" | "claude-code", resumable: boolean) {
+    let hang = true;
+    const leg = scriptedLeg(
+      (t) => (hang ? [{ hang: true }] : [{ write: "parser.js", content: "x\n" }, { say: "DONE" }]),
+      { kind, models: ["m1"], resumable },
+    );
+    rig = await harness({
+      legs: [{ kind, name: "Agent", leg }],
+      plan: {
+        summary: "A parser.",
+        tasks: [task("a", "Build the parser", ["test -f parser.js"], ["parser.js"])],
+        jobVerify: [],
+      },
+    });
+    const { id } = await rig.repoJob("A parser");
+    await waitFor("its session", () => leg.log.length > 0);
+    await new Promise((r) => setTimeout(r, 100));
+    await rig.api.jobs.pause({ id });
+    hang = false;
+    await rig.api.jobs.resume({ id });
+    const done = await rig.ended(id);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+    return leg.log.map((x) => [x.session, x.resumeFrom]);
+  }
+
+  it("resumes Oraknid's own agent, whose probe says it can", async () => {
+    expect(await pausedOnce("oraknid-agent", true)).toEqual([
+      [1, null],
+      [2, "Agent-session-1"],
+    ]);
+  }, 60_000);
+
+  it("starts afresh where the agent's probe says it can't resume", async () => {
+    expect(await pausedOnce("claude-code", false)).toEqual([
+      [1, null],
+      [2, null],
+    ]);
+  }, 60_000);
+});

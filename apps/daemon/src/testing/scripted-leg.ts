@@ -98,7 +98,7 @@ export function scriptedLeg(
               },
               { model: "haiku", displayName: "Haiku", effortLevels: [], contextWindow: null },
             ],
-        features: { resume: false, tools: true, usage: "reported", quotaWindows: true },
+        features: { resume: !!o.resumable, tools: true, usage: "reported", quotaWindows: true },
       };
     },
     async start(s: SessionStart) {
