@@ -224,6 +224,31 @@ describe("oraknid-agent: the loop", () => {
     await s.kill();
   });
 
+  it("lets Oraknid hold its turn when it gives its own check hook (onStop)", async () => {
+    const server = await serve((req) => {
+      const last = contentText(req.messages.at(-1)?.content);
+      if (/checks fail/.test(last))
+        return { toolCalls: [{ name: "write", arguments: { path: "done.txt", content: "yes" } }] };
+      return { text: "All done." };
+    });
+    let asked = 0;
+    const start = startFor(server.baseUrl, {
+      checks: ["test -f done.txt"],
+      onStop: async () => {
+        asked++;
+        return asked === 1 ? "Oraknid ran the task's checks fail: done.txt is missing." : null;
+      },
+    });
+    const s = await createOraknidAgentAdapter().start(start);
+    const events = await readUntil(s, turnEnded, 15_000);
+    expect(events.at(-1)).toMatchObject({ reason: "completed" });
+    expect(asked).toBe(2);
+    // Oraknid's hook decides: the session doesn't run the checks itself as well.
+    expect(events.some((e) => e.type === "tool.called" && e.tool === "check")).toBe(false);
+    expect(existsSync(join(start.cwd, "done.txt"))).toBe(true);
+    await s.kill();
+  });
+
   it("resumes a session from its stored history", async () => {
     const dir = mkdtempSync(join(tmpdir(), "oraknid-agent-sessions-"));
     const server = await serve((req) => ({ text: `turn ${users(req)}` }));

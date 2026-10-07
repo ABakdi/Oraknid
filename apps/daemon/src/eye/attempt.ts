@@ -1005,6 +1005,8 @@ export async function runAttempt(
         localPorts: job.localPorts ?? [],
         onPermission,
         onStop,
+        // Named in the session's prompt by adapters that list them; Oraknid runs them (onStop).
+        ...(task.verify.length ? { checks: task.verify } : {}),
         ...(tools ? { tools } : {}),
       });
     } catch (error) {

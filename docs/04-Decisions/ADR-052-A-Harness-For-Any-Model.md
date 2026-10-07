@@ -141,10 +141,12 @@ real path. The job's MCP bridges (github, email, local-models) are its
 tools too. Near 80% of the window the earlier work is summarised by the
 same model (a list of the calls if it can't), the task kept word for
 word. A session's messages are kept in
-`<data>/legs/oraknid-agent-sessions` and resumed. `SessionStart.checks`
-(new, optional) are run in the sandbox when a turn ends done; a failing
-one is handed back, up to three rounds; the daemon doesn't pass them yet
-(M15.3). The probe sends one tiny request per model (the first eight,
+`<data>/legs/oraknid-agent-sessions` and resumed. The daemon gives it the task's
+checks (`SessionStart.checks`, named in its prompt) and the same
+`onStop` hook as Claude Code's Stop hook: when a turn ends done, Oraknid
+runs the checks and a failure is handed back, up to three rounds, a
+broken check told apart as for every Leg (§2). Without a hook (the
+adapter on its own) it runs `checks` itself in the sandbox. The probe sends one tiny request per model (the first eight,
 once a day): native tool calls, else a JSON grammar
 (`response_format: json_schema`, which llama.cpp and Ollama enforce),
 else none; the result is stored on the model's profile (`probed`) and a

@@ -111,7 +111,7 @@ one stays for plain servers.
 | Permissions | Write, Edit, Bash and WebFetch ask the policy by those names, before they run; reads and the todo list don't. A denial goes back to the model with "don't repeat this call". |
 | Stream | `text-delta` → `text.delta`, reasoning → `thinking.delta`, `tool-call` → `tool.called`; the permission and the result are given out in the stream's order when the call's result arrives; `finish-step` → `usage`. |
 | Compaction | In `prepareStep`: past 80% of the window (the last step's reported tokens, else estimated), the middle is summarised by the same model (a list of the calls if it can't) and the task kept word for word, roles alternating. |
-| Checks | `SessionStart.checks`, when given, run in the sandbox at a turn's end; a failing one is handed back (three rounds at most). |
+| Checks | At a turn's end it asks `onStop` (Oraknid runs the task's checks, as for Claude Code's Stop hook); without one, `SessionStart.checks` run in the sandbox. A failing check is handed back (three rounds at most). |
 | Resume | Native: `nativeSessionId()` is `oa-<uuid>`; the messages and todo list are kept in `<data>/legs/oraknid-agent-sessions/<id>.json` after each turn and read back on `resumeFrom`. |
 | Interrupt / kill | Abort the request and the command running; what the model said is kept, marked interrupted. |
 | Probe | Lists the models; tests tool calling: native calls, else a JSON grammar (`response_format: json_schema`, enforced by llama.cpp and Ollama, the answer turned back into a tool call by a fetch shim), else none (`toolCalls` on each model; the profile's `probed` keeps it to text work). Context from `/props` (llama.cpp) or `/api/show` (Ollama). |

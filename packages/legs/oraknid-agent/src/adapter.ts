@@ -562,16 +562,20 @@ export function createOraknidAgentAdapter(deps: OraknidAgentDeps = {}): LegAdapt
               });
               return;
             }
-            const failed =
-              checks.length && round < cfg.maxCheckRounds ? await runChecks(signal) : null;
-            if (!failed) break;
-            history = [
-              ...history,
-              {
-                role: "user",
-                content: `A check failed, so the work isn't done yet:\n${failed}\nFix the work and run the checks again; end your turn once they pass. If the check itself is broken, say so with the evidence.`,
-              },
-            ];
+            if (round >= cfg.maxCheckRounds) break;
+            // Oraknid's own checks when it gives them (ADR-052 §2: the same as Claude Code's
+            // Stop hook, broken checks told apart there); else the session's own.
+            const held = s.onStop
+              ? await s.onStop(text)
+              : checks.length
+                ? await runChecks(signal).then((failed) =>
+                    failed
+                      ? `A check failed, so the work isn't done yet:\n${failed}\nFix the work and run the checks again; end your turn once they pass. If the check itself is broken, say so with the evidence.`
+                      : null,
+                  )
+                : null;
+            if (!held) break;
+            history = [...history, { role: "user", content: held }];
           }
           events.push({ type: "turn.ended", reason: "completed", text, error: null });
         } catch (error) {
