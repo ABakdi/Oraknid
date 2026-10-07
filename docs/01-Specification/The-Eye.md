@@ -253,9 +253,19 @@ it pass, and sending the Leg after it only burns its time (seen live
   task names, else its work branch, never a word guessed from the text;
   an old check naming a branch the repo doesn't have is repaired
   (2026-10-04).
+- **CI passed** (2026-10-07, [[ADR-058-CI-In-Oraknid]]): `oraknid
+  github-ci [<branch>|--branch <b>] [--repo <name>] [--timeout <minutes>]`
+  waits for the GitHub Actions runs of the branch's commit here (pushed
+  by the job's end steps; else its latest on GitHub) and passes when
+  every one passed. It fails with the failing workflow, job and step and
+  that step's last 40 lines, when they still run at the timeout (20
+  minutes, 60 at most), when no run came for the commit, or at once when
+  the repository has no workflows. The branch defaults to the
+  repository's default branch. Like the other two it runs after the end
+  steps; stopping the job stops the wait.
 
 In a project of several repos ([[ADR-042-Several-Repos-And-Servers]]),
-both take `--repo <name>` (its name in the project), as
+all three take `--repo <name>` (its name in the project), as
 `oraknid github-branch <branch> --repo web`; without it, the project's
 only repo, or its only linked one.
 
@@ -274,7 +284,10 @@ only repo, or its only linked one.
   exact count.
 
 BR-1 holds: a task is still done only when Oraknid's own run of its
-checks passes; the change of a check is visible, never silent.
+checks passes; the change of a check is visible, never silent. A check
+that passes only thanks to files the agent made outside its task after
+the check failed, files the check names, fails (ADR-052 §2 → Not
+another way; the Verifier's rule, wired with the harness's stage 4).
 
 ## What the agent needs of me (2026-10-07)
 

@@ -9,6 +9,7 @@ import type {
 } from "@oraknid/contracts";
 import type { RouterClient } from "@orpc/server";
 import type { Router } from "../api/router.ts";
+import { ciCommand } from "./ci.ts";
 import { COMMANDS, findCommand, helpLines } from "./commands.ts";
 import type { LiveFeed } from "./live.ts";
 import { ansi, renderMarkdown } from "./markdown.ts";
@@ -728,6 +729,51 @@ export function makeActions(c: Ctx) {
     });
   };
 
+  /** Sites across my servers (ADR-060): up or down, the certificate's end, DNS. */
+  const sites = async () => {
+    const list = await c.api.sites.list();
+    if (!list.length) {
+      c.flash(
+        "No sites yet: Find sites on the Servers page reads them from your proxies.",
+        "error",
+      );
+      return;
+    }
+    c.push({
+      key: panelKey("sites"),
+      title: "Sites",
+      items: list.map((x) => ({
+        label: `${!x.checkEnabled ? ansi.dim("○") : x.downSince ? ansi.red("●") : x.up ? ansi.green("●") : ansi.yellow("●")} ${x.host}`,
+        detail: [
+          x.serverName ? `on ${x.serverName}` : "added by hand",
+          x.downSince
+            ? `down since ${ago(x.downSince, c.now())}`
+            : x.lastLatencyMs !== null
+              ? `${x.lastLatencyMs} ms`
+              : "",
+          x.uptime24h !== null ? `${(x.uptime24h * 100).toFixed(1)}% today` : "",
+          x.cert.expiresAt !== null
+            ? `cert ends ${new Date(x.cert.expiresAt).toISOString().slice(0, 10)}`
+            : "",
+          x.dns?.pointsHere === false ? "DNS points elsewhere" : "",
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      })),
+      onPick: async (i) => {
+        const x = list[i];
+        if (!x) return;
+        const r = await c.api.sites.refresh({ id: x.id });
+        c.flash(
+          `${r.host}: ${r.up ? "up" : "down"}${r.lastStatus ? ` (${r.lastStatus})` : ""}${r.lastError ? ` · ${r.lastError}` : ""}`,
+          r.up ? "ok" : "error",
+        );
+      },
+      topics: ["overview"],
+      hint: "A number checks it now.",
+    });
+  };
+
   const ssh = () => {
     const s = needServer();
     c.shell(s);
@@ -1217,12 +1263,14 @@ export function makeActions(c: Ctx) {
     state,
     ssh,
     backups,
+    sites,
     agents,
     models,
     usage,
     health,
     mail,
     repos,
+    ci: ciCommand(c, needProject),
     storage,
     chats,
     skills,

@@ -88,7 +88,10 @@ updated:
 
 - when I press **Discover again**;
 - after every job that had the server, from a new discovery and what
-  the job changed; a server job's version ends with **Changes by job
+  the job changed (2026-10-07: also a job that stopped on a failure or
+  was cancelled, when a task that wasn't only looking ran since the last
+  refresh: what may have changed is still there, its tasks named as not
+  finished); a server job's version ends with **Changes by job
   “…”**, the tasks that changed something and the checks that proved
   them, and The Eye's report of the job shows the diff from the version
   before (below);
@@ -176,6 +179,11 @@ memory, disks, load, network bytes, open connections, the running
 services and the listening ports. The Servers page shows them live,
 with the last 24 hours as charts. Removing a server removes the program.
 
+A server Oraknid can't reach (its connection failing, or no reading for
+three rounds, at least two minutes) is **stale** (2026-10-07): its page
+shows its last state document and readings, marked "stale since …";
+the last reading is kept past the 24 hours until a new one comes.
+
 ## What runs there ([[ADR-043-Server-Insight]])
 
 A ready server's page is in tabs: **Overview** (the readings, its name,
@@ -191,7 +199,7 @@ and nothing of it is stored.
 | Part | What it shows | How it is read |
 | :-- | :-- | :-- |
 | Docker (or Podman) | Containers grouped by compose project: state, health, uptime, ports, CPU and memory; images (size, unused); volumes (unused); networks | `docker ps -a`, `docker stats --no-stream`, `images`, `volume ls`, `network ls`, `inspect` |
-| Databases | PostgreSQL, MySQL/MariaDB, MongoDB, Redis as services, processes or containers: kind, version, state, port; size of its data folder only when the user can read all of it | `systemctl list-units --all`, `pgrep`, the client's `--version`, `ss -tln`, `du -sk` |
+| Databases | PostgreSQL, MySQL/MariaDB, MongoDB, Redis as services, processes or containers: kind, version, state, port; size of its data folder only when the user can read all of it; SQLite files the state document or a backup plan names, sized when readable; each database's size with a backup plan's login (PostgreSQL, MySQL/MariaDB; 2026-10-07) | `systemctl list-units --all`, `pgrep`, the client's `--version`, `ss -tln`, `du -sk` |
 | Reverse proxy | nginx, Caddy, Traefik, HAProxy: which, its state, version, sites (names, ports, upstreams, root or redirect), certificates and when they end (red under two weeks), `nginx -t` when the user is root or has sudo without a password | `nginx -T` (or the config files), the Caddyfile, `haproxy.cfg`, Traefik's labels; `openssl x509 -enddate` |
 | Traffic | The last 15 minutes: requests per minute, status codes, top paths (without their query) and clients, bytes; established connections per listening port | the access logs the proxy names, `tail -n 5000` each (never the whole file); `ss -tn` |
 | Logs | A service's (`journalctl`), a container's (`docker logs`) or the proxy's files: the last lines, a search through the last 20 000, or followed live | `oraknid-monitor logs …`; followed over the live socket, stopped on the server when the tab or page closes |
@@ -210,6 +218,20 @@ the audit log. Home only for a device without full rights.
 
 Discovery feeds the state document with what it finds: the containers,
 the databases and the proxy's sites and certificates.
+
+## Sites (2026-10-07, [[ADR-060-Sites-Domains-And-Uptime]])
+
+**Sites**, first in the Servers list: the domains my servers' proxies
+serve (read with **Find sites** and after each discovery; wildcards,
+`_`, localhost and addresses left out), and those I add by hand. For
+each, from this computer: its DNS (A, AAAA, CNAME, and whether it points
+at its server), its certificate from a handshake (its end, red under two
+weeks, its issuer, and whether it is trusted and for this domain), read
+every 6 hours; and an uptime check, a GET every 5 minutes by default
+(1–60), up below 500, kept 7 days. Two failed checks in a row are the
+`site.down` notification, once; the first check up after is `site.up`.
+Removing a site its proxy serves hides it from Find sites. The helper
+(`sites`) and the terminal app (`/sites`) list them.
 
 ## The terminal
 

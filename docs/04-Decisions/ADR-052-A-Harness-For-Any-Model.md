@@ -82,6 +82,19 @@ when needed.
   2026-10-07).
 - Checks are few and meaningful: the build, the tests, the behaviour
   the goal asked for. Not `test -s notes.md`.
+- **Not another way** (2026-10-07): an agent may not make a check pass
+  another way than by the work. One simple rule, a Verifier option
+  (`scope` in `harness/verifier.ts`, `harness/scope-guard.ts`): when a
+  check fails, the files of the folder are noted; when it passes later,
+  the files made since outside the task's scope and notes that the
+  check's command names (by path or file name) are hidden (moved beside
+  the folder) and the check run again. Still passing, it passes; failing,
+  it failed, and the agent reads why ("passed only with files created
+  outside the task's scope after it failed (…); change the work, not
+  what the check reads"). The files are put back either way. Not yet
+  wired: the attempt (`eye/attempt.ts`) gives the Verifier no scope
+  until the harness's stage 4 does (ADR-056); until then nothing
+  changes.
 
 ### 3. The ladder: a failing model hands over at once
 - Every model (each Leg's model, each local model) has a **rung per kind

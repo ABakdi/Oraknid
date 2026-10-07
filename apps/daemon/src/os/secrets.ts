@@ -157,6 +157,15 @@ export class Secrets {
     return this.#known;
   }
 
+  /**
+   * Every entry's name in this data folder's store (ADR-061): the keychain's
+   * service, or the encrypted file. Never a value.
+   */
+  async names(): Promise<string[]> {
+    if (!this.#store?.names) return [];
+    return (await this.#store.names()).filter((n) => n !== "__probe__");
+  }
+
   async delete(name: string): Promise<boolean> {
     if (!this.#store) return false;
     const gone = await this.#store.delete(name);

@@ -7,7 +7,10 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
  * branches, a tree, files (text, binary, too large), a README, commits in
  * pages with their diffs, and pull requests. It answers with ETags (and
  * 304 to If-None-Match) and an hourly allowance in the usual headers,
- * which a test can use up. Every request is counted.
+ * which a test can use up. Every request is counted. me/piano has GitHub
+ * Actions too (ADR-058): workflows and their files, runs a test pushes and
+ * finishes, jobs with steps, logs and artifacts behind a signed redirect
+ * (which must never get the token), re-runs, cancels and dispatches.
  */
 export interface FakeGitHub {
   api: string;
@@ -17,7 +20,53 @@ export interface FakeGitHub {
   setRemaining(login: string, n: number): void;
   /** Asks to slow down: the next requests get a 403 with Retry-After. */
   slowDown(seconds: number | null): void;
+  /** GitHub Actions on me/piano (ADR-058). */
+  ci: FakeActions;
   close(): Promise<void>;
+}
+
+/** A run of the stand-in's Actions, changed by a test as GitHub would. */
+export interface FakeRun {
+  id: number;
+  workflowId: number;
+  name: string;
+  branch: string;
+  sha: string;
+  event: string;
+  status: "queued" | "in_progress" | "completed";
+  conclusion: string | null;
+  attempt: number;
+  jobs: FakeJob[];
+}
+
+export interface FakeJob {
+  id: number;
+  name: string;
+  status: "queued" | "in_progress" | "completed";
+  conclusion: string | null;
+  steps: {
+    number: number;
+    name: string;
+    status: string;
+    conclusion: string | null;
+    started_at: string | null;
+  }[];
+}
+
+export interface FakeActions {
+  runs: FakeRun[];
+  /** Each job's log, by its id. */
+  logs: Map<number, string>;
+  /** The changes asked: "rerun 102", "rerun-failed-jobs 102", "cancel 103", "dispatch 12 dev {…}". */
+  changes: string[];
+  /** Whether a token was sent to a signed address (it never should be). */
+  tokenOnBlob: boolean;
+  /** A new run on a branch, in progress (its one job running). */
+  push(o: { branch: string; sha: string; name?: string; workflowId?: number }): FakeRun;
+  /** A run ends, its jobs with it; a failure fails its job's "Run tests" step. */
+  finish(id: number, conclusion: "success" | "failure" | "cancelled"): void;
+  /** No workflows at all (the repository runs nothing). */
+  noWorkflows(): void;
 }
 
 const TOKENS: Record<string, string> = { "good-token": "me", "work-token": "work" };
@@ -224,6 +273,354 @@ export async function startFakeGitHub(o: { fillerRepos?: number } = {}): Promise
     deletions: 2,
   });
 
+  // ── GitHub Actions on me/piano (ADR-058) ──────────────────────────
+  const at = (h: number, m: number, s: number) =>
+    new Date(Date.UTC(2026, 9, 2, h, m, s)).toISOString().replace(".000Z", "Z");
+  const steps = (start: [number, number, number][], failAt: number | null, running = false) =>
+    ["Set up job", "Run actions/checkout@v4", "Install", "Run tests", "Complete job"].map(
+      (name, i) => ({
+        number: i + 1,
+        name,
+        status: running && i >= 3 ? "in_progress" : "completed",
+        conclusion: running && i >= 3 ? null : failAt === i + 1 ? "failure" : "success",
+        started_at: start[i] ? at(...(start[i] as [number, number, number])) : null,
+      }),
+    );
+  const TIMES: [number, number, number][] = [
+    [12, 0, 0],
+    [12, 0, 2],
+    [12, 0, 5],
+    [12, 0, 20],
+    [12, 1, 0],
+  ];
+  const failingLog = [
+    `${at(12, 0, 0).replace("Z", ".1000000Z")} Current runner version: '2.320.0'`,
+    `${at(12, 0, 0).replace("Z", ".2000000Z")} Runner name: 'GitHub Actions 3'`,
+    `${at(12, 0, 2).replace("Z", ".1000000Z")} ##[group]Run actions/checkout@v4`,
+    `${at(12, 0, 2).replace("Z", ".3000000Z")} Syncing repository: me/piano`,
+    `${at(12, 0, 3).replace("Z", ".0000000Z")} ##[endgroup]`,
+    `${at(12, 0, 5).replace("Z", ".1000000Z")} ##[group]Run pnpm install --frozen-lockfile`,
+    `${at(12, 0, 6).replace("Z", ".0000000Z")} Lockfile is up to date`,
+    `${at(12, 0, 19).replace("Z", ".0000000Z")} Done in 13s`,
+    `${at(12, 0, 20).replace("Z", ".1000000Z")} ##[group]Run pnpm test`,
+    `${at(12, 0, 21).replace("Z", ".0000000Z")}  RUN  v5.0.3 /home/runner/work/piano`,
+    ...Array.from(
+      { length: 50 },
+      (_, i) =>
+        `${at(12, 0, 22 + Math.floor(i / 2)).replace("Z", ".5000000Z")}  ✓ src/keys.test.ts > key ${i}`,
+    ),
+    `${at(12, 0, 58).replace("Z", ".0000000Z")}  FAIL  src/tune.test.ts > tune > plays at 120 bpm`,
+    `${at(12, 0, 58).replace("Z", ".1000000Z")} \u001b[31mAssertionError: expected 100 to be 120\u001b[39m`,
+    `${at(12, 0, 59).replace("Z", ".0000000Z")} ##[error]Process completed with exit code 1.`,
+    `${at(12, 1, 0).replace("Z", ".1000000Z")} Post job cleanup.`,
+    `${at(12, 1, 0).replace("Z", ".2000000Z")} Cleaning up orphan processes`,
+  ].join("\n");
+  const passingLog = (sha: string) =>
+    [
+      `${at(12, 0, 0).replace("Z", ".1000000Z")} Current runner version: '2.320.0'`,
+      `${at(12, 0, 20).replace("Z", ".1000000Z")} ##[group]Run pnpm test`,
+      `${at(12, 0, 30).replace("Z", ".1000000Z")}  Test Files  12 passed (12) at ${sha.slice(0, 7)}`,
+    ].join("\n");
+  let workflows = [
+    { id: 11, name: "CI", path: ".github/workflows/ci.yml", state: "active" },
+    { id: 12, name: "Deploy", path: ".github/workflows/deploy.yml", state: "active" },
+  ];
+  const WORKFLOW_FILES: Record<string, string> = {
+    ".github/workflows/ci.yml":
+      "name: CI\non: [push, pull_request]\njobs:\n  test:\n    runs-on: ubuntu-latest\n",
+    ".github/workflows/deploy.yml": `name: Deploy
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Where to
+        type: choice
+        options: [staging, production]
+        default: staging
+      dry_run:
+        type: boolean
+        default: true
+      note:
+        description: Why
+        required: true
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+`,
+  };
+  const ci: FakeActions = {
+    runs: [
+      {
+        id: 101,
+        workflowId: 11,
+        name: "CI",
+        branch: "main",
+        sha: commits[0]?.sha ?? "",
+        event: "push",
+        status: "completed",
+        conclusion: "success",
+        attempt: 1,
+        jobs: [
+          {
+            id: 1001,
+            name: "test",
+            status: "completed",
+            conclusion: "success",
+            steps: steps(TIMES, null),
+          },
+        ],
+      },
+      {
+        id: 102,
+        workflowId: 11,
+        name: "CI",
+        branch: "dev",
+        sha: commits[1]?.sha ?? "",
+        event: "push",
+        status: "completed",
+        conclusion: "failure",
+        attempt: 1,
+        jobs: [
+          {
+            id: 1002,
+            name: "build",
+            status: "completed",
+            conclusion: "success",
+            steps: steps(TIMES, null),
+          },
+          {
+            id: 1003,
+            name: "test",
+            status: "completed",
+            conclusion: "failure",
+            steps: steps(TIMES, 4),
+          },
+        ],
+      },
+    ],
+    logs: new Map([
+      [1001, passingLog(commits[0]?.sha ?? "")],
+      [1002, passingLog(commits[1]?.sha ?? "")],
+      [1003, failingLog],
+    ]),
+    changes: [],
+    tokenOnBlob: false,
+    push: (o) => {
+      const id = 200 + ci.runs.length;
+      const run: FakeRun = {
+        id,
+        workflowId: o.workflowId ?? 11,
+        name: o.name ?? "CI",
+        branch: o.branch,
+        sha: o.sha,
+        event: "push",
+        status: "in_progress",
+        conclusion: null,
+        attempt: 1,
+        jobs: [
+          {
+            id: id * 10,
+            name: "test",
+            status: "in_progress",
+            conclusion: null,
+            steps: steps(TIMES, null, true),
+          },
+        ],
+      };
+      ci.runs.push(run);
+      ci.logs.set(id * 10, passingLog(o.sha));
+      return run;
+    },
+    finish: (id, conclusion) => {
+      const run = ci.runs.find((r) => r.id === id);
+      if (!run) return;
+      run.status = "completed";
+      run.conclusion = conclusion;
+      for (const j of run.jobs) {
+        j.status = "completed";
+        j.conclusion = conclusion;
+        j.steps = steps(TIMES, conclusion === "failure" ? 4 : null);
+        if (conclusion === "failure") ci.logs.set(j.id, failingLog);
+      }
+    },
+    noWorkflows: () => {
+      workflows = [];
+    },
+  };
+  const apiRun = (r: FakeRun, owner: string, name: string) => ({
+    id: r.id,
+    name: r.name,
+    display_title: `A change on ${r.branch}`,
+    workflow_id: r.workflowId,
+    head_branch: r.branch,
+    head_sha: r.sha,
+    event: r.event,
+    status: r.status,
+    conclusion: r.conclusion,
+    run_attempt: r.attempt,
+    actor: { login: "me" },
+    run_started_at: at(12, 0, 0),
+    created_at: at(12, 0, 0),
+    updated_at: at(12, 1, 30),
+    html_url: `https://github.com/${owner}/${name}/actions/runs/${r.id}`,
+    pull_requests: r.branch === "metronome" ? [{ number: 2 }] : [],
+  });
+  const apiJob = (j: FakeJob, owner: string, name: string) => ({
+    id: j.id,
+    name: j.name,
+    status: j.status,
+    conclusion: j.conclusion,
+    started_at: at(12, 0, 0),
+    completed_at: j.status === "completed" ? at(12, 1, 1) : null,
+    html_url: `https://github.com/${owner}/${name}/actions/runs/0/job/${j.id}`,
+    steps: j.steps.map((s) => ({
+      ...s,
+      completed_at: s.status === "completed" ? s.started_at : null,
+    })),
+  });
+  const artifacts = (runId: number) =>
+    runId === 102
+      ? [
+          {
+            id: 501,
+            name: "coverage",
+            size_in_bytes: 18,
+            expired: false,
+            created_at: at(12, 1, 0),
+            expires_at: "2026-12-31T00:00:00Z",
+          },
+          {
+            id: 502,
+            name: "old-build",
+            size_in_bytes: 1000,
+            expired: true,
+            created_at: at(12, 1, 0),
+            expires_at: "2026-10-03T00:00:00Z",
+          },
+        ]
+      : [];
+  type Routed = { status: number; body: unknown; link?: string | null; location?: string };
+  const actionsRoute = (
+    method: string,
+    url: URL,
+    rest: string,
+    owner: string,
+    name: string,
+    sent: string,
+    host: string,
+  ): Routed | null => {
+    const piano = owner === "me" && name === "piano";
+    const wfFile = /^\/contents\/(\.github\/workflows\/.+)$/.exec(rest);
+    if (method === "GET" && wfFile) {
+      const content = piano ? WORKFLOW_FILES[decodeURIComponent(wfFile[1] ?? "")] : undefined;
+      if (content === undefined) return { status: 404, body: { message: "Not Found" } };
+      return {
+        status: 200,
+        body: {
+          type: "file",
+          content: Buffer.from(content).toString("base64"),
+          encoding: "base64",
+        },
+      };
+    }
+    if (!rest.startsWith("/actions/")) return null;
+    const runs = piano ? ci.runs : [];
+    const list = (all: FakeRun[]) => {
+      const branch = url.searchParams.get("branch");
+      const mine = all.filter((r) => !branch || r.branch === branch).sort((a, b) => b.id - a.id);
+      const { items, link } = paged(url, mine);
+      return {
+        status: 200,
+        body: { total_count: mine.length, workflow_runs: items.map((r) => apiRun(r, owner, name)) },
+        link,
+      };
+    };
+    if (method === "GET" && rest === "/actions/workflows") {
+      const wfs = piano ? workflows : [];
+      return { status: 200, body: { total_count: wfs.length, workflows: wfs } };
+    }
+    const wfRuns = /^\/actions\/workflows\/(\d+)\/runs$/.exec(rest);
+    if (method === "GET" && wfRuns)
+      return list(runs.filter((r) => r.workflowId === Number(wfRuns[1])));
+    if (method === "GET" && rest === "/actions/runs") return list(runs);
+    const run = /^\/actions\/runs\/(\d+)(\/[a-z-]+)?$/.exec(rest);
+    if (run) {
+      const r = runs.find((x) => x.id === Number(run[1]));
+      if (!r) return { status: 404, body: { message: "Not Found" } };
+      const what = run[2] ?? "";
+      if (method === "GET" && what === "") return { status: 200, body: apiRun(r, owner, name) };
+      if (method === "GET" && what === "/jobs")
+        return {
+          status: 200,
+          body: { total_count: r.jobs.length, jobs: r.jobs.map((j) => apiJob(j, owner, name)) },
+        };
+      if (method === "GET" && what === "/artifacts") {
+        const a = artifacts(r.id);
+        return { status: 200, body: { total_count: a.length, artifacts: a } };
+      }
+      if (method === "POST" && (what === "/rerun" || what === "/rerun-failed-jobs")) {
+        ci.changes.push(`${what.slice(1)} ${r.id}`);
+        r.status = "queued";
+        r.conclusion = null;
+        r.attempt += 1;
+        return { status: 201, body: {} };
+      }
+      if (method === "POST" && what === "/cancel") {
+        if (r.status === "completed")
+          return {
+            status: 409,
+            body: { message: "Cannot cancel a workflow run that is completed." },
+          };
+        ci.changes.push(`cancel ${r.id}`);
+        r.status = "completed";
+        r.conclusion = "cancelled";
+        return { status: 202, body: {} };
+      }
+    }
+    const job = /^\/actions\/jobs\/(\d+)(\/logs)?$/.exec(rest);
+    if (method === "GET" && job) {
+      const j = runs.flatMap((x) => x.jobs).find((x) => x.id === Number(job[1]));
+      if (!j) return { status: 404, body: { message: "Not Found" } };
+      if (job[2])
+        return {
+          status: 302,
+          body: null,
+          location: `http://${host}/blobs/log-${j.id}?sig=signed`,
+        };
+      return { status: 200, body: apiJob(j, owner, name) };
+    }
+    const art = /^\/actions\/artifacts\/(\d+)(\/zip)?$/.exec(rest);
+    if (method === "GET" && art) {
+      const a = runs.flatMap((x) => artifacts(x.id)).find((x) => x.id === Number(art[1]));
+      if (!a) return { status: 404, body: { message: "Not Found" } };
+      if (art[2]) {
+        if (a.expired) return { status: 410, body: { message: "Artifact has expired" } };
+        return {
+          status: 302,
+          body: null,
+          location: `http://${host}/blobs/artifact-${a.id}?sig=signed`,
+        };
+      }
+      return { status: 200, body: a };
+    }
+    const dispatch = /^\/actions\/workflows\/(\d+)\/dispatches$/.exec(rest);
+    if (method === "POST" && dispatch) {
+      const wf = workflows.find((w) => w.id === Number(dispatch[1]));
+      if (!piano || !wf) return { status: 404, body: { message: "Not Found" } };
+      const b = JSON.parse(sent || "{}") as { ref?: string; inputs?: Record<string, string> };
+      ci.changes.push(`dispatch ${wf.id} ${b.ref} ${JSON.stringify(b.inputs ?? {})}`);
+      const made = ci.push({
+        branch: b.ref ?? "main",
+        sha: commits[0]?.sha ?? "",
+        name: wf.name,
+        workflowId: wf.id,
+      });
+      made.event = "workflow_dispatch";
+      return { status: 204, body: null };
+    }
+    return { status: 404, body: { message: "Not Found" } };
+  };
+
   /** One page of a list, and a Link header when there is more. */
   const paged = <T>(url: URL, all: T[], fallback = 30) => {
     const per = Number(url.searchParams.get("per_page") ?? fallback);
@@ -235,12 +632,7 @@ export async function startFakeGitHub(o: { fillerRepos?: number } = {}): Promise
     return { items, link: next ? `<${u}>; rel="next"` : null };
   };
 
-  const route = (
-    login: string,
-    method: string,
-    url: URL,
-    sent: string,
-  ): { status: number; body: unknown; link?: string | null } => {
+  const route = (login: string, method: string, url: URL, sent: string, host = ""): Routed => {
     const p = url.pathname;
     if (method === "GET" && p === "/user") return { status: 200, body: { login } };
     if (method === "POST" && p === "/user/repos") {
@@ -285,6 +677,8 @@ export async function startFakeGitHub(o: { fillerRepos?: number } = {}): Promise
     if (!r || !canSee(login, owner, name)) return { status: 404, body: { message: "Not Found" } };
     const isPiano = owner === "me" && name === "piano";
     if (rest === "") return { status: 200, body: apiRepo(r) };
+    const actions = actionsRoute(method, url, rest, owner, name, sent, host);
+    if (actions) return actions;
     if (rest === "/branches") {
       const all = r.pushed
         ? [
@@ -430,6 +824,20 @@ export async function startFakeGitHub(o: { fillerRepos?: number } = {}): Promise
   const handle = (req: IncomingMessage, res: ServerResponse, sent: string) => {
     const url = new URL(req.url ?? "/", "http://fake.github");
     const method = req.method ?? "GET";
+    // A signed address (a log, an artifact): no token needed, and none should come.
+    const blob = /^\/blobs\/(log|artifact)-(\d+)$/.exec(url.pathname);
+    if (blob) {
+      hits.push(`${method} ${url.pathname}`);
+      if (req.headers.authorization) ci.tokenOnBlob = true;
+      if (blob[1] === "log") {
+        res.setHeader("content-type", "text/plain; charset=utf-8");
+        return res.end(ci.logs.get(Number(blob[2])) ?? "");
+      }
+      const zip = Buffer.from(`PK\u0003\u0004fake-zip-${blob[2]}`);
+      res.setHeader("content-type", "application/zip");
+      res.setHeader("content-length", String(zip.length));
+      return res.end(zip);
+    }
     res.setHeader("content-type", "application/json");
     const token = /^Bearer (.+)$/.exec(req.headers.authorization ?? "")?.[1] ?? "";
     const login = TOKENS[token];
@@ -455,8 +863,9 @@ export async function startFakeGitHub(o: { fillerRepos?: number } = {}): Promise
       res.statusCode = 403;
       return res.end('{"message":"API rate limit exceeded."}');
     }
-    const r = route(login, method, url, sent);
-    const body = JSON.stringify(r.body);
+    const r = route(login, method, url, sent, req.headers.host ?? "");
+    if (r.location) res.setHeader("location", r.location);
+    const body = r.body === null ? "" : JSON.stringify(r.body);
     const etag = `"${createHash("sha1").update(body).digest("hex")}"`;
     hits.push(`${method} ${url.pathname}${url.search}`);
     if (r.status === 200 && req.headers["if-none-match"] === etag) {
@@ -489,6 +898,7 @@ export async function startFakeGitHub(o: { fillerRepos?: number } = {}): Promise
     slowDown: (s) => {
       retryAfter = s;
     },
+    ci,
     close: () => new Promise<void>((r) => server.close(() => r())),
   };
 }

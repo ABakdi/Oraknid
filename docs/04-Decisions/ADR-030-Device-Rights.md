@@ -42,6 +42,19 @@ per device.
   `term` / `term-close` ([[Nest-Protocol]]); the daemon opens its own
   `/term` for it, marked as from away.
 
+## As built (2026-10-07)
+- **The badge.** The header shows "Full rights" on a device that has
+  them ("Full rights, away" through The Nest), and the Terminal shows it
+  away from home, each with what it allows (`full-rights.tsx`, from
+  `lock.status`). A standard device shows nothing.
+- **Every use away from home audited.** A call through the tunnel that
+  only full rights allow (home only for a standard device, not home only
+  for all: `needsFullRights` in `auth/lock.ts`) publishes
+  `device.awayUse` `{device, path}` (actor owner) before it runs; the
+  helper does the same for its actions (`via: "helper"`), the terminal
+  already logged `terminal.opened` with `away`. Reads, and calls refused,
+  log nothing. The Overview's activity names it "Used away from home".
+
 ## Consequences
 - A phone with full rights is as powerful as my keyboard: the PIN and
   ten tries are what stand between a thief and my computer. The pairing

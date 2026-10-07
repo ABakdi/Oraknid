@@ -12,7 +12,16 @@
 - Checkpoints: commits on `refs/oraknid/<job>/<task>/<attempt>`, made by
   The Eye (never by a Leg) through a temporary index, and never pushed.
 - Job end: the branch stays for review. Merging into the work branch is
-  the gated `merge` action. Removing the worktree happens on my request.
+  the gated `merge` action. Removing the worktree happens on my request
+  (2026-10-07, `workspace/worktrees.ts`): **Remove worktree** on a
+  finished job's result, or Settings → Storage → Finished jobs'
+  worktrees, each with its size, and **Clean up finished jobs'
+  worktrees**. Only a completed or cancelled job's; its own folder
+  (`.oraknid/worktrees/<job>`, each repo's worktree in it) and its tasks'
+  (`<job>-t-<n>`) go through `git worktree remove`, then `prune`; the
+  branch stays. One with commits not merged into the work branch, or
+  files not committed, is refused in words until I confirm; the clean-up
+  leaves those and names them. Audited (`job.worktree-removed`).
 - Non-git projects: a shadow repo in Oraknid's data folder
   (`shadow/<hash of the path>.git`, out of every Leg's reach) with
   `--work-tree` set to the project. The job works in place.
@@ -40,9 +49,16 @@ bwrap --unshare-all --share-net --die-with-parent --new-session \
   --bind <project>/.git/worktrees/<job> <the same path> \
   --ro-bind <worktree>/.git … --ro-bind <project>/.git/worktrees/<job>/{commondir,gitdir} … \
   --chdir <worktree> \
-  --clearenv --setenv PATH … <only the variables this Leg needs> \
+  --unsetenv PWD --unsetenv OLDPWD --unsetenv SHLVL --unsetenv _ \
   -- <command>
 ```
+
+The line above is started as `env -i PATH=… sh -c '. <file>; rm <file>;
+exec "$@"' <file> [pasta …] [landlock …] bwrap …`: the variables this Leg
+needs (PATH, HOME, its keys, a project's secrets) come from a private
+0600 file, read and deleted by that clean shell, and `bwrap` inherits
+exactly them. No value is ever on a command line, which every user of
+the computer can read (2026-10-08).
 
 - **Toolchain dirs**: every `PATH` entry under my home (system ones live
   under `/usr`, already bound), plus the real directory of the agent's

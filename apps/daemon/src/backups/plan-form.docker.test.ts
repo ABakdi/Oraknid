@@ -121,6 +121,7 @@ const found = (kind: "postgres" | "mysql" | "mongodb" | "redis", name: string) =
   sizeBytes: null,
   note: null,
   login: null,
+  sizes: null,
 });
 
 async function testWatched(api: Api, input: BackupPlanTest, password: string) {

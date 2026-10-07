@@ -346,6 +346,7 @@ const KIND: Record<ServerDatabase["kind"], string> = {
   mysql: "MySQL / MariaDB",
   mongodb: "MongoDB",
   redis: "Redis",
+  sqlite: "SQLite",
 };
 
 export function ServerDatabasesTab({ server }: { server: ServerView }) {
@@ -362,7 +363,7 @@ export function ServerDatabasesTab({ server }: { server: ServerView }) {
       {d.databases.length === 0 ? (
         <Empty title={t("No database found")}>
           {t(
-            "Oraknid looks for PostgreSQL, MySQL or MariaDB, MongoDB and Redis, as services, processes or containers.",
+            "Oraknid looks for PostgreSQL, MySQL or MariaDB, MongoDB and Redis, as services, processes or containers, and the SQLite files the state document or a backup plan names.",
           )}
         </Empty>
       ) : (
@@ -377,7 +378,7 @@ export function ServerDatabasesTab({ server }: { server: ServerView }) {
                 {b.version ? <span className="text-muted-foreground">{b.version}</span> : null}
                 <Badge variant={stateVariant(b.state)}>{b.state}</Badge>
                 <span className="flex-1" />
-                {b.source !== "process" ? (
+                {b.source !== "process" && b.source !== "file" ? (
                   <>
                     <LogsButton
                       id={server.id}
@@ -398,12 +399,23 @@ export function ServerDatabasesTab({ server }: { server: ServerView }) {
                     ? t("container {name}", { name: b.name })
                     : b.source === "service"
                       ? t("service {name}", { name: b.name })
-                      : t("process {name}", { name: b.name })}
+                      : b.source === "file"
+                        ? t("file {name}", { name: b.name })
+                        : t("process {name}", { name: b.name })}
                 </span>
                 {b.port ? <span>{t("port {port}", { port: b.port })}</span> : null}
                 {b.sizeBytes !== null ? <span>{bytes(b.sizeBytes)}</span> : null}
               </div>
               {b.note ? <div className="text-xs text-muted-foreground">{b.note}</div> : null}
+              {b.sizes ? (
+                <div className="text-xs text-muted-foreground">
+                  {t("With the backup plan “{plan}”'s login:", { plan: b.sizes.plan })}{" "}
+                  {b.sizes.error
+                    ? b.sizes.error
+                    : b.sizes.databases.map((x) => `${x.name} ${bytes(x.bytes)}`).join(" · ") ||
+                      t("no databases it may see")}
+                </div>
+              ) : null}
             </li>
           ))}
         </ul>

@@ -22,6 +22,21 @@ tooling and non-TypeScript clients.
 - A documented API for free ([[API-Contract]] is generated from it,
   plus a hand-written summary).
 
+## As built (2026-10-07, [[ADR-058-CI-In-Oraknid]])
+The OpenAPI document was promised and not made until then. It is
+generated from the router by `@orpc/openapi` with `@orpc/zod`'s Zod 4
+converter (both 1.15.4, the installed oRPC): served at
+`GET /api/openapi.json` to paired devices (made when first asked, then
+kept), and written to `docs/02-Architecture/openapi.json` by `pnpm
+--filter @oraknid/daemon openapi`. Not by the plain build: an install
+builds in its own checkout, and a file changed there would make the next
+update refuse ("local changes"); the release script regenerates it and
+CI fails when it isn't the router's. It describes each procedure's input
+and output under `/api/<path>`; the wire stays oRPC's RPC protocol
+(`POST` with `{"json": input}`), as its description says. No REST-shaped
+handler is mounted beside it. [[API-Contract]] stays the hand-written
+summary.
+
 ## Why not tRPC
 Its RPC-only wire format is less friendly to the relay and to
 non-TypeScript clients than oRPC with OpenAPI.

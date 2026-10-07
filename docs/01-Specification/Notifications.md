@@ -31,7 +31,12 @@ Settings → Notifications.
 | Security: the 5th wrong PIN on a device, a device unpaired by ten ([[ADR-029-App-Lock]]) | ✓ | ✓ | ✓ |
 | A backup failed, with its error in words ([[ADR-044-Backups]]) | ✓ | ✓ | ✓ |
 | A new version of Oraknid, once per release on my channel ([[ADR-048-Updates]]) | ✓ | ✓ | — |
+| A site down: two checks in a row from this computer failed, once (`site.down`, [[ADR-060-Sites-Domains-And-Uptime]]) | ✓ | ✓ | ✓ |
+| A site up again, with how long it was down (`site.up`) | ✓ | ✓ | — |
 | The computer in danger (`machine.danger`): memory and swap, a full disk, the OOM killer, heat, a session running away; once per incident, with what Oraknid did ([[ADR-050-Parallel-By-Default]]) | ✓ | ✓ | — |
+| CI failed (`ci.failed`): a GitHub Actions run on a linked repo's release or work branch ended failing (failure, timed out, startup failure), with the failing job and step; once per run and attempt, looked for every 3 minutes ([[ADR-058-CI-In-Oraknid]]) | ✓ | ✓ | — |
+| A job paused for quota resumed by itself at the reset (`job.resumed`, [[Budgets-and-Quotas]]) | ✓ | ✓ | — |
+| The computer can't be kept awake: taking the sleep lock failed (`sleep.problem`, once until it is held again, [[Durability]]) | ✓ | ✓ | — |
 
 I can change every cell. **Quiet hours** hold everything except
 approvals for running jobs, security alerts and the computer in danger. Repeated events are grouped

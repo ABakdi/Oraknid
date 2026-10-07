@@ -8,6 +8,7 @@ import {
   renameSync,
   rmSync,
   statSync,
+  writeFileSync,
   writeSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -199,6 +200,111 @@ program
   });
 
 program
+  .command("export")
+  .description(
+    "everything, as one archive encrypted to a passphrase, to move Oraknid to another computer",
+  )
+  .option("--all", "the database, Silk, settings and the keychain's entries (required)")
+  .option("-o, --out <file>", "where to write it (default: oraknid-move-<date>.age here)")
+  .option("--passphrase-file <file>", "read the passphrase from a file instead of asking")
+  .action(async (o: { all?: boolean; out?: string; passphraseFile?: string }) => {
+    if (!o.all)
+      fail(
+        "Use oraknid export --all. A job or a project is exported as a zip from its page (Export).",
+      );
+    const passphrase = o.passphraseFile
+      ? readFileSync(o.passphraseFile, "utf8").replace(/\r?\n$/, "")
+      : await newPassphrase();
+    const secrets = await localSecrets();
+    const { exportAll } = await import("./moving/move.ts");
+    try {
+      const r = await exportAll({ paths, secrets, passphrase });
+      const out = resolve(o.out ?? r.name);
+      writeFileSync(out, r.data, { mode: 0o600 });
+      const c = r.manifest.counts;
+      console.log(
+        `✓ ${out}: ${c.projects} project(s), ${c.jobs} job(s), ${c.servers} server(s), ${c.secrets} secret(s).`,
+      );
+      console.log(
+        "Projects' folders aren't in it: on the new computer, copy them or clone their repos again.",
+      );
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  });
+
+program
+  .command("import")
+  .description(
+    "restore an archive made by `oraknid export --all` (Oraknid stopped, a fresh install)",
+  )
+  .argument("<file>", "the archive (.age)")
+  .option("--replace", "replace this Oraknid's projects and jobs (its database is backed up first)")
+  .option("--passphrase-file <file>", "read the passphrase from a file instead of asking")
+  .action(async (file: string, o: { replace?: boolean; passphraseFile?: string }) => {
+    if (await findRunning()) fail("Stop Oraknid first (oraknid stop), then import.");
+    const passphrase = o.passphraseFile
+      ? readFileSync(o.passphraseFile, "utf8").replace(/\r?\n$/, "")
+      : await askHidden("The archive's passphrase: ");
+    const secrets = await localSecrets();
+    const { importAll } = await import("./moving/move.ts");
+    try {
+      const r = await importAll({
+        paths,
+        secrets,
+        data: readFileSync(file),
+        passphrase,
+        replace: o.replace === true,
+      });
+      const c = r.manifest.counts;
+      console.log(
+        `✓ Imported ${c.projects} project(s), ${c.jobs} job(s), ${c.servers} server(s) and ${r.secrets} secret(s), from Oraknid ${r.manifest.oraknid}.`,
+      );
+      if (r.missing.length) {
+        console.log("These projects' folders aren't on this computer:");
+        for (const p of r.missing) {
+          const repos = p.repos.filter((x) => x.github).map((x) => x.github);
+          console.log(
+            `  ${p.name}: ${p.folder}${repos.length ? ` (Clone again on its page: ${repos.join(", ")})` : " (copy it from the old computer)"}`,
+          );
+        }
+      }
+      console.log("Legs log in again from their cards. Start Oraknid with: oraknid start");
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  });
+
+program
+  .command("start-job")
+  .description("start a draft job (New work's Start)")
+  .argument("<id>", "the draft's id")
+  .option(
+    "--unsandboxed",
+    "run it without the sandbox (only when the sandbox doesn't work here; asks first)",
+  )
+  .option("-y, --yes", "with --unsandboxed: don't ask")
+  .action(async (id: string, o: { unsandboxed?: boolean; yes?: boolean }) => {
+    const info = await findRunning();
+    if (!info) fail("Oraknid is not running. Start it with: oraknid start");
+    if (o.unsandboxed) {
+      // An explicit choice, confirmed and recorded (ADR-006).
+      const ok =
+        o.yes ||
+        (await ask(
+          "Without the sandbox its agents run with your own rights on this computer. Run it so? [y/N] ",
+        ));
+      if (!ok) fail("Not started.");
+    }
+    try {
+      await api(info).jobs.start(o.unsandboxed ? { id, unsandboxed: true, confirm: true } : { id });
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+    console.log(o.unsandboxed ? "Started, without the sandbox." : "Started.");
+  });
+
+program
   .command("doctor")
   .description("check this machine and say what is wrong")
   .action(async () => {
@@ -367,6 +473,51 @@ async function ask(question: string): Promise<boolean> {
   const answer = await new Promise<string>((r) => rl.question(question, r));
   rl.close();
   return /^y(es)?$/i.test(answer.trim());
+}
+
+/** A line typed without showing it (a passphrase). */
+async function askHidden(question: string): Promise<string> {
+  if (!process.stdin.isTTY)
+    fail("Give the passphrase with --passphrase-file, or run this in a terminal.");
+  const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+  const out = rl as unknown as { _writeToOutput: (s: string) => void; output: NodeJS.WriteStream };
+  let asked = false;
+  out._writeToOutput = (s: string) => {
+    if (!asked) {
+      out.output.write(s);
+      asked = true;
+    }
+  };
+  const answer = await new Promise<string>((r) => rl.question(question, r));
+  rl.close();
+  process.stdout.write("\n");
+  return answer;
+}
+
+/** A new passphrase, typed twice. */
+async function newPassphrase(): Promise<string> {
+  const p = await askHidden("A passphrase for the archive (12 characters or more): ");
+  const again = await askHidden("The same passphrase again: ");
+  if (p !== again) fail("The two passphrases differ.");
+  return p;
+}
+
+/** This data folder's secrets, from here (the keychain, or the encrypted file opened). */
+async function localSecrets() {
+  const { Secrets } = await import("./os/secrets.ts");
+  const { isDefaultDataDir } = await import("./paths.ts");
+  const secrets = new Secrets(paths.dataDir, createKeychainStore(), {
+    ownsLegacy: isDefaultDataDir(paths.dataDir),
+  });
+  const status = await secrets.init();
+  if (!status.available) {
+    try {
+      secrets.unlock(await askHidden("The passphrase of Oraknid's secrets file: "));
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  }
+  return secrets;
 }
 
 // ── helpers ─────────────────────────────────────────────────────────

@@ -78,6 +78,8 @@ export function startNotificationRouter(o: {
   }
 
   const url = (path: string) => `${o.uiUrl()}${path}`;
+  /** The sleep lock's failure was told; told again only after it was held once more. */
+  let sleepWarned = false;
 
   function fromEvent(e: Event): { p: Pending; itemId: string | null } | null {
     const payload = (e.payload ?? {}) as Record<string, unknown>;
@@ -241,6 +243,99 @@ export function startNotificationRouter(o: {
               url: url("/"),
               urgency: m.level === "danger" ? "critical" : "normal",
               tag: `machine-${m.kind ?? ""}`,
+            },
+          },
+          itemId: null,
+        };
+      }
+      case "ci.failed": {
+        // A run on a linked repo's release or work branch failed (ADR-058), told once.
+        const c = payload as {
+          projectId?: string;
+          projectName?: string;
+          fullName?: string;
+          branch?: string;
+          name?: string;
+          failing?: string | null;
+          runId?: number;
+        };
+        return {
+          p: {
+            event: "ci.failed",
+            jobId: null,
+            n: {
+              title: `CI failed: ${c.projectName ?? c.fullName ?? "a project"} · ${c.branch ?? ""}`,
+              body: `${c.name ?? "A workflow"} failed on ${c.fullName ?? "the repo"}${c.failing ? `: ${c.failing}` : ""}.`,
+              url: url(c.projectId ? `/projects/${c.projectId}/ci` : "/repos"),
+              urgency: "normal",
+              tag: `ci-${c.fullName ?? ""}-${c.branch ?? ""}`,
+            },
+          },
+          itemId: null,
+        };
+      }
+      case "job.auto-resumed": {
+        // Paused for quota, resumed by itself at the reset (Budgets-and-Quotas → When everything runs out).
+        const job = e.jobId
+          ? o.db.select().from(jobs).where(eq(jobs.id, e.jobId)).get()
+          : undefined;
+        return {
+          p: {
+            event: "job.resumed",
+            jobId: e.jobId,
+            n: {
+              title: `Resumed: ${job?.title ?? "a job"}`,
+              body: String(payload.reason ?? "Its agents have quota again; it goes on."),
+              url: url(`/jobs/${e.jobId}`),
+              urgency: "normal",
+              tag: `job-${e.jobId}`,
+            },
+          },
+          itemId: null,
+        };
+      }
+      case "system.inhibitor": {
+        // Taking the sleep lock failed: once, until it is held again (Durability → Sleep inhibition).
+        const s = payload as { held?: boolean; problem?: string | null };
+        if (s.held) {
+          sleepWarned = false;
+          return null;
+        }
+        if (!s.problem || sleepWarned) return null;
+        sleepWarned = true;
+        return {
+          p: {
+            event: "sleep.problem",
+            jobId: null,
+            n: {
+              title: "Can't keep the computer awake",
+              body: `${s.problem} The jobs go on, but the computer may sleep.`,
+              url: url("/settings/about"),
+              urgency: "normal",
+              tag: "sleep-problem",
+            },
+          },
+          itemId: null,
+        };
+      }
+      case "site.down":
+      case "site.up": {
+        // A site down twice in a row, then back (ADR-060): once each.
+        const s = payload as { id?: string; host?: string; error?: string; downForMs?: number };
+        const down = e.type === "site.down";
+        const mins = Math.max(1, Math.round((s.downForMs ?? 0) / 60_000));
+        return {
+          p: {
+            event: down ? "site.down" : "site.up",
+            jobId: null,
+            n: {
+              title: down ? `Down: ${s.host ?? "a site"}` : `Up again: ${s.host ?? "a site"}`,
+              body: down
+                ? `${s.error ?? "No answer."} Two checks in a row from this computer failed.`
+                : `It answers again, after about ${mins} minute${mins === 1 ? "" : "s"} down.`,
+              url: url("/servers/sites"),
+              urgency: down ? "critical" : "normal",
+              tag: `site-${s.id ?? ""}`,
             },
           },
           itemId: null,

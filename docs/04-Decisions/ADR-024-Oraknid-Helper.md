@@ -52,6 +52,28 @@ own rules.
 - The Confirm card shows the action and its exact input, not only the
   model's summary (S2-11).
 
+## As built (2026-10-07)
+- **The UI's procedures, by name.** The helper's newer actions
+  (`helper/api-actions.ts`) call the API's procedures through oRPC's
+  `call` with the asking device's context (`apiContext` in `daemon.ts`),
+  so each is validated, audited and refused exactly as from the screens;
+  a wrong input comes back as "Its input was wrong: <field>: <why>".
+- **Added:** `find_agents`, `set_setting` (every setting the Settings page
+  changes, by name), `edit_draft`, `waive_gate`, `open_chat`,
+  `continue_chat`, `list_chats`, `github_repos`, `answer_inbox`,
+  `delete_chat`, `delete_skill`, `delete_project`, `remove_leg`,
+  `remove_server` ([[Chats-and-Helper]] lists them).
+- **Asked first:** starting a job, deleting or removing anything, waiving
+  a gate, answering an approval (a question is answered at once), the
+  approvals policy, creating a project, adding a Leg. `confirm` now sees
+  Oraknid's state, to tell an approval from a question.
+- **Who asks travels with the turn.** `helper.send` and `helper.decide`
+  carry the device, whether it is away and whether it has full rights;
+  an action whose procedure a standard device can't call away from home
+  fails (run at once) or is refused (on Confirm), replacing the fixed
+  list of two. With full rights it runs and is audited
+  (`device.awayUse` with `via: "helper"`, [[ADR-030-Device-Rights]]).
+
 ## Consequences
 - Everything the helper can do, I can do in the UI, and the other way
   round as actions are added.

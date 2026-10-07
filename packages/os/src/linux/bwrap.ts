@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, lstatSync, readlinkSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Sandbox, SandboxSpec, SandboxStatus } from "../sandbox.ts";
 import { gitBinds, gitEnv } from "./git-binds.ts";
 
@@ -103,11 +105,8 @@ export function createBwrapSandbox(options: BwrapOptions = {}): Sandbox {
       const isolated = (spec.network ?? true) && !spec.hostNetwork && ownNet();
       // Git works in a job's worktree: its folders in the project's .git, and git's settings (M13.22).
       const git = spec.git ?? gitBinds(spec.cwd);
-      const args = bwrapArgs(
-        { ...spec, git, env: { ...gitEnv(git), ...spec.env } },
-        exists,
-        symlinkTarget,
-      );
+      const env = { ...gitEnv(git), ...spec.env, HOME: spec.home };
+      const args = bwrapArgs({ ...spec, git, env }, exists, symlinkTarget, false);
       // pasta first: the sandbox gets a network namespace of its own, with the
       // internet through pasta and only the chosen ports of this computer (Audit 2 → S2-21).
       // Landlock comes inside pasta: applied before it, pasta's user namespace can't map ids.
@@ -117,15 +116,50 @@ export function createBwrapSandbox(options: BwrapOptions = {}): Sandbox {
       const line = isolated
         ? ["pasta", ...pastaArgs(spec.localPorts ?? [], spec.inboundPorts ?? []), ...confined]
         : confined;
-      return { command: line[0] as string, args: line.slice(1) };
+      // The sandbox's variables (a Leg's key, a project's secrets, ADR-059) never go on a
+      // command line, which every user of the computer can read: a 0600 file a clean shell
+      // reads, deletes, and execs the line from, so bwrap inherits exactly them.
+      const file = envFile(env);
+      return {
+        command: "env",
+        args: [
+          "-i",
+          `PATH=${process.env.PATH ?? "/usr/bin:/bin"}`,
+          "sh",
+          "-c",
+          ENV_LAUNCH,
+          file,
+          ...line,
+        ],
+      };
     },
   };
+}
+
+/** Reads the variables' file, deletes it, and runs the rest with exactly them (and PATH for the launch). */
+const ENV_LAUNCH = 'f="$0"; . "$f"; rm -f "$f"; unset f; exec "$@"';
+
+/** A shell-quoted `export` per variable, in a private 0600 file; removed by the launch, or after a minute. */
+function envFile(env: Record<string, string>): string {
+  const dir = mkdtempSync(join(tmpdir(), "oraknid-env-"));
+  const file = join(dir, "env");
+  const q = (v: string) => `'${v.replaceAll("'", "'\\''")}'`;
+  const body = Object.entries(env)
+    .filter(([k]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k))
+    .map(([k, v]) => `export ${k}=${q(v)}`)
+    .join("\n");
+  writeFileSync(file, `${body}\n`, { mode: 0o600 });
+  // Whatever happens to the launch, the file doesn't stay.
+  setTimeout(() => rmSync(dir, { recursive: true, force: true }), 60_000).unref();
+  return file;
 }
 
 export function bwrapArgs(
   spec: SandboxSpec,
   exists: (p: string) => boolean = existsSync,
   symlinkTarget: (p: string) => string | undefined = readSymlink,
+  /** false: the variables come from bwrap's own environment (wrap), not --setenv. */
+  envInArgs = true,
 ): string[] {
   if (!spec.writable.includes(spec.cwd)) throw new Error(`cwd ${spec.cwd} must be writable`);
   if (!spec.writable.includes(spec.home)) throw new Error(`home ${spec.home} must be writable`);
@@ -163,9 +197,15 @@ export function bwrapArgs(
   for (const dir of spec.git?.writable ?? []) a.push("--bind", dir, dir);
   for (const file of spec.git?.protect ?? []) a.push("--ro-bind", file, file);
 
-  a.push("--chdir", spec.cwd, "--clearenv");
-  const env = { ...spec.env, HOME: spec.home };
-  for (const [k, v] of Object.entries(env)) a.push("--setenv", k, v);
+  if (envInArgs) {
+    a.push("--chdir", spec.cwd, "--clearenv");
+    const env = { ...spec.env, HOME: spec.home };
+    for (const [k, v] of Object.entries(env)) a.push("--setenv", k, v);
+  } else {
+    // Inherited: only what the launch's shell adds is taken away.
+    a.push("--chdir", spec.cwd);
+    for (const k of ["PWD", "OLDPWD", "SHLVL", "_"]) a.push("--unsetenv", k);
+  }
 
   a.push("--", spec.command, ...spec.args);
   return a;

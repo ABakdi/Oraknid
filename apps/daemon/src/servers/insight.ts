@@ -158,7 +158,7 @@ export async function addLogins(client: Client, data: ServerDatabases): Promise<
   }
   for (const d of containers) {
     const m = env.get(d.name);
-    if (!m) continue;
+    if (!m || d.kind === "sqlite") continue;
     const names = LOGIN_ENV[d.kind];
     const first = (keys: readonly string[]) => keys.map((k) => m.get(k)).find((v) => v) ?? null;
     const known = new Set<string>(
@@ -172,8 +172,105 @@ export async function addLogins(client: Client, data: ServerDatabases): Promise<
   }
 }
 
+/** Absolute paths of SQLite files a text names (a state document): `.db`, `.sqlite`, `.sqlite3`. */
+export function sqlitePaths(text: string): string[] {
+  const out = new Set<string>();
+  const re = /(?:^|[\s`'"(=:])(\/[\w.@+-]+(?:\/[\w.@+-]+)*\.(?:sqlite3?|db))(?=$|[\s`'",):;])/gm;
+  for (const m of text.matchAll(re)) {
+    const p = m[1] as string;
+    if (p.includes("/..") || /^\/(proc|sys|dev)\//.test(p)) continue;
+    out.add(p);
+    if (out.size >= 20) break;
+  }
+  return [...out];
+}
+
+/** Each path: its size, `-` when it can't be read, `none` when it isn't there. Read only. */
+const SQLITE_SCRIPT = `for p in "$@"; do if [ -f "$p" ]; then if [ -r "$p" ]; then printf '%s\\t%s\\n' "$p" "$(wc -c < "$p" | tr -d ' ')"; else printf '%s\\t-\\n' "$p"; fi; else printf '%s\\tnone\\n' "$p"; fi; done`;
+
+/** The SQLite files named, as databases of their own (ADR-043): sized when readable. */
+export async function addSqliteFiles(
+  client: Client,
+  data: ServerDatabases,
+  paths: string[],
+): Promise<void> {
+  if (!paths.length) return;
+  const r = await exec(client, `sh -c ${q(SQLITE_SCRIPT)} sh ${paths.map(q).join(" ")}`, {
+    timeoutMs: 20_000,
+  });
+  for (const line of r.stdout.split("\n")) {
+    const [path, size] = line.split("\t");
+    if (!path || !size || size === "none") continue;
+    const readable = size !== "-";
+    data.databases.push({
+      kind: "sqlite",
+      name: path,
+      source: "file",
+      version: null,
+      state: readable ? "file" : "not readable",
+      port: null,
+      sizeBytes: readable ? Number(size) : null,
+      note: readable ? null : "The SSH user can't read it.",
+      login: null,
+      sizes: null,
+    });
+  }
+}
+
+/** Sizes read with a backup plan's login (ADR-044), as `Backups.databaseSizes` gives them. */
+export type SizesReader = (serverId: string) => Promise<
+  {
+    plan: string;
+    target: { kind: string; container: string | null; port: number | null; path: string | null };
+    databases: { name: string; bytes: number }[];
+    error: string | null;
+  }[]
+>;
+
+const DEFAULT_PORT: Record<string, number> = { postgres: 5432, mysql: 3306 };
+
+/**
+ * Puts each plan's sizes on the database it reaches: its container, or the
+ * host's on its port. The SQLite files the plans name, returned.
+ */
+export function attachSizes(
+  data: ServerDatabases,
+  plans: Awaited<ReturnType<SizesReader>>,
+): string[] {
+  const sqlite: string[] = [];
+  for (const p of plans) {
+    if (p.target.kind === "sqlite") {
+      if (p.target.path) sqlite.push(p.target.path);
+      continue;
+    }
+    const port = p.target.port ?? DEFAULT_PORT[p.target.kind] ?? null;
+    const db =
+      data.databases.find(
+        (d) =>
+          d.kind === p.target.kind && d.source === "container" && d.name === p.target.container,
+      ) ??
+      (p.target.container
+        ? undefined
+        : data.databases.find(
+            (d) => d.kind === p.target.kind && d.source !== "container" && d.port === port,
+          ));
+    const sizes = { plan: p.plan, databases: p.databases, error: p.error };
+    if (db && !db.sizes) {
+      db.sizes = sizes;
+      if (db.sizeBytes === null && !p.error && p.databases.length)
+        db.sizeBytes = p.databases.reduce((a, x) => a + x.bytes, 0);
+    } else if (!db)
+      data.notes.push(
+        `The backup plan "${p.plan}" reaches a database not found here${p.error ? `: ${p.error}` : ""}.`,
+      );
+  }
+  return sqlite;
+}
+
 export class ServerInsight {
   readonly #cache = new Map<string, { at: number; value: Promise<unknown> }>();
+  /** Database sizes with backup plans' logins (set by the daemon when backups exist). */
+  sizes: SizesReader | null = null;
 
   constructor(private readonly o: { servers: Servers; bus: EventBus; now?: () => number }) {}
 
@@ -200,8 +297,17 @@ export class ServerInsight {
           ? [...new Set((await this.part(id, "proxy")).data.proxies.flatMap((p) => p.accessLogs))]
           : [];
       const data = await runPart(client, part, args);
-      // Containers' logins, for a backup plan's form (ADR-044): never a password.
-      if (part === "databases") await addLogins(client, data as ServerDatabases).catch(() => {});
+      if (part === "databases") {
+        const dbs = data as ServerDatabases;
+        // Containers' logins, for a backup plan's form (ADR-044): never a password.
+        await addLogins(client, dbs).catch(() => {});
+        // Sizes with backup plans' logins; SQLite files the plans and the state document name.
+        const plans = this.sizes ? await this.sizes(id).catch(() => []) : [];
+        const fromPlans = attachSizes(dbs, plans);
+        const named = sqlitePaths(this.o.servers.state(id)?.body ?? "");
+        const files = [...new Set([...fromPlans, ...named])].slice(0, 20);
+        await addSqliteFiles(client, dbs, files).catch(() => {});
+      }
       return data;
     })();
     this.#cache.set(key, { at: now, value });

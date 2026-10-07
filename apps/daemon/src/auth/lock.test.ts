@@ -140,7 +140,15 @@ describe("the lock (ADR-029)", () => {
     ).rejects.toThrow(/Wrong PIN/);
     await as(token, session).devices.setRights({ id, full: true, pin: PIN });
     expect((await away.lock.status()).full).toBe(true);
+    // Refused while it was standard: nothing used, nothing in the log.
+    const used = () => as(token, session).audit.search({ type: "device.awayUse" });
+    expect(await used()).toEqual([]);
     await away.settings.setTerminal({ enabled: false });
+    // Each use of its full rights away from home is in the audit log; reading isn't such a use.
+    await away.jobs.list();
+    expect((await used()).map((e) => [e.payload, e.actor])).toEqual([
+      [{ device: id, path: "/settings/setTerminal" }, "owner"],
+    ]);
     // Still home only, whatever the rights: a device can't widen itself or mint others.
     await expect(away.devices.pairStart()).rejects.toThrow(/not away/);
     await expect(away.devices.setRights({ id, full: true, pin: PIN })).rejects.toThrow(/not away/);

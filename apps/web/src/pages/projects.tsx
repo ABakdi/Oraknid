@@ -5,15 +5,19 @@ import { toast } from "sonner";
 import { Link, Redirect, useLocation } from "wouter";
 import { ActivityFeed } from "@/components/activity-feed";
 import { LegComparison, TokensChart } from "@/components/charts";
+import { ProjectCiBadge } from "@/components/ci-badge";
+import { ProjectCiTab } from "@/components/ci-panel";
 import { BackButton, Empty, ErrorNote, Loading, PageHeader, Stat } from "@/components/common";
 import { EyeChat } from "@/components/eye-chat";
 import { ProjectBudgetCard } from "@/components/job-budget";
+import { CloneAgainButton, ExportRecordsButton } from "@/components/moving";
 import { NewProjectDialog } from "@/components/new-project";
 import { type PageTab, PageTabs } from "@/components/page-tabs";
 import { ProjectList } from "@/components/project-list";
 import { ProjectNetworkCard } from "@/components/project-network";
 import { ProjectMenu, ProjectRemovalDialog, type RemovalKind } from "@/components/project-removal";
 import { isSeveral, ProjectReposCard, ProjectRepoTab } from "@/components/project-repo";
+import { ProjectSecretsCard } from "@/components/project-secrets";
 import { ProjectServersCard } from "@/components/project-servers";
 import { ProjectSkillsCard } from "@/components/project-skills";
 import { currentJob, ProjectWork, ProjectWorkflow } from "@/components/project-work";
@@ -166,6 +170,8 @@ function ProjectDetail({
       <h2 className="min-w-0 truncate text-lg font-semibold" title={project.name}>
         {project.name}
       </h2>
+      {/* Its linked repo's CI at a glance (ADR-058). */}
+      <ProjectCiBadge projectId={id} />
       {project.archivedAt ? (
         <span className="flex shrink-0 items-center gap-1 rounded border px-1.5 text-xs text-muted-foreground">
           <Archive className="size-3" />
@@ -239,6 +245,17 @@ function ProjectDetail({
       content: () => <ProjectRepoTab project={project} />,
     },
     {
+      id: "ci",
+      label: t("CI"),
+      content: () => (
+        <ProjectCiTab
+          project={project}
+          runId={tab === "ci" && job && /^\d+$/.test(job) ? Number(job) : undefined}
+          repo={tab === "ci" && sub ? decodeURIComponent(sub) : undefined}
+        />
+      ),
+    },
+    {
       id: "inbox",
       label: t("Inbox"),
       badge: inbox.data?.length || undefined,
@@ -295,6 +312,7 @@ function ProjectDetail({
     { id: "skills", label: t("Skills"), content: () => <ProjectSkillsCard projectId={id} /> },
     { id: "servers", label: t("Servers"), content: () => <ProjectServersCard projectId={id} /> },
     { id: "network", label: t("Network"), content: () => <ProjectNetworkCard projectId={id} /> },
+    { id: "secrets", label: t("Secrets"), content: () => <ProjectSecretsCard projectId={id} /> },
   ];
   return (
     <PageTabs
@@ -394,6 +412,8 @@ function ProjectActions({ project }: { project: ProjectView }) {
           <Trash2 className="size-4" />
           {t("Delete…")}
         </Button>
+        <ExportRecordsButton projectId={project.id} />
+        {project.repos.some((r) => r.github) ? <CloneAgainButton projectId={project.id} /> : null}
       </div>
       <ProjectRemovalDialog
         project={project}

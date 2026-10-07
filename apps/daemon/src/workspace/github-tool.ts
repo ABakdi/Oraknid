@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import type { GitHubLink, ProjectRepo } from "@oraknid/contracts";
+import { type GitHubLink, isCiFailure, type ProjectRepo } from "@oraknid/contracts";
+import { wrapUntrusted } from "@oraknid/core";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
 import { jobs, projects } from "../db/schema.ts";
@@ -8,6 +9,7 @@ import type { EventBus } from "../events/bus.ts";
 import type { BuiltInServer, McpHandler, Rpc } from "../tools/broker.ts";
 import type { BuiltInTool, McpDeclaration } from "../tools/registry.ts";
 import type { GitHub } from "./github.ts";
+import { ciOf } from "./github-ci.ts";
 import { type Projects, viewOf } from "./projects.ts";
 import { isSeveral } from "./repos.ts";
 
@@ -80,15 +82,55 @@ const TOOLS: { name: string; description: string; inputSchema: Schema }[] = [
       required: ["head", "title"],
     },
   },
+  // GitHub Actions on the linked repo (ADR-058): reads are free, a re-run is asked.
+  {
+    name: "ci_runs",
+    description:
+      "The latest GitHub Actions runs of the linked repository, on a branch when named: workflow, status, conclusion, commit, run id.",
+    inputSchema: {
+      type: "object",
+      properties: { repo: REPO, branch: str("Only this branch's runs (optional).") },
+    },
+  },
+  {
+    name: "ci_log",
+    description:
+      "The failing step's log of a GitHub Actions run (its last 80 lines): the run named by run_id, or the latest failing run on a branch.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        repo: REPO,
+        run_id: { type: "number", description: "The run's id (from ci_runs)." },
+        branch: str("Without run_id: the latest failing run on this branch."),
+      },
+    },
+  },
+  {
+    name: "ci_rerun",
+    description:
+      "Run a GitHub Actions run again (its failed jobs only, unless failed_only is false). Asks the owner first.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        repo: REPO,
+        run_id: { type: "number", description: "The run's id (from ci_runs)." },
+        failed_only: { type: "boolean", description: "Only the failed jobs (true when left out)." },
+      },
+      required: ["run_id"],
+    },
+  },
 ];
+
+/** The github tool's calls that only read. */
+const READS = ["repo_info", "ci_runs", "ci_log"];
 
 /** The github tool's declaration, its calls judged against the job's project's link. */
 export function githubTool(db: Db): BuiltInTool {
   return {
     name: NAME,
     description:
-      "Oraknid's GitHub, with the project's linked account: create its repo, push a branch, open a pull request. The token never reaches an agent.",
-    reads: ["repo_info"],
+      "Oraknid's GitHub, with the project's linked account: create its repo, push a branch, open a pull request, read its GitHub Actions runs and logs, re-run one (asked). The token never reaches an agent.",
+    reads: READS,
     held: [],
     // What it returns is GitHub's answer about my own repo, not someone's words.
     untrusted: false,
@@ -156,7 +198,9 @@ export function judgeGitHub(
   name: string,
   args: Record<string, unknown>,
 ): McpDeclaration | undefined {
-  if (name === "repo_info") return undefined;
+  if (READS.includes(name)) return undefined;
+  // A re-run changes GitHub on the owner's behalf: through approvals, never linked (ADR-058, ADR-053).
+  if (name === "ci_rerun") return "external-write";
   let repos: ProjectRepo[] = [];
   try {
     repos = place(db, jobId).repos;
@@ -355,6 +399,46 @@ export async function githubCall(
     );
     audit("github.pull-request", { repo: full(link), number: pr.number, head, base });
     return `Opened pull request #${pr.number}: ${pr.url}`;
+  }
+
+  if (name === "ci_runs" || name === "ci_log" || name === "ci_rerun") {
+    if (!repos.some((r) => r.github)) throw new Error(NO_LINK);
+    const link = linkOf(target());
+    if (!link.ready) throw new Error(`${full(link)} doesn't exist yet: nothing runs there.`);
+    const r = { owner: link.owner, name: link.name, account: link.account };
+    const ci = ciOf(d.github);
+    const runId = typeof a.run_id === "number" ? a.run_id : Number(a.run_id) || null;
+    if (name === "ci_runs") {
+      const page = await ci.runs(r, { branch: s("branch") ?? null, perPage: 10 });
+      if (!page.items.length)
+        return `No runs on ${full(link)}${s("branch") ? ` for ${s("branch")}` : ""}.`;
+      return page.items
+        .map(
+          (x) =>
+            `- run ${x.id}: ${x.name} on ${x.branch ?? "?"} at ${x.sha.slice(0, 7)}, ${x.status}${x.conclusion ? ` (${x.conclusion})` : ""}, attempt ${x.attempt}`,
+        )
+        .join("\n");
+    }
+    if (name === "ci_rerun") {
+      if (!runId) throw new Error("Give run_id (from ci_runs).");
+      const failedOnly = a.failed_only !== false;
+      await ci.rerun(r, runId, failedOnly);
+      audit("ci.rerun", { fullName: full(link), runId, failedOnly });
+      return `Run ${runId} on ${full(link)} runs again${failedOnly ? " (its failed jobs)" : ""}.`;
+    }
+    let id = runId;
+    if (!id) {
+      const page = await ci.runs(r, { branch: s("branch") ?? null, perPage: 20 });
+      id =
+        page.items.find((x) => x.status === "completed" && isCiFailure(x.conclusion))?.id ?? null;
+      if (!id) return `No failing run on ${full(link)}${s("branch") ? ` for ${s("branch")}` : ""}.`;
+    }
+    const run = await ci.run(r, id);
+    const job = run.jobs.find((j) => isCiFailure(j.conclusion));
+    if (!job)
+      return `Run ${id} (${run.name}) has no failing job: ${run.status}${run.conclusion ? `, ${run.conclusion}` : ""}.`;
+    const tail = await ci.tail(r, job, 80);
+    return `${run.name} run ${id} on ${run.branch ?? "?"} at ${run.sha.slice(0, 7)}: ${job.name} failed${job.failingStep ? ` at ${job.failingStep}` : ""}.\n${wrapUntrusted("a GitHub Actions log", tail.join("\n"))}`;
   }
 
   throw new Error(`The github tool has no ${name}.`);

@@ -601,6 +601,20 @@ I asked: "whenever there are tasks that can be done in parallel, multiple agents
 - [x] **Telling me** ([[Notifications]], [[Web-UI]]). `machine.danger` (desktop and phone, through quiet hours) once per incident: what is happening and what Oraknid did; busy with my own work is shown, not sent. API `machine.health`, `settings.resources` / `setResources`, `TaskView.waitingReason` (`task.waiting` events when what a task waits for changes). The web: a red banner on every page in danger, the Overview's Health card, "4 tasks running at once · 2 waiting: …" in a job's header (Work and the Workflow), the reason on a waiting task's box, Settings → Work at once (tasks at once, heavy at once, memory, CPU and disk thresholds, pausing for my own work), a job's limit with "A job runs what is admitted".
   Tested: `router.test.ts` (the notice through quiet hours, its words and tag; busy not sent); web `machine-health.test.tsx` (the header line with how many run and why the others wait, one task, nothing; the banner only in danger with the message and what was done; the Health card's figures and paused tasks).
 
+### M13.27 — What the canon said and the screens didn't do yet (2026-10-07)
+From a canon-vs-code audit: the parts of [[Web-UI]], [[Chats-and-Helper]] and ADR-024/030/041 that were missing or partial.
+- [x] **The command palette** jumps to anything and runs the controls, fuzzy, with recent items ([[Web-UI]] → Layout).
+  Tested: web `palette.test.ts` (fuzzy order, words anywhere, word starts first, a few of each group, recent first, kept per device, eight at most), `command-palette.test.tsx` (every kind of place and control; a job found by a fuzzy query and by its description, then opened; recent items; pause, an approval's Deny, an update check; cancel only after a second step).
+- [x] **The Overview's Activity** in words, filtered by job, Leg and kind, a Leg's output condensed and opening ([[Web-UI]] → Overview).
+  Tested: web `overview-activity.test.tsx` (kinds, titles, the Leg, condensing; the three filters; a line opened).
+- [x] **Resources** per Leg and per process, and the full chart over a range ([[Web-UI]] → Overview).
+  Tested: web `overview-resources.test.tsx` (sessions under their Leg, models and Oraknid apart, sums; points over samples; the rows; a sparkline's chart asking the daemon for 15 minutes, then an hour; a process's chart).
+- [x] **The inbox's State filter** ([[Web-UI]] → Inbox). Tested: web `inbox.test.tsx`.
+- [x] **Full rights shown and every away use audited** ([[ADR-030-Device-Rights]] → As built 2026-10-07; M11.3).
+- [x] **The helper's actions** ([[ADR-024-Oraknid-Helper]] → As built 2026-10-07; M8.7).
+- [x] **The guide's missing pages** and the map's links to them ([[ADR-041-Docs-And-A-Guiding-Helper]] → As built 2026-10-07). Tested: web `help-map.test.ts` (every page's guide is a page of the guide).
+  Not checked by hand in a browser yet.
+
 ## Exit criterion
 
 I ask for new work on the piano project from its Eye tab and follow it

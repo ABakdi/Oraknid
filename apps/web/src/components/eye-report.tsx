@@ -11,6 +11,7 @@ import {
   ShieldX,
 } from "lucide-react";
 import { Link } from "wouter";
+import { JobCiLine } from "@/components/ci-badge";
 import { Markdown } from "@/components/common";
 import { ago } from "@/lib/format";
 import { t } from "@/lib/i18n";
@@ -111,6 +112,8 @@ export function EyeReportView({
             </ul>
           </div>
         ) : null}
+        {/* Its pull request's CI, when it put something on GitHub (ADR-058). */}
+        {message.jobId ? <JobCiLine jobId={message.jobId} projectId={message.projectId} /> : null}
         <Link
           href={resultHref}
           className="mt-2 inline-block text-xs font-medium text-primary underline-offset-2 hover:underline"

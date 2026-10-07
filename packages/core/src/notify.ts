@@ -16,6 +16,11 @@ export const DEFAULT_ROUTES: Record<NotifyEvent, Route> = {
   "backup.failed": { desktop: true, push: true, email: "now" },
   "update.available": { desktop: true, push: true, email: "never" },
   "machine.danger": { desktop: true, push: true, email: "never" },
+  "ci.failed": { desktop: true, push: true, email: "never" },
+  "job.resumed": { desktop: true, push: true, email: "never" },
+  "sleep.problem": { desktop: true, push: true, email: "never" },
+  "site.down": { desktop: true, push: true, email: "now" },
+  "site.up": { desktop: true, push: true, email: "never" },
 };
 
 export const routeFor = (event: NotifyEvent, mine: Partial<Record<NotifyEvent, Route>>): Route =>

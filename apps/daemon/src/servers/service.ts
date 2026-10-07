@@ -10,7 +10,7 @@ import {
   type ServerTestResult,
   type ServerView,
 } from "@oraknid/contracts";
-import { and, asc, desc, eq, lt } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import ssh2, { type Client } from "ssh2";
 import type { Db } from "../db/open.ts";
 import { jobs, projects, serverSamples, serverStates, servers } from "../db/schema.ts";
@@ -48,6 +48,8 @@ export class Servers {
   readonly #busy = new Map<string, string>();
   readonly #clients = new Map<string, Client>();
   readonly #latest = new Map<string, ServerSample>();
+  /** Servers said stale, until a reading comes again. */
+  readonly #staleSaid = new Set<string>();
   #timer: NodeJS.Timeout | undefined;
   /** What runs on each server, read while a screen asks (ADR-043). */
   readonly insight: ServerInsight;
@@ -118,9 +120,10 @@ export class Servers {
       hostKeyOffered: r.hostKeyOffered,
       lastSeenAt: r.lastSeenAt,
       error: r.error,
+      stale: this.isStale(r),
       busy: this.#busy.get(r.id) ?? null,
       stateVersion: version,
-      latest: this.#latest.get(r.id) ?? null,
+      latest: this.latest(r.id),
       projectIds: mine.map((p) => p.id),
       projectId: all.find((p) => p.serverId === r.id)?.id ?? null,
       production: r.production,
@@ -396,9 +399,33 @@ export class Servers {
     return client;
   }
 
-  /** oraknid-monitor's last reading of a server. */
+  /**
+   * Not reached for a while (ADR-026): a ready server with no reading for
+   * three rounds of oraknid-monitor (at least two minutes), or whose last
+   * connection failed. Its last document and readings stay, marked stale.
+   */
+  isStale(r: ServerRow): boolean {
+    if (r.setup !== "ready") return false;
+    if (r.error) return true;
+    const every = (this.o.sampleEverySec ?? 15) * 1000;
+    const after = Math.max(3 * every, 2 * 60_000);
+    return r.lastSeenAt === null || this.#now() - r.lastSeenAt > after;
+  }
+
+  /** oraknid-monitor's last reading of a server (after a restart, the last one kept). */
   latest(id: string): ServerSample | null {
-    return this.#latest.get(id) ?? null;
+    const known = this.#latest.get(id);
+    if (known) return known;
+    const kept = this.o.db
+      .select({ sample: serverSamples.sample })
+      .from(serverSamples)
+      .where(eq(serverSamples.serverId, id))
+      .orderBy(desc(serverSamples.at))
+      .get();
+    if (!kept) return null;
+    const sample = kept.sample as ServerSample;
+    this.#latest.set(id, sample);
+    return sample;
   }
 
   /** The key a server now presents is mine to accept (ADR-026). */
@@ -737,19 +764,35 @@ export class Servers {
             const res = await exec(client, `~/${MONITOR_PATH} sample`, { timeoutMs: 20_000 });
             const sample = { at: this.#now(), ...JSON.parse(res.stdout.trim()) } as ServerSample;
             this.#latest.set(r.id, sample);
+            if (this.#staleSaid.delete(r.id)) this.#publish("server.reached", { id: r.id });
             this.o.db.insert(serverSamples).values({ serverId: r.id, at: sample.at, sample }).run();
             this.o.db
               .update(servers)
               .set({ lastSeenAt: sample.at })
               .where(eq(servers.id, r.id))
               .run();
-          } catch {}
+          } catch (error) {
+            // A connection that stopped answering is dropped: the next round connects again.
+            // The server goes stale (ADR-026) and says so once.
+            this.#drop(r.id);
+            const now = this.row(r.id);
+            if (this.isStale(now) && !this.#staleSaid.has(r.id)) {
+              this.#staleSaid.add(r.id);
+              this.#publish("server.stale", {
+                id: r.id,
+                since: r.lastSeenAt,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
+          }
         }),
     );
-    this.o.db
-      .delete(serverSamples)
-      .where(lt(serverSamples.at, this.#now() - DAY))
-      .run();
+    // The last day's readings; a server not reached keeps its last one (ADR-026: stale, not blank).
+    this.o.db.$client
+      .prepare(
+        "delete from server_samples where at < ? and at < (select max(s.at) from server_samples s where s.server_id = server_samples.server_id)",
+      )
+      .run(this.#now() - DAY);
   }
 
   samples(id: string, since: number): ServerSample[] {

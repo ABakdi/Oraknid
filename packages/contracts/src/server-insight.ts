@@ -55,10 +55,11 @@ export const ServerDocker = z.object({
 export type ServerDocker = z.infer<typeof ServerDocker>;
 
 export const ServerDatabase = z.object({
-  kind: z.enum(["postgres", "mysql", "mongodb", "redis"]),
-  /** The service unit, the process or the container. */
+  kind: z.enum(["postgres", "mysql", "mongodb", "redis", "sqlite"]),
+  /** The service unit, the process, the container, or a SQLite file's path. */
   name: z.string(),
-  source: z.enum(["service", "process", "container"]),
+  /** file: a SQLite file the state document or a backup plan names (ADR-043). */
+  source: z.enum(["service", "process", "container", "file"]),
   version: z.string().nullable(),
   state: z.string(),
   port: z.number().nullable(),
@@ -75,6 +76,18 @@ export const ServerDatabase = z.object({
       user: z.string().nullable(),
       database: z.string().nullable(),
       passwordSet: z.boolean(),
+    })
+    .nullable()
+    .default(null),
+  /**
+   * Each database's size, read with a backup plan's login (ADR-043,
+   * ADR-044); null when no plan's login reaches it.
+   */
+  sizes: z
+    .object({
+      plan: z.string(),
+      databases: z.array(z.object({ name: z.string(), bytes: z.number() })),
+      error: z.string().nullable(),
     })
     .nullable()
     .default(null),

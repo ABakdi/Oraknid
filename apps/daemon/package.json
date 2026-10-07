@@ -12,7 +12,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run --exclude '**/*.perf.test.ts'",
     "test:perf": "vitest run .perf.test.ts",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "openapi": "tsx src/api/openapi-write.ts"
   },
   "dependencies": {
     "@ai-sdk/mcp": "2.0.69",
@@ -32,7 +33,9 @@
     "@oraknid/os": "workspace:^",
     "@oraknid/tunnel": "workspace:^",
     "@orpc/client": "1.15.4",
+    "@orpc/openapi": "1.15.4",
     "@orpc/server": "1.15.4",
+    "@orpc/zod": "1.15.4",
     "@secretlint/core": "13.0.7",
     "@secretlint/secretlint-rule-preset-recommend": "13.0.7",
     "age-encryption": "0.3.1",
@@ -55,6 +58,7 @@
     "web-push": "3.6.7",
     "web-tree-sitter": "0.27.0",
     "ws": "8.22.0",
+    "yaml": "2.9.1",
     "zod": "4.6.5"
   },
   "devDependencies": {
