@@ -3,6 +3,65 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.2.0 — 2026-10-07 (pre-release)
+
+Phase 15, agents that deliver (started), and the rest of Phase 13.
+Update from Settings → About & updates (or `oraknid update`), then
+reload any open tab.
+
+### Agents that deliver ([ADR-052](docs/04-Decisions/ADR-052-A-Harness-For-Any-Model.md))
+- **Whole goals instead of crumbs:** the planner makes substantial, independent tasks, and chains of small ones are merged. The agent plans inside its own session and runs the task's checks itself; Claude Code can't end its turn while one fails.
+- **Checks are tried before they judge.** A broken check (quoting, syntax, a missing tool) is repaired, never counted against an agent. An agent showing that a check is broken gets the check reviewed.
+- **A ladder up:** one real failure moves the task to the next stronger model with a handoff, up to the strongest you allow; a Claude share per job. Retries resume the same session.
+- **Only usable agents are chosen:** out of quota (read from the agent's own words, e.g. "Resets in 51h"), paused, failing to start or on a deprecated model are skipped. A blocked job says the real reason and what to do.
+- **The Eye** plans, repairs checks and reviews on the strongest model you allow.
+- **One interview round** when the spec is complete.
+- **Oraknid's own handoff notes** no longer count as edits outside a task's scope.
+
+### Auto mode ([ADR-053](docs/04-Decisions/ADR-053-Auto-Mode.md))
+- **Rules from open-source parts:** commands parsed with tree-sitter-bash (also inside `sh -c` and `ssh host '…'`), dangerous ones blocked by cc-safety-net plus Oraknid's rules, secrets going out caught by secretlint. Read-only commands, edits in the job's folder, and the project's build, test and lint run at once.
+- **A model judges the rest**, seeing only your messages, the task and the action. A blocked agent is told why and carries on another way.
+- **You're asked only for:** a server job's plan, each change on a production server, sending mail, publishing and deleting repos, and an agent stuck on repeated blocks.
+- **Autonomy levels** auto (default), careful and full; Claude Code runs in its own auto mode with Oraknid's rules before every tool.
+- **Fixed:** a path containing "deploy" was treated as a deployment.
+
+### Oraknid's own agent and local models ([ADR-054](docs/04-Decisions/ADR-054-Local-Models.md))
+- **Oraknid's own agent:** a new Leg that drives any model through an OpenAI-compatible API, with Claude-Code-like tools in the sandbox. Tool calling is tested per model.
+- **A Models page:**
+  - search Hugging Face and the Ollama library, with what fits this machine;
+  - resumable, checksum-checked downloads;
+  - running with llama.cpp or the Ollama already on the machine;
+  - loading admitted by the machine's limits.
+- **Roles** (translate, OCR, speech to text, embeddings) become tools for every agent.
+- **`install.sh --local-models`** installs llama.cpp for your GPU.
+
+### The terminal app ([ADR-055](docs/04-Decisions/ADR-055-Terminal-App.md))
+- **`oraknid` opens a full-screen terminal app:** The Eye's conversation, a prompt, and `/` commands with completion and numbered lists (`/projects`, `/jobs`, `/inbox`, `/servers`, then a server's `/chat`, `/docker`, `/logs`, `/ssh` and more, `/agents`, `/models`, `/settings`, `/update`…).
+- **Install without the web UI:** `install.sh --no-gui` (or the question it asks); `oraknid install --gui` adds the web UI later.
+
+### Since 0.1.0, also
+- **Setup:** servers take a key file first, Fix wording, Edit and Test connection; New project asks the name first, offers New, an existing folder or GitHub, with a folder picker.
+- **Updates from inside Oraknid** following your channel; an open tab notices an update and reloads.
+- **The planner fixed:**
+  - a real dependency graph with no duplicate tasks;
+  - a short interview;
+  - git and OpenCode working in the sandbox;
+  - a question you skip is closed rather than left open.
+- **Projects:** archive and delete, with your choices for the repos and the folder.
+- **A chat on each server**, and jobs that work on it, with the state document updated after.
+- **The Eye thinks out loud:** stop it, or redo with your words; the conversation reads like a terminal transcript, with a rail of your prompts.
+- **Parallel by default**, within what the machine can take; warnings when it's in danger.
+- **Fixed:**
+  - signing an Antigravity Leg in again shows the link;
+  - the service's PATH no longer grows with each update.
+
+### Known limits
+- **Auto mode's judge:** a judge that doesn't answer in 10 s counts as a block.
+- **Not yet built:** a per-job network allowlist.
+- **The terminal app:** it can't create projects, servers or Legs, or edit a plan; the web UI does.
+- **Local models:** GPU fit counts memory only on AMD and Intel; whisper.cpp is used when installed, not installed.
+- **Not yet tried on real jobs:** the 30-minute piano run (Phase 15's proof).
+
 ## 0.1.0 — 2026-10-04 (pre-release)
 
 The first release: everything built in Phases 1 to 13 of the

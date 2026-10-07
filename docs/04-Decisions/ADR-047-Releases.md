@@ -36,6 +36,7 @@ what is in it, and a command that installs exactly that.
 
 ## As built (2026-10-04)
 - v0.1.0, the first: Phases 1 to 13.
+- v0.2.0 (2026-10-07): Phase 15's harness, auto mode, local models and the terminal app, and the rest of Phase 13 (M13.18–M13.26). Versions stay 0.x.y, the minor raised for each batch of features and the patch for fixes, until I say 1.0.
 - Oraknid tells me of a new release and installs it from inside (2026-10-04, [[ADR-048-Updates]]): an install from `dev` counts pre-releases and new work on dev, one from `main` or a tag only releases, so a release meant for `main`'s installs is published as a release, not a pre-release.
 
 Related: [[ADR-036-One-Script-Install]] · [[ADR-048-Updates]]
