@@ -335,6 +335,11 @@ export function createOpenCodeAdapter(): LegAdapter {
         tools: true,
         usage: "reported" as const,
         quotaWindows: false,
+        // Every action is asked for; no hook of its own, no stop hook.
+        inlineGate: true,
+        preToolHook: false,
+        stopHook: false,
+        steer: false,
       };
       const models = cfg.models.map((m) => ({
         model: m,

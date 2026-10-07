@@ -31,7 +31,9 @@ import type { SideEffects } from "../engine/effects.ts";
 import { AwaitingOwner } from "../engine/effects.ts";
 import type { JobContext, JobProgram } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
+import { runController } from "../harness/controller.ts";
 import { checkRefusal } from "../harness/gate.ts";
+import type { AttemptJob, AttemptOutcome } from "../harness/types.ts";
 import { createVerifier } from "../harness/verifier.ts";
 import type { InboxStore } from "../inbox/store.ts";
 import { sandboxPlan } from "../legs/plan.ts";
@@ -72,7 +74,6 @@ import type { GitHub } from "../workspace/github.ts";
 import { type Projects, viewOf } from "../workspace/projects.ts";
 import { isSeveral } from "../workspace/repos.ts";
 import { MultiTree, multiTreeOf, singleTree, type WorkTree } from "../workspace/tree.ts";
-import { type AttemptJob, type AttemptOutcome, runAttempt } from "./attempt.ts";
 import { forgetTaskVerdicts } from "./auto-mode.ts";
 import { BrainStopped, type EyeBrain } from "./brain.ts";
 import { parseBuiltinCheck } from "./builtin-checks.ts";
@@ -862,7 +863,7 @@ async function runTask(
     `task:${task.id}:attempt:${attemptNo}`,
     { taskId: task.id, attemptNo },
     async (signal) => {
-      const result = await runAttempt(
+      const result = await runController(
         {
           db: d.db,
           bus: d.bus,

@@ -70,6 +70,13 @@ export interface AttemptEventData {
     evidence: string;
   };
   Outcome: { kind: string; reason: string | null };
+  /**
+   * The controller moved (ADR-056 §8): from a state to the next, why (the
+   * outcome or the event), its idempotency key. A step with side effects
+   * carries what it needs to be reconciled after a crash (Done: the
+   * checkpoint its commit is measured from).
+   */
+  Transition: { from: string; to: string; why: string; key: string; ckpt?: string };
   HandoffWritten: { silkId: string; failed: string | null };
   AttemptEnded: { reason: string };
   /** The task settled, or its job ended: what the Gate remembered of it is forgotten. */

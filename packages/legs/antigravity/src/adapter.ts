@@ -270,6 +270,11 @@ export function createAntigravityAdapter(): LegAdapter {
         tools: true,
         usage: "reported" as const,
         quotaWindows: false,
+        // Headless agy runs what its settings allow without asking: audited after the fact.
+        inlineGate: false,
+        preToolHook: false,
+        stopHook: false,
+        steer: false,
       };
       const home = plan?.home ?? cfg.home ?? join(tmpdir(), `oraknid-agy-${leg.id}`);
       const env = legEnv(home, plan);

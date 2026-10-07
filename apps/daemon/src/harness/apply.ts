@@ -20,13 +20,13 @@ import {
 } from "@oraknid/core";
 import { eq } from "drizzle-orm";
 import { jobs, tasks } from "../db/schema.ts";
-import type { AttemptOutcome } from "../eye/attempt.ts";
 import { BrainStopped } from "../eye/brain.ts";
 import { giveToLeg } from "../eye/leg-work.ts";
 import { dependentsOf, keepsGoingWrong, readKeepsGoingWrong } from "../eye/questions.ts";
 import { parseSsh } from "../servers/remote.ts";
 import { type AttemptCtx, type Turn, verdictFor } from "./facts.ts";
 import { ALLOW } from "./gate.ts";
+import type { AttemptOutcome } from "./types.ts";
 
 // What an outcome does (ADR-056 §6): the side effects of the one decision
 // `decideOutcome` made — feedback sent, checks repaired, the owner asked
@@ -60,6 +60,7 @@ const PREFIX: Record<TaskKind, string> = {
  * throws `EndAttempt`.
  */
 export async function applyOutcome(o: Outcome, x: AttemptCtx, t: Turn): Promise<"decide" | "turn"> {
+  x.enter(o);
   if (o.kind !== "Verify" && o.kind !== "RepairChecks") settle(x, t, o);
   switch (o.kind) {
     case "Verify":

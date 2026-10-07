@@ -2,6 +2,7 @@ import {
   budget,
   drift,
   type Observed,
+  type Outcome,
   type OutcomeInput,
   type Review,
   type RouteCandidate,
@@ -17,14 +18,13 @@ import {
   type WorkKind,
 } from "@oraknid/core";
 import type { LegEvent, UsageSnapshot } from "@oraknid/leg-sdk";
-import type { AttemptDeps, AttemptJob, TaskRow } from "../eye/attempt.ts";
 import { takeGuidance } from "../eye/talk.ts";
 import type { Supervised } from "../legs/supervisor.ts";
 import { parseSsh } from "../servers/remote.ts";
-import type { WorkTree } from "../workspace/tree.ts";
 import type { Gate } from "./gate.ts";
 import type { AttemptLog } from "./log.ts";
 import { stepsOf } from "./record.ts";
+import type { AttemptDeps, AttemptJob, AttemptWhere, TaskRow } from "./types.ts";
 import type { CheckReport, RunOptions } from "./verifier.ts";
 
 // What an attempt knows at a turn's end, gathered for `decideOutcome`
@@ -91,7 +91,7 @@ export interface AttemptCtx {
   leg: RouteCandidate;
   effort: string | null;
   work: WorkKind;
-  ws: { cwd: string; tree: WorkTree; tmpDir: string; trash: string };
+  ws: AttemptWhere;
   gate: Gate;
   log: AttemptLog;
   trail: ReturnType<AttemptLog["at"]>;
@@ -120,6 +120,8 @@ export interface AttemptCtx {
   /** A question of mine said in the project's conversation too (ADR-045). */
   conversationAsks: (text: string, questions: unknown[], itemId: string) => unknown;
   scope: () => string[];
+  /** An outcome is about to be applied: the controller moves to the state it leads to. */
+  enter: (o: Outcome) => void;
 }
 
 /**

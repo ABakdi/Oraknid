@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { LegKind } from "@oraknid/contracts";
 import {
+  type Capabilities,
   Channel,
   emptyUsage,
   type LegAdapter,
@@ -68,6 +69,8 @@ export function scriptedLeg(
     autoModeHooks?: boolean;
     /** Before a turn ends, Oraknid's Stop hook runs the checks, as Claude Code's does (ADR-052 §2). */
     stopHook?: boolean;
+    /** What its probe says it can do, where that differs from what it does (ADR-056 §2). */
+    declares?: Partial<Capabilities>;
   } = {},
 ) {
   const log: TurnContext[] = [];
@@ -104,7 +107,17 @@ export function scriptedLeg(
               },
               { model: "haiku", displayName: "Haiku", effortLevels: [], contextWindow: null },
             ],
-        features: { resume: !!o.resumable, tools: true, usage: "reported", quotaWindows: true },
+        features: {
+          resume: !!o.resumable,
+          tools: true,
+          usage: "reported",
+          quotaWindows: true,
+          inlineGate: true,
+          preToolHook: !!o.autoModeHooks,
+          stopHook: !!o.stopHook,
+          steer: false,
+          ...o.declares,
+        },
       };
     },
     async start(s: SessionStart) {

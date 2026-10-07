@@ -270,6 +270,11 @@ export function createCodexAdapter(): LegAdapter {
         tools: true,
         usage: "reported" as const,
         quotaWindows: !cfg.apiKey,
+        // Its PreToolUse hook asks for every call; its Stop hook holds the turn (ADR-057).
+        inlineGate: true,
+        preToolHook: true,
+        stopHook: true,
+        steer: false,
       };
       const binary = resolveBinary(cfg.binary, plan?.env.PATH);
       const home = plan?.home ?? join(tmpdir(), `oraknid-codex-home-${leg.id}`);
