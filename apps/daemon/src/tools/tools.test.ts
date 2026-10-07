@@ -7,7 +7,7 @@ import { createBwrapSandbox } from "@oraknid/os";
 import { describe, expect, it } from "vitest";
 import { openDatabase } from "../db/open.ts";
 import { EventBus } from "../events/bus.ts";
-import { isBrokered } from "../eye/attempt.ts";
+import { isBrokered } from "../harness/gate.ts";
 import { Secrets } from "../os/secrets.ts";
 import { fakeOs } from "../testing/fake-os.ts";
 import { type BrokerHooks, McpBroker } from "./broker.ts";
