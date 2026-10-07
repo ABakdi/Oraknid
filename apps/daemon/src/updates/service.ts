@@ -270,6 +270,7 @@ export class Updates {
         from: install.from,
         ref: v.target,
         service: install.service,
+        gui: install.gui,
         fromVersion: this.version,
         fromCommit: install.commit,
       },

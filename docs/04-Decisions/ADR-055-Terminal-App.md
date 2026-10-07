@@ -64,3 +64,45 @@ web UI out, saving space and build time.
   an API procedure; the terminal adds none of its own.
 - Ink adds a dependency to the daemon package's CLI only, loaded only
   when the terminal app opens (the service doesn't load it).
+
+## As built (2026-10-07, M15.6)
+
+- **The app** is `apps/daemon/src/tui/` (spec: [[Terminal-App]]): Ink 8
+  with React 19, imported by `oraknid` / `oraknid tui` with a dynamic
+  `import()`, so tsdown puts it in its own chunk and `oraknid run` never
+  loads it. It uses the same oRPC client and router types as the web,
+  over 127.0.0.1 with the CLI's token (which needs no unlocking), and its
+  own Node client of `/live` (topics, replay, followed server logs). No
+  procedure was added for it: `system.status` gained `webUi`, the one new
+  field.
+- **The transcript** is the web's, drawn as text: messages and thoughts
+  merged and folded the same way (the function is repeated, not shared:
+  the web's sits in a React DOM component), Markdown rendered to ANSI by
+  a small renderer of its own rather than a library. Thinking live shows
+  its last six lines.
+- **While it thinks**, "redo with this" or "add as context" is guessed
+  from my words (`correctsThinking`, as the web) and switched with Tab.
+- **Commands**: every one listed in the Decision, plus `/answer` (The
+  Eye's open questions here), `/stop`, `/server <n>`, `/project <n>`;
+  `/settings` covers max running jobs, max tasks per job, interview
+  rounds and the terminal. `/models` reads `models.list` when the daemon
+  has it (ADR-054) and says it hasn't otherwise.
+- **`/ssh`** goes through the daemon's terminal socket (`/term`,
+  [[ADR-028-Terminal]]) rather than an `ssh` started here: Oraknid's key
+  stays in the daemon's keychain, the shell is audited and follows the
+  terminal's on/off setting as the web's does. Ctrl+] leaves it.
+- **Notifications**: a line at the top and the bell for `inbox.opened`
+  and danger (`machine.incident`); the bell is always on (no setting yet).
+- **Terminal only**: `install.sh --gui` / `--no-gui`, asked through
+  `/dev/tty` when neither is given ([[ADR-036-One-Script-Install]] → With
+  or without the web UI); `.oraknid-install.json` gains `gui`; updates
+  pass it on; `oraknid install --gui` builds the web UI in place. Without
+  a web build the daemon answers every page with a few lines of text; on
+  an install recorded terminal only (`system.status.webUi` false; a
+  developer's clone, whose web UI Vite serves, is not), `oraknid open`,
+  `oraknid pair` and `nest.pairAway` say a browser or a phone needs the
+  web UI.
+- **Not done**: the terminal app can't create a project, a server or a
+  Leg, or edit the plan (the web UI does); a long reply wraps in the
+  terminal and the transcript scrolls by lines, not by wrapped rows; no
+  mouse.

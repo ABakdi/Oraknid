@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type InstallInfo, InstallRecord } from "@oraknid/contracts";
@@ -16,6 +16,42 @@ export function findAppDir(from = dirname(fileURLToPath(import.meta.url))): stri
     dir = dirname(dir);
   }
   return null;
+}
+
+/** A command run in the app's folder; its exit status. */
+export type RunIn = (
+  cmd: string,
+  args: string[],
+  o: { cwd: string; env: NodeJS.ProcessEnv },
+) => number;
+
+/**
+ * `oraknid install --gui` (ADR-055): the web UI added to an install made for
+ * the terminal only. Its dependencies installed and it built, with the Node
+ * and pnpm install.sh put in the app's folder; the record then says so, and
+ * updates build it from then on.
+ */
+export function addWebUi(appDir: string, run: RunIn, env: NodeJS.ProcessEnv = process.env): void {
+  const tools = `${join(appDir, ".tools", "bin")}:${join(appDir, ".tools", "node", "bin")}`;
+  const e = {
+    ...env,
+    PATH: `${tools}:${env.PATH ?? "/usr/bin:/bin"}`,
+    COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
+    TURBO_TELEMETRY_DISABLED: "1",
+    DO_NOT_TRACK: "1",
+  };
+  const steps: [string, string[]][] = [
+    ["pnpm", ["install", "--frozen-lockfile"]],
+    ["pnpm", ["exec", "turbo", "run", "build", "--filter", "@oraknid/web"]],
+  ];
+  for (const [cmd, args] of steps) {
+    const status = run(cmd, args, { cwd: appDir, env: e });
+    if (status !== 0) throw new Error(`${cmd} ${args.join(" ")} failed (exit ${status}).`);
+  }
+  const file = join(appDir, RECORD_FILE);
+  if (!existsSync(file)) return;
+  const raw = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+  writeFileSync(file, `${JSON.stringify({ ...raw, gui: true }, null, 2)}\n`);
 }
 
 /**

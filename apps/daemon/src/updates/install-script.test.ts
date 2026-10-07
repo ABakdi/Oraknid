@@ -1,10 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { InstallRecord } from "@oraknid/contracts";
 import { describe, expect, it } from "vitest";
-import { findAppDir, RECORD_FILE, readInstall } from "./install.ts";
+import { addWebUi, findAppDir, RECORD_FILE, readInstall } from "./install.ts";
 import { type Launcher, readRun, startUpdate, type UpdatePlan } from "./runner.ts";
 
 // install.sh's record of what it installed, and the update script that runs
@@ -47,7 +47,7 @@ exit ${exit}
  * Oraknid's repository in miniature: v0.1.0, v0.2.0, and v0.3.0 whose
  * install.sh fails; dev one commit past it.
  */
-function origin(root: string) {
+function origin(root: string, o: { knowsGui?: boolean } = {}) {
   const dir = join(root, 'ori"gin');
   mkdirSync(dir);
   git(dir, "init", "-q", "-b", "dev");
@@ -56,7 +56,11 @@ function origin(root: string) {
       join(dir, "package.json"),
       `{\n  "name": "oraknid",\n  "version": "${version}",\n  "private": true\n}\n`,
     );
-    writeFileSync(join(dir, "install.sh"), fakeScript(exit));
+    // An install.sh that knows --gui / --no-gui (ADR-055) says so in its help.
+    writeFileSync(
+      join(dir, "install.sh"),
+      fakeScript(exit) + (o.knowsGui ? "# --gui | --no-gui\n" : ""),
+    );
     writeFileSync(join(dir, "pnpm-workspace.yaml"), "packages: []\n");
     git(dir, "add", "-A");
     git(dir, "commit", "-q", "-m", `v${version}`);
@@ -73,17 +77,24 @@ function origin(root: string) {
 }
 
 /** install.sh's own functions, run in a shell: fetch_source, then write_record. */
-function installSh(o: { dir: string; from: string; ref: string; service?: boolean }) {
+function installSh(o: {
+  dir: string;
+  from: string;
+  ref: string;
+  service?: boolean;
+  gui?: boolean;
+}) {
   const r = spawnSync(
     "sh",
     [
       "-c",
-      'ORAKNID_INSTALL_LIB=1 . "$0"; DIR="$1"; FROM="$2"; REF="$3"; SERVICE="$4"; fetch_source && write_record',
+      'ORAKNID_INSTALL_LIB=1 . "$0"; DIR="$1"; FROM="$2"; REF="$3"; SERVICE="$4"; GUI="$5"; fetch_source && write_record',
       join(ROOT, "install.sh"),
       o.dir,
       o.from,
       o.ref,
       o.service === false ? "0" : "1",
+      o.gui === undefined ? "" : o.gui ? "1" : "0",
     ],
     { env: GIT_ENV, encoding: "utf8" },
   );
@@ -155,9 +166,9 @@ describe("install.sh's record of what it installed (ADR-048)", () => {
 
 describe("the update script (ADR-048)", () => {
   /** An install at v0.1.0 from the miniature repository, its data folder, and a launcher that runs the script to its end. */
-  function installed() {
+  function installed(g: { knowsGui?: boolean; gui?: boolean } = {}) {
     const root = mkdtempSync(join(tmpdir(), "oraknid-update-"));
-    const o = origin(root);
+    const o = origin(root, g);
     const app = join(root, "app");
     git(root, "clone", "-q", o.dir, app);
     git(app, "checkout", "-q", "--detach", o.c1);
@@ -187,6 +198,7 @@ describe("the update script (ADR-048)", () => {
         from: o.dir,
         ref,
         service: true,
+        ...(g.gui === undefined ? {} : { gui: g.gui }),
         fromVersion: "0.1.0",
         fromCommit: o.c1,
       };
@@ -240,6 +252,140 @@ describe("the update script (ADR-048)", () => {
     expect(calls()).toEqual([`--ref v9.9.9 --dir ${app} --from ${o.dir}`]);
     expect(git(app, "rev-parse", "HEAD")).toBe(o.c1);
     expect(run?.log.join("\n")).toContain("Using this version's install.sh.");
+  });
+
+  it("keeps a terminal-only install terminal only, and a GUI one with its GUI (ADR-055)", () => {
+    const tonly = installed({ knowsGui: true, gui: false });
+    expect(tonly.update("v0.2.0")).toMatchObject({ state: "succeeded" });
+    expect(tonly.calls()).toEqual([
+      `--ref v0.2.0 --dir ${tonly.app} --from ${tonly.o.dir} --no-gui`,
+    ]);
+    const gui = installed({ knowsGui: true });
+    gui.update("v0.3.0");
+    // Going back to the version before keeps the choice too.
+    expect(gui.calls()).toEqual([
+      `--ref v0.3.0 --dir ${gui.app} --from ${gui.o.dir} --gui`,
+      `--ref ${gui.o.c1} --dir ${gui.app} --from ${gui.o.dir} --gui`,
+    ]);
+  });
+});
+
+/** install.sh's functions in a shell, with an environment of the test's own. */
+function shLib(script: string, env: Record<string, string>, ...args: string[]) {
+  const r = spawnSync(
+    "sh",
+    ["-c", `ORAKNID_INSTALL_LIB=1 . "$0"; ${script}`, join(ROOT, "install.sh"), ...args],
+    // No display, no browser, no terminal: what the test says, nothing of this machine's.
+    {
+      env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: tmpdir(), ...env },
+      encoding: "utf8",
+    },
+  );
+  return { status: r.status, out: `${r.stdout}${r.stderr}` };
+}
+
+describe("install.sh with or without the web UI (ADR-055)", () => {
+  const choose = (env: Record<string, string>, dir: string, gui = "") =>
+    shLib('DIR="$1"; GUI="$2"; choose_gui; echo "GUI=$GUI"', env, dir, gui).out;
+
+  it("--gui and --no-gui win; then what an earlier install chose; then a display or not", () => {
+    const dir = mkdtempSync(join(tmpdir(), "oraknid-gui-"));
+    expect(choose({ DISPLAY: ":0" }, dir, "0")).toContain("GUI=0");
+    expect(choose({}, dir, "1")).toContain("GUI=1");
+    // Nothing said, no terminal to ask on: a desktop gets the web UI, a server doesn't.
+    expect(choose({ DISPLAY: ":0" }, dir)).toMatch(/With the web UI\.\nGUI=1/);
+    expect(choose({ WAYLAND_DISPLAY: "wayland-1" }, dir)).toContain("GUI=1");
+    expect(choose({ BROWSER: "lynx" }, dir)).toContain("GUI=1");
+    expect(choose({}, dir)).toMatch(
+      /Terminal only: no web UI \(add it later with: oraknid install --gui\)\.\nGUI=0/,
+    );
+    // Run again (an update by hand), the choice of the install before stays.
+    writeFileSync(join(dir, RECORD_FILE), '{\n  "service": true,\n  "gui": false\n}\n');
+    expect(choose({ DISPLAY: ":0" }, dir)).toBe("GUI=0\n");
+    writeFileSync(join(dir, RECORD_FILE), '{\n  "service": true,\n  "gui": true\n}\n');
+    expect(choose({}, dir)).toBe("GUI=1\n");
+  });
+
+  it("records the choice; a record from before it reads as with the web UI", () => {
+    const root = mkdtempSync(join(tmpdir(), "oraknid-install-"));
+    const o = origin(root);
+    const app = join(root, "app");
+    const out = installSh({ dir: app, from: o.dir, ref: "dev", gui: false });
+    expect(out).toContain("version 0.3.0, terminal only)");
+    expect(record(app).gui).toBe(false);
+    expect(readInstall(app)).toMatchObject({ mode: "script", gui: false });
+    installSh({ dir: app, from: o.dir, ref: "dev", gui: true });
+    expect(record(app).gui).toBe(true);
+    installSh({ dir: app, from: o.dir, ref: "dev" });
+    expect(record(app).gui).toBe(true);
+    expect(InstallRecord.parse({ ...record(app), gui: undefined }).gui).toBe(true);
+  });
+
+  it("terminal only, installs and builds everything but apps/web, and removes a web build left from before", () => {
+    const root = mkdtempSync(join(tmpdir(), "oraknid-build-"));
+    const bin = join(root, "bin");
+    mkdirSync(bin);
+    // A pnpm that only says how it was called.
+    writeFileSync(join(bin, "pnpm"), `#!/bin/sh\necho "$*" >>"${root}/pnpm.log"\n`, {
+      mode: 0o755,
+    });
+    const app = join(root, "app");
+    mkdirSync(join(app, "apps", "web", "dist"), { recursive: true });
+    mkdirSync(join(app, "apps", "web", "dist-remote"), { recursive: true });
+    const env = { PATH: `${bin}:${process.env.PATH ?? "/usr/bin:/bin"}` };
+    const build = (gui: string) => shLib('DIR="$1"; GUI="$2"; build', env, app, gui);
+    expect(build("0").status).toBe(0);
+    expect(readFileSync(join(root, "pnpm.log"), "utf8").trim().split("\n")).toEqual([
+      "install --frozen-lockfile --filter !@oraknid/web",
+      "exec turbo run build --filter !@oraknid/web",
+    ]);
+    expect(existsSync(join(app, "apps", "web", "dist"))).toBe(false);
+    expect(existsSync(join(app, "apps", "web", "dist-remote"))).toBe(false);
+    writeFileSync(join(root, "pnpm.log"), "");
+    expect(build("1").status).toBe(0);
+    expect(readFileSync(join(root, "pnpm.log"), "utf8").trim().split("\n")).toEqual([
+      "install --frozen-lockfile",
+      "build",
+    ]);
+  });
+
+  it("lists --gui and --no-gui in its help", () => {
+    const r = spawnSync("sh", [join(ROOT, "install.sh"), "--help"], { encoding: "utf8" });
+    expect(r.stdout).toContain("--gui | --no-gui");
+    expect(r.stdout).toContain("--uninstall");
+  });
+
+  it("oraknid install --gui builds the web UI and records it", () => {
+    const root = mkdtempSync(join(tmpdir(), "oraknid-addgui-"));
+    writeFileSync(
+      join(root, RECORD_FILE),
+      JSON.stringify({ ref: "main", gui: false, service: true }),
+    );
+    const ran: string[] = [];
+    addWebUi(
+      root,
+      (cmd, args, o) => {
+        ran.push(`${cmd} ${args.join(" ")}`);
+        expect(o.cwd).toBe(root);
+        expect(o.env.PATH?.startsWith(join(root, ".tools", "bin"))).toBe(true);
+        return 0;
+      },
+      { PATH: "/usr/bin" },
+    );
+    expect(ran).toEqual([
+      "pnpm install --frozen-lockfile",
+      "pnpm exec turbo run build --filter @oraknid/web",
+    ]);
+    expect(JSON.parse(readFileSync(join(root, RECORD_FILE), "utf8"))).toMatchObject({
+      ref: "main",
+      gui: true,
+    });
+    // A step that fails says which, and the record stays as it was.
+    writeFileSync(join(root, RECORD_FILE), JSON.stringify({ gui: false }));
+    expect(() => addWebUi(root, () => 1, { PATH: "/usr/bin" })).toThrow(
+      "pnpm install --frozen-lockfile failed (exit 1).",
+    );
+    expect(JSON.parse(readFileSync(join(root, RECORD_FILE), "utf8")).gui).toBe(false);
   });
 });
 

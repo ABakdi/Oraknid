@@ -86,9 +86,39 @@ real download or a real agent; llama.cpp's real release and a real GPU
 are still to try by hand.
 
 ### M15.6 — The terminal app and a terminal-only install ([[ADR-055-Terminal-App]])
-- [ ] `oraknid` opens the Ink app: the prompt, The Eye's transcript live, slash commands with completion, numbered lists, picking by number
-- [ ] `/projects`, `/jobs`, `/inbox`, `/servers` (and a server's `/chat`, `/docker`, `/db`, `/proxy`, `/logs`, `/state`, `/ssh`, `/backups`), `/agents`, `/models`, `/usage`, `/health`, `/mail`, `/repos`, `/storage`, `/chats`, `/skills`, `/settings`, `/update`, `/doctor`, `/help`
-- [ ] `install.sh --no-gui` / `--gui`, asked when unset; terminal-only skips the web build; `oraknid install --gui` later
+- [x] `oraknid` opens the Ink app: the prompt, The Eye's transcript live, slash commands with completion, numbered lists, picking by number
+- [x] `/projects`, `/jobs`, `/inbox`, `/servers` (and a server's `/chat`, `/docker`, `/db`, `/proxy`, `/logs`, `/state`, `/ssh`, `/backups`), `/agents`, `/models`, `/usage`, `/health`, `/mail`, `/repos`, `/storage`, `/chats`, `/skills`, `/settings`, `/update`, `/doctor`, `/help`
+- [x] `install.sh --no-gui` / `--gui`, asked when unset; terminal-only skips the web build; `oraknid install --gui` later
+
+Done 2026-10-07 ([[ADR-055-Terminal-App]] → As built, [[Terminal-App]],
+[[ADR-036-One-Script-Install]] → With or without the web UI). Tested:
+`apps/daemon/src/tui/tui.test.tsx` (ink-testing-library, a stand-in API
+and live socket): commands parsed, completed and ordered by where I am,
+picking by number at once or on Enter, the help; Markdown for the
+terminal; the transcript (my prompt `›`, a rendered reply, a folded
+thought, a running task), thinking live with its text, Esc stopping it,
+Tab choosing redo for a message sent while it thinks (`projects.talk`
+with `mode: "redo"`), `auto` otherwise; `/` listing and filtering, a
+server picked by typing 2, its overview, Esc back a panel at a time; a
+job's plan tree, ↑↓ Enter opening a task, `/pause` on the current job;
+the inbox answered by number; the notice and bell for a question; a
+missing procedure (`/models`) said in words; a command needing a server,
+an unknown command. `tui-daemon.test.tsx`: the app on a whole daemon
+with the CLI's token and the real live socket (the project chosen,
+`/projects`, `/settings` read and written through the real procedures,
+`/models` on a daemon without them, `/doctor`, `/servers`).
+`no-web-ui.test.ts`: `/` answered in text with the daemon's words, other
+pages 404, `system.status.webUi` (false from a terminal-only record, true
+for a clone), pairing a phone refused, the web UI served when built. `install-script.test.ts`: `choose_gui` (flags, the
+record of an earlier install, a display, `$BROWSER`, none), the record's
+`gui`, `build` terminal only (the filtered install and build, an old web
+build removed; a fake `pnpm`) and with the web UI, `--help`, updates
+passing `--no-gui`/`--gui` (and to the version before), `oraknid install
+--gui`'s steps and record. By hand: a terminal-only install and build of
+the repository in a temp folder (`pnpm install --frozen-lockfile --filter
+'!@oraknid/web'` then the filtered turbo build: the daemon, the Nest and
+the site built, apps/web untouched); the daemon's build puts Ink in its
+own chunk.
 
 ### M15.7 — The proof
 - [ ] My piano project (React, every feature of its spec) built in under 30 minutes from the spec, verified by its checks, with free models doing the simple parts and climbing when they fail

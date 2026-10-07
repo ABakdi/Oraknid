@@ -79,7 +79,14 @@ updates; `--uninstall` removes it and keeps your data.
 Update from Settings → About, or `oraknid update` ([how](docs/04-Decisions/ADR-048-Updates.md)).
 
 Options: `--dev`, `--ref <branch or tag>`, `--dir <path>`, `--from <path or URL>`,
-`--no-service`, `--uninstall` ([how it works](docs/04-Decisions/ADR-036-One-Script-Install.md)).
+`--no-service`, `--gui` / `--no-gui`, `--uninstall` ([how it works](docs/04-Decisions/ADR-036-One-Script-Install.md)).
+
+**In a terminal**: `oraknid` alone opens Oraknid in the terminal: The Eye's
+conversation, a prompt, and slash commands for everything else (`/projects`,
+`/jobs`, `/inbox`, `/servers`…; [the guide](https://oraknid.abakdi.com/docs/terminal.html)).
+On a server or over SSH, install it **terminal only** with `--no-gui`: no web UI
+is built (asked when you don't say; without a terminal to ask on, terminal only
+when there is no display). `oraknid install --gui` adds the web UI later.
 Tested on Arch, Debian, Ubuntu, Fedora, Alpine and openSUSE.
 
 **Away from home**: pair your phone through a public Nest

@@ -14,6 +14,8 @@
 #   --no-service         build and link, but don't install the background service
 #   --local-models       also get llama.cpp's llama-server for running models on this
 #                        computer (the build for its GPU: CUDA, ROCm, Vulkan or CPU)
+#   --gui | --no-gui     with the web UI, or terminal only (`oraknid` in a terminal); asked
+#                        when neither is given (no question: the web UI when there is a display)
 #   --uninstall          remove the service and the `oraknid` command (your data is kept)
 #
 # Run it as yourself: it asks for sudo only to install missing packages
@@ -30,6 +32,8 @@ FROM="$REPO"
 DIR="${XDG_DATA_HOME:-$HOME/.local/share}/oraknid/app"
 BIN_DIR="$HOME/.local/bin"
 SERVICE=1
+# 1: build the web UI, 0: terminal only (ADR-055); empty until chosen.
+GUI=""
 UNINSTALL=0
 LOCAL_MODELS=0
 DATA_DIR="${ORAKNID_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/oraknid}"
@@ -464,7 +468,7 @@ json_str() {
 # What was installed, for Oraknid's updates (ADR-048): the ref asked for and
 # its channel (dev for the dev branch; main, a release's tag or any other ref
 # is stable), the commit, the version, when, from where, and whether the
-# background service runs it.
+# background service runs it, and with the web UI or terminal only (ADR-055).
 write_record() {
 	case "$REF" in
 	dev) channel=dev ;;
@@ -473,6 +477,7 @@ write_record() {
 	commit="$(git -C "$DIR" rev-parse HEAD)"
 	version="$(sed -n 's/^  "version": *"\([^"]*\)".*/\1/p' "$DIR/package.json" | head -n 1)"
 	if [ "$SERVICE" = 1 ]; then service=true; else service=false; fi
+	if [ "$GUI" = 0 ]; then gui=false; else gui=true; fi
 	cat >"$DIR/.oraknid-install.json.new" <<EOF
 {
   "ref": "$(json_str "$REF")",
@@ -481,17 +486,55 @@ write_record() {
   "version": "$(json_str "$version")",
   "installedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "from": "$(json_str "$FROM")",
-  "service": $service
+  "service": $service,
+  "gui": $gui
 }
 EOF
 	mv -f "$DIR/.oraknid-install.json.new" "$DIR/.oraknid-install.json"
-	say "Recorded $REF ($channel channel, version $version) in $DIR/.oraknid-install.json"
+	say "Recorded $REF ($channel channel, version $version$([ "$GUI" = 0 ] && printf ', terminal only')) in $DIR/.oraknid-install.json"
+}
+
+# With the web UI or terminal only (ADR-055): --gui / --no-gui; else what an
+# earlier install chose; else asked on a terminal; else the web UI when this
+# computer has a display (or a browser named), terminal only when it has none.
+choose_gui() {
+	[ -z "$GUI" ] || return 0
+	if grep -q '"gui": *false' "$DIR/.oraknid-install.json" 2>/dev/null; then
+		GUI=0
+		return 0
+	elif grep -q '"gui": *true' "$DIR/.oraknid-install.json" 2>/dev/null; then
+		GUI=1
+		return 0
+	fi
+	if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}${BROWSER:-}" ]; then default=1; else default=0; fi
+	# Under `curl | sh` the script is standard input: the question goes to the terminal itself.
+	if [ -z "${ORAKNID_UPDATE:-}" ] && [ -t 1 ] && { : </dev/tty; } 2>/dev/null; then
+		if [ "$default" = 1 ]; then hint="Y/n"; else hint="y/N"; fi
+		printf '\nInstall the web UI too? Without it Oraknid is used in a terminal (`oraknid`),\nand the install is smaller and quicker. [%s] ' "$hint"
+		answer=""
+		read -r answer </dev/tty || answer=""
+		case "$answer" in
+		[yY]*) GUI=1 ;;
+		[nN]*) GUI=0 ;;
+		*) GUI="$default" ;;
+		esac
+	else
+		GUI="$default"
+	fi
+	if [ "$GUI" = 1 ]; then say "With the web UI."; else say "Terminal only: no web UI (add it later with: oraknid install --gui)."; fi
 }
 
 build() {
 	title "Installing dependencies and building"
 	export TURBO_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1
-	(cd "$DIR" && run pnpm install --frozen-lockfile && run pnpm build)
+	if [ "$GUI" = 0 ]; then
+		# Terminal only: apps/web is neither installed nor built, and an earlier build of it goes.
+		(cd "$DIR" && run pnpm install --frozen-lockfile --filter '!@oraknid/web' &&
+			run pnpm exec turbo run build --filter '!@oraknid/web' &&
+			run rm -rf apps/web/dist apps/web/dist-remote)
+	else
+		(cd "$DIR" && run pnpm install --frozen-lockfile && run pnpm build)
+	fi
 }
 
 link_command() {
@@ -520,12 +563,19 @@ wait_until_up() {
 finish() {
 	title "Done"
 	if [ "$SERVICE" = 1 ] && wait_until_up; then
-		url="$("$BIN_DIR/oraknid" status | awk '$1 == "url" { print $2 }')"
-		say "Oraknid is running. Open ${url:-http://127.0.0.1:7417} in your browser."
-		# An update from inside Oraknid: its browsers are paired already, and no code goes in its log.
-		[ -n "${ORAKNID_UPDATE:-}" ] || "$BIN_DIR/oraknid" pair || true
+		if [ "$GUI" = 0 ]; then
+			say "Oraknid is running. Open it in a terminal with: oraknid"
+		else
+			url="$("$BIN_DIR/oraknid" status | awk '$1 == "url" { print $2 }')"
+			say "Oraknid is running. Open ${url:-http://127.0.0.1:7417} in your browser, or run: oraknid"
+			# An update from inside Oraknid: its browsers are paired already, and no code goes in its log.
+			[ -n "${ORAKNID_UPDATE:-}" ] || "$BIN_DIR/oraknid" pair || true
+		fi
 	elif [ "$SERVICE" = 1 ]; then
 		say "Oraknid did not answer yet. See: oraknid status, oraknid logs"
+	elif [ "$GUI" = 0 ]; then
+		say "Start Oraknid with: oraknid start"
+		say "Then open it in a terminal with: oraknid"
 	else
 		say "Start Oraknid with: oraknid start"
 		say "Then open http://127.0.0.1:7417 and pair this browser with the code from: oraknid pair"
@@ -567,8 +617,10 @@ main() {
 		--from=*) FROM="${1#*=}"; shift ;;
 		--no-service) SERVICE=0; shift ;;
 		--local-models) LOCAL_MODELS=1; shift ;;
+		--gui) GUI=1; shift ;;
+		--no-gui) GUI=0; shift ;;
 		--uninstall) UNINSTALL=1; shift ;;
-		-h | --help) sed -n '2,22p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' || true; exit 0 ;;
+		-h | --help) sed -n '2,24p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' || true; exit 0 ;;
 		*) die "unknown option $1 (see --help)" ;;
 		esac
 	done
@@ -587,6 +639,8 @@ main() {
 	PATH="$DIR/.tools/bin:$DIR/.tools/node/bin:$PATH"
 	export PATH
 
+	# Asked first, before the long part.
+	choose_gui
 	ensure_packages
 	fetch_source
 	[ "$NODE_LOCAL" = 0 ] || install_local_node

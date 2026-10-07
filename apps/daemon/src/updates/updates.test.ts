@@ -291,6 +291,8 @@ describe("Update now (ADR-048)", () => {
     const text = readFileSync(join(paths.dataDir, "updates", "run-update.sh"), "utf8");
     expect(text).toContain("REF='dev'");
     expect(text).toContain("NO_SERVICE=--no-service");
+    // A record from before the choice (ADR-055): with the web UI.
+    expect(text).toContain("then GUI=--gui; fi");
     expect(launcher.detached.length).toBe(1);
   });
 
