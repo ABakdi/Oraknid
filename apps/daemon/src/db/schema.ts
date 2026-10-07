@@ -651,6 +651,14 @@ export const mailAccounts = sqliteTable("mail_accounts", {
     .notNull()
     .default("imap"),
   login: text("login").notNull(),
+  /**
+   * How it signs in (ADR-063): a password (an app password for Gmail and
+   * Outlook), or OAuth with Google or Microsoft (XOAUTH2, its refresh token
+   * in the keychain).
+   */
+  auth: text("auth", { enum: ["password", "google", "microsoft"] })
+    .notNull()
+    .default("password"),
   /** The incoming server, IMAP or POP3 (its columns kept their first name). */
   incomingHost: text("imap_host").notNull(),
   incomingPort: integer("imap_port").notNull(),

@@ -73,6 +73,8 @@ export interface ProjectDraft {
   repo: string;
   /** The account that reads it; "" for the default. */
   repoAccount: string;
+  /** Its git host when not GitHub (ADR-062): GitLab, Gitea or Forgejo, by its id. */
+  repoHost: string;
   url: string;
 }
 
@@ -88,6 +90,7 @@ export const newDraft = (o: Partial<ProjectDraft> = {}): ProjectDraft => ({
   via: "mine",
   repo: "",
   repoAccount: "",
+  repoHost: "",
   url: "",
   ...o,
 });
@@ -116,7 +119,7 @@ export const folderOf = (d: ProjectDraft) => d.folder.trim() || slugify(d.name);
 /** The folder a clone lands in, named by the daemon after the repo. */
 const cloneFolder = (d: ProjectDraft) =>
   d.via === "mine"
-    ? (d.repo.split("/")[1] ?? "")
+    ? (d.repo.split("/").at(-1) ?? "")
     : lastPart(d.url.trim()).replace(/\.git$/, "") || "project";
 
 /**
@@ -156,6 +159,7 @@ export function projectSource(
           parent,
           fullName: d.repo,
           ...(d.repoAccount ? { account: d.repoAccount } : {}),
+          ...(d.repoHost ? { host: d.repoHost } : {}),
         }
       : null;
   const url = d.url.trim();
@@ -206,7 +210,7 @@ export function whatHappens(
     }
     case "github-clone":
       return t("Clones {repo} into {path} and links the project to it.", {
-        repo: s.fullName,
+        repo: s.host ? `${s.fullName} (${s.host})` : s.fullName,
         path: inside(s.parent, cloneFolder(d)),
       });
     default:
@@ -263,10 +267,15 @@ export function NewProjectFields({
     topics: ["overview"],
     refreshOn: (e) => e.type.startsWith("github."),
   });
-  const connected = !!github.data?.connected;
+  // Accounts on GitLab, Gitea or Forgejo count too (ADR-062).
+  const hostAccounts = useLive(() => api.hosts.accounts({}), {
+    topics: ["overview"],
+    refreshOn: (e) => e.type.startsWith("githost."),
+  });
+  const connected = !!github.data?.connected || !!hostAccounts.data?.length;
   const set = (p: Partial<ProjectDraft>) => onChange({ ...draft, ...p });
   // Without a GitHub account, a link is the only way from GitHub.
-  const linkOnly = !!github.data && !connected && draft.via === "mine";
+  const linkOnly = !!github.data && !!hostAccounts.data && !connected && draft.via === "mine";
   // biome-ignore lint/correctness/useExhaustiveDependencies: only when GitHub's state says so
   useEffect(() => {
     if (linkOnly) onChange({ ...draft, via: "link" });
@@ -428,8 +437,14 @@ export function NewProjectFields({
           {connected && draft.via === "mine" ? (
             <GitHubRepoChooser
               value={draft.repo}
-              onChange={(repo, account) =>
-                set({ repo, repoAccount: account, name: draft.name || (repo.split("/")[1] ?? "") })
+              host={draft.repoHost}
+              onChange={(repo, account, host) =>
+                set({
+                  repo,
+                  repoAccount: account,
+                  repoHost: host,
+                  name: draft.name || (repo.split("/").at(-1) ?? ""),
+                })
               }
             />
           ) : (
@@ -631,23 +646,48 @@ const ALL = "__all__";
  */
 export function GitHubRepoChooser({
   value,
+  host = "",
   onChange,
 }: {
   value: string;
-  onChange: (fullName: string, account: string) => void;
+  /** The chosen one's host when not GitHub (ADR-062). */
+  host?: string;
+  onChange: (fullName: string, account: string, host: string) => void;
 }) {
   const accounts = useLive(() => api.github.accounts({}), {
     topics: ["overview"],
     refreshOn: (e) => e.type.startsWith("github."),
   });
+  const hostAccounts = useLive(() => api.hosts.accounts({}), {
+    topics: ["overview"],
+    refreshOn: (e) => e.type.startsWith("githost."),
+  });
   const [account, setAccount] = useState(ALL);
   const [query, setQuery] = useState("");
-  const list = useLive(() => api.github.repoList(account === ALL ? {} : { account }), {
-    topics: ["overview"],
-    refreshOn: (e) => e.type.startsWith("github.") || e.type === "project.github",
-    deps: [account],
-  });
-  const logins = (accounts.data ?? []).map((a) => a.login);
+  // Every host's when all are shown; one account's, GitHub's or another host's (`host!login`).
+  const list = useLive(
+    () => {
+      if (account === ALL) return api.hosts.repoList({});
+      const cut = account.indexOf("!");
+      return cut < 0
+        ? api.github.repoList({ account })
+        : api.hosts.repoList({ host: account.slice(0, cut), account: account.slice(cut + 1) });
+    },
+    {
+      topics: ["overview"],
+      refreshOn: (e) =>
+        e.type.startsWith("github.") ||
+        e.type.startsWith("githost.") ||
+        e.type === "project.github",
+      deps: [account],
+    },
+  );
+  const logins = [
+    ...(accounts.data ?? []).map((a) => a.login),
+    ...(hostAccounts.data ?? []).map((a) => `${a.host}!${a.login}`),
+  ];
+  const chosen = (r: { fullName: string; host?: string | undefined }) =>
+    value === r.fullName && (r.host ?? "") === host;
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     return (list.data?.repos ?? []).filter(
@@ -680,7 +720,7 @@ export function GitHubRepoChooser({
               <SelectItem value={ALL}>{t("All accounts")}</SelectItem>
               {logins.map((l) => (
                 <SelectItem key={l} value={l}>
-                  {l}
+                  {l.includes("!") ? `${l.split("!")[1]} · ${l.split("!")[0]}` : l}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -699,7 +739,7 @@ export function GitHubRepoChooser({
         className="max-h-56 overflow-y-auto rounded-md border"
       >
         {/* One chosen in Repos may not be listed here. */}
-        {value && !list.data?.repos.some((r) => r.fullName === value) ? (
+        {value && !list.data?.repos.some(chosen) ? (
           <button
             type="button"
             role="option"
@@ -718,18 +758,25 @@ export function GitHubRepoChooser({
         ) : (
           shown.map((r) => (
             <button
-              key={`${r.account}:${r.fullName}`}
+              key={`${r.host ?? ""}:${r.account}:${r.fullName}`}
               type="button"
               role="option"
-              aria-selected={value === r.fullName}
-              onClick={() => onChange(r.fullName, r.account)}
+              aria-selected={chosen(r)}
+              onClick={() => onChange(r.fullName, r.account, r.host ?? "")}
               className={cn(
                 "flex w-full items-center gap-2 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent",
-                value === r.fullName && "bg-accent font-medium",
+                chosen(r) && "bg-accent font-medium",
               )}
             >
               <span className="min-w-0 flex-1">
-                <span className="block truncate">{r.fullName}</span>
+                <span className="block truncate">
+                  {r.fullName}
+                  {r.host ? (
+                    <span className="ml-1 text-xs font-normal text-muted-foreground">
+                      · {r.host}
+                    </span>
+                  ) : null}
+                </span>
                 {r.project ? (
                   <span className="block truncate text-xs font-normal text-muted-foreground">
                     {t("Already the project {name}", { name: r.project.name })}

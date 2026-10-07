@@ -10,6 +10,7 @@ import type { BuiltInServer, McpHandler, Rpc } from "../tools/broker.ts";
 import type { BuiltInTool, McpDeclaration } from "../tools/registry.ts";
 import type { GitHub } from "./github.ts";
 import { ciOf } from "./github-ci.ts";
+import { hostFor } from "./hosts/registry.ts";
 import { type Projects, viewOf } from "./projects.ts";
 import { isSeveral } from "./repos.ts";
 
@@ -19,7 +20,9 @@ import { isSeveral } from "./repos.ts";
 // linked repo (creating it when it is new, pushing a branch, a pull
 // request) runs without asking; anything else is judged as a gated action.
 // A project of several repos (ADR-042) has a link per repo: a call names
-// the repo by its name in the project.
+// the repo by its name in the project. A link on GitLab, Gitea or Forgejo
+// (ADR-062) is served the same way, by its host's client: the tool keeps
+// its name, its calls and its gates.
 
 const NAME = "github";
 
@@ -129,7 +132,7 @@ export function githubTool(db: Db): BuiltInTool {
   return {
     name: NAME,
     description:
-      "Oraknid's GitHub, with the project's linked account: create its repo, push a branch, open a pull request, read its GitHub Actions runs and logs, re-run one (asked). The token never reaches an agent.",
+      "Oraknid's GitHub (or the project's GitLab, Gitea or Forgejo), with the project's linked account: create its repo, push a branch, open a pull request; on GitHub, read its Actions runs and logs, re-run one (asked). The token never reaches an agent.",
     reads: READS,
     held: [],
     // What it returns is GitHub's answer about my own repo, not someone's words.
@@ -304,15 +307,25 @@ export async function githubCall(
     if (!r.github) throw new Error(several ? noLinkFor(r) : NO_LINK);
     return r.github;
   };
+  /** The link's host: GitHub, or the GitLab or Gitea it names (ADR-062). */
+  const host = (link: GitHubLink | null) => {
+    const h = hostFor(d.github, link);
+    if (!h) throw new Error("GitHub isn't set up in Oraknid.");
+    return h;
+  };
+  const where = (link: GitHubLink) =>
+    link.host
+      ? `the account ${link.account} on ${link.host}`
+      : `the GitHub account ${link.account}`;
 
   if (name === "repo_info") {
     const describe = async (r: ProjectRepo) => {
       const link = r.github;
       if (!link) return several ? noLinkFor(r) : NO_LINK;
-      const head = `${several ? `${r.name} (${r.folder}/): ` : ""}${full(link)} (${link.visibility}), through the GitHub account ${link.account}.`;
+      const head = `${several ? `${r.name} (${r.folder}/): ` : ""}${full(link)} (${link.visibility}), through ${where(link)}.`;
       if (!link.ready)
         return `${head} It doesn't exist yet: create it with create_repo, then push.`;
-      const info = await d.github.repo(full(link), link.account);
+      const info = await host(link).repo(full(link), link.account);
       return `${head} Default branch: ${info.defaultBranch}. ${info.url}`;
     };
     if (several && !named) return (await Promise.all(repos.map(describe))).join("\n");
@@ -324,7 +337,7 @@ export async function githubCall(
     const r = target();
     const link = linkOf(r);
     if (link.ready) return `${full(link)} exists already: push to it.`;
-    const made = await d.github.createRepo(
+    const made = await host(link).createRepo(
       {
         name: link.name,
         owner: link.owner,
@@ -368,7 +381,7 @@ export async function githubCall(
     });
     if (known.status !== 0)
       throw new Error(`There is no local branch ${branch}${several ? ` in ${r.name}` : ""}.`);
-    const out = await d.github.push({
+    const out = await host(link).push({
       cwd,
       fullName: repo,
       refspecs: [`refs/heads/${branch}:refs/heads/${to}`],
@@ -392,8 +405,8 @@ export async function githubCall(
     const head = s("head");
     const title = s("title");
     if (!head || !title) throw new Error("Give head (a pushed branch) and title.");
-    const base = s("base") ?? (await d.github.repo(full(link), link.account)).defaultBranch;
-    const pr = await d.github.openPullRequest(
+    const base = s("base") ?? (await host(link).repo(full(link), link.account)).defaultBranch;
+    const pr = await host(link).openPullRequest(
       { fullName: full(link), head, base, title, body: s("body") ?? "" },
       link.account,
     );
@@ -404,6 +417,11 @@ export async function githubCall(
   if (name === "ci_runs" || name === "ci_log" || name === "ci_rerun") {
     if (!repos.some((r) => r.github)) throw new Error(NO_LINK);
     const link = linkOf(target());
+    // CI is GitHub's for now (ADR-058, ADR-062): another host's pipelines aren't read here.
+    if (link.host)
+      throw new Error(
+        `${full(link)} is on ${link.host}: Oraknid reads GitHub Actions only, not its pipelines. Say in your report that its CI wasn't checked.`,
+      );
     if (!link.ready) throw new Error(`${full(link)} doesn't exist yet: nothing runs there.`);
     const r = { owner: link.owner, name: link.name, account: link.account };
     const ci = ciOf(d.github);

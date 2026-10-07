@@ -259,6 +259,32 @@ describe("Claude Code adapter", () => {
     await s.kill();
   });
 
+  it("takes what fills the context from Claude Code's own measure when the SDK has it", async () => {
+    const base = fakeQuery("reply");
+    let asked = 0;
+    const withContext: QueryFn = (args) =>
+      Object.assign(base(args), {
+        getContextUsage: async () => {
+          asked++;
+          return { totalTokens: 31_400, maxTokens: 200_000, rawMaxTokens: 200_000 };
+        },
+      }) as ReturnType<QueryFn>;
+    const s = await createClaudeCodeAdapter({ query: withContext }).start(start());
+    await readUntil(s, (e) => e.type === "turn.ended");
+    expect(asked).toBe(1);
+    expect(s.usage()).toMatchObject({ contextTokens: 31_400, contextWindow: 200_000 });
+    await s.kill();
+    // One that never answers: the result's numbers, after a few seconds at most.
+    const silent: QueryFn = (args) =>
+      Object.assign(base(args), {
+        getContextUsage: () => new Promise(() => {}),
+      }) as ReturnType<QueryFn>;
+    const t = await createClaudeCodeAdapter({ query: silent }).start(start());
+    await readUntil(t, (e) => e.type === "turn.ended");
+    expect(t.usage()).toMatchObject({ contextTokens: 150, contextWindow: 200_000 });
+    await t.kill();
+  }, 15_000);
+
   it("turns a rejected window into a quota report in milliseconds, scoped to the account", async () => {
     const s = await createClaudeCodeAdapter({ query: fakeQuery("rate-limit") }).start(start());
     const events = await readUntil(s, (e) => e.type === "turn.ended");

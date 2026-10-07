@@ -83,7 +83,12 @@ export function WorkPage({ draftId }: { draftId?: string }) {
     const st: unknown = history.state;
     const s = (st && typeof st === "object" ? st : {}) as Record<string, unknown>;
     const str = (k: string) => (typeof s[k] === "string" ? (s[k] as string) : "");
-    return { projectId: str("projectId"), repo: str("repo"), account: str("account") };
+    return {
+      projectId: str("projectId"),
+      repo: str("repo"),
+      account: str("account"),
+      host: str("host"),
+    };
   });
   const [projectId, setProjectId] = useState<string>(arrived.repo ? "new" : arrived.projectId);
   const { confirm, dialog } = useConfirm();
@@ -91,7 +96,13 @@ export function WorkPage({ draftId }: { draftId?: string }) {
   const [draft, setDraft] = useState(() =>
     newDraft(
       arrived.repo
-        ? { origin: "github", via: "mine", repo: arrived.repo, repoAccount: arrived.account }
+        ? {
+            origin: "github",
+            via: "mine",
+            repo: arrived.repo,
+            repoAccount: arrived.account,
+            repoHost: arrived.host,
+          }
         : {},
     ),
   );

@@ -26,6 +26,7 @@ import { CiRuns } from "@/components/ci-panel";
 import { BackButton, Empty, ErrorNote, Loading, Markdown } from "@/components/common";
 import { useConfirm } from "@/components/confirm";
 import { DiffList } from "@/components/diff-view";
+import { GitHostsCard } from "@/components/git-hosts-card";
 import { GitHubCard } from "@/components/github-card";
 import { type PageTab, PageTabs } from "@/components/page-tabs";
 import { Badge } from "@/components/ui/badge";
@@ -58,7 +59,10 @@ import { cn } from "@/lib/utils";
 
 // Repos (ADR-040): my GitHub repositories, read through the daemon with an
 // account's token. The list, then a repository in tabs in the address:
-// /repos/<owner>/<name>/<tab>/<what in the tab>.
+// /repos/<owner>/<name>/<tab>/<what in the tab>. A repository on GitLab,
+// Gitea or Forgejo (ADR-062) is read the same way; its owner part in the
+// address carries its host: `<host>!<owner>` (neither a host nor an owner
+// has a "!"), a GitLab group's subgroups encoded in it.
 
 const seg = (s: string) => encodeURIComponent(s);
 const unseg = (s: string | undefined) => {
@@ -80,6 +84,70 @@ export const repoHref = {
     `${repoHref.base(o, n)}/commits/${seg(branch)}${sha ? `/${sha}` : ""}`,
   pulls: (o: string, n: string, state: "open" | "closed", num?: number) =>
     `${repoHref.base(o, n)}/pulls/${state}${num ? `/${num}` : ""}`,
+};
+
+/** Between a host and an owner in the address's owner part (ADR-062). */
+const HOST_MARK = "!";
+
+/** The address's owner part of a repository: its owner, after its host when not GitHub's. */
+export const ownerKey = (host: string | undefined, owner: string) =>
+  host && host !== "github" ? `${host}${HOST_MARK}${owner}` : owner;
+
+/** The host and owner an address's owner part names. */
+export function splitOwner(key: string): { host: string | undefined; owner: string } {
+  const i = key.indexOf(HOST_MARK);
+  return i < 0
+    ? { host: undefined, owner: key }
+    : { host: key.slice(0, i), owner: key.slice(i + 1) };
+}
+
+/** GitHub's reads, or another host's (ADR-062), by the owner part of the reference. */
+type Ref = GitHubRepoRef;
+const via =
+  <I extends Ref, O>(gh: (i: I) => Promise<O>, other: (i: I & { host: string }) => Promise<O>) =>
+  (i: I): Promise<O> => {
+    const { host, owner } = splitOwner(i.owner);
+    return host ? other({ ...i, owner, host }) : gh(i);
+  };
+type G = typeof api.github;
+type H = typeof api.hosts;
+export const rapi = {
+  repoInfo: via<Parameters<G["repoInfo"]>[0], Awaited<ReturnType<G["repoInfo"]>>>(
+    (i) => api.github.repoInfo(i),
+    (i) => api.hosts.repoInfo(i),
+  ),
+  branches: via<Parameters<G["branches"]>[0], Awaited<ReturnType<G["branches"]>>>(
+    (i) => api.github.branches(i),
+    (i) => api.hosts.branches(i),
+  ),
+  tree: via<Parameters<G["tree"]>[0], Awaited<ReturnType<H["tree"]>>>(
+    (i) => api.github.tree(i),
+    (i) => api.hosts.tree(i),
+  ),
+  readme: via<Parameters<G["readme"]>[0], Awaited<ReturnType<G["readme"]>>>(
+    (i) => api.github.readme(i),
+    (i) => api.hosts.readme(i),
+  ),
+  file: via<Parameters<G["file"]>[0], Awaited<ReturnType<G["file"]>>>(
+    (i) => api.github.file(i),
+    (i) => api.hosts.file(i),
+  ),
+  commits: via<Parameters<G["commits"]>[0], Awaited<ReturnType<G["commits"]>>>(
+    (i) => api.github.commits(i),
+    (i) => api.hosts.commits(i),
+  ),
+  commit: via<Parameters<G["commit"]>[0], Awaited<ReturnType<G["commit"]>>>(
+    (i) => api.github.commit(i),
+    (i) => api.hosts.commit(i),
+  ),
+  pulls: via<Parameters<G["pulls"]>[0], Awaited<ReturnType<G["pulls"]>>>(
+    (i) => api.github.pulls(i),
+    (i) => api.hosts.pulls(i),
+  ),
+  pull: via<Parameters<G["pull"]>[0], Awaited<ReturnType<G["pull"]>>>(
+    (i) => api.github.pull(i),
+    (i) => api.hosts.pull(i),
+  ),
 };
 
 /** What the rest of the address says inside a tab. */
@@ -167,6 +235,7 @@ function AccountsPane() {
   return (
     <>
       <GitHubCard />
+      <GitHostsCard />
       {limits.data?.length ? (
         <Card>
           <CardHeader>
@@ -197,17 +266,41 @@ function RepoList({ selected }: { selected: { owner: string; name: string } | nu
     topics: ["overview"],
     refreshOn: (e) => e.type.startsWith("github."),
   });
+  // GitLab, Gitea and Forgejo beside GitHub (ADR-062).
+  const hostAccounts = useLive(() => api.hosts.accounts({}), {
+    topics: ["overview"],
+    refreshOn: (e) => e.type.startsWith("githost."),
+  });
   const [account, setAccount] = useState(ALL);
   const [query, setQuery] = useState("");
   const [visibility, setVisibility] = useState<"any" | "public" | "private">("any");
   const [creating, setCreating] = useState(false);
   const [showAccounts, setShowAccounts] = useState(false);
-  const list = useLive(() => api.github.repoList(account === ALL ? {} : { account }), {
-    topics: ["overview"],
-    refreshOn: (e) => e.type.startsWith("github.") || e.type === "project.github",
-    deps: [account],
-  });
-  const logins = (accounts.data ?? []).map((a) => a.login).filter(Boolean);
+  const list = useLive(
+    () => {
+      if (account === ALL) return api.hosts.repoList({});
+      const { host, owner: login } = splitOwner(account);
+      return host ? api.hosts.repoList({ host, account: login }) : api.github.repoList({ account });
+    },
+    {
+      topics: ["overview"],
+      refreshOn: (e) =>
+        e.type.startsWith("github.") ||
+        e.type.startsWith("githost.") ||
+        e.type === "project.github",
+      deps: [account],
+    },
+  );
+  const githubLogins = (accounts.data ?? []).map((a) => a.login).filter(Boolean);
+  /** Every account, GitHub's by login, another host's as `<host>!<login>`. */
+  const logins = [
+    ...githubLogins,
+    ...(hostAccounts.data ?? []).map((a) => ownerKey(a.host, a.login)),
+  ];
+  const accountLabel = (key: string) => {
+    const { host, owner: login } = splitOwner(key);
+    return host ? `${login} · ${host}` : login;
+  };
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     return (list.data?.repos ?? []).filter(
@@ -248,7 +341,7 @@ function RepoList({ selected }: { selected: { owner: string; name: string } | nu
           </Button>
         ) : null}
       </div>
-      {accounts.data && !logins.length ? (
+      {accounts.data && hostAccounts.data && !logins.length ? (
         <Empty title={t("No GitHub account yet")}>
           {t(
             "Add a token in Accounts to see your repositories here: their code, commits, branches and pull requests.",
@@ -280,7 +373,7 @@ function RepoList({ selected }: { selected: { owner: string; name: string } | nu
                 <SelectItem value={ALL}>{t("All accounts")}</SelectItem>
                 {logins.map((l) => (
                   <SelectItem key={l} value={l}>
-                    {l}
+                    {accountLabel(l)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -330,13 +423,13 @@ function RepoList({ selected }: { selected: { owner: string; name: string } | nu
             ) : null}
             {shown.map((r) => (
               <RepoRow
-                key={r.fullName}
+                key={`${r.host ?? ""}:${r.fullName}`}
                 repo={r}
                 active={
-                  selected?.owner.toLowerCase() === r.owner.toLowerCase() &&
+                  selected?.owner.toLowerCase() === ownerKey(r.host, r.owner).toLowerCase() &&
                   selected?.name.toLowerCase() === r.name.toLowerCase()
                 }
-                onOpen={() => go(repoHref.base(r.owner, r.name))}
+                onOpen={() => go(repoHref.base(ownerKey(r.host, r.owner), r.name))}
               />
             ))}
             {list.data?.truncated ? (
@@ -351,9 +444,9 @@ function RepoList({ selected }: { selected: { owner: string; name: string } | nu
       <Dialog open={showAccounts} onOpenChange={setShowAccounts}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{t("GitHub accounts")}</DialogTitle>
+            <DialogTitle>{t("Accounts")}</DialogTitle>
             <DialogDescription>
-              {t("The same as Settings → Connections → GitHub.")}
+              {t("GitHub's are the same as Settings → Connections → GitHub.")}
             </DialogDescription>
           </DialogHeader>
           <AccountsPane />
@@ -401,6 +494,11 @@ function RepoRow({
         </span>
         <span>{r.pushedAt ? t("pushed {when}", { when: when(r.pushedAt) }) : t("empty")}</span>
         <span>{r.account}</span>
+        {r.host ? (
+          <Badge variant="outline" className="max-w-40 truncate font-normal" title={r.host}>
+            {r.host}
+          </Badge>
+        ) : null}
         {r.project ? (
           <Badge variant="secondary" className="max-w-40 truncate" title={r.project.name}>
             {r.project.name}
@@ -442,17 +540,21 @@ function NewRepoDialog({
     setBusy(true);
     setError(undefined);
     try {
-      const r = await api.github.createRepo({
-        account: chosen,
+      const { host, owner: login } = splitOwner(chosen);
+      const input = {
+        account: login,
         name: name.trim(),
         private: isPrivate,
         ...(description.trim() ? { description: description.trim() } : {}),
-      });
+      };
+      const r = host
+        ? await api.hosts.createRepo({ ...input, host })
+        : await api.github.createRepo(input);
       toast.success(t("Created {repo}.", { repo: `${r.owner}/${r.name}` }));
       onOpenChange(false);
       setName("");
       setDescription("");
-      go(repoHref.base(r.owner, r.name));
+      go(repoHref.base(ownerKey(host, r.owner), r.name));
     } catch (e) {
       setError(e);
     } finally {
@@ -465,7 +567,7 @@ function NewRepoDialog({
         <DialogHeader>
           <DialogTitle>{t("New repository")}</DialogTitle>
           <DialogDescription>
-            {t("Made on GitHub with a README, so it can be cloned at once.")}
+            {t("Made with a README, so it can be cloned at once.")}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -485,7 +587,7 @@ function NewRepoDialog({
                 <SelectContent>
                   {logins.map((l) => (
                     <SelectItem key={l} value={l}>
-                      {l}
+                      {splitOwner(l).host ? `${splitOwner(l).owner} · ${splitOwner(l).host}` : l}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -541,25 +643,38 @@ function RepoDetail({
   tab?: string;
   rest?: string;
 }) {
-  const info = useLive(() => api.github.repoInfo({ owner, name }), {
+  const info = useLive(() => rapi.repoInfo({ owner, name }), {
     topics: ["overview"],
     refreshOn: (e) => e.type === "project.github" || e.type.startsWith("github."),
     deps: [owner, name],
   });
+  // Another host than GitHub (ADR-062): its name, and what it calls its pull requests.
+  const at = splitOwner(owner);
+  const hosts = useLive(() => (at.host ? api.hosts.list() : Promise.resolve([])), {
+    topics: [],
+    deps: [at.host],
+  });
+  const hostView = hosts.data?.find((h) => h.host === at.host);
+  const site = at.host ? (hostView?.label ?? at.host) : "GitHub";
   const header = (
     <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
       <BackButton fallback="/repos" label={t("All repositories")} className="md:hidden" />
-      <h2 className="min-w-0 truncate text-lg font-semibold" title={`${owner}/${name}`}>
-        <span className="text-muted-foreground">{owner}/</span>
+      <h2 className="min-w-0 truncate text-lg font-semibold" title={`${at.owner}/${name}`}>
+        <span className="text-muted-foreground">{at.owner}/</span>
         {name}
       </h2>
       {info.data ? <Visibility value={info.data.visibility} /> : null}
+      {at.host ? (
+        <Badge variant="outline" className="font-normal">
+          {site}
+        </Badge>
+      ) : null}
       <span className="flex-1" />
       {info.data ? (
         <Button asChild size="sm" variant="ghost" className="gap-1">
           <a href={info.data.url} target="_blank" rel="noreferrer">
             <ExternalLink className="size-4" />
-            {t("Open on GitHub")}
+            {at.host ? t("Open on {site}", { site: at.host }) : t("Open on GitHub")}
           </a>
         </Button>
       ) : null}
@@ -584,7 +699,9 @@ function RepoDetail({
         <Loading />
       </div>
     );
-  const repo = info.data;
+  // The tabs read and link through the address's owner part, the host in it (ADR-062).
+  const linked = info.data;
+  const repo = { ...linked, owner: ownerKey(linked.host, linked.owner) };
   const ref: GitHubRepoRef = { owner: repo.owner, name: repo.name, account: repo.account };
   const sub = parseRest(tab, rest);
   const tabs: PageTab[] = [
@@ -621,7 +738,7 @@ function RepoDetail({
     { id: "branches", label: t("Branches"), content: () => <BranchesTab repo={repo} r={ref} /> },
     {
       id: "pulls",
-      label: t("Pull requests"),
+      label: at.host && hostView ? t(hostView.pullsName) : t("Pull requests"),
       content: () => (
         <PullsTab
           repo={repo}
@@ -631,19 +748,24 @@ function RepoDetail({
         />
       ),
     },
-    {
-      id: "ci",
-      label: t("CI"),
-      content: () => (
-        <CiRuns
-          r={ref}
-          defaultBranch={repo.defaultBranch}
-          runId={"runId" in sub ? sub.runId : undefined}
-          hrefFor={(id) => `${repoHref.base(owner, name)}/ci${id ? `/${id}` : ""}`}
-        />
-      ),
-    },
-    { id: "project", label: t("Project"), content: () => <ProjectTab repo={repo} /> },
+    // GitHub Actions: GitHub's only (ADR-058); another host's repo has no CI tab here.
+    ...(at.host
+      ? []
+      : [
+          {
+            id: "ci",
+            label: t("CI"),
+            content: () => (
+              <CiRuns
+                r={ref}
+                defaultBranch={repo.defaultBranch}
+                runId={"runId" in sub ? sub.runId : undefined}
+                hrefFor={(id) => `${repoHref.base(owner, name)}/ci${id ? `/${id}` : ""}`}
+              />
+            ),
+          },
+        ]),
+    { id: "project", label: t("Project"), content: () => <ProjectTab repo={linked} /> },
   ];
   return (
     <PageTabs
@@ -658,7 +780,7 @@ function RepoDetail({
 
 /** The branches, for a picker. */
 function useBranches(r: GitHubRepoRef) {
-  return useLive(() => api.github.branches({ ...r }), {
+  return useLive(() => rapi.branches({ ...r }), {
     topics: [],
     deps: [r.owner, r.name],
   });
@@ -769,14 +891,14 @@ function TreeTab({
   at: string;
   path: string;
 }) {
-  const tree = useLive(() => api.github.tree({ ...r, ref: at, path }), {
+  const tree = useLive(() => rapi.tree({ ...r, ref: at, path }), {
     topics: [],
     deps: [r.owner, r.name, at, path],
   });
-  const readme = useLive(
-    () => (path ? Promise.resolve(null) : api.github.readme({ ...r, ref: at })),
-    { topics: [], deps: [r.owner, r.name, at, path] },
-  );
+  const readme = useLive(() => (path ? Promise.resolve(null) : rapi.readme({ ...r, ref: at })), {
+    topics: [],
+    deps: [r.owner, r.name, at, path],
+  });
   if (tree.error) return <ErrorNote error={tree.error} />;
   if (!tree.data) return <Loading rows={5} />;
   return (
@@ -849,7 +971,7 @@ function TreeTab({
 }
 
 function FileTab({ r, at, path }: { r: GitHubRepoRef; at: string; path: string }) {
-  const file = useLive(() => api.github.file({ ...r, ref: at, path }), {
+  const file = useLive(() => rapi.file({ ...r, ref: at, path }), {
     topics: [],
     deps: [r.owner, r.name, at, path],
   });
@@ -1019,10 +1141,7 @@ function CommitsTab({
   sha?: string;
 }) {
   const [, go] = useLocation();
-  const list = usePages(
-    (page) => api.github.commits({ ...r, branch, page }),
-    [r.owner, r.name, branch],
-  );
+  const list = usePages((page) => rapi.commits({ ...r, branch, page }), [r.owner, r.name, branch]);
   if (sha) return <CommitView repo={repo} r={r} branch={branch} sha={sha} />;
   return (
     <div className="min-w-0 space-y-3">
@@ -1070,7 +1189,7 @@ function CommitView({
   branch: string;
   sha: string;
 }) {
-  const c = useLive(() => api.github.commit({ ...r, sha }), {
+  const c = useLive(() => rapi.commit({ ...r, sha }), {
     topics: [],
     deps: [r.owner, r.name, sha],
   });
@@ -1116,7 +1235,7 @@ function CommitView({
 }
 
 function BranchesTab({ repo, r }: { repo: GitHubRepoDetail; r: GitHubRepoRef }) {
-  const list = usePages((page) => api.github.branches({ ...r, page }), [r.owner, r.name]);
+  const list = usePages((page) => rapi.branches({ ...r, page }), [r.owner, r.name]);
   return (
     <div className="min-w-0 space-y-3">
       {list.error ? <ErrorNote error={list.error} /> : null}
@@ -1184,10 +1303,7 @@ function PullsTab({
   number?: number;
 }) {
   const [, go] = useLocation();
-  const list = usePages(
-    (page) => api.github.pulls({ ...r, state, page }),
-    [r.owner, r.name, state],
-  );
+  const list = usePages((page) => rapi.pulls({ ...r, state, page }), [r.owner, r.name, state]);
   if (number) return <PullView repo={repo} r={r} state={state} number={number} />;
   return (
     <div className="min-w-0 space-y-3">
@@ -1259,7 +1375,7 @@ function PullView({
   state: "open" | "closed";
   number: number;
 }) {
-  const p = useLive(() => api.github.pull({ ...r, number }), {
+  const p = useLive(() => rapi.pull({ ...r, number }), {
     topics: [],
     deps: [r.owner, r.name, number],
   });
@@ -1356,7 +1472,7 @@ function ProjectTab({ repo }: { repo: GitHubRepoDetail }) {
       p.github &&
       !(await confirm(
         t("Link {project} to {repo} instead?", { project: p.name, repo: repo.fullName }),
-        t("It is linked to {other} now. Nothing changes on GitHub.", {
+        t("It is linked to {other} now. Nothing changes on the host.", {
           other: `${p.github.owner}/${p.github.name}`,
         }),
         t("Link"),
@@ -1369,6 +1485,7 @@ function ProjectTab({ repo }: { repo: GitHubRepoDetail }) {
       await api.projects.setGitHub({
         id: p.id,
         link: {
+          ...(repo.host ? { host: repo.host } : {}),
           account: repo.account,
           owner: repo.owner,
           name: repo.name,
@@ -1387,7 +1504,12 @@ function ProjectTab({ repo }: { repo: GitHubRepoDetail }) {
     linked
       ? go(`/projects/${linked.id}/eye`)
       : go("/new", {
-          state: { source: "github-clone", repo: repo.fullName, account: repo.account },
+          state: {
+            source: "github-clone",
+            repo: repo.fullName,
+            account: repo.account,
+            ...(repo.host ? { host: repo.host } : {}),
+          },
         });
   return (
     <div className="min-w-0 space-y-4">

@@ -168,6 +168,13 @@ sandbox limits damage, but it doesn't make that safe.
   without raw HTML or images. Reading works away from home; creating a
   repository, adding or removing an account and changing a project's
   GitHub link are done at home or on a device with full rights.
+- GitLab, Gitea and Forgejo ([[ADR-062-Git-Hosts]]) the same way: a
+  personal access token per account, checked against its host and kept
+  in the keychain (`githost.token.<host>.<login>`), given to git only
+  through `GIT_ASKPASS` (GitLab's user `oauth2`, Gitea's the login), its
+  output scrubbed; a host's address over plain http only to this
+  computer. Adding and removing such an account and creating a
+  repository there are home only for a standard device.
 - Work on a project's linked repo (creating it as I chose, pushing a
   branch, a pull request) runs without asking: the link is my approval.
   A push anywhere else, a force-push, or linked work in a task that read
@@ -238,7 +245,14 @@ sandbox limits damage, but it doesn't make that safe.
   asks first, on the page and in the helper; the helper's uploads ask
   first too, and it never sends a hidden file, one in a hidden folder,
   or anything of Oraknid's data folder. File names are untrusted data
-  to it. No agent tool reaches cloud storage.
+  to it.
+- Agents reach cloud storage only through Oraknid's `storage` tool, and
+  only in a job whose skill asks for it ([[ADR-046-Cloud-Storage]] →
+  The storage tool): listing and downloading into the job's folder pass,
+  an upload of a job's file is a write the job's policy judges, a public
+  link always asks. Files go only from and into the job's own folder, by
+  real path, never a hidden one or Git's; the providers' credentials
+  never leave the daemon, and what the tool returns is untrusted data.
 
 ## Moving Oraknid (2026-10-07, [[ADR-061-Moving-Oraknid]])
 - `oraknid export --all` (or Settings → About) holds every keychain entry
@@ -261,8 +275,16 @@ sandbox limits damage, but it doesn't make that safe.
   An account is saved only once its incoming server (IMAP or POP3) and
   its SMTP server accept the login, over TLS or STARTTLS; a connection
   without TLS is refused unless the server is this machine
-  ([[ADR-032-Email]]). There is no OAuth sign-in for now: no client
-  secret or token is kept.
+  ([[ADR-032-Email]]).
+- Gmail and Outlook may sign in with Google or Microsoft instead
+  ([[ADR-063-Mail-OAuth]]), through an app I register: its client id a
+  setting, Google's client secret in the keychain; the browser sign-in
+  uses PKCE and comes back only to this daemon on 127.0.0.1, accepted
+  only for a sign-in started here (a random state, fifteen minutes);
+  Microsoft's may be a code typed on its page. The refresh token is in
+  the keychain (`mail.<account>.refresh`), access tokens only in memory;
+  none is in an event, a view or a log. Setting an app and signing in
+  are home only.
 - A login refused stops that account and shows "Reconnect"; nothing
   retries a refused password.
 - POP accounts keep their messages here: each one's bytes in

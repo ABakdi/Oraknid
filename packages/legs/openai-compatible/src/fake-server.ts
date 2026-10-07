@@ -3,7 +3,11 @@ import type { AddressInfo } from "node:net";
 import type { Script } from "@oraknid/leg-sdk/contract";
 
 /** A stand-in OpenAI-compatible server (Ollama-flavoured) following a contract script on the first turn. */
-export async function fakeServer(script: Script, opts: { usage?: boolean; tools?: boolean } = {}) {
+export async function fakeServer(
+  script: Script,
+  /** `lmstudio`: LM Studio's own REST API instead of Ollama's (its context windows there). */
+  opts: { usage?: boolean; tools?: boolean; lmstudio?: boolean } = {},
+) {
   const requests: { messages: { role: string; content?: string }[]; [k: string]: unknown }[] = [];
   const server = createServer((req, res) => {
     let raw = "";
@@ -13,8 +17,21 @@ export async function fakeServer(script: Script, opts: { usage?: boolean; tools?
     req.on("end", () => {
       if (req.url === "/v1/models")
         return json(res, { data: [{ id: "qwen" }, { id: "tiny", max_model_len: 8192 }] });
-      if (req.url === "/api/show")
+      if (req.url === "/api/show" && !opts.lmstudio)
         return json(res, { model_info: { "qwen2.context_length": 32768 } });
+      // LM Studio 0.4: each model with the most it takes and how its loaded instance runs.
+      if (req.url === "/api/v1/models" && opts.lmstudio)
+        return json(res, {
+          models: [
+            {
+              type: "llm",
+              key: "qwen",
+              max_context_length: 131072,
+              loaded_instances: [{ id: "qwen", config: { context_length: 16384 } }],
+            },
+            { type: "llm", key: "tiny", max_context_length: 4096, loaded_instances: [] },
+          ],
+        });
       if (req.url !== "/v1/chat/completions") return json(res, {}, 404);
       const body = JSON.parse(raw);
       // The probe's tool test (not a session's turn): one call to add, unless the server has no tools.

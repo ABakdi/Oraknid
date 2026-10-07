@@ -13,7 +13,7 @@ sent without me ([[ADR-032-Email]]).
 
 ### M12.1 — Accounts and sync
 - [x] Several accounts: IMAP or POP3 with SMTP, with a password (Gmail and Outlook app passwords, a link to make one)
-- [ ] OAuth2 for Gmail and Microsoft: taken out 2026-10-03, back after a few releases
+- [x] OAuth2 for Gmail and Microsoft: taken out 2026-10-03, back 2026-10-07 through an app I register, the browser flow with PKCE or Microsoft's device code, XOAUTH2 ([[ADR-063-Mail-OAuth]])
 - [x] POP3 accounts: downloaded by UIDL into a local Inbox every two minutes; local folders and flags; delete from the server only if I choose
 - [x] Sync with IDLE, cached in SQLite; threads; new mail live within 10 s
 - [x] Read, star, move, archive, delete done on the server (IMAP), kept here (POP)
@@ -39,8 +39,9 @@ twice, a dotted line kept), local folders and flags, attachments from
 the kept copy, deleting on the server only with the option on, the
 two-minute check and Reconnect. The add-account form is tested in the
 web app, and the Mail page was checked by hand at 390 px against a
-test daemon. OAuth was taken out the same day (back after a few
-releases). With a real account (2026-10-03): my Gmail added with an
+test daemon. OAuth was taken out the same day, and came back on
+2026-10-07 ([[ADR-063-Mail-OAuth]], tested against a stand-in sign-in
+server; not yet with a real Google or Microsoft account). With a real account (2026-10-03): my Gmail added with an
 app password, synced. Still to try: an agent's draft approved and sent
 from it, a generic IMAP account, a POP account; see [[ADR-032-Email]]
 → Acceptance.

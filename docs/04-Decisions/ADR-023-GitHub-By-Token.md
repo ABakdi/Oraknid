@@ -24,7 +24,9 @@ copy, but an app to register once) or a token. My choice: a token.
 - Creating a repo is an action of mine (from the page or through the
   helper, which asks first); it is audited.
 - Other remotes (GitLab, any git URL): a plain clone URL works for
-  public repos now; tokens for other hosts come later.
+  public repos now; tokens for other hosts come later. *Changed
+  2026-10-07:* GitLab, Gitea and Forgejo accounts by token
+  ([[ADR-062-Git-Hosts]]).
 
 ## Consequences
 - No app to register; the token's expiry is mine to manage, and Settings

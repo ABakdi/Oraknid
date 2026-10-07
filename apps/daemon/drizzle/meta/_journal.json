@@ -295,6 +295,13 @@
       "when": 1791409764335,
       "tag": "0041_project_secrets_and_sites",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "6",
+      "when": 1791413574767,
+      "tag": "0042_mail_oauth",
+      "breakpoints": true
     }
   ]
 }

@@ -46,7 +46,7 @@ terminal.
 **Projects and code**
 - A **project page** for everything: the conversation with The Eye, the **Workflow** diagram of its jobs, the work history, Silk (what the project knows), budget and stats, its repos and servers.
 - **One repo or several**; each job works on its own branch per repo, merged and pushed by Oraknid when you ask.
-- **GitHub**: several accounts, a repo linked to each project, created and pushed without fuss; **Repos** browses your repositories, code, commits with diffs, branches and pull requests.
+- **GitHub**: several accounts, a repo linked to each project, created and pushed without fuss; **Repos** browses your repositories, code, commits with diffs, branches and pull requests. GitLab, Gitea and Forgejo too, by token.
 - **Terminal** in the browser: tabs, split, grid, on this computer or your servers.
 - **Local models**: search Hugging Face and Ollama's library for what fits your machine, download (resumable, checked), run with llama.cpp or Ollama, and give them roles (translate, OCR, speech to text, embeddings) every agent can use.
 - **Archive or delete** a project, choosing what happens to its repos and folder.
@@ -59,7 +59,7 @@ terminal.
 - **Cloud storage**: every provider rclone supports (Google Drive, Dropbox, OneDrive, MEGA, S3, B2, SFTP, WebDAV and more) as **one pool**; uploads go where they fit.
 
 **Everyday**
-- **Mail**: IMAP and POP3 accounts with app passwords; agents read, sort and draft, and nothing is sent without you.
+- **Mail**: IMAP and POP3 accounts with app passwords, or Gmail and Outlook signed in with Google or Microsoft through your own app; agents read, sort and draft, and nothing is sent without you.
 - **Chats** with any of your models, and a **helper** that knows the guide and your screens: it takes you to the page and points at the option you're looking for.
 - **From your phone**: pair it with a QR code; an end-to-end encrypted relay (**The Nest**, which you can host yourself) lets you approve, follow and steer from anywhere; a PIN locks every device.
 - **From a terminal**: `oraknid` opens The Eye's conversation with slash commands for everything else; a server can run Oraknid with no web UI at all.

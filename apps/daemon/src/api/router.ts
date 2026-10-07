@@ -53,6 +53,10 @@ import {
   MailDraftView,
   MailFolderView,
   MailMessageView,
+  MailOAuthApp,
+  MailOAuthProvider,
+  MailOAuthStart,
+  MailOAuthStatus,
   MailTestResult,
   MailThreadPage,
   MetricsSample,
@@ -233,6 +237,8 @@ import { listFolders, makeFolder } from "../workspace/folders.ts";
 import { type GitHub, GitHubError } from "../workspace/github.ts";
 import type { Ci } from "../workspace/github-ci.ts";
 import type { Repos } from "../workspace/github-repos.ts";
+import type { GitHosts } from "../workspace/hosts/registry.ts";
+import { hostFor } from "../workspace/hosts/registry.ts";
 import { NotAGitRepo, type Projects } from "../workspace/projects.ts";
 import { ProjectRemoval } from "../workspace/removal.ts";
 import { jobResult, mergeJob, taskDiff } from "../workspace/result.ts";
@@ -241,6 +247,7 @@ import { cleanFinishedWorktrees, jobWorktrees, removeJobWorktree } from "../work
 import { backupsRouter } from "./backups.ts";
 import { ciRouter } from "./ci.ts";
 import { cloudRouter, notAway } from "./cloud.ts";
+import { hostsRouter } from "./hosts.ts";
 import { modelsRouter } from "./models.ts";
 import { projectSecretsRouter } from "./secrets.ts";
 import { sitesRouter } from "./sites.ts";
@@ -309,6 +316,8 @@ export interface ApiContext {
   github: GitHub;
   /** My repositories, read through GitHub's API (ADR-040). */
   repos: Repos;
+  /** GitHub and the other git hosts I added an account on (ADR-062). */
+  hosts: GitHosts;
   /** Their GitHub Actions (ADR-058). */
   ci: Ci;
   /** The Oraknid helper (ADR-024). */
@@ -1106,9 +1115,14 @@ export const router = {
       .handler(({ context: c, input }) =>
         guard(async () => {
           if (input.link) {
-            const logins = (await c.github.accounts()).map((a) => a.login);
+            const h = c.hosts.forLink(input.link);
+            const logins = (await h.accounts()).map((a) => a.login);
             if (!logins.includes(input.link.account))
-              throw new Error(`No GitHub account ${input.link.account} in Oraknid.`);
+              throw new Error(
+                input.link.host
+                  ? `No account ${input.link.account} on ${input.link.host} in Oraknid.`
+                  : `No GitHub account ${input.link.account} in Oraknid.`,
+              );
           }
           c.projects.setGitHub(input.id, input.link, "owner", input.repo ?? null);
         }),
@@ -1130,10 +1144,16 @@ export const router = {
       .output(ProjectView)
       .handler(({ context: c, input }) =>
         guard(async () => {
+          // A clone from GitLab, Gitea or Forgejo through its account (ADR-062).
+          const s = input.source;
+          const h =
+            s.kind === "github-clone"
+              ? (hostFor(c.github, s.host ? { host: s.host } : null) ?? c.github)
+              : c.github;
           const p = await c.projects.addRepo(
             input,
-            (url, dest, login) => c.github.clone(url, dest, login),
-            (fullName) => c.github.cloneUrl(fullName),
+            (url, dest, login) => h.clone(url, dest, login),
+            (fullName) => h.cloneUrl(fullName),
           );
           return { ...p, jobCount: c.projects.list().find((x) => x.id === p.id)?.jobCount ?? 0 };
         }),
@@ -1339,6 +1359,8 @@ export const router = {
   sites: sitesRouter,
   /** Cloud storage: providers and the pool (ADR-046). */
   cloud: cloudRouter,
+  /** GitLab, Gitea and Forgejo accounts, and reading any host's repositories (ADR-062). */
+  hosts: hostsRouter,
   models: modelsRouter,
   /** GitHub Actions: runs, jobs, logs, artifacts, re-runs, workflows by hand (ADR-058). */
   ci: ciRouter,
@@ -1613,6 +1635,51 @@ export const router = {
     removeAccount: base
       .input(z.object({ id: z.string() }))
       .handler(({ context: c, input }) => guard(() => c.mail.removeAccount(input.id))),
+    /** The OAuth apps I registered with Google and Microsoft (ADR-063); secrets only said to be kept. */
+    oauthApps: base
+      .output(z.array(MailOAuthApp))
+      .handler(({ context: c }) => guard(() => c.mail.oauthApps())),
+    /** An app's client id, and its secret (Google's) kept in the keychain; an empty id forgets it. */
+    setOAuthApp: base
+      .input(
+        z.object({
+          provider: MailOAuthProvider,
+          clientId: z.string().max(300),
+          clientSecret: z.string().min(1).max(300).optional(),
+        }),
+      )
+      .handler(({ context: c, input }) =>
+        guard(() => c.mail.setOAuthApp(input.provider, input.clientId, input.clientSecret)),
+      ),
+    /**
+     * Signs in with Google or Microsoft, for a new account or one to sign in
+     * again: a page to open (back to this daemon), or a code to type on
+     * Microsoft's page while Oraknid waits.
+     */
+    oauthStart: base
+      .input(
+        z.object({
+          provider: MailOAuthProvider,
+          accountId: z.string().optional(),
+          flow: z.enum(["browser", "device"]).optional(),
+        }),
+      )
+      .output(MailOAuthStart)
+      .handler(({ context: c, input }) =>
+        guard(() =>
+          c.mail.oauthStart(input.provider, {
+            accountId: input.accountId ?? null,
+            ...(input.flow ? { flow: input.flow } : {}),
+          }),
+        ),
+      ),
+    oauthStatus: base
+      .input(z.object({ id: z.string() }))
+      .output(MailOAuthStatus)
+      .handler(({ context: c, input }) => c.mail.oauthStatus(input.id)),
+    oauthCancel: base
+      .input(z.object({ id: z.string() }))
+      .handler(({ context: c, input }) => c.mail.oauthCancel(input.id)),
     /** Connecting again ("Reconnect"): with a new password, or the one kept after a network failure. */
     reconnect: base
       .input(z.object({ id: z.string(), password: z.string().min(1).optional() }))

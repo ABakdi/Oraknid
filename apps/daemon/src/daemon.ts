@@ -35,6 +35,7 @@ import { Backups } from "./backups/service.ts";
 import { Chats } from "./chats/service.ts";
 import { attachCloudRoutes, Downloads } from "./cloud/routes.ts";
 import { Cloud } from "./cloud/service.ts";
+import { STORAGE_TOOL, storageServer } from "./cloud/tool.ts";
 import { closeDatabase, openDatabase, startIdleCheckpoint } from "./db/open.ts";
 import { jobs as jobsTable, projects as projectsTable, tasks as tasksTable } from "./db/schema.ts";
 import { SideEffects } from "./engine/effects.ts";
@@ -94,7 +95,7 @@ import { Sites, type SitesDeps } from "./sites/service.ts";
 import { SkillStore } from "./skills/store.ts";
 import { startNightlyBackups } from "./storage/storage.ts";
 import { attachTerminal, TERMINAL_SETTING } from "./term/server.ts";
-import { McpBroker } from "./tools/broker.ts";
+import { type BuiltInServer, McpBroker } from "./tools/broker.ts";
 import { ToolRegistry } from "./tools/registry.ts";
 import { findAppDir, readInstall } from "./updates/install.ts";
 import { Updates, type UpdatesOptions } from "./updates/service.ts";
@@ -105,6 +106,7 @@ import { GitHub } from "./workspace/github.ts";
 import { ciOf } from "./workspace/github-ci.ts";
 import { Repos } from "./workspace/github-repos.ts";
 import { githubServer, githubTool } from "./workspace/github-tool.ts";
+import { GitHosts } from "./workspace/hosts/registry.ts";
 import { Projects } from "./workspace/projects.ts";
 
 export interface DaemonOptions {
@@ -138,6 +140,8 @@ export interface DaemonOptions {
   rclone?: () => string | null;
   /** GitHub's addresses, for tests against a stand-in. */
   github?: { api?: string; web?: string };
+  /** The other git hosts' requests, for tests (ADR-062). */
+  hosts?: { fetch?: typeof fetch };
   /** The CI watcher's timings (ADR-058; tests), or false: none. */
   ciWatch?: { intervalMs?: number; firstMs?: number; now?: () => number } | false;
   /** What runs a job: The Eye, unless a test replaces it. */
@@ -181,7 +185,14 @@ export interface DaemonOptions {
   /** Mail timings and the providers' servers (tests). */
   mail?: Pick<
     MailOptions,
-    "syncEveryMs" | "popEveryMs" | "idleDelayMs" | "initialLimit" | "presets" | "resolveMx"
+    | "syncEveryMs"
+    | "popEveryMs"
+    | "idleDelayMs"
+    | "initialLimit"
+    | "presets"
+    | "resolveMx"
+    | "oauthEndpoints"
+    | "devicePollMs"
   >;
 }
 
@@ -274,6 +285,8 @@ export async function startDaemon(options: DaemonOptions) {
     inbox,
     dataDir: paths.dataDir,
     now,
+    // Where the browser sign-in with Google or Microsoft comes back (ADR-063).
+    baseUrl: () => url,
     // The email tool appears with the first account.
     hasAccounts: () => {
       try {
@@ -289,6 +302,8 @@ export async function startDaemon(options: DaemonOptions) {
   const github = new GitHub(secrets, db, options.github ?? {});
   // My repositories, read through its API (ADR-040).
   const repos = new Repos(github, projectsService);
+  // GitLab, Gitea and Forgejo beside GitHub (ADR-062): a project's link names its host.
+  const hosts = new GitHosts({ db, secrets, github, repos, ...(options.hosts ?? {}) });
   // Their GitHub Actions (ADR-058); a failing run on a release or work branch is told.
   const ci = ciOf(github);
   const ciWatch =
@@ -351,15 +366,17 @@ export async function startDaemon(options: DaemonOptions) {
     // A tool of mine named "env" stays as it is.
     console.warn(error instanceof Error ? error.message : error);
   }
+  // Oraknid's own tools, answered in the daemon; the storage tool joins once cloud storage is made.
+  const builtIns = new Map<string, BuiltInServer>([
+    [ENV_TOOL_NAME, envServer(projectSecrets)],
+    [EMAIL_TOOL.name, emailServer(mail)],
+    [githubToolDecl.name, githubServer({ db, bus, github, projects: projectsService })],
+    [MODELS_TOOL.name, modelsServer(models)],
+  ]);
   const broker = new McpBroker({
     registry: toolRegistry,
     sandbox: os.sandbox,
-    builtIns: new Map([
-      [ENV_TOOL_NAME, envServer(projectSecrets)],
-      [EMAIL_TOOL.name, emailServer(mail)],
-      [githubToolDecl.name, githubServer({ db, bus, github, projects: projectsService })],
-      [MODELS_TOOL.name, modelsServer(models)],
-    ]),
+    builtIns,
   });
   // The roles' tool appears once a model is downloaded (ADR-054), like the email tool with an account.
   const offerModelsTool = () => {
@@ -474,6 +491,21 @@ export async function startDaemon(options: DaemonOptions) {
   });
   // rclone's list of backends, read once per version, so the add dialog opens on it.
   cloud.preloadBackends();
+  // The storage tool (ADR-046): for a job whose skill asks for it, once there is a provider.
+  builtIns.set(STORAGE_TOOL.name, storageServer({ db, cloud }));
+  const offerStorageTool = () => {
+    if (!cloud.providers().length) return;
+    try {
+      toolRegistry.ensureBuiltIn(STORAGE_TOOL);
+    } catch (error) {
+      // A tool of mine named "storage" stays as it is.
+      console.warn(error instanceof Error ? error.message : error);
+    }
+  };
+  offerStorageTool();
+  bus.subscribe((e) => {
+    if (e.type === "cloud.provider.added") offerStorageTool();
+  });
   const downloads = new Downloads(now);
   // Scheduled, encrypted database backups (ADR-044); the schedule starts once notifications do.
   const backupPlans = new Backups({
@@ -995,6 +1027,7 @@ export async function startDaemon(options: DaemonOptions) {
     chats,
     github,
     repos,
+    hosts,
     ci,
     helper,
     servers: serverService,
@@ -1053,6 +1086,31 @@ export async function startDaemon(options: DaemonOptions) {
       ),
     });
     if (!matched) next();
+  });
+
+  // Back from Google's or Microsoft's sign-in (ADR-063): only a sign-in started here is accepted.
+  app.get("/oauth/mail/callback", async (req, res) => {
+    const q = (k: string) =>
+      typeof req.query[k] === "string" ? (req.query[k] as string) : undefined;
+    const page = (title: string, text: string) =>
+      `<!doctype html><meta charset="utf-8"><title>${title}</title><body style="font-family:sans-serif;max-width:32rem;margin:4rem auto;line-height:1.5"><h1 style="font-size:1.25rem">${title}</h1><p>${text}</p></body>`;
+    const esc = (s: string) =>
+      s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+    try {
+      const { email } = await mail.oauthCallback({
+        ...(q("state") ? { state: q("state") } : {}),
+        ...(q("code") ? { code: q("code") } : {}),
+        ...(q("error") ? { error: q("error") } : {}),
+      });
+      res
+        .type("html")
+        .send(page("Connected", `${esc(email)} is connected to Oraknid. You can close this tab.`));
+    } catch (error) {
+      res
+        .status(400)
+        .type("html")
+        .send(page("Not connected", esc(error instanceof Error ? error.message : String(error))));
+    }
   });
 
   app.get("/health", (_req, res) => {
@@ -1224,6 +1282,8 @@ export async function startDaemon(options: DaemonOptions) {
     sites,
     cloud,
     mail,
+    github,
+    hosts,
     devices,
     updates,
     models,

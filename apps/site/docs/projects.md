@@ -37,6 +37,17 @@ In a project of several repos, each repo has its own link, set on its section of
 
 A project's **CI** tab shows its linked repos' GitHub Actions: see [CI](repos.html#ci-github-actions).
 
+## GitLab, Gitea and Forgejo
+
+Your repositories on GitLab (gitlab.com or your own), Gitea or Forgejo work the same way. In **Repos → Accounts** (or **Settings → Connections**, under GitHub), **Add a GitLab, Gitea or Forgejo account**: pick the kind, give its address (`https://gitlab.com`, `https://git.example.org`) and paste a token:
+
+- **GitLab**: your avatar → **Edit profile → Access tokens → Add new token**, with the scopes **api**, **read_repository** and **write_repository**.
+- **Gitea or Forgejo**: **Settings → Applications → Generate new token**, with repository **Read and write**, user **Read** and organisation **Read** (Read and write to make repos in an organisation).
+
+Oraknid checks the token with the host and keeps it in your keychain. The repositories appear in Repos beside GitHub's, each marked with its host (a GitLab project in a group with subgroups too); on GitLab, **Merge requests** take the place of pull requests. **New work** can clone one (pick it in the list; the host is named on it), or make a new one there, and the project is linked to it: Oraknid pushes branches and opens merge requests there itself, as it does on GitHub, giving git the token only for the command that needs it.
+
+Archiving or deleting a project never archives or deletes a GitLab, Gitea or Forgejo repo; it is compared with your folder and cloned back like a GitHub one.
+
 ## Network
 
 Agents reach the internet, but none of the services running on your computer. If a project needs one (a local Postgres on 5432, say), list its port in the project's **Network** tab. A Leg that uses a local model can always reach that model.

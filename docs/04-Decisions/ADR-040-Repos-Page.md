@@ -85,4 +85,7 @@ Tested: `apps/daemon/src/workspace/github-repos.test.ts` against a
 stand-in GitHub (`apps/daemon/src/testing/fake-github.ts`: two accounts,
 pages, ETags, an allowance a test can use up); `apps/web/src/pages/repos.test.tsx`.
 
+*Extended 2026-10-07:* GitLab, Gitea and Forgejo repositories in the same
+list and tabs, read through their host ([[ADR-062-Git-Hosts]]).
+
 Related: [[ADR-038-Project-Accounts]] · [[ADR-023-GitHub-By-Token]] · [[Web-UI]]

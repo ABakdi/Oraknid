@@ -28,7 +28,7 @@ to a model or to ask Oraknid to do things for me.
 - [x] New project from a new GitHub repo (created, cloned) or an existing one (listed, cloned)
 - [x] Pushing stays a gated action (BR-5); the token never reaches a Leg
 - [x] Any public git URL, cloned
-- [ ] GitLab and other hosts with an account (create, private repos) — last
+- [x] GitLab and other hosts with an account (create, private repos): GitLab (gitlab.com or my own), Gitea and Forgejo by token, behind one GitHost interface GitHub's client fills too; read in Repos, linked, cloned and pushed to by Oraknid ([[ADR-062-Git-Hosts]], 2026-10-07)
 
 ### M8.4 — Markdown everywhere
 - [x] What the agents and The Eye say, in session logs, the activity stream and the Eye's conversation, is rendered as markdown

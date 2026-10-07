@@ -1425,13 +1425,19 @@
                               {
                                 "type": "object",
                                 "properties": {
+                                  "host": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
                                   "account": {
                                     "type": "string",
                                     "minLength": 1
                                   },
                                   "owner": {
                                     "type": "string",
-                                    "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                                    "minLength": 1,
+                                    "maxLength": 255
                                   },
                                   "name": {
                                     "type": "string",
@@ -1491,13 +1497,19 @@
                         {
                           "type": "object",
                           "properties": {
+                            "host": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
                             "account": {
                               "type": "string",
                               "minLength": 1
                             },
                             "owner": {
                               "type": "string",
-                              "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                              "minLength": 1,
+                              "maxLength": 255
                             },
                             "name": {
                               "type": "string",
@@ -1644,6 +1656,9 @@
                           "kind": {
                             "const": "github-new"
                           },
+                          "host": {
+                            "type": "string"
+                          },
                           "account": {
                             "type": "string"
                           },
@@ -1676,6 +1691,9 @@
                           "kind": {
                             "const": "github-clone"
                           },
+                          "host": {
+                            "type": "string"
+                          },
                           "account": {
                             "type": "string"
                           },
@@ -1685,7 +1703,7 @@
                           },
                           "fullName": {
                             "type": "string",
-                            "pattern": "^[\\w.-]+\\/[\\w.-]+$"
+                            "pattern": "^[\\w.-]+(\\/[\\w.-]+)+$"
                           }
                         },
                         "required": [
@@ -1865,13 +1883,19 @@
                               {
                                 "type": "object",
                                 "properties": {
+                                  "host": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
                                   "account": {
                                     "type": "string",
                                     "minLength": 1
                                   },
                                   "owner": {
                                     "type": "string",
-                                    "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                                    "minLength": 1,
+                                    "maxLength": 255
                                   },
                                   "name": {
                                     "type": "string",
@@ -1931,13 +1955,19 @@
                         {
                           "type": "object",
                           "properties": {
+                            "host": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
                             "account": {
                               "type": "string",
                               "minLength": 1
                             },
                             "owner": {
                               "type": "string",
-                              "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                              "minLength": 1,
+                              "maxLength": 255
                             },
                             "name": {
                               "type": "string",
@@ -2182,13 +2212,19 @@
                                 {
                                   "type": "object",
                                   "properties": {
+                                    "host": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 200
+                                    },
                                     "account": {
                                       "type": "string",
                                       "minLength": 1
                                     },
                                     "owner": {
                                       "type": "string",
-                                      "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                                      "minLength": 1,
+                                      "maxLength": 255
                                     },
                                     "name": {
                                       "type": "string",
@@ -2248,13 +2284,19 @@
                           {
                             "type": "object",
                             "properties": {
+                              "host": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
                               "account": {
                                 "type": "string",
                                 "minLength": 1
                               },
                               "owner": {
                                 "type": "string",
-                                "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                                "minLength": 1,
+                                "maxLength": 255
                               },
                               "name": {
                                 "type": "string",
@@ -2501,13 +2543,19 @@
                               {
                                 "type": "object",
                                 "properties": {
+                                  "host": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
                                   "account": {
                                     "type": "string",
                                     "minLength": 1
                                   },
                                   "owner": {
                                     "type": "string",
-                                    "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                                    "minLength": 1,
+                                    "maxLength": 255
                                   },
                                   "name": {
                                     "type": "string",
@@ -2567,13 +2615,19 @@
                         {
                           "type": "object",
                           "properties": {
+                            "host": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
                             "account": {
                               "type": "string",
                               "minLength": 1
                             },
                             "owner": {
                               "type": "string",
-                              "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                              "minLength": 1,
+                              "maxLength": 255
                             },
                             "name": {
                               "type": "string",
@@ -3576,13 +3630,19 @@
                       {
                         "type": "object",
                         "properties": {
+                          "host": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
                           "account": {
                             "type": "string",
                             "minLength": 1
                           },
                           "owner": {
                             "type": "string",
-                            "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                            "minLength": 1,
+                            "maxLength": 255
                           },
                           "name": {
                             "type": "string",
@@ -3764,13 +3824,19 @@
                           {
                             "type": "object",
                             "properties": {
+                              "host": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
                               "account": {
                                 "type": "string",
                                 "minLength": 1
                               },
                               "owner": {
                                 "type": "string",
-                                "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                                "minLength": 1,
+                                "maxLength": 255
                               },
                               "name": {
                                 "type": "string",
@@ -3900,9 +3966,12 @@
                           },
                           "fullName": {
                             "type": "string",
-                            "pattern": "^[\\w.-]+\\/[\\w.-]+$"
+                            "pattern": "^[\\w.-]+(\\/[\\w.-]+)+$"
                           },
                           "account": {
+                            "type": "string"
+                          },
+                          "host": {
                             "type": "string"
                           }
                         },
@@ -4086,13 +4155,19 @@
                               {
                                 "type": "object",
                                 "properties": {
+                                  "host": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
                                   "account": {
                                     "type": "string",
                                     "minLength": 1
                                   },
                                   "owner": {
                                     "type": "string",
-                                    "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                                    "minLength": 1,
+                                    "maxLength": 255
                                   },
                                   "name": {
                                     "type": "string",
@@ -4152,13 +4227,19 @@
                         {
                           "type": "object",
                           "properties": {
+                            "host": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
                             "account": {
                               "type": "string",
                               "minLength": 1
                             },
                             "owner": {
                               "type": "string",
-                              "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                              "minLength": 1,
+                              "maxLength": 255
                             },
                             "name": {
                               "type": "string",
@@ -4424,13 +4505,19 @@
                               {
                                 "type": "object",
                                 "properties": {
+                                  "host": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
                                   "account": {
                                     "type": "string",
                                     "minLength": 1
                                   },
                                   "owner": {
                                     "type": "string",
-                                    "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                                    "minLength": 1,
+                                    "maxLength": 255
                                   },
                                   "name": {
                                     "type": "string",
@@ -4490,13 +4577,19 @@
                         {
                           "type": "object",
                           "properties": {
+                            "host": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
                             "account": {
                               "type": "string",
                               "minLength": 1
                             },
                             "owner": {
                               "type": "string",
-                              "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                              "minLength": 1,
+                              "maxLength": 255
                             },
                             "name": {
                               "type": "string",
@@ -4746,13 +4839,19 @@
                               {
                                 "type": "object",
                                 "properties": {
+                                  "host": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
                                   "account": {
                                     "type": "string",
                                     "minLength": 1
                                   },
                                   "owner": {
                                     "type": "string",
-                                    "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                                    "minLength": 1,
+                                    "maxLength": 255
                                   },
                                   "name": {
                                     "type": "string",
@@ -4812,13 +4911,19 @@
                         {
                           "type": "object",
                           "properties": {
+                            "host": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
                             "account": {
                               "type": "string",
                               "minLength": 1
                             },
                             "owner": {
                               "type": "string",
-                              "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                              "minLength": 1,
+                              "maxLength": 255
                             },
                             "name": {
                               "type": "string",
@@ -19553,6 +19658,1813 @@
         }
       }
     },
+    "/hosts/list": {
+      "post": {
+        "operationId": "hosts.list",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "host": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "github",
+                          "gitlab",
+                          "gitea"
+                        ],
+                        "type": "string"
+                      },
+                      "url": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "pullsName": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "host",
+                      "kind",
+                      "url",
+                      "label",
+                      "pullsName"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hosts/accounts": {
+      "post": {
+        "operationId": "hosts.accounts",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "check": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                },
+                "default": {
+                  "check": false
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "host": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "github",
+                          "gitlab",
+                          "gitea"
+                        ],
+                        "type": "string"
+                      },
+                      "url": {
+                        "type": "string"
+                      },
+                      "login": {
+                        "type": "string"
+                      },
+                      "error": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "host",
+                      "kind",
+                      "url",
+                      "login",
+                      "error"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hosts/addAccount": {
+      "post": {
+        "operationId": "hosts.addAccount",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "gitlab",
+                      "gitea"
+                    ],
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "format": "uri"
+                  },
+                  "token": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "kind",
+                  "url",
+                  "token"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "host": {
+                      "type": "string"
+                    },
+                    "login": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "host",
+                    "login"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hosts/removeAccount": {
+      "post": {
+        "operationId": "hosts.removeAccount",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "host": {
+                    "type": "string"
+                  },
+                  "login": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "host",
+                  "login"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {},
+                    {
+                      "not": {}
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hosts/repos": {
+      "post": {
+        "operationId": "hosts.repos",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "host": {
+                    "type": "string"
+                  },
+                  "login": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "host"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "fullName": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "private": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "updatedAt": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "fullName",
+                      "name",
+                      "private",
+                      "description",
+                      "updatedAt"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hosts/repoList": {
+      "post": {
+        "operationId": "hosts.repoList",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "host": {
+                    "type": "string"
+                  },
+                  "account": {
+                    "type": "string"
+                  }
+                },
+                "default": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "repos": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "host": {
+                            "type": "string"
+                          },
+                          "account": {
+                            "type": "string"
+                          },
+                          "owner": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "fullName": {
+                            "type": "string"
+                          },
+                          "visibility": {
+                            "enum": [
+                              "public",
+                              "private",
+                              "internal"
+                            ],
+                            "type": "string"
+                          },
+                          "defaultBranch": {
+                            "type": "string"
+                          },
+                          "pushedAt": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "description": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "archived": {
+                            "type": "boolean"
+                          },
+                          "fork": {
+                            "type": "boolean"
+                          },
+                          "url": {
+                            "type": "string"
+                          },
+                          "project": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "account",
+                          "owner",
+                          "name",
+                          "fullName",
+                          "visibility",
+                          "defaultBranch",
+                          "pushedAt",
+                          "description",
+                          "archived",
+                          "fork",
+                          "url",
+                          "project"
+                        ]
+                      }
+                    },
+                    "errors": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "account": {
+                            "type": "string"
+                          },
+                          "error": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "account",
+                          "error"
+                        ]
+                      }
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "repos",
+                    "errors",
+                    "truncated"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hosts/repoInfo": {
+      "post": {
+        "operationId": "hosts.repoInfo",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "host": {
+                    "type": "string",
+                    "default": "github"
+                  },
+                  "owner": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                  },
+                  "account": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "owner",
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "host": {
+                      "type": "string"
+                    },
+                    "account": {
+                      "type": "string"
+                    },
+                    "owner": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "fullName": {
+                      "type": "string"
+                    },
+                    "visibility": {
+                      "enum": [
+                        "public",
+                        "private",
+                        "internal"
+                      ],
+                      "type": "string"
+                    },
+                    "defaultBranch": {
+                      "type": "string"
+                    },
+                    "pushedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "description": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "archived": {
+                      "type": "boolean"
+                    },
+                    "fork": {
+                      "type": "boolean"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "project": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "stars": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "openIssues": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "empty": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "account",
+                    "owner",
+                    "name",
+                    "fullName",
+                    "visibility",
+                    "defaultBranch",
+                    "pushedAt",
+                    "description",
+                    "archived",
+                    "fork",
+                    "url",
+                    "project",
+                    "stars",
+                    "openIssues",
+                    "empty"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hosts/branches": {
+      "post": {
+        "operationId": "hosts.branches",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "host": {
+                    "type": "string",
+                    "default": "github"
+                  },
+                  "owner": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                  },
+                  "account": {
+                    "type": "string"
+                  },
+                  "page": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991,
+                    "exclusiveMinimum": 0,
+                    "default": 1
+                  }
+                },
+                "required": [
+                  "owner",
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "sha": {
+                            "type": "string"
+                          },
+                          "protected": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "sha",
+                          "protected"
+                        ]
+                      }
+                    },
+                    "page": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "exclusiveMinimum": 0
+                    },
+                    "next": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "page",
+                    "next"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hosts/tree": {
+      "post": {
+        "operationId": "hosts.tree",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "host": {
+                    "type": "string",
+                    "default": "github"
+                  },
+                  "owner": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                  },
+                  "account": {
+                    "type": "string"
+                  },
+                  "ref": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "path": {
+                    "type": "string",
+                    "default": ""
+                  },
+                  "recursive": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                },
+                "required": [
+                  "owner",
+                  "name",
+                  "ref"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ref": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "enum": [
+                              "file",
+                              "dir",
+                              "symlink",
+                              "submodule"
+                            ],
+                            "type": "string"
+                          },
+                          "size": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "path",
+                          "type",
+                          "size"
+                        ]
+                      }
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ref",
+                    "path",
+                    "entries",
+                    "truncated"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hosts/file": {
+      "post": {
+        "operationId": "hosts.file",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "host": {
+                    "type": "string",
+                    "default": "github"
+                  },
+                  "owner": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                  },
+                  "account": {
+                    "type": "string"
+                  },
+                  "ref": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "owner",
+                  "name",
+                  "ref",
+                  "path"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "ref": {
+                      "type": "string"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "text": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "binary": {
+                      "type": "boolean"
+                    },
+                    "tooLarge": {
+                      "type": "boolean"
+                    },
+                    "url": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "ref",
+                    "size",
+                    "text",
+                    "binary",
+                    "tooLarge",
+                    "url"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hosts/readme": {
+      "post": {
+        "operationId": "hosts.readme",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "host": {
+                    "type": "string",
+                    "default": "github"
+                  },
+                  "owner": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                  },
+                  "account": {
+                    "type": "string"
+                  },
+                  "ref": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "owner",
+                  "name",
+                  "ref"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "ref": {
+                          "type": "string"
+                        },
+                        "size": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "text": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "binary": {
+                          "type": "boolean"
+                        },
+                        "tooLarge": {
+                          "type": "boolean"
+                        },
+                        "url": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "ref",
+                        "size",
+                        "text",
+                        "binary",
+                        "tooLarge",
+                        "url"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hosts/commits": {
+      "post": {
+        "operationId": "hosts.commits",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "host": {
+                    "type": "string",
+                    "default": "github"
+                  },
+                  "owner": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                  },
+                  "account": {
+                    "type": "string"
+                  },
+                  "branch": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "page": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991,
+                    "exclusiveMinimum": 0,
+                    "default": 1
+                  }
+                },
+                "required": [
+                  "owner",
+                  "name",
+                  "branch"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "sha": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "author": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "login": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "login"
+                            ]
+                          },
+                          "date": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "sha",
+                          "title",
+                          "author",
+                          "date",
+                          "url"
+                        ]
+                      }
+                    },
+                    "page": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "exclusiveMinimum": 0
+                    },
+                    "next": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "page",
+                    "next"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hosts/commit": {
+      "post": {
+        "operationId": "hosts.commit",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "host": {
+                    "type": "string",
+                    "default": "github"
+                  },
+                  "owner": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                  },
+                  "account": {
+                    "type": "string"
+                  },
+                  "sha": {
+                    "type": "string",
+                    "pattern": "^[0-9a-fA-F]{4,64}$"
+                  }
+                },
+                "required": [
+                  "owner",
+                  "name",
+                  "sha"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sha": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "author": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "login": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "login"
+                      ]
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "parents": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "additions": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "deletions": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "files": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "previousPath": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "additions": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "deletions": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "patch": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "previousPath",
+                          "status",
+                          "additions",
+                          "deletions",
+                          "patch"
+                        ]
+                      }
+                    },
+                    "filesTruncated": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "sha",
+                    "title",
+                    "author",
+                    "date",
+                    "url",
+                    "message",
+                    "parents",
+                    "additions",
+                    "deletions",
+                    "files",
+                    "filesTruncated"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hosts/pulls": {
+      "post": {
+        "operationId": "hosts.pulls",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "host": {
+                    "type": "string",
+                    "default": "github"
+                  },
+                  "owner": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                  },
+                  "account": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "enum": [
+                      "open",
+                      "closed"
+                    ],
+                    "type": "string",
+                    "default": "open"
+                  },
+                  "page": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991,
+                    "exclusiveMinimum": 0,
+                    "default": 1
+                  }
+                },
+                "required": [
+                  "owner",
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "number": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "enum": [
+                              "open",
+                              "closed",
+                              "merged"
+                            ],
+                            "type": "string"
+                          },
+                          "draft": {
+                            "type": "boolean"
+                          },
+                          "author": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "head": {
+                            "type": "string"
+                          },
+                          "base": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "number",
+                          "title",
+                          "state",
+                          "draft",
+                          "author",
+                          "head",
+                          "base",
+                          "createdAt",
+                          "updatedAt",
+                          "url"
+                        ]
+                      }
+                    },
+                    "page": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "exclusiveMinimum": 0
+                    },
+                    "next": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "page",
+                    "next"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hosts/pull": {
+      "post": {
+        "operationId": "hosts.pull",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "host": {
+                    "type": "string",
+                    "default": "github"
+                  },
+                  "owner": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                  },
+                  "account": {
+                    "type": "string"
+                  },
+                  "number": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991,
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "owner",
+                  "name",
+                  "number"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "number": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "enum": [
+                        "open",
+                        "closed",
+                        "merged"
+                      ],
+                      "type": "string"
+                    },
+                    "draft": {
+                      "type": "boolean"
+                    },
+                    "author": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "head": {
+                      "type": "string"
+                    },
+                    "base": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "body": {
+                      "type": "string"
+                    },
+                    "commits": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "sha": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "author": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "login": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "login"
+                            ]
+                          },
+                          "date": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "sha",
+                          "title",
+                          "author",
+                          "date",
+                          "url"
+                        ]
+                      }
+                    },
+                    "files": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "previousPath": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "additions": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "deletions": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "patch": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "previousPath",
+                          "status",
+                          "additions",
+                          "deletions",
+                          "patch"
+                        ]
+                      }
+                    },
+                    "additions": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "deletions": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "number",
+                    "title",
+                    "state",
+                    "draft",
+                    "author",
+                    "head",
+                    "base",
+                    "createdAt",
+                    "updatedAt",
+                    "url",
+                    "body",
+                    "commits",
+                    "files",
+                    "additions",
+                    "deletions",
+                    "truncated"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hosts/createRepo": {
+      "post": {
+        "operationId": "hosts.createRepo",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "host": {
+                    "type": "string"
+                  },
+                  "account": {
+                    "type": "string"
+                  },
+                  "owner": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                  },
+                  "private": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 350
+                  }
+                },
+                "required": [
+                  "host",
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "host": {
+                      "type": "string"
+                    },
+                    "account": {
+                      "type": "string"
+                    },
+                    "owner": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "host",
+                    "account",
+                    "owner",
+                    "name"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/models/status": {
       "post": {
         "operationId": "models.status",
@@ -26403,6 +28315,9 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "host": {
+                            "type": "string"
+                          },
                           "account": {
                             "type": "string"
                           },
@@ -26566,6 +28481,9 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "host": {
+                      "type": "string"
+                    },
                     "account": {
                       "type": "string"
                     },
@@ -28483,6 +30401,14 @@
                         ],
                         "type": "string"
                       },
+                      "auth": {
+                        "enum": [
+                          "password",
+                          "google",
+                          "microsoft"
+                        ],
+                        "type": "string"
+                      },
                       "protocol": {
                         "enum": [
                           "imap",
@@ -28553,6 +30479,7 @@
                       "name",
                       "email",
                       "provider",
+                      "auth",
                       "protocol",
                       "incomingHost",
                       "smtpHost",
@@ -28736,6 +30663,14 @@
                       ],
                       "type": "string"
                     },
+                    "auth": {
+                      "enum": [
+                        "password",
+                        "google",
+                        "microsoft"
+                      ],
+                      "type": "string"
+                    },
                     "protocol": {
                       "enum": [
                         "imap",
@@ -28806,6 +30741,7 @@
                     "name",
                     "email",
                     "provider",
+                    "auth",
                     "protocol",
                     "incomingHost",
                     "smtpHost",
@@ -29220,6 +31156,314 @@
     "/mail/removeAccount": {
       "post": {
         "operationId": "mail.removeAccount",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {},
+                    {
+                      "not": {}
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mail/oauthApps": {
+      "post": {
+        "operationId": "mail.oauthApps",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "provider": {
+                        "enum": [
+                          "google",
+                          "microsoft"
+                        ],
+                        "type": "string"
+                      },
+                      "clientId": {
+                        "type": "string"
+                      },
+                      "hasSecret": {
+                        "type": "boolean"
+                      },
+                      "redirectUri": {
+                        "type": "string"
+                      },
+                      "ready": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "provider",
+                      "clientId",
+                      "hasSecret",
+                      "redirectUri",
+                      "ready"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mail/setOAuthApp": {
+      "post": {
+        "operationId": "mail.setOAuthApp",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "enum": [
+                      "google",
+                      "microsoft"
+                    ],
+                    "type": "string"
+                  },
+                  "clientId": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "clientSecret": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300
+                  }
+                },
+                "required": [
+                  "provider",
+                  "clientId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {},
+                    {
+                      "not": {}
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mail/oauthStart": {
+      "post": {
+        "operationId": "mail.oauthStart",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "enum": [
+                      "google",
+                      "microsoft"
+                    ],
+                    "type": "string"
+                  },
+                  "accountId": {
+                    "type": "string"
+                  },
+                  "flow": {
+                    "enum": [
+                      "browser",
+                      "device"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "provider"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "const": "browser"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "url": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "id",
+                        "url"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "const": "device"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "userCode": {
+                          "type": "string"
+                        },
+                        "verificationUri": {
+                          "type": "string"
+                        },
+                        "expiresAt": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "id",
+                        "userCode",
+                        "verificationUri",
+                        "expiresAt"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mail/oauthStatus": {
+      "post": {
+        "operationId": "mail.oauthStatus",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "enum": [
+                        "pending",
+                        "done",
+                        "failed"
+                      ],
+                      "type": "string"
+                    },
+                    "email": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "email",
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mail/oauthCancel": {
+      "post": {
+        "operationId": "mail.oauthCancel",
         "requestBody": {
           "required": true,
           "content": {

@@ -32,9 +32,20 @@ type Token = string | Buffer | Token[];
 const CRLF = "\r\n";
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-export async function fakeMail(o: { user?: string; password?: string; gmail?: boolean } = {}) {
+export async function fakeMail(
+  o: {
+    user?: string;
+    password?: string;
+    /** Accepts XOAUTH2 with this token as well as the password (ADR-063). */
+    accessToken?: string;
+    gmail?: boolean;
+  } = {},
+) {
   const user = o.user ?? "me@example.com";
-  const state = { password: o.password ?? "app-password" };
+  const state: { password: string; accessToken?: string | null } = {
+    password: o.password ?? "app-password",
+    accessToken: o.accessToken ?? null,
+  };
   const gmail = o.gmail ?? false;
   const boxes = new Map<string, Box>();
   const addBox = (path: string, specialUse: string | null) =>
@@ -128,11 +139,16 @@ export async function fakeMail(o: { user?: string; password?: string; gmail?: bo
   const smtp = new SMTPServer({
     secure: false,
     disabledCommands: ["STARTTLS"],
-    authMethods: ["PLAIN", "LOGIN"],
+    authMethods: ["PLAIN", "LOGIN", "XOAUTH2"],
     allowInsecureAuth: true,
     logger: false,
     onAuth(auth, _session, cb) {
-      if (auth.username === user && auth.password === state.password) return cb(null, { user });
+      const ok =
+        auth.username === user &&
+        (auth.method === "XOAUTH2"
+          ? !!state.accessToken && auth.accessToken === state.accessToken
+          : auth.password === state.password);
+      if (ok) return cb(null, { user });
       cb(new Error("Invalid username or password"));
     },
     onData(stream, session, cb) {
@@ -168,6 +184,10 @@ export async function fakeMail(o: { user?: string; password?: string; gmail?: bo
     /** Like a password changed at the provider. */
     setPassword(p: string) {
       state.password = p;
+    },
+    /** The access token the provider now accepts (null: none, as when it is revoked). */
+    setAccessToken(t: string | null) {
+      state.accessToken = t;
     },
     /** Every connection dropped, as when the provider restarts. */
     dropConnections() {
@@ -312,7 +332,7 @@ class ImapBad extends Error {}
 
 interface Shared {
   user: string;
-  state: { password: string };
+  state: { password: string; accessToken?: string | null };
   gmail: boolean;
   boxes: Map<string, Box>;
   box: (path: string) => Box;
@@ -351,6 +371,7 @@ class ImapSession {
 
   #caps() {
     const caps = ["IMAP4rev1", "IDLE", "MOVE", "UIDPLUS", "SPECIAL-USE", "LITERAL+"];
+    if (this.x.state.accessToken) caps.push("AUTH=XOAUTH2", "SASL-IR");
     if (this.x.gmail) caps.push("X-GM-EXT-1");
     return caps.join(" ");
   }
@@ -459,6 +480,20 @@ class ImapSession {
         throw new ImapNo("[AUTHENTICATIONFAILED] Invalid credentials (Failure)");
       this.#authed = true;
       return `[CAPABILITY ${this.#caps()}] Logged in`;
+    }
+    // XOAUTH2 with the initial response (SASL-IR): "user=<u>^Aauth=Bearer <token>^A^A".
+    if (name === "AUTHENTICATE") {
+      const token = Buffer.from(str(args[1]), "base64").toString("utf8");
+      const [u, b] = token.split("\u0001");
+      if (
+        str(args[0]).toUpperCase() !== "XOAUTH2" ||
+        u?.replace(/^user=/, "") !== this.x.user ||
+        !this.x.state.accessToken ||
+        b?.replace(/^auth=Bearer /, "") !== this.x.state.accessToken
+      )
+        throw new ImapNo("[AUTHENTICATIONFAILED] Invalid credentials (Failure)");
+      this.#authed = true;
+      return `[CAPABILITY ${this.#caps()}] Authenticated`;
     }
     if (!this.#authed) throw new ImapBad("Log in first");
 

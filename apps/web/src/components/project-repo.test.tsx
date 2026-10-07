@@ -87,6 +87,7 @@ const repoInfo = vi.fn(async (x: { owner: string; name: string }) => ({
 
 vi.mock("@/lib/api", () => ({
   api: {
+    hosts: { accounts: async () => [] },
     github: {
       accounts: async () => [{ login: "me", error: null }],
       repoInfo: (x: { owner: string; name: string }) => repoInfo(x),

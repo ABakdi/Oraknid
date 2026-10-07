@@ -65,7 +65,9 @@ server (stdio, JSON-RPC). Three things matter:
   the project's linked repo is "linked" (allowed without asking, unless
   the task read untrusted content), anything else the gated action it
   is (`push`, `external-write`). What it returns is GitHub's answer
-  about my repo, so it isn't wrapped as untrusted.
+  about my repo, so it isn't wrapped as untrusted. *Added 2026-10-07*
+  ([[ADR-046-Cloud-Storage]]): the `storage` tool, given only to a job
+  whose skill asks for it; its public link judged as `send`.
 - **Adapters** pass the bridge as an MCP server: Claude Code through
   the SDK's `mcpServers`, OpenCode through its config's `mcp`,
   Antigravity through `mcp_config.json` in the Leg's home (unverified,

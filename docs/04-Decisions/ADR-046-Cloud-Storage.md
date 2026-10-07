@@ -109,7 +109,8 @@ by name.
   publishing its own) in a throwaway unprivileged container and a real
   rclone; Drive, Dropbox and MEGA with a stand-in rclone, no account.
 - **Not yet**: uploads and downloads away from home; a public link
-  (nothing makes a file public); a token rclone refreshes while Oraknid
+  (nothing makes a file public; *2026-10-07:* the storage tool's
+  `share_link`, always asked, below); a token rclone refreshes while Oraknid
   writes the config at the same moment could be lost (writes are
   serialised among Oraknid's own, not against rclone's).
 
@@ -188,5 +189,34 @@ by name.
   (Jottacloud's "traditional" sign-in: its personal login token works);
   a provider's options can't be changed after it is added (remove and
   add again).
+
+## As built (2026-10-07): the storage tool
+What the Decision said of agents ("nothing of it unless a job's skill asks
+for a storage tool, declared and gated like any tool") is built:
+- **`storage`, one of Oraknid's own tools** (`apps/daemon/src/cloud/tool.ts`),
+  answered by the broker in the daemon like `email` and `github`, so no
+  credential leaves it. It is registered once there is a provider (at
+  start, and when one is added); a job has it only when its skill asks for
+  it (`requires.tools: [storage]`), and a job asking for it can't start
+  while there is no provider (the tool is missing).
+- **Its calls**: `list` (a folder of the pool, or a search under it, each
+  file with its provider's id) and `download` (a file into the job's
+  folder, never over a file) are declared reads; `upload` (a file of the
+  job's folder, where the placement rule puts it or the provider named) is
+  a write, judged by the job's policy (`external-write`); `share_link` (a
+  public link, `rclone link`, with an expiry where the provider takes one)
+  is judged as `send`: always asked, never waived by autonomy. A provider
+  without links (WebDAV, SFTP…) says so in words. Each link made is an
+  event (`cloud.file.shared`).
+- **Inside the job's folder only**: paths relative to it, resolved by real
+  path (a link pointing out is refused), never a hidden file or folder
+  (`.git`, `.oraknid`). What it returns (file names, a provider's words)
+  is wrapped as untrusted data, and the task is untrusted from then on.
+- **Tested** (`cloud/tool.test.ts`) with a real rclone against its own
+  WebDAV server started by the test: offered once a provider exists, a
+  job's file uploaded, listed, searched, downloaded into the job's folder,
+  the refusals (over a file, out of the folder, absolute, hidden, a link
+  out), WebDAV's lack of public links said; the policy's verdicts on each
+  call. Not yet: a public link made on a real Drive or Dropbox.
 
 Related: [[ADR-044-Backups]] · [[ADR-021-Tools-Broker]] · [[Security]] · [[Web-UI]]
