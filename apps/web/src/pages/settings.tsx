@@ -6,9 +6,11 @@ import { AwayCard, PhoneCard } from "@/components/away-card";
 import { BackupsSettings } from "@/components/backups";
 import { ErrorNote, Loading, PageHeader } from "@/components/common";
 import { useConfirm } from "@/components/confirm";
+import { GitHostsCard } from "@/components/git-hosts-card";
 import { GitHubCard } from "@/components/github-card";
 import { LockCard } from "@/components/lock-card";
 import { MailAccountsCard } from "@/components/mail-accounts-card";
+import { MailOAuthAppsCard } from "@/components/mail-oauth";
 import { type PageTab, PageTabs } from "@/components/page-tabs";
 import { RulesCard } from "@/components/rules-card";
 import { StorageCard } from "@/components/storage-card";
@@ -144,9 +146,11 @@ export function SettingsPage({ tab }: { tab?: string }) {
         <>
           <Section help="settings.mail" title={t("Email accounts")}>
             <MailAccountsCard />
+            <MailOAuthAppsCard />
           </Section>
           <Section help="settings.github" title={t("GitHub")}>
             <GitHubCard />
+            <GitHostsCard />
           </Section>
           <Section help="settings.tools" title={t("Tools for skills")}>
             <ToolsCard />

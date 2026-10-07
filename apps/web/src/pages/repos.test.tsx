@@ -40,6 +40,13 @@ const REPOS = [
   repo("me/empty", { visibility: "private", pushedAt: null }),
 ];
 
+const GITLAB = repo("team/web/tools", {
+  host: "gitlab.com",
+  owner: "team/web",
+  name: "tools",
+  url: "https://gitlab.com/team/web/tools",
+});
+
 const PIANO: GitHubRepoDetail = {
   ...(REPOS[0] as GitHubRepoSummary),
   stars: 7,
@@ -117,6 +124,30 @@ vi.mock("@/lib/api", () => ({
       })),
       pulls: fn("pulls", () => ({ items: [], page: 1, next: false })),
     },
+    // Other git hosts (ADR-062): every host's list, and a GitLab project in a subgroup.
+    hosts: {
+      accounts: fn("hostAccounts", () => [
+        { host: "gitlab.com", kind: "gitlab", url: "https://gitlab.com", login: "me", error: null },
+      ]),
+      list: fn("hosts", () => [
+        {
+          host: "gitlab.com",
+          kind: "gitlab",
+          url: "https://gitlab.com",
+          label: "GitLab (gitlab.com)",
+          pullsName: "Merge requests",
+        },
+      ]),
+      repoList: fn("repoList", (x) => ({
+        repos: x.host ? [GITLAB] : [...REPOS, GITLAB],
+        errors: [],
+        truncated: false,
+      })),
+      repoInfo: fn("hostRepoInfo", () => ({ ...GITLAB, stars: 0, openIssues: 0, empty: false })),
+      branches: fn("hostBranches", () => ({ items: [], page: 1, next: false })),
+      tree: fn("hostTree", () => ({ ref: "main", path: "", truncated: false, entries: [] })),
+      readme: fn("hostReadme", () => null),
+    },
     projects: { list: fn("projects", () => []) },
   },
   message: (e: unknown) => String(e),
@@ -173,7 +204,7 @@ describe("the list of repositories", () => {
   it("shows each with its visibility, default branch, last push and linking project, and searches", async () => {
     at("/repos");
     const list = await screen.findByRole("region", { name: "Repositories" });
-    await waitFor(() => expect(within(list).getAllByTestId("repo-row")).toHaveLength(3));
+    await waitFor(() => expect(within(list).getAllByTestId("repo-row")).toHaveLength(4));
     const piano = within(list).getAllByTestId("repo-row")[0] as HTMLElement;
     expect(piano.textContent).toContain("me/piano");
     expect(piano.textContent).toContain("Public");
@@ -197,7 +228,7 @@ describe("the list of repositories", () => {
     });
     expect(within(list).queryAllByTestId("repo-row")).toHaveLength(0);
     fireEvent.click(screen.getByRole("button", { name: "Clear the filters" }));
-    expect(within(list).getAllByTestId("repo-row")).toHaveLength(3);
+    expect(within(list).getAllByTestId("repo-row")).toHaveLength(4);
     // The accounts, as in Settings, beside the list on a computer.
     expect(await screen.findByText("GitHub")).toBeTruthy();
   });
@@ -205,9 +236,23 @@ describe("the list of repositories", () => {
   it("opens a repository at its address", async () => {
     const mem = at("/repos");
     const list = await screen.findByRole("region", { name: "Repositories" });
-    await waitFor(() => expect(within(list).getAllByTestId("repo-row")).toHaveLength(3));
+    await waitFor(() => expect(within(list).getAllByTestId("repo-row")).toHaveLength(4));
     fireEvent.click(within(list).getAllByTestId("repo-row")[0] as HTMLElement);
     expect(mem.history?.at(-1)).toBe("/repos/me/piano");
+  });
+
+  it("lists a GitLab project beside GitHub's, its host in its address, read through its host (ADR-062)", async () => {
+    const mem = at("/repos");
+    const list = await screen.findByRole("region", { name: "Repositories" });
+    const row = await within(list).findByText("team/web/tools");
+    expect(row.closest("button")?.textContent).toContain("gitlab.com");
+    fireEvent.click(row);
+    expect(mem.history?.at(-1)).toBe("/repos/gitlab.com!team%2Fweb/tools");
+    cleanup();
+    at("/repos/gitlab.com!team%2Fweb/tools");
+    expect(await screen.findByRole("tab", { name: /Merge requests/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Open on gitlab.com/ })).toBeTruthy();
+    expect(calls).toContain('hostRepoInfo {"owner":"team/web","name":"tools","host":"gitlab.com"}');
   });
 });
 

@@ -11,6 +11,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Loading } from "@/components/common";
 import { useConfirm } from "@/components/confirm";
+import { OAuthSignIn } from "@/components/mail-oauth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -91,6 +92,11 @@ export function MailAccountsCard() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium">{a.name}</span>
               {a.name !== a.email ? <span className="text-muted-foreground">{a.email}</span> : null}
+              {a.auth !== "password" ? (
+                <Badge variant="secondary">
+                  {a.auth === "google" ? t("signed in with Google") : t("signed in with Microsoft")}
+                </Badge>
+              ) : null}
               <Badge
                 variant={a.state === "reconnect" || a.state === "error" ? "destructive" : "outline"}
               >
@@ -119,7 +125,8 @@ export function MailAccountsCard() {
             )}
           </div>
         ) : adding ? (
-          <div className="rounded-md border p-3">
+          <div className="space-y-3 rounded-md border p-3">
+            <OAuthSignIn onDone={() => setAdding(false)} />
             <AddAccountForm onDone={() => setAdding(false)} />
           </div>
         ) : (
@@ -268,6 +275,43 @@ export function ReconnectDialog({
 }) {
   const [password, setPassword] = useState("");
   const needed = account.state === "reconnect";
+  // Signed in with Google or Microsoft (ADR-063): signing in again, not a password.
+  if (account.auth !== "password")
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("Reconnect {email}", { email: account.email })}</DialogTitle>
+            <DialogDescription>
+              {needed
+                ? t("Sign in again: its sign-in was refused or revoked.")
+                : t("Oraknid connects again with the sign-in it keeps, or sign in again.")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {needed ? null : (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() =>
+                  void act(async () => {
+                    await api.mail.reconnect({ id: account.id });
+                    onOpenChange(false);
+                  }, t("Connecting again."))
+                }
+              >
+                {t("Reconnect")}
+              </Button>
+            )}
+            <OAuthSignIn
+              accountId={account.id}
+              only={account.auth}
+              onDone={() => onOpenChange(false)}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -325,9 +369,12 @@ export function AddAccountDialog({
         <DialogHeader>
           <DialogTitle>{t("Add an email account")}</DialogTitle>
           <DialogDescription>
-            {t("With an app password for Gmail and Outlook, or any IMAP or POP3 server.")}
+            {t(
+              "Sign in with Google or Microsoft once their apps are set up in Settings, or use an app password for Gmail and Outlook, or any IMAP or POP3 server.",
+            )}
           </DialogDescription>
         </DialogHeader>
+        {open ? <OAuthSignIn onDone={() => onOpenChange(false)} /> : null}
         {open ? <AddAccountForm onDone={() => onOpenChange(false)} /> : null}
       </DialogContent>
     </Dialog>

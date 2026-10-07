@@ -87,6 +87,11 @@ vi.mock("@/lib/api", () => ({
       status: async () => ({ connected: CONNECTED, login: CONNECTED ? "me" : null, error: null }),
       repoList: async () => ({ repos: CONNECTED ? REPOS : [], errors: [], truncated: false }),
     },
+    // No GitLab, Gitea or Forgejo account here: every host's list is GitHub's (ADR-062).
+    hosts: {
+      accounts: async () => [],
+      repoList: async () => ({ repos: CONNECTED ? REPOS : [], errors: [], truncated: false }),
+    },
     files: { folders: async (i: { path?: string }) => listing(i.path) },
     projects: { createFrom: (i: unknown) => createFrom(i) },
   },
