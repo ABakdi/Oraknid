@@ -169,10 +169,17 @@ export async function harness(o: RigOptions) {
   /** A job on a new project of a repo, started; careful asks for the plan first. */
   const repoJob = async (
     goal: string,
-    x: { files?: Record<string, string>; autonomy?: "careful" | "auto" | "full" } = {},
+    x: {
+      files?: Record<string, string>;
+      autonomy?: "careful" | "auto" | "full";
+      /** The rig's server given to the project (ADR-026). */
+      withServer?: boolean;
+    } = {},
   ) => {
     const workspace = repo(x.files);
     const project = await api.projects.create({ name: "demo", workspacePath: workspace });
+    if (x.withServer && server)
+      await api.projects.setServers({ id: project.id, serverIds: [server.id] });
     const { id } = await api.jobs.create({
       projectId: project.id,
       goal,

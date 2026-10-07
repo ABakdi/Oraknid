@@ -36,6 +36,7 @@ import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor } from "../legs/supervisor.ts";
 import { Work } from "../resources/work.ts";
 import { runServerCheck } from "../servers/checks.ts";
+import { serverVerdict } from "../servers/remote.ts";
 import { jobServers, serverDigest, serverPlanApproval } from "../servers/server-jobs.ts";
 import type { Servers } from "../servers/service.ts";
 import {
@@ -605,6 +606,51 @@ function workOf(d: EyeDeps): Work {
   return w;
 }
 
+/** A task verified alone that can't be merged this many times stops the job (bug 2). */
+const MAX_MERGE_FAILURES = 3;
+
+/**
+ * A task's checks run again outside its attempt (the merge, ADR-016): in
+ * the sandbox, on the job's servers over Oraknid's connection, or answered
+ * by Oraknid itself about GitHub, as in the attempt (ADR-049, ADR-038).
+ */
+function taskChecks(
+  d: EyeDeps,
+  job: typeof jobs.$inferSelect,
+  where: Where,
+  commands: string[],
+  signal: AbortSignal,
+) {
+  const servers = jobServers(d, job.id);
+  const policy = () => policyFor(d.db, job.id, where.cwd);
+  return runVerify(
+    commands,
+    where.cwd,
+    job.unsandboxed ? null : sandboxPlan(firstLeg(d), d.sandbox, d.legsDir),
+    {
+      signal,
+      refuse: (command) => verifyRefusal(decide({ tool: "Bash", command, path: null }, policy())),
+      builtin: async (command) =>
+        (servers.length && d.servers
+          ? await runServerCheck(command, {
+              servers,
+              run: (id, remote) => (d.servers as Servers).run(id, remote),
+              refuse: (c) => {
+                const v = serverVerdict(c, servers, policy());
+                return v ? verifyRefusal(v) : null;
+              },
+            })
+          : null) ??
+        runBuiltinCheck(command, {
+          ...(d.github ? { github: d.github } : {}),
+          link: githubLinkOf(d.db, job.id),
+          linkFor: (repo) => githubLinkOf(d.db, job.id, repo),
+          localCommit: (branch, repo) => where.tree.localCommit(branch, repo),
+        }),
+    },
+  );
+}
+
 /** Merges of one job happen one at a time. */
 const merging = new Map<string, Promise<unknown>>();
 function oneMergeAtATime<T>(jobId: string, fn: () => Promise<T>): Promise<T> {
@@ -881,7 +927,7 @@ async function runTask(
   // failing check merges nothing and the task is redone on top of the newer work (ADR-016).
   if (own && outcome.kind === "done") {
     const mine = own;
-    const merged = await ctx.step(`task:${task.id}:merge:${attemptNo}`, { attemptNo }, () =>
+    const merged = await ctx.step(`task:${task.id}:merge:${attemptNo}`, { attemptNo }, (signal) =>
       oneMergeAtATime(job.id, async () => {
         const m = await mergeTask(where, mine, job.branch as string, `merge: ${task.title}`);
         if (!m.ok)
@@ -889,17 +935,9 @@ async function runTask(
             ok: false,
             why: `it conflicted with work merged meanwhile (${m.conflicts.join(", ")})`,
           };
-        const results = await runVerify(
-          task.verify,
-          where.cwd,
-          job.unsandboxed ? null : sandboxPlan(firstLeg(d), d.sandbox, d.legsDir),
-          {
-            refuse: (command) =>
-              verifyRefusal(
-                decide({ tool: "Bash", command, path: null }, policyFor(d.db, job.id, where.cwd)),
-              ),
-          },
-        );
+        // With the runners the task's own checks had: on the job's servers, Oraknid's own
+        // GitHub checks, the policy; stopped with the job (bug 2).
+        const results = await taskChecks(d, job, where, task.verify, signal);
         const failed = results.find((r) => !r.ok);
         if (failed) {
           m.undo();
@@ -912,6 +950,14 @@ async function runTask(
     else removeTaskWorktree(where.projectPath, own.path, own.branch);
     d.db.update(tasks).set({ worktree: null }).where(eq(tasks.id, task.id)).run();
     if (!merged.ok) {
+      // Verified alone and never merged, again and again: not redone for ever (bug 2).
+      const key = `eye.mergeFailures.${task.id}`;
+      const times = readSetting(d.db, key, z.number(), 0) + 1;
+      writeSetting(d.db, key, z.number(), times);
+      if (times >= MAX_MERGE_FAILURES)
+        throw new Error(
+          `"${task.title}" passed its checks alone but couldn't be merged with the other work ${times} times: ${merged.why}. Look at it, then resume.`,
+        );
       d.silk.add({
         jobId: job.id,
         taskId: task.id,

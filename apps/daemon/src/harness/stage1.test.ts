@@ -81,3 +81,76 @@ describe("“Stop the job” stops the job (bug 1)", () => {
     expect(leg.log.some((t) => taskOf(t) === "Write the config")).toBe(false);
   }, 60_000);
 });
+
+describe("a task merged beside others is checked again with its own runners (bug 2)", () => {
+  it("runs a server check of a parallel task on the server at the merge, and merges it", async () => {
+    const leg = scriptedLeg((t) =>
+      taskOf(t) === "Build the parser"
+        ? [{ run: "sleep 1" }, { write: "parser.js", content: "x\n" }, { say: "DONE" }]
+        : [{ run: "sleep 1" }, { write: "logo.svg", content: "<svg/>\n" }, { say: "DONE" }],
+    );
+    rig = await harness({
+      legs: [{ kind: "claude-code", name: "Claude A", leg }],
+      server: true,
+      plan: {
+        summary: "Two parts, each checked on the server too.",
+        tasks: [
+          task(
+            "a",
+            "Build the parser",
+            ["test -f parser.js", "ssh oraknid-vps-one true"],
+            ["parser.js"],
+          ),
+          task(
+            "b",
+            "Draw the logo",
+            ["test -f logo.svg", "ssh oraknid-vps-one true"],
+            ["logo.svg"],
+          ),
+        ],
+        jobVerify: [],
+      },
+    });
+    await rig.api.legs.update({ id: rig.legIds["Claude A"] as string, maxSessions: 2 });
+    const { id } = await rig.repoJob("Two parts", { withServer: true });
+    const done = await rig.ended(id, 30_000);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+    expect(
+      (await rig.api.silk.list({ jobId: id })).filter((e) => e.title.startsWith("Not merged")),
+    ).toEqual([]);
+    // The checks ran on the server: tried first, at each task, and at each merge.
+    expect(rig.ssh?.commands.filter((c) => c === "true").length).toBeGreaterThanOrEqual(6);
+  }, 60_000);
+
+  it("stops redoing a task that passes alone and never merges, and says why", async () => {
+    const leg = scriptedLeg((t) =>
+      taskOf(t) === "Build the parser"
+        ? [{ write: "parser.js", content: "x\n" }, { say: "DONE" }]
+        : [{ write: "logo.svg", content: "<svg/>\n" }, { say: "DONE" }],
+    );
+    rig = await harness({
+      legs: [{ kind: "claude-code", name: "Claude A", leg }],
+      plan: {
+        summary: "Two parts.",
+        tasks: [
+          task("a", "Build the parser", ["test -f parser.js"], ["parser.js"]),
+          // True on the task's own branch only: never once merged.
+          task(
+            "b",
+            "Draw the logo",
+            ["test -f logo.svg && git rev-parse --abbrev-ref HEAD | grep -q -e --t-"],
+            ["logo.svg"],
+          ),
+        ],
+        jobVerify: [],
+      },
+    });
+    await rig.api.legs.update({ id: rig.legIds["Claude A"] as string, maxSessions: 2 });
+    const { id } = await rig.repoJob("Two parts");
+    const done = await rig.ended(id, 45_000);
+    expect(done.state).toBe("blocked");
+    expect(done.blockedReason).toMatch(
+      /^"Draw the logo" passed its checks alone but couldn't be merged with the other work 3 times/,
+    );
+  }, 60_000);
+});
