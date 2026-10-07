@@ -474,9 +474,10 @@ export const attempts = sqliteTable(
     effort: text("effort"),
     startedAt: integer("started_at").notNull(),
     endedAt: integer("ended_at"),
-    /** "unavailable": its provider failed, not the task (M13.22); not counted against it. */
+    /** "unavailable": its provider failed, not the task (M13.22); "redirected": I said how to go on
+     * (try again with advice, another Leg). Neither is counted against the task. */
     outcome: text("outcome", {
-      enum: ["succeeded", "failed", "reassigned", "abandoned", "unavailable"],
+      enum: ["succeeded", "failed", "reassigned", "redirected", "abandoned", "unavailable"],
     }),
     escalations: json<string[]>("escalations").notNull(),
   },

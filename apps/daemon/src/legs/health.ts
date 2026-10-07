@@ -30,6 +30,7 @@ export function startHealthChecks(o: HealthOptions) {
       .catch((e: Error) => ({ ok: false as const, detail: e.message, models: [] }));
     if (!probe.ok) return o.registry.setHealth(leg.id, "unavailable", probe.detail);
     o.registry.syncModels(leg.id, probe.models);
+    if ("features" in probe) o.registry.setFeatures(leg.id, probe.features);
     if (leg.kind === "openai-compatible") await readVram(leg);
     if (leg.limitedUntil && leg.limitedUntil > now()) return; // still waiting for the window to reset
     o.registry.setHealth(leg.id, "healthy", probe.detail, null);

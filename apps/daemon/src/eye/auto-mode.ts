@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { ALL_LOCKFILES } from "@oraknid/contracts";
 import type { Layer1Verdict } from "@oraknid/core";
 import {
   type GuardContext,
@@ -31,10 +32,24 @@ export const stuck = new StuckWatch();
 /** How long the judge may take before its silence counts as BLOCK (ADR-053: 10 s). */
 export const JUDGE_TIMEOUT_MS = 10_000;
 
-/** A task ended: its verdicts and its count of blocks go. */
+/** A task settled (done, left out): its verdicts and its count of blocks go (bug 6). */
 export function forgetTaskVerdicts(jobId: string, taskId: string) {
   verdicts.forgetTask(`${jobId}:${taskId}`);
   stuck.forget(`${jobId}:${taskId}`);
+}
+
+/** A job ended: every one of its tasks' verdicts and counts go. */
+export function forgetJobVerdicts(jobId: string) {
+  verdicts.forgetTasksStarting(`${jobId}:`);
+  stuck.forgetStarting(`${jobId}:`);
+}
+
+/** What is held in memory for a task: the judge's verdicts and the blocks counted. */
+export function heldFor(jobId: string, taskId: string) {
+  return {
+    verdicts: verdicts.countTask(`${jobId}:${taskId}`),
+    blocks: stuck.count(`${jobId}:${taskId}`),
+  };
 }
 
 /** Registries and code hosts a plain GET may read at once (layer 1's known hosts). */
@@ -58,22 +73,6 @@ const REGISTRIES = [
   "rubygems.org",
   "repo.maven.apache.org",
   "nodejs.org",
-];
-
-const LOCKFILES = [
-  "package-lock.json",
-  "npm-shrinkwrap.json",
-  "pnpm-lock.yaml",
-  "yarn.lock",
-  "bun.lockb",
-  "bun.lock",
-  "uv.lock",
-  "poetry.lock",
-  "Pipfile.lock",
-  "Gemfile.lock",
-  "composer.lock",
-  "go.sum",
-  "Cargo.lock",
 ];
 
 /** What the guard knows of a job's attempt; read once per attempt, cheap to rebuild. */
@@ -102,7 +101,7 @@ export function guardContext(i: {
     taskText: i.taskText,
     knownHosts: REGISTRIES,
     projectScripts: scripts,
-    lockfiles: LOCKFILES.filter((f) => existsSync(join(i.cwd, f))),
+    lockfiles: ALL_LOCKFILES.filter((f) => existsSync(join(i.cwd, f))),
     verify: i.verify,
   };
 }

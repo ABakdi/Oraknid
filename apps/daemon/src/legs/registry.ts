@@ -17,14 +17,32 @@ import {
   type ProviderFailure,
   restFor,
 } from "@oraknid/core";
-import type { LegConfig, ModelOffer, PlanUsageReport, QuotaReport } from "@oraknid/leg-sdk";
+import type {
+  LegConfig,
+  ModelOffer,
+  PlanUsageReport,
+  ProbeResult,
+  QuotaReport,
+} from "@oraknid/leg-sdk";
 import { and, eq, gte, inArray, sum } from "drizzle-orm";
+import { z } from "zod";
 import type { Db } from "../db/open.ts";
 import { legModels, legs, sessions } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 import type { Secrets } from "../os/secrets.ts";
+import { readSetting, writeSetting } from "../settings.ts";
 import { matches, modelKey } from "./plan-usage.ts";
+
+/** What a Leg's probe found it can do (ADR-056 §2: capabilities from the probe, not a list). */
+export type LegFeatures = ProbeResult["features"];
+const LegFeatures = z.object({
+  resume: z.boolean(),
+  tools: z.boolean(),
+  usage: z.enum(["reported", "estimated"]),
+  quotaWindows: z.boolean(),
+});
+const featuresKey = (legId: string) => `leg.features.${legId}`;
 
 export type LegRow = typeof legs.$inferSelect;
 export type LegModelRow = typeof legModels.$inferSelect;
@@ -58,6 +76,16 @@ export class LegRegistry {
     private readonly legsDir: string,
     private readonly now: () => number = Date.now,
   ) {}
+
+  /** Kept from a probe, so a restart knows it before the next one. */
+  setFeatures(legId: string, features: LegFeatures) {
+    writeSetting(this.db, featuresKey(legId), LegFeatures, features, this.now());
+  }
+
+  /** What the Leg's last probe found it can do; null when it was never probed. */
+  features(legId: string): LegFeatures | null {
+    return readSetting(this.db, featuresKey(legId), LegFeatures.nullable(), null);
+  }
 
   async create(input: NewLeg): Promise<LegRow> {
     const id = newId(this.now());

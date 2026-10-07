@@ -36,6 +36,7 @@ import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor } from "../legs/supervisor.ts";
 import { Work } from "../resources/work.ts";
 import { runServerCheck } from "../servers/checks.ts";
+import { serverVerdict } from "../servers/remote.ts";
 import { jobServers, serverDigest, serverPlanApproval } from "../servers/server-jobs.ts";
 import type { Servers } from "../servers/service.ts";
 import {
@@ -71,6 +72,7 @@ import { type Projects, viewOf } from "../workspace/projects.ts";
 import { isSeveral } from "../workspace/repos.ts";
 import { MultiTree, multiTreeOf, singleTree, type WorkTree } from "../workspace/tree.ts";
 import { type AttemptJob, runAttempt } from "./attempt.ts";
+import { forgetTaskVerdicts } from "./auto-mode.ts";
 import { BrainStopped, type EyeBrain } from "./brain.ts";
 import { parseBuiltinCheck, runBuiltinCheck } from "./builtin-checks.ts";
 import { endingKey, JobEndingState, readEnding, runEnding } from "./ending.ts";
@@ -88,6 +90,7 @@ import {
 import { ensureLinks } from "./links.ts";
 import { policyFor } from "./policy.ts";
 import { dependentsOf } from "./questions.ts";
+import { forgetTaskMemory, readTaskMemory, rememberForTask } from "./task-memory.ts";
 import { runVerify, verifyRefusal } from "./verify.ts";
 import { storeWeb, taskRows } from "./web-store.ts";
 
@@ -236,6 +239,14 @@ export function eyeProgram(d: EyeDeps): JobProgram {
     // A Leg's permission request dies with its session: one still open is stale.
     for (const item of d.inbox.list("open")) {
       if (item.jobId === ctx.jobId && typeof item.raisedBy === "object") d.inbox.withdraw(item.id);
+    }
+    // So does what The Eye asked for an attempt cut short by a crash: its next attempt asks
+    // again if it must (bug 9).
+    for (const t of taskRows(d.db, ctx.jobId)) {
+      const { asked } = readTaskMemory(d.db, t.id);
+      if (!asked.length) continue;
+      for (const id of asked) if (d.inbox.get(id)?.state === "open") d.inbox.withdraw(id);
+      rememberForTask(d.db, t.id, { asked: [] });
     }
 
     // Only one program runs a job: a task still marked running was cut short (pause, crash, stop).
@@ -471,6 +482,12 @@ async function runTasks(d: EyeDeps, ctx: JobContext, where: Where, parallel = fa
     failure: null,
     cancelled: false,
   };
+  // "Stop the job" from one task stops the others where they are (ADR-056 stage 1, bug 1).
+  const stopAll = new AbortController();
+  const cancelled = async () => {
+    stopAll.abort(new Error("The job was stopped."));
+    await Promise.allSettled(running.values());
+  };
   try {
     for (;;) {
       if (ctx.signal.aborted && running.size === 0)
@@ -488,10 +505,7 @@ async function runTasks(d: EyeDeps, ctx: JobContext, where: Where, parallel = fa
       for (const t of all) if (!readyIds.has(t.id)) work.clear(job.id, t.id);
       if (ready.length === 0 && running.size > 0) {
         await Promise.race(running.values());
-        if (run.cancelled) {
-          await Promise.allSettled(running.values());
-          return;
-        }
+        if (run.cancelled) return await cancelled();
         continue;
       }
       if (ready.length === 0) {
@@ -509,7 +523,7 @@ async function runTasks(d: EyeDeps, ctx: JobContext, where: Where, parallel = fa
       const own = parallel && canRunSideBySide(all);
       let waiting = 0;
       for (const t of ready) {
-        if (run.failure || ctx.signal.aborted) break;
+        if (run.failure || run.cancelled || ctx.signal.aborted) break;
         const req = {
           jobId: job.id,
           jobTitle: job.title,
@@ -555,7 +569,7 @@ async function runTasks(d: EyeDeps, ctx: JobContext, where: Where, parallel = fa
           continue;
         }
         if (!own) inPlace = t.id;
-        const p = runTask(d, ctx, job, t, where, own)
+        const p = runTask(d, ctx, job, t, where, own, stopAll.signal)
           .then((r) => {
             if (r === "cancelled") run.cancelled = true;
           })
@@ -576,10 +590,7 @@ async function runTasks(d: EyeDeps, ctx: JobContext, where: Where, parallel = fa
       }
       // A task ending, room coming back, or a setting changing: look again.
       await Promise.race([...running.values(), ...(waiting ? [work.changed(2000)] : [])]);
-      if (run.cancelled) {
-        await Promise.allSettled(running.values());
-        return;
-      }
+      if (run.cancelled) return await cancelled();
     }
   } finally {
     work.forgetJob(ctx.jobId);
@@ -603,6 +614,51 @@ function workOf(d: EyeDeps): Work {
     ownWork.set(d, w);
   }
   return w;
+}
+
+/** A task verified alone that can't be merged this many times stops the job (bug 2). */
+const MAX_MERGE_FAILURES = 3;
+
+/**
+ * A task's checks run again outside its attempt (the merge, ADR-016): in
+ * the sandbox, on the job's servers over Oraknid's connection, or answered
+ * by Oraknid itself about GitHub, as in the attempt (ADR-049, ADR-038).
+ */
+function taskChecks(
+  d: EyeDeps,
+  job: typeof jobs.$inferSelect,
+  where: Where,
+  commands: string[],
+  signal: AbortSignal,
+) {
+  const servers = jobServers(d, job.id);
+  const policy = () => policyFor(d.db, job.id, where.cwd);
+  return runVerify(
+    commands,
+    where.cwd,
+    job.unsandboxed ? null : sandboxPlan(firstLeg(d), d.sandbox, d.legsDir),
+    {
+      signal,
+      refuse: (command) => verifyRefusal(decide({ tool: "Bash", command, path: null }, policy())),
+      builtin: async (command) =>
+        (servers.length && d.servers
+          ? await runServerCheck(command, {
+              servers,
+              run: (id, remote) => (d.servers as Servers).run(id, remote),
+              refuse: (c) => {
+                const v = serverVerdict(c, servers, policy());
+                return v ? verifyRefusal(v) : null;
+              },
+            })
+          : null) ??
+        runBuiltinCheck(command, {
+          ...(d.github ? { github: d.github } : {}),
+          link: githubLinkOf(d.db, job.id),
+          linkFor: (repo) => githubLinkOf(d.db, job.id, repo),
+          localCommit: (branch, repo) => where.tree.localCommit(branch, repo),
+        }),
+    },
+  );
 }
 
 /** Merges of one job happen one at a time. */
@@ -708,6 +764,8 @@ async function runTask(
   task: ReturnType<typeof taskRows>[number],
   where: Where,
   parallel: boolean,
+  /** Aborted when another task of the job stopped the job (bug 1). */
+  stopped: AbortSignal = new AbortController().signal,
 ): Promise<"cancelled" | undefined> {
   // The GitHub repo or the server the task needs, asked once and saved to the project (ADR-038).
   await ensureLinks(
@@ -864,7 +922,7 @@ async function runTask(
         task.id,
         taskWhere,
         attemptNo,
-        signal,
+        AbortSignal.any([signal, stopped]),
       );
       // Being blocked is not an attempt: fail the step so a resume tries again rather than replaying it.
       if (result.kind === "blocked") {
@@ -879,7 +937,7 @@ async function runTask(
   // failing check merges nothing and the task is redone on top of the newer work (ADR-016).
   if (own && outcome.kind === "done") {
     const mine = own;
-    const merged = await ctx.step(`task:${task.id}:merge:${attemptNo}`, { attemptNo }, () =>
+    const merged = await ctx.step(`task:${task.id}:merge:${attemptNo}`, { attemptNo }, (signal) =>
       oneMergeAtATime(job.id, async () => {
         const m = await mergeTask(where, mine, job.branch as string, `merge: ${task.title}`);
         if (!m.ok)
@@ -887,17 +945,9 @@ async function runTask(
             ok: false,
             why: `it conflicted with work merged meanwhile (${m.conflicts.join(", ")})`,
           };
-        const results = await runVerify(
-          task.verify,
-          where.cwd,
-          job.unsandboxed ? null : sandboxPlan(firstLeg(d), d.sandbox, d.legsDir),
-          {
-            refuse: (command) =>
-              verifyRefusal(
-                decide({ tool: "Bash", command, path: null }, policyFor(d.db, job.id, where.cwd)),
-              ),
-          },
-        );
+        // With the runners the task's own checks had: on the job's servers, Oraknid's own
+        // GitHub checks, the policy; stopped with the job (bug 2).
+        const results = await taskChecks(d, job, where, task.verify, signal);
         const failed = results.find((r) => !r.ok);
         if (failed) {
           m.undo();
@@ -910,6 +960,14 @@ async function runTask(
     else removeTaskWorktree(where.projectPath, own.path, own.branch);
     d.db.update(tasks).set({ worktree: null }).where(eq(tasks.id, task.id)).run();
     if (!merged.ok) {
+      // Verified alone and never merged, again and again: not redone for ever (bug 2).
+      const key = `eye.mergeFailures.${task.id}`;
+      const times = readSetting(d.db, key, z.number(), 0) + 1;
+      writeSetting(d.db, key, z.number(), times);
+      if (times >= MAX_MERGE_FAILURES)
+        throw new Error(
+          `"${task.title}" passed its checks alone but couldn't be merged with the other work ${times} times: ${merged.why}. Look at it, then resume.`,
+        );
       d.silk.add({
         jobId: job.id,
         taskId: task.id,
@@ -927,6 +985,12 @@ async function runTask(
   // Applied first, then marked settled: a crash in between applies it again, which changes nothing.
   const settle = () =>
     d.db.update(tasks).set({ settledAttempt: attemptNo }).where(eq(tasks.id, task.id)).run();
+  // A task settled keeps nothing in memory: the judge's verdicts on it, its blocks (bug 6), nor
+  // what its attempts remembered across restarts (bug 8).
+  const forget = (taskId: string) => {
+    forgetTaskVerdicts(job.id, taskId);
+    forgetTaskMemory(d.db, taskId);
+  };
   switch (outcome.kind) {
     case "done":
       if (outcome.commit)
@@ -936,6 +1000,7 @@ async function runTask(
           .where(eq(tasks.id, task.id))
           .run();
       setTask(d, job.id, task.id, "done");
+      forget(task.id);
       break;
     case "retry":
       setTask(d, job.id, task.id, "ready", outcome.reason);
@@ -950,6 +1015,7 @@ async function runTask(
         setTask(d, job.id, t.id, "skipped", `Left out with “${task.title}”, which it needs.`, {
           with: task.id,
         });
+      for (const t of [task, ...dropped]) forget(t.id);
       break;
     }
     case "owner-held":
@@ -968,7 +1034,8 @@ async function runTask(
     case "cancel-job":
       ctx.setState("cancelled", outcome.reason);
       settle();
-      return;
+      // Read by runTasks: the job's other tasks stop, and none starts (bug 1).
+      return "cancelled";
     case "leg-stopped":
       // Paused: it waits for its Leg; cancelled: it goes on without it (Jobs-and-Projects → Controls).
       setTask(d, job.id, task.id, "ready", outcome.reason);

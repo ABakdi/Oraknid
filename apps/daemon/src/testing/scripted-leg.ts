@@ -26,7 +26,11 @@ export type Action =
   /** Asks permission as the Leg would (an OpenCode ask for its own tmp), doing nothing else. */
   | { ask: { tool: string; path?: string; command?: string } }
   /** The turn ends on an error, as a provider's 500 ends it. */
-  | { fail: string };
+  | { fail: string }
+  /** A command Claude Code's own auto mode refused before it ran, Oraknid never asked (ADR-053). */
+  | { legDenies: { command: string; reason: string } }
+  /** The turn ends unfinished: cut short, or at the Leg's own limit of steps in a turn. */
+  | { endTurn: "interrupted" | "max_turns" };
 
 export interface TurnContext {
   leg: string;
@@ -43,6 +47,8 @@ export interface TurnContext {
   home: string | null;
   /** The native session this one continues, when Oraknid resumed one (ADR-052 §1). */
   resumeFrom: string | null;
+  /** The task's checks the session was given to run itself (ADR-052 §2), if any. */
+  checks: string[] | null;
 }
 
 /**
@@ -60,6 +66,8 @@ export function scriptedLeg(
     resumable?: boolean;
     /** In auto mode, commands go through Oraknid's PreToolUse hook first, as Claude Code's do (ADR-053). */
     autoModeHooks?: boolean;
+    /** Before a turn ends, Oraknid's Stop hook runs the checks, as Claude Code's does (ADR-052 §2). */
+    stopHook?: boolean;
   } = {},
 ) {
   const log: TurnContext[] = [];
@@ -96,7 +104,7 @@ export function scriptedLeg(
               },
               { model: "haiku", displayName: "Haiku", effortLevels: [], contextWindow: null },
             ],
-        features: { resume: false, tools: true, usage: "reported", quotaWindows: true },
+        features: { resume: !!o.resumable, tools: true, usage: "reported", quotaWindows: true },
       };
     },
     async start(s: SessionStart) {
@@ -109,10 +117,11 @@ export function scriptedLeg(
       let interrupted = false;
       let tokens = 0;
 
-      async function runTurn(message: string) {
+      /** `held`: how many times Oraknid's Stop hook kept this turn going (Claude Code's, ADR-052 §2). */
+      async function runTurn(message: string, held = 0) {
         turn++;
         interrupted = false;
-        events.push({ type: "turn.started" });
+        if (!held) events.push({ type: "turn.started" });
         const ctx: TurnContext = {
           leg: s.leg.name,
           model: s.model,
@@ -123,6 +132,7 @@ export function scriptedLeg(
           session,
           home: s.sandbox?.home ?? null,
           resumeFrom: s.resumeFrom,
+          checks: s.checks ?? null,
         };
         log.push(ctx);
         let text = "";
@@ -207,6 +217,23 @@ export function scriptedLeg(
               path: a.ask.path ?? null,
             });
             asks.push({ tool: a.ask.tool, path: a.ask.path ?? null, allow: d.allow });
+          } else if ("endTurn" in a) {
+            events.push({ type: "turn.ended", reason: a.endTurn, text, error: null });
+            return;
+          } else if ("legDenies" in a) {
+            events.push({
+              type: "permission.denied",
+              request: {
+                tool: "Bash",
+                input: { command: a.legDenies.command },
+                command: a.legDenies.command,
+                path: null,
+              },
+              by: "leg",
+              reason: a.legDenies.reason,
+            });
+            // The model reads the refusal before it acts again.
+            await new Promise((r) => setTimeout(r, 30));
           } else if ("fail" in a) {
             events.push({ type: "turn.ended", reason: "error", text, error: a.fail });
             return;
@@ -222,6 +249,11 @@ export function scriptedLeg(
               return;
             }
           }
+        }
+        // Its Stop hook: the task's checks before it may end the turn, three holds at most.
+        if (o.stopHook && s.onStop && held < 3) {
+          const reason = await s.onStop(text);
+          if (reason) return runTurn(reason, held + 1);
         }
         tokens += 1000;
         events.push({

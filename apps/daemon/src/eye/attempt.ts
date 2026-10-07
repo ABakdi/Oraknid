@@ -49,6 +49,7 @@ import {
   whenSaid,
   workKindOf,
 } from "@oraknid/core";
+import type { Blocked } from "@oraknid/guard";
 import type {
   LegEvent,
   PermissionDecision,
@@ -98,6 +99,7 @@ import type { WorkTree } from "../workspace/tree.ts";
 import { waitForAnswer } from "./approvals.ts";
 import {
   type DecisionLayer,
+  forgetJobVerdicts,
   guardContext,
   judgeAction,
   layer1,
@@ -144,6 +146,7 @@ const READS = new Set([
 import { summarizeShortened } from "../silk/summarize.ts";
 import { dependentsOf, keepsGoingWrong, readKeepsGoingWrong } from "./questions.ts";
 import { addMessage, guidanceMark, takeGuidance } from "./talk.ts";
+import { readTaskMemory, rememberForTask } from "./task-memory.ts";
 import { looksBroken, runVerify, type VerifyResult, verifyRefusal } from "./verify.ts";
 
 export type TaskRow = typeof tasks.$inferSelect;
@@ -226,13 +229,15 @@ class EndAttempt extends Error {
     readonly outcome: AttemptOutcome,
     /** The Leg or its model couldn't be used, not the task failing: not counted (ADR-052 §4). */
     readonly unavailable = false,
+    /**
+     * Ended by my answer: a "try again" isn't counted against the task (bug 10), and no
+     * choice of mine is learned as the model's failure (bug 11).
+     */
+    readonly byOwner = false,
   ) {
     super(outcome.kind);
   }
 }
-
-/** Kinds of Leg that can continue a session of theirs (ADR-052 §1: a retry resumes it). */
-const RESUMES = new Set(["claude-code", "opencode", "antigravity"]);
 
 const SEVERITY: DriftCode[] = ["D8", "D7", "D1", "D4", "D3", "D2", "D6", "D5"];
 const PREFIX: Record<TaskKind, string> = {
@@ -550,13 +555,14 @@ export async function runAttempt(
 
   // The same model again (the top of the ladder, a stop, a step up in effort): its own session
   // is resumed with what happened, not a fresh one that finds everything again (ADR-052 §1).
-  // Never after its work was rolled back (a kill), and only where the Leg can resume.
+  // Never after its work was rolled back (a kill), and only where the Leg can resume: what its
+  // probe found, never a list of kinds here; never probed, a fresh session with the handoff.
   const resumeFrom =
     before &&
     before.legModelId === leg.legModelId &&
     before.outcome !== "succeeded" &&
     !(before.escalations as string[]).some((e) => e.endsWith(":kill")) &&
-    RESUMES.has(d.registry.require(leg.legId).kind)
+    d.registry.features(leg.legId)?.resume === true
       ? (d.db
           .select({ native: sessions.nativeSessionId })
           .from(sessions)
@@ -579,21 +585,27 @@ export async function runAttempt(
   // Typed by assertion: they change inside closures, which narrowing cannot follow.
   let session = null as Supervised | null;
   let sessionLog: string | null = null;
-  const deniedGates = new Set<string>();
+  // What earlier attempts of this task learned, kept across a restart (bug 8).
+  const memory = readTaskMemory(d.db, taskId);
+  const deniedGates = new Set<string>(memory.denied);
   /**
    * Commands I let run once (ADR-053): a change the plan names, a command
    * the stuck rule or the agent's own words asked me about. Each is used
    * by the first run that matches it, in its plain form.
    */
-  const allowOnce: string[] = [];
+  const allowOnce: string[] = [...memory.allowOnce];
   /** What the PreToolUse hook sent on to canUseTool to be asked of me there, by its plain form. */
   const hookAsks = new Map<string, () => Promise<PermissionDecision>>();
   /** What layer 1 blocked in this attempt, oldest first: for the agent's "the owner must…". */
-  const blockedHere: { command: string; reason: string }[] = [];
+  const blockedHere: { command: string; reason: string; byLeg?: boolean }[] = [];
   /** Planned changes and commands I kept blocked when asked: not asked again in this attempt. */
   const keptBlocked = new Set<string>();
-  /** Approvals this attempt asked for: withdrawn if it ends before I answer. */
+  /** Approvals this attempt asked for: withdrawn if it ends before I answer, or after a crash (bug 9). */
   const asked: string[] = [];
+  const raised = (itemId: string) => {
+    asked.push(itemId);
+    rememberForTask(d.db, taskId, { asked });
+  };
   /** Commands waiting for their result, by tool call id. */
   const pending = new Map<string, string>();
   /** What every turn's events tell the drift detectors: commands, results, usage, activity. */
@@ -626,7 +638,16 @@ export async function runAttempt(
         layer: "leg",
       });
       // What the agent may say it needs of me (askOwnerNeeded).
-      if (e.request.command) blockedHere.push({ command: e.request.command, reason: e.reason });
+      if (e.request.command)
+        blockedHere.push({ command: e.request.command, reason: e.reason, byLeg: true });
+      // Its blocks count toward the stuck rule like any other (ADR-053; bug 7). It can't be held
+      // for my answer: I'm asked at its next action, or at the turn's end if a check fails.
+      const stuckNow = stuckBlocked({
+        action: (e.request.command ? plainOf(e.request.command) : action).slice(0, 200),
+        reason: e.reason,
+        layer: "leg",
+      });
+      if (stuckNow) stuckByLeg = stuckNow;
     }
     if (e.type === "usage") {
       sessionTokens = e.usage.inputTokens + e.usage.outputTokens;
@@ -636,6 +657,14 @@ export async function runAttempt(
   };
 
   let usage = null as UsageSnapshot | null;
+  /** Stuck on the agent's own auto mode's refusals, not asked yet (bug 7). */
+  let stuckByLeg = null as { why: string; blocks: Blocked[] } | null;
+  /** Asked of me at the agent's next action that comes through Oraknid: it waits for my answer. */
+  const takeStuckByLeg = () => {
+    const s = stuckByLeg;
+    stuckByLeg = null;
+    return s;
+  };
 
   const observed: Observed = {
     scope: scopeOf(task),
@@ -654,12 +683,34 @@ export async function runAttempt(
   const event = (type: string, payload: Record<string, unknown>) =>
     d.bus.publish({ type, topic: `job:${job.id}`, jobId: job.id, payload: { taskId, ...payload } });
 
-  /** This attempt read something from the web: untrusted from here on (BR-15; Audit 1 → S1-09). */
-  let readTheWeb = false;
+  /**
+   * The task read something from the web: untrusted from here on (BR-15; Audit 1 → S1-09), in
+   * every later attempt too, a resumed session included (bug 8).
+   */
+  let readTheWeb = memory.untrusted !== null;
+  const markUntrusted = (reason: string) => {
+    if (readTheWeb) return;
+    readTheWeb = true;
+    rememberForTask(d.db, taskId, { untrusted: reason });
+    event("task.untrusted", { reason });
+  };
   const toolRows = d.tools && job.tools.length ? d.tools.registry.byNames(job.tools) : [];
   const brokered = toolRows.map((t) => `oraknid-${t.name}`);
-  /** The stuck rule's key: blocks are counted per task (ADR-053). */
+  /** The stuck rule's key: blocks are counted per task (ADR-053), and kept across a restart (bug 8). */
   const stuckKey = `${job.id}:${taskId}`;
+  stuck.restore(stuckKey, memory.stuck);
+  const keepStuck = () => rememberForTask(d.db, taskId, { stuck: stuck.snapshot(stuckKey) });
+  const stuckBlocked = (b: Blocked) => {
+    const s = stuck.blocked(stuckKey, b);
+    keepStuck();
+    return s;
+  };
+  /** An action ran: the row ends (written only when there was one). */
+  const stuckAllowed = () => {
+    if (!stuck.snapshot(stuckKey)?.row.length) return;
+    stuck.allowed(stuckKey);
+    keepStuck();
+  };
   /** What layer 1 knows of this attempt: the folder, its scratch, the job's servers, the task. */
   const guardCtx = () =>
     guardContext({
@@ -700,12 +751,8 @@ export async function runAttempt(
       (r.tool === "WebFetch" && !ownRepoPage(fetchedUrl(r), githubLinksOf(d.db, job.id))) ||
       r.tool === "WebSearch" ||
       (r.command ? /\b(curl|wget)\b/.test(r.command) : false);
-    if (fetches && first.verdict !== "deny" && !readTheWeb) {
-      readTheWeb = true;
-      event("task.untrusted", {
-        reason: `read from the web (${r.tool}): gated actions ask me from now on`,
-      });
-    }
+    if (fetches && first.verdict !== "deny")
+      markUntrusted(`read from the web (${r.tool}): gated actions ask me from now on`);
     return { first, policy };
   };
   /** Layer 1, 2 or 3 settles one request of the Leg (ADR-053). */
@@ -823,6 +870,7 @@ export async function runAttempt(
     );
     if (i < 0) return false;
     allowOnce.splice(i, 1);
+    rememberForTask(d.db, taskId, { allowOnce });
     return true;
   };
 
@@ -836,7 +884,7 @@ export async function runAttempt(
       layer: "owner",
       reason: "let it run once",
     });
-    stuck.allowed(stuckKey);
+    stuckAllowed();
   };
 
   /**
@@ -906,7 +954,7 @@ export async function runAttempt(
         ]),
       ],
     });
-    asked.push(itemId);
+    raised(itemId);
     event("task.waiting", { itemId, reason: `the plan names it: ${reason}` });
     waitingOnOwner++;
     let answer: string;
@@ -928,7 +976,7 @@ export async function runAttempt(
         layer: "owner",
         reason: `allowed once: ${where}`,
       });
-      stuck.allowed(stuckKey);
+      stuckAllowed();
       return { allow: true, why: `owner: allowed once, ${where}` };
     }
     keptBlocked.add(plainOf(action));
@@ -953,6 +1001,9 @@ export async function runAttempt(
   ): Promise<PermissionDecision> => {
     // The broker judges every call to a job's tool: the Leg's own ask for it passes (ADR-021).
     if (isBrokered(r.tool, brokered)) return { allow: true };
+    // Stuck on its own auto mode's refusals: asked now, with this action held (bug 7).
+    const byLeg = takeStuckByLeg();
+    if (byLeg) return askWhenStuck(r, byLeg, { allow: true });
     if (r.command) {
       // What I let run once runs (ADR-053); never what is never allowed.
       if (allowOnce.length) {
@@ -982,7 +1033,7 @@ export async function runAttempt(
         reason: v.reason,
       });
     if (v.verdict === "allow") {
-      stuck.allowed(stuckKey);
+      stuckAllowed();
       return { allow: true, why: `${layer}: ${v.reason}` };
     }
     if (v.verdict === "deny") {
@@ -1010,7 +1061,7 @@ export async function runAttempt(
       }
       // Stuck on blocks (3 in a row, 20 in the task): The Eye asks me, with what was blocked and why.
       if (v.drift === null && layer !== "owner") {
-        const stuckNow = stuck.blocked(stuckKey, {
+        const stuckNow = stuckBlocked({
           action: (r.command ? plainOf(r.command) : r.tool).slice(0, 200),
           reason: v.reason,
           layer: layer === "judge" ? 2 : 1,
@@ -1056,7 +1107,7 @@ export async function runAttempt(
         ]),
       ],
     });
-    asked.push(itemId);
+    raised(itemId);
     event("task.waiting", { itemId, reason: v.reason });
     let answer: string;
     waitingOnOwner++;
@@ -1084,7 +1135,7 @@ export async function runAttempt(
         layer: "owner",
         reason: "approved, with all like it",
       });
-      stuck.allowed(stuckKey);
+      stuckAllowed();
       return { allow: true };
     }
     if (answer === "Approve") {
@@ -1096,7 +1147,7 @@ export async function runAttempt(
         layer: "owner",
         reason: "approved",
       });
-      stuck.allowed(stuckKey);
+      stuckAllowed();
       return { allow: true };
     }
     logDecision(d.bus, job.id, {
@@ -1108,6 +1159,7 @@ export async function runAttempt(
       reason: "denied",
     });
     deniedGates.add(key);
+    rememberForTask(d.db, taskId, { denied: [...deniedGates] });
     // The consequence, said in the project's conversation (ADR-045).
     addMessage(
       d,
@@ -1138,6 +1190,12 @@ export async function runAttempt(
    */
   const onPreToolUse = async (r: PermissionRequest): Promise<PreToolDecision> => {
     if (isBrokered(r.tool, brokered)) return null;
+    // Stuck on its own auto mode's refusals: this action waits for my answer there (bug 7).
+    if (r.command && stuckByLeg) {
+      const byLeg = takeStuckByLeg() as NonNullable<typeof stuckByLeg>;
+      hookAsks.set(plainOf(r.command), () => askWhenStuck(r, byLeg, { allow: true }));
+      return { decision: "ask" };
+    }
     const { first, policy } = await rulesVerdict(r);
     // What I let run once runs, Claude Code's classifier not asked (ADR-053); never what is
     // never allowed.
@@ -1177,7 +1235,7 @@ export async function runAttempt(
           }
         }
         // Blocks here count toward the stuck rule like any other; stuck, I'm asked (ADR-053).
-        const stuckNow = stuck.blocked(stuckKey, {
+        const stuckNow = stuckBlocked({
           action: (r.command ? plainOf(r.command) : r.tool).slice(0, 200),
           reason: first.reason,
           layer: 1,
@@ -1214,14 +1272,15 @@ export async function runAttempt(
    */
   const askWhenStuck = async (
     r: PermissionRequest,
-    s: { why: string; blocks: { action: string; reason: string; layer: 1 | 2 }[] },
+    s: { why: string; blocks: Blocked[] },
     refused: PermissionDecision,
   ): Promise<PermissionDecision> => {
+    const by = (l: Blocked["layer"]) =>
+      l === 1 ? "rules" : l === 2 ? "judge" : `${leg.legName}'s own auto mode`;
     const list = s.blocks
       .slice(-10)
       .map(
-        (b) =>
-          `- \`${b.action.replace(/`/g, "'").slice(0, 160)}\` — ${b.reason} (${b.layer === 1 ? "rules" : "judge"})`,
+        (b) => `- \`${b.action.replace(/`/g, "'").slice(0, 160)}\` — ${b.reason} (${by(b.layer)})`,
       )
       .join("\n");
     const itemId = d.inbox.open({
@@ -1246,7 +1305,7 @@ export async function runAttempt(
         ]),
       ],
     });
-    asked.push(itemId);
+    raised(itemId);
     event("task.waiting", { itemId, reason: s.why });
     waitingOnOwner++;
     let answer: string;
@@ -1268,7 +1327,7 @@ export async function runAttempt(
         layer: "owner",
         reason: "let it run, stuck on blocks",
       });
-      stuck.allowed(stuckKey);
+      stuckAllowed();
       return { allow: true };
     }
     logDecision(d.bus, job.id, {
@@ -1420,12 +1479,8 @@ export async function runAttempt(
             ...(o.flags.length ? { flags: o.flags } : {}),
           });
           // What came from outside makes the task untrusted (BR-15).
-          if (o.allowed && tool.untrusted && !readTheWeb) {
-            readTheWeb = true;
-            event("task.untrusted", {
-              reason: `read from ${tool.name} (${name}): gated actions ask me from now on`,
-            });
-          }
+          if (o.allowed && tool.untrusted)
+            markUntrusted(`read from ${tool.name} (${name}): gated actions ask me from now on`);
         },
       },
       { jobId: job.id },
@@ -1558,9 +1613,27 @@ export async function runAttempt(
     if (!task.verify.length) return null;
     const results = await runChecks();
     const bad = results.find((r) => !r.ok);
-    if (!bad || looksBroken(bad)) return null;
+    if (!bad || looksBroken(bad)) {
+      // It lets the turn end now, nothing done after: the turn's end uses this run (bug 5).
+      stopRun = { verify: [...task.verify], tree: await treeState(), results };
+      return null;
+    }
     event("task.checks-held", { command: bad.command, exitCode: bad.exitCode });
     return `Oraknid ran the task's checks and this one fails, so the task isn't done yet:\n${fence(bad.command)}\nfailed (exit ${bad.exitCode}):\n${fence(bad.output.slice(-2000))}\nFix the work, not the check, then finish. If the check itself is wrong, say why and finish.`;
+  };
+
+  /**
+   * The checks the Stop hook ran when it let the turn end (ADR-052 §2): the
+   * same checks on the same work aren't run again at the turn's end (bug 5).
+   */
+  let stopRun = null as { verify: string[]; tree: string; results: VerifyResult[] } | null;
+  /** The work as it stands, to tell whether it changed since the checks ran. */
+  const treeState = async () => {
+    try {
+      return hash(await ws.tree.diffSince(scopeBase));
+    } catch {
+      return `unknown:${now()}`;
+    }
   };
 
   const openSession = async (prompt: string, resume: string | null = null) => {
@@ -1587,7 +1660,7 @@ export async function runAttempt(
         onPermission,
         onStop,
         // Named in the session's prompt by adapters that list them; Oraknid runs them (onStop).
-        ...(task.verify.length ? { checks: task.verify } : {}),
+        checks: task.verify,
         // Careful keeps every prompt Oraknid's; auto and full let Claude Code's own auto mode
         // judge, with Oraknid's rules before every tool (ADR-053). Other Legs ignore it.
         permissionMode: job.autonomy === "careful" ? "ask" : "auto",
@@ -1977,7 +2050,11 @@ export async function runAttempt(
     const dropped = dependentsOf(d.db, job.id, taskId);
     const prompt = command
       ? `${leg.legName} says it can't finish “${task.title}” without \`${shown}${
-          blocked ? `, which Oraknid's rules blocked (${blocked.reason})` : ""
+          blocked
+            ? blocked.byLeg
+              ? `, which its own auto mode refused (${blocked.reason})`
+              : `, which Oraknid's rules blocked (${blocked.reason})`
+            : ""
         }. What should I do?`
       : `${leg.legName} says it can't finish “${task.title}” without you. What should I do?`;
     const questions = [
@@ -2040,7 +2117,7 @@ export async function runAttempt(
       },
       { questions, itemId },
     );
-    asked.push(itemId);
+    raised(itemId);
     event("task.waiting", { itemId, reason: `the agent needs the owner: ${said.slice(0, 200)}` });
     waitingOnOwner++;
     let answer: string;
@@ -2052,6 +2129,7 @@ export async function runAttempt(
     observed.lastActivityAt = now();
     if (answer === ALLOW && command) {
       allowOnce.push(plainOf(command));
+      rememberForTask(d.db, taskId, { allowOnce });
       logDecision(d.bus, job.id, {
         taskId,
         tool: "Bash",
@@ -2069,18 +2147,23 @@ export async function runAttempt(
       return true;
     }
     if (answer !== ILL_DO_IT && answer !== LEAVE_IT_OUT && answer !== STOP_JOB) {
-      // My own words: the agent gets them and goes on.
+      // My own words: the agent gets them and goes on. What came of this turn isn't held
+      // against it, as with Allow: it was waiting on me (bug 12).
       observed.falseClaim = null;
+      observed.verifyFailures.pop();
       await session?.session.send(`The owner answers: ${answer}`);
       return true;
     }
     await closeSession();
-    if (answer === ILL_DO_IT) throw new EndAttempt({ kind: "owner-held" });
-    if (answer === LEAVE_IT_OUT) throw new EndAttempt({ kind: "skipped", dependents: true });
-    throw new EndAttempt({
-      kind: "cancel-job",
-      reason: `Stopped by me: "${task.title}" couldn't finish without me.`,
-    });
+    // My choices, not the model's failures (bug 11).
+    if (answer === ILL_DO_IT) throw new EndAttempt({ kind: "owner-held" }, false, true);
+    if (answer === LEAVE_IT_OUT)
+      throw new EndAttempt({ kind: "skipped", dependents: true }, false, true);
+    throw new EndAttempt(
+      { kind: "cancel-job", reason: `Stopped by me: "${task.title}" couldn't finish without me.` },
+      false,
+      true,
+    );
   };
 
   const ask = async (drift: Drift): Promise<never> => {
@@ -2132,18 +2215,23 @@ export async function runAttempt(
       { questions: asking.questions, itemId },
     );
     // Withdrawn if the attempt stops before I answer (Audit 1 → D1-07).
-    asked.push(itemId);
+    raised(itemId);
     const text = await waitForAnswer(d.inbox, d.bus, itemId, signal);
     const answered = d.inbox.get(itemId);
     const choice = readKeepsGoingWrong(text, answered?.answers ?? null);
-    if (choice.kind === "mine") throw new EndAttempt({ kind: "owner-held" });
+    // My choices, not the model's failures (bug 11).
+    if (choice.kind === "mine") throw new EndAttempt({ kind: "owner-held" }, false, true);
     if (choice.kind === "leave-out")
-      throw new EndAttempt({ kind: "skipped", dependents: choice.dependents });
+      throw new EndAttempt({ kind: "skipped", dependents: choice.dependents }, false, true);
     if (choice.kind === "stop")
-      throw new EndAttempt({
-        kind: "cancel-job",
-        reason: `Stopped by me after "${task.title}" kept going wrong; the work so far stays on its branch.`,
-      });
+      throw new EndAttempt(
+        {
+          kind: "cancel-job",
+          reason: `Stopped by me after "${task.title}" kept going wrong; the work so far stays on its branch.`,
+        },
+        false,
+        true,
+      );
     if (choice.advice) {
       d.silk.add({
         jobId: job.id,
@@ -2161,17 +2249,22 @@ export async function runAttempt(
       .run();
     if (choice.kind === "another-leg") {
       giveToLeg(d.db, job.id, taskId, leg.legId, choice.legId);
-      throw new EndAttempt({
-        kind: "retry",
-        reason: choice.legId
-          ? `given to ${d.registry.get(choice.legId)?.name ?? "another Leg"} by me`
-          : "given to another Leg by me",
-      });
+      throw new EndAttempt(
+        {
+          kind: "retry",
+          reason: choice.legId
+            ? `given to ${d.registry.get(choice.legId)?.name ?? "another Leg"} by me`
+            : "given to another Leg by me",
+        },
+        false,
+        true,
+      );
     }
-    throw new EndAttempt({
-      kind: "retry",
-      reason: choice.advice ? "retrying with my advice" : "retrying, as I asked",
-    });
+    throw new EndAttempt(
+      { kind: "retry", reason: choice.advice ? "retrying with my advice" : "retrying, as I asked" },
+      false,
+      true,
+    );
   };
 
   /** Climbs one step of the ladder for the worst drift seen. `failure` is the last check's output, if it failed. */
@@ -2251,13 +2344,14 @@ export async function runAttempt(
   };
 
   const finish = (
-    outcome: "succeeded" | "failed" | "reassigned" | "abandoned" | "unavailable",
+    outcome: "succeeded" | "failed" | "reassigned" | "redirected" | "abandoned" | "unavailable",
     success: boolean,
     /** What came of it says something of the model: learned from (the ladder's trust). */
     learn = true,
   ) => {
     release();
     for (const id of asked) d.inbox.withdraw(id);
+    if (asked.length) rememberForTask(d.db, taskId, { asked: [] });
     d.db
       .update(attempts)
       .set({ endedAt: now(), outcome, escalations })
@@ -2311,6 +2405,9 @@ export async function runAttempt(
         continue;
       }
       turns++;
+      // What the Stop hook ran as it let this turn end, if it did: used once (bug 5).
+      const ranAtStop = stopRun;
+      stopRun = null;
       // The job's folder is still a worktree of the project, else put back and the attempt fails
       // (Jobs-and-Projects → Ending a job, after the piano job).
       const strayed = safeStrayed(ws.tree);
@@ -2380,6 +2477,24 @@ export async function runAttempt(
         return { kind: "retry", reason: `${leg.legName} failed: ${end.error ?? "unknown error"}` };
       }
 
+      // Cut short before it finished (bug 14): not a turn to judge. Stopped by me or its job,
+      // the stop goes on; otherwise it is told to go on where it was.
+      if (end.reason === "interrupted") {
+        if (signal.aborted) throw signal.reason;
+        event("task.turn-interrupted", {});
+        if (turns >= (d.maxTurns ?? 25)) {
+          await escalate([{ code: "D6", evidence: `took ${turns} turns without finishing one` }]);
+          continue;
+        }
+        await session?.session.send(
+          "Your last turn was interrupted before it finished. Go on with the task where you were; say DONE when it is finished.",
+        );
+        continue;
+      }
+      /** Stopped at its own limit of steps in a turn (bug 14): checked, its words not a claim. */
+      const cutShort = end.reason === "max_turns";
+      if (cutShort) event("task.turn-limit", {});
+
       // A turn went through: its provider works (M13.22).
       d.registry.providerWorked(leg.legId, leg.legModelId);
 
@@ -2394,13 +2509,25 @@ export async function runAttempt(
 
       observed.changedPaths = await ws.tree.changedSince(scopeBase);
       observed.scope = scopeOf(task);
-      let verified = task.verify.length === 0;
-      let failure = "";
+      let verified = task.verify.length === 0 && !cutShort;
+      let failure =
+        cutShort && !task.verify.length
+          ? "Its turn reached its limit of steps before it finished."
+          : "";
       if (task.verify.length) {
         event("task.verifying", {});
         // A check that is wrong is The Eye's to fix, not the Leg's (The-Eye → A check that is
         // wrong); so is one the agent shows is broken (ADR-052 §2).
-        const results = await repairBroken(await runChecks(), end.text, () => runChecks());
+        // Run once per turn end: what the Stop hook just ran on this same work stands (bug 5).
+        const same =
+          ranAtStop &&
+          ranAtStop.verify.join("\n") === task.verify.join("\n") &&
+          ranAtStop.tree === (await treeState());
+        const results = await repairBroken(
+          same ? ranAtStop.results : await runChecks(),
+          end.text,
+          () => runChecks(),
+        );
         const failed = results.find((r) => !r.ok);
         verified = !failed;
         event("task.verified", {
@@ -2410,17 +2537,22 @@ export async function runAttempt(
         if (failed) {
           failure = `${fence(failed.command)}\nfailed (exit ${failed.exitCode}):\n${fence(failed.output.slice(-3000))}`;
           observed.verifyFailures.push(failed.signature ?? "");
-          if (claimsDone(end.text))
+          if (claimsDone(end.text) && !cutShort)
             observed.falseClaim = `said it was done, but \`${failed.command}\` failed`;
           // It says it can't finish without me (a guard blocked it, only I can do or allow it):
-          // that is asked, specifically, before any ladder or "keeps going wrong" (ADR-053).
-          const said = saysOwnerNeeded(end.text);
+          // that is asked, specifically, before any ladder or "keeps going wrong" (ADR-053). So is
+          // being stuck on its own auto mode's refusals with nothing after them (bug 7).
+          const byLeg = takeStuckByLeg();
+          const said = cutShort
+            ? null
+            : (saysOwnerNeeded(end.text) ??
+              (byLeg ? `${byLeg.why} by its own auto mode: “${end.text.slice(0, 300)}”` : null));
           if (said && (await askOwnerNeeded(said, end.text, failed))) continue;
         }
       }
 
       // No verify command (research, plan): a second reasoning look decides (The-Eye → Planning).
-      if (!task.verify.length && d.brain) {
+      if (!task.verify.length && d.brain && !cutShort) {
         event("task.evaluating", {});
         try {
           const review = await d.brain.evaluate({
@@ -2486,8 +2618,14 @@ export async function runAttempt(
       }
       // The ladder (ADR-052 §3): the work isn't done after the agent ended its turn (its checks
       // fail, the review says it's wrong): one failure moves it up a rung at once, with a
-      // handoff, while a stronger model is allowed. A forbidden action is the drift ladder's.
-      if (!verified && !drifts.some((x) => x.code === "D7" || x.code === "D8")) {
+      // handoff, while a stronger model is allowed. Precedence (ADR-056 stage 1, bug 13):
+      // security and scope first — a forbidden action (D7), a refused gate tried again (D8),
+      // edits outside the task's scope (D1) are the drift ladder's, which puts the scope back
+      // before anyone works on; then the climb on a failed check; then the other drifts
+      // (D2–D6), whose ladder runs where there is no rung left to climb.
+      const first = drifts.some((x) => x.code === "D7" || x.code === "D8" || x.code === "D1");
+      // A turn cut at its limit of steps isn't its answer: it goes on in its session first.
+      if (!verified && !first && !cutShort) {
         const up = higherRung();
         if (up) {
           event("task.climbing", {
@@ -2518,7 +2656,9 @@ export async function runAttempt(
       }
       // Self-prompting (The-Eye → Self-prompting): the exact failure goes back.
       await session?.session.send(
-        `Oraknid ran the checks and the task is not done yet.\n${failure}\nFix it, then say DONE.`,
+        cutShort
+          ? `Your turn reached its limit of steps before you finished.${task.verify.length ? ` Oraknid ran the checks and the task is not done yet:\n${failure}\n` : " "}Go on with the task, then say DONE.`
+          : `Oraknid ran the checks and the task is not done yet.\n${failure}\nFix it, then say DONE.`,
       );
       if (shouldRotate(usage, d.rotateAt ?? 0.6)) {
         event("task.rotating", {
@@ -2540,9 +2680,14 @@ export async function runAttempt(
         error.unavailable
           ? "unavailable"
           : error.outcome.kind === "retry"
-            ? "reassigned"
+            ? // My "try again": redirected by me, not a failure spending the task's attempts.
+              error.byOwner
+              ? "redirected"
+              : "reassigned"
             : "abandoned",
         false,
+        // What I chose (skip it, take it over, stop, try again) says nothing of the model.
+        !error.byOwner,
       );
       return error.outcome;
     }
@@ -2655,8 +2800,10 @@ async function safeDiffStat(ws: { tree: WorkTree }, since: string): Promise<stri
   }
 }
 
-/** A job that ended keeps nothing in memory here (Audit 1 → Q1-19): the judge's cache is per task. */
-export function forgetJob(_jobId: string) {}
+/** A job that ended keeps nothing in memory here (Audit 1 → Q1-19; bug 6): its tasks' verdicts and counts go. */
+export function forgetJob(jobId: string) {
+  forgetJobVerdicts(jobId);
+}
 
 function shouldRotate(u: UsageSnapshot | null, at: number): boolean {
   return !!u?.contextTokens && !!u.contextWindow && u.contextTokens > u.contextWindow * at;

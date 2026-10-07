@@ -140,6 +140,16 @@ export class VerdictCache {
   forgetTask(task: string) {
     for (const k of this.#map.keys()) if (k.startsWith(`${task}\0`)) this.#map.delete(k);
   }
+  /** Every task whose key starts so (a job's, `<job>:`): their verdicts go. */
+  forgetTasksStarting(prefix: string) {
+    for (const k of this.#map.keys()) if (k.startsWith(prefix)) this.#map.delete(k);
+  }
+  /** How many verdicts are held for a task. */
+  countTask(task: string): number {
+    let n = 0;
+    for (const k of this.#map.keys()) if (k.startsWith(`${task}\0`)) n++;
+    return n;
+  }
 }
 
 class Timeout extends Error {}

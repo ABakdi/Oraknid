@@ -1,5 +1,5 @@
 import { posix } from "node:path";
-import type { Autonomy } from "@oraknid/contracts";
+import { type Autonomy, isSensitivePath, OWN_SSH_FILE } from "@oraknid/contracts";
 import { programsIn } from "./shell.ts";
 
 // The permission policy (Approvals-and-Autonomy → Leg permission prompts,
@@ -405,7 +405,8 @@ export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
 
   if (READ_ONLY_TOOLS.has(r.tool)) {
     // Reading a credential is refused, as `cat .env` is (ADR-053).
-    const secret = r.path && READ_TOOLS_WITH_PATH.has(r.tool) ? sensitivePath(r.path) : null;
+    const secret =
+      r.path && READ_TOOLS_WITH_PATH.has(r.tool) ? sensitivePath(r.path, ctx.scratch) : null;
     if (secret)
       return {
         verdict: "deny",
@@ -571,20 +572,15 @@ export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
   };
 }
 
-/** Files whose reading is reading a credential (ADR-053; CC Safety Net's secret paths). */
-const SENSITIVE_PATHS = [
-  /(^|\/)\.env(\.(?!example\b|sample\b|template\b|dist\b|defaults\b)[\w-]+)?$/,
-  /(^|\/)\.ssh\/(id_[\w-]+|[\w.-]*key[\w.-]*|authorized_keys)$/,
-  /(^|\/)\.aws\/(credentials|config)$/,
-  /(^|\/)\.gnupg(\/|$)/,
-  /(^|\/)\.(netrc|pgpass|git-credentials|pypirc)$/,
-  /(^|\/)\.docker\/config\.json$/,
-  /(^|\/)\.kube\/config$/,
-  /(^|\/)\.config\/gh\/hosts\.yml$/,
-];
 const READ_TOOLS_WITH_PATH = new Set(["Read", "read_file"]);
 
-/** The credential a path names, or null. */
-export function sensitivePath(path: string): string | null {
-  return SENSITIVE_PATHS.some((re) => re.test(path)) ? path : null;
+/**
+ * The credential a path names, or null: the same list the rules read
+ * (ADR-056 §3). The job's own ssh config and pinned host keys, in its
+ * scratch, are Oraknid's, not a secret.
+ */
+export function sensitivePath(path: string, scratch: string[] = []): string | null {
+  if (OWN_SSH_FILE.test(path) && scratch.some((d) => path.startsWith(`${d.replace(/\/+$/, "")}/`)))
+    return null;
+  return isSensitivePath(path) ? path : null;
 }

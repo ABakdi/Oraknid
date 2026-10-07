@@ -144,6 +144,50 @@ found on the way are fixed in their own commits, each with a test.
 4. Monitors and `decideOutcome` (pure, table-tested), `EscalationPolicy`.
 5. `AgentSession` capabilities; the `TaskController`; `runAttempt` gone.
 
+## As built (stage 1, 2026-10-07)
+Behaviour pinned, the map's bugs fixed one commit each; nothing moved yet.
+- **Scenario tests**: `apps/daemon/src/harness/scenarios.test.ts` replays
+  my real jobs with stand-in agents through `testing/harness-rig.ts` (a
+  whole daemon, scripted Legs of any kind with Claude Code's PreToolUse
+  and Stop hooks, a scripted Eye, the stand-in SSH server), asserting what
+  each job ends as and what I was asked, how often and in which words.
+  `harness/stage1.test.ts` holds each bug's test.
+- **Precedence at a turn's end**, as the code has it now (`attempt.ts`),
+  until `decideOutcome` takes it: not-the-task's-fault (quota, provider,
+  deprecated model) first; a turn cut short (interrupted) is not judged,
+  the agent goes on; my messages to it; the checks (what the Stop hook ran as it let
+  the turn end stands when the work is the same); what the agent says it
+  needs of me (and being stuck on its own auto mode's refusals) asked
+  before any ladder; then **security and scope — D7, D8, D1 — go to the
+  drift ladder before any climb**; then a failed check climbs a rung
+  (not for a turn stopped at the agent's limit of steps, which goes on
+  in its session); then the other drifts (D2–D6) on the rung where it
+  is; then self-prompting with the failure.
+- **Counting**: only `failed` and `reassigned` attempts spend the task's
+  limit; my "try again" ends an attempt `redirected`; none of my choices
+  is learned as the model's failure; `unavailable` isn't either.
+- **Kept per task across a restart** until the task settles
+  (`eye/task-memory.ts`, a setting per task; the attempt log replaces it
+  in stage 3): the untrusted mark, "allow once", refused actions (D8),
+  the stuck counts, and the inbox items the running attempt raised (a
+  job that starts again withdraws them, as it does a Leg's requests).
+  The judge's verdict cache and the stuck counts in memory go when the
+  task settles, and with its job.
+- **Every block counted**: Claude Code's own classifier's refusals count
+  toward the stuck rule; they can't be held for my answer, so I'm asked
+  at the agent's next action that comes through Oraknid, or as what it
+  needs at the turn's end when a check fails.
+- **One runner for a task's checks outside its attempt**: the merge
+  re-check uses the task's runners (servers, Oraknid's GitHub checks,
+  the policy) and the job's stop; three merges that fail stop the job.
+  "Stop the job" stops the job's other tasks and starts none.
+- **Capabilities from the probe**: a Leg's probed `features` are kept with
+  it (`registry.features`); resume reads them, not a list of kinds. A
+  task's checks reach every session (`StartRequest.checks`).
+- **One list each** of credential files and lockfiles
+  (`@oraknid/contracts` → `sensitive.ts`), read by the rules, the policy
+  and The Eye.
+
 ## Consequences
 - More files, each small, each with its own tests; the bugs of the last
   two days become cases in a table.
