@@ -754,6 +754,36 @@ export class Cloud {
     await this.rclone.ok(["copyto", this.#at(r, path), localFile]);
   }
 
+  /**
+   * A public link to a file (`rclone link`), where its provider makes one
+   * (Drive, Dropbox, OneDrive, pCloud, Box, S3 as a presigned address…);
+   * `expire` like rclone's (`7d`) where the provider takes one. Anyone with
+   * it can read the file: the storage tool always asks me first (ADR-046).
+   */
+  async shareLink(providerId: string, path: string, expire?: string): Promise<string> {
+    const r = this.#row(providerId);
+    const p = cleanPath(path);
+    if (!(await this.stat(providerId, p))) throw new Error(`No file ${p} in ${r.name}.`);
+    if (expire && !/^\d+(ms|s|m|h|d|w|M|y)$/.test(expire))
+      throw new Error("An expiry is a number and a unit: 30m, 12h, 7d.");
+    const res = await this.rclone.run([
+      "link",
+      ...(expire ? ["--expire", expire] : []),
+      this.#at(r, p),
+    ]);
+    if (res.code !== 0) {
+      const why = rcloneError(res.stderr);
+      if (/doesn't support|not supported|can't.*public link/i.test(why))
+        throw new Error(
+          `${r.name} doesn't make public links: share it from the provider's own site.`,
+        );
+      throw new Error(`${r.name} couldn't make a link: ${why}`);
+    }
+    const link = res.stdout.trim().split("\n").pop() ?? "";
+    this.#publish("cloud.file.shared", { providerId, path: p, expire: expire ?? null }, "agent");
+    return link;
+  }
+
   /** A file's bytes as they come, for a download. */
   async open(
     providerId: string,

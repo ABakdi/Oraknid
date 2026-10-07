@@ -34,6 +34,7 @@ import { Backups } from "./backups/service.ts";
 import { Chats } from "./chats/service.ts";
 import { attachCloudRoutes, Downloads } from "./cloud/routes.ts";
 import { Cloud } from "./cloud/service.ts";
+import { STORAGE_TOOL, storageServer } from "./cloud/tool.ts";
 import { closeDatabase, openDatabase } from "./db/open.ts";
 import { jobs as jobsTable, projects as projectsTable, tasks as tasksTable } from "./db/schema.ts";
 import { SideEffects } from "./engine/effects.ts";
@@ -87,7 +88,7 @@ import { SilkStore } from "./silk/store.ts";
 import { SkillStore } from "./skills/store.ts";
 import { startNightlyBackups } from "./storage/storage.ts";
 import { attachTerminal, TERMINAL_SETTING } from "./term/server.ts";
-import { McpBroker } from "./tools/broker.ts";
+import { type BuiltInServer, McpBroker } from "./tools/broker.ts";
 import { ToolRegistry } from "./tools/registry.ts";
 import { findAppDir, readInstall } from "./updates/install.ts";
 import { Updates, type UpdatesOptions } from "./updates/service.ts";
@@ -335,14 +336,16 @@ export async function startDaemon(options: DaemonOptions) {
     ...(process.env.VITEST ? { ollamaUrl: null } : {}),
     ...options.models,
   });
+  // Oraknid's own tools, answered in the daemon; the storage tool joins once cloud storage is made.
+  const builtIns = new Map<string, BuiltInServer>([
+    [EMAIL_TOOL.name, emailServer(mail)],
+    [githubToolDecl.name, githubServer({ db, bus, github, projects: projectsService })],
+    [MODELS_TOOL.name, modelsServer(models)],
+  ]);
   const broker = new McpBroker({
     registry: toolRegistry,
     sandbox: os.sandbox,
-    builtIns: new Map([
-      [EMAIL_TOOL.name, emailServer(mail)],
-      [githubToolDecl.name, githubServer({ db, bus, github, projects: projectsService })],
-      [MODELS_TOOL.name, modelsServer(models)],
-    ]),
+    builtIns,
   });
   // The roles' tool appears once a model is downloaded (ADR-054), like the email tool with an account.
   const offerModelsTool = () => {
@@ -456,6 +459,21 @@ export async function startDaemon(options: DaemonOptions) {
   });
   // rclone's list of backends, read once per version, so the add dialog opens on it.
   cloud.preloadBackends();
+  // The storage tool (ADR-046): for a job whose skill asks for it, once there is a provider.
+  builtIns.set(STORAGE_TOOL.name, storageServer({ db, cloud }));
+  const offerStorageTool = () => {
+    if (!cloud.providers().length) return;
+    try {
+      toolRegistry.ensureBuiltIn(STORAGE_TOOL);
+    } catch (error) {
+      // A tool of mine named "storage" stays as it is.
+      console.warn(error instanceof Error ? error.message : error);
+    }
+  };
+  offerStorageTool();
+  bus.subscribe((e) => {
+    if (e.type === "cloud.provider.added") offerStorageTool();
+  });
   const downloads = new Downloads(now);
   // Scheduled, encrypted database backups (ADR-044); the schedule starts once notifications do.
   const backupPlans = new Backups({
