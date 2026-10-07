@@ -175,11 +175,16 @@ soon as a model can" until then), its state, branch and tokens, and
   shadow) · Result (once completed) · Agents · Activity · Silk · Inbox
   (this job) · Budget & stats · Settings. Back goes to the Work list.
 - **Controls** always visible: Pause / Resume, Cancel, Redirect, priority,
-  autonomy level; Edit plan in Tasks.
+  autonomy level (Auto, Careful, Full; [[ADR-053-Auto-Mode]]); Edit plan
+  in Tasks. New work's Autonomy says in a line what each level asks of
+  me; the job's Settings tab marks each gate "never automatic: asks
+  unless waived" (send, spend, publish) or "the judge decides at Auto".
 - **Agents**: every session of the job (Legs and The Eye's reasoning),
   live or finished; opening one shows its whole output as a terminal-like
   log: text, tool calls with their commands and results, permission
-  decisions, usage. It follows along while a session runs. The task
+  decisions with their layer and reason ("allowed: … (rules: git only
+  reads)", "refused: … (judge: [Crossing a trust boundary] …)", "refused
+  by the Leg's auto mode: …"), usage. It follows along while a session runs. The task
   drawer shows the task's own sessions the same way.
 - **Result**: once the job is completed, where the work is (folder,
   branch, commits), Open (on this computer) and Merge into the work
@@ -681,7 +686,9 @@ Submit for a round; an old round asked in prose shows as before. An
 approval's buttons each carry the line saying what that answer leads to
 (ADR-045), side by side on a wide screen and one under the other on a
 phone; a question that only explains an item's own options shows them
-in the component, not again as buttons beside Submit. Each item names its
+in the component, not again as buttons beside Submit. An agent stuck on
+blocks (ADR-053) is an approval listing each blocked action and its
+reason, answered "Let it run this one" or "Keep it blocked". Each item names its
 project and job (the job's description on hover, 2026-10-04). Filters: project, job, kind, state, and a search over
 the text.
 

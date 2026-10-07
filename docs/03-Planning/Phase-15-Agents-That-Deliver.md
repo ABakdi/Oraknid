@@ -24,10 +24,44 @@ terminal alone.
 - [ ] Scope drift ignores Oraknid's own files (`notes/handoff.md`, `.oraknid/`)
 
 ### M15.2 — Auto mode ([[ADR-053-Auto-Mode]])
-- [ ] The rule layer from open-source parts: allow at once, block at once, judge the rest; read-only commands over ssh recognised
-- [ ] The judge: a fast model, then a stronger one on doubt, reasoning-blind; I am asked only when it says no on something I might want, or for production
-- [ ] Claude Code runs in its own auto mode in the sandbox; its denials come back as events
-- [ ] Approvals per command gone from the default autonomy; one approval of a server job's plan, production per change
+- [x] The rule layer from open-source parts: allow at once, block at once, judge the rest; read-only commands over ssh recognised
+- [x] The judge: a fast model, then a stronger one on doubt, reasoning-blind; I am asked only when it says no on something I might want, or for production
+- [x] Claude Code runs in its own auto mode in the sandbox; its denials come back as events
+- [x] Approvals per command gone from the default autonomy; one approval of a server job's plan, production per change
+
+Done 2026-10-07 (ADR-053 → As built; Approvals-and-Autonomy → Auto mode;
+ADR-014 partly superseded). The new package `@oraknid/guard`; autonomy
+is Auto (default), Careful or Full, old jobs moved by migration 0038.
+Tested: `packages/guard` — `corpus.test.ts` (112 cases: the owner's
+commands of 2026-10-06 allowed, among them `ssh -F … oraknid-spinet-staging
+'cd /root/spinet-deploy && docker compose -p spinet-deploy ps -a'`,
+`test -s notes/change-plan.md`, `nc -z -w5 95.217.201.11 3456`; blocks
+in CC Safety Net's kind (force push, `reset --hard`, `checkout --`,
+`rm -rf` outside, `.env`, `~/.ssh`, `~/.aws`), dcg's categories as
+ideas (containers, cloud, databases, Kubernetes, Terraform, deploys),
+hidden in lists, wrappers, subshells, `sh -c` and the far side of ssh;
+`docker compose -p misahaty down -v` blocked unless the task names it;
+an AWS key or GitHub token sent with curl; the judge's and production's
+share; layer 1 under 5 ms per command on average and a plain read under
+1 ms), `judge.test.ts` (a fake brain: allow, block with its category
+from stage 2, stage 2 overturning, the cache by normalised command and
+task, a timeout and a failure as BLOCK and not cached, the template
+reasoning-blind; the stuck rule at three in a row and once at twenty;
+shapes). `packages/core` — the policy with layer 1's verdict (a block
+above my allow rules, full skipping the judge in the folder and on
+non-production servers, never automatic at every level, `deploy` as a
+word only, credentials refused to file tools). `claude-code` adapter —
+auto mode's options and its two hooks (deny with the reason, ask, no
+opinion, Claude Code's denials as events); the contract kit's deny path
+for every adapter. Daemon — `eye.test.ts` (the judge's verdicts cached
+and its block told to the agent with the layer in the audit, the job
+report's "Blocked" count, stuck on blocks asking me, never automatic
+asking at Auto, careful's approvals), `server-jobs.test.ts` (a server
+job at Auto: one approval, the plan's, every read over ssh and port
+check settled by the rules; production still asks at Full),
+`project-links.test.ts` (a push to someone else's repo blocked by the
+judge), `entities.test.ts` (old autonomy names parse). Not tested
+against real models or a real Claude Code session.
 
 ### M15.3 — Whole goals, checks in the loop, the ladder ([[ADR-052-A-Harness-For-Any-Model]] §1–3, §5)
 - [ ] The planner makes substantial, independent tasks; chains of crumbs merged; a goal one agent can do is one task

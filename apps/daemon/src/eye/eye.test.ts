@@ -819,7 +819,7 @@ describe("approvals and autonomy (M1.7)", () => {
     }
   };
 
-  it("Supervised: waits for my approval of the plan, then goes on as soon as I answer", async () => {
+  it("Careful: waits for my approval of the plan, then goes on as soon as I answer", async () => {
     const { api, id } = await eye(good, { autonomy: "careful" });
     const item = await firstOpen(api);
     expect(item.title).toBe("Approve the plan");
@@ -831,7 +831,7 @@ describe("approvals and autonomy (M1.7)", () => {
     expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
   });
 
-  it("Supervised: a plan I deny is never run", async () => {
+  it("Careful: a plan I deny is never run", async () => {
     const { api, id, leg } = await eye(good, { autonomy: "careful" });
     const item = await firstOpen(api);
     await api.inbox.answer({ id: item.id, answer: "Deny" });
@@ -887,7 +887,7 @@ describe("approvals and autonomy (M1.7)", () => {
     expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
   });
 
-  it("Supervised: a replan waits for my approval too, and is not skipped on resume", async () => {
+  it("Careful: a replan waits for my approval too, and is not skipped on resume", async () => {
     const plan: WebPlan = {
       ...HELLO,
       tasks: [HELLO.tasks[0] as WebPlan["tasks"][number]],

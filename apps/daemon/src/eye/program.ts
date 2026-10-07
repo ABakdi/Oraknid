@@ -312,7 +312,7 @@ export function eyeProgram(d: EyeDeps): JobProgram {
 
     for (;;) {
       // Asked every time, before any work: approved passes through, denied stops (never skipped on a resume).
-      await approvePlanIfSupervised(d, ctx);
+      await approvePlanIfCareful(d, ctx);
       // Tasks side by side need a worktree each (a folder of worktrees across several repos).
       await runTasks(d, ctx, where, !ws.shadow);
       if (ctx.state() === "cancelled") return;
@@ -1137,11 +1137,11 @@ export function renderRound(
 }
 
 /**
- * Supervised: I approve the plan before work starts, and each replan
+ * Careful (the old Supervised, ADR-053): I approve the plan before work starts, and each replan
  * (Approvals → Autonomy levels). A server job's plan that changes the
  * server is approved too, saying what it will change (ADR-049).
  */
-async function approvePlanIfSupervised(d: EyeDeps, ctx: JobContext) {
+async function approvePlanIfCareful(d: EyeDeps, ctx: JobContext) {
   const job = d.db.select().from(jobs).where(eq(jobs.id, ctx.jobId)).get();
   if (!job) return;
   const server = serverPlanApproval(

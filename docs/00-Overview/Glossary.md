@@ -31,7 +31,8 @@ the canon. Code identifiers are shown in `code`.
 | **Drift** | `drift` | A Leg going off course: out-of-scope edits, loops, repeated failures, fake progress claims, stalls, token burn without progress. |
 | **Escalation ladder** | `escalation` | The Eye's response to drift, one step at a time: corrective prompt → context reset → reassign → kill → ask the user. |
 | **Checkpoint (git)** | `checkpoint` | A recorded commit or worktree state a task's changes can be rolled back to. *Not to be confused with a canon checkpoint note in `05-Checkpoints/`.* |
-| **Autonomy level** | `autonomy` | Supervised, Standard or Full. Decides which actions need my approval. |
+| **Autonomy level** | `autonomy` | Auto (default), Careful or Full ([[ADR-053-Auto-Mode]]). Decides which actions need my approval. |
+| **Auto mode** | the guard, the judge | Rules, then a reasoning-blind model judge, decide what a Leg may do; I'm asked for plans of servers, production and what is never automatic ([[ADR-053-Auto-Mode]]). |
 | **Gated action** | `gatedAction` | An action that may need approval: send, push, deploy, delete, spend over a threshold, external API writes. |
 | **Approval** | `approval` | A request in the inbox for me to allow or deny a gated action or a Leg's permission prompt. |
 | **Question** | `question` | A Leg's or The Eye's question that needs my answer. Answered inline. |

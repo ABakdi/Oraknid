@@ -67,14 +67,23 @@ sandbox limits damage, but it doesn't make that safe.
   `sudo`, `chmod -R 777`, `curl … | sh`, writes to `~/.ssh`,
   force-pushes, and so on) and gate `git push`, merges, publishing,
   deploys and system installs.
-- The allow list names ordinary development programs (shells, git, the
-  package managers, test runners, coreutils). What else a command runs
-  is decided by auto approval ([[ADR-014-Auto-Approval]]); at Supervised
-  it asks me.
+- Since auto mode ([[ADR-053-Auto-Mode]]) a shell command is parsed with
+  tree-sitter-bash, its `sh -c` scripts and the command an `ssh` runs
+  on the far side read again, and checked by CC Safety Net (with its
+  Terraform and cloud rulebooks, from a configuration home of
+  Oraknid's own, tighten-only for a project), our rules for its gaps,
+  and a scan for credentials in what goes out (secretlint and
+  gitleaks-style patterns). What only reads, edits the job's folder, or
+  is the project's own build, test or lint runs at once; the rest goes
+  to the judge, a model that sees my words, the task and the action,
+  never the agent's prose or output. The fixed program lists of
+  [[ADR-014-Auto-Approval]] are the fallback when the parser can't run.
 - Global options are taken out before the lists are read, so `git -C .
   push` is a push. Fetching and running code (`npx <package>`, `dlx`,
-  `pip install`) or inline code (`node -e`, `python -c`) gets a look at
-  Standard.
+  `pip install`) or inline code (`node -e`, `python -c`) goes to the
+  judge.
+- Reading a credential (`.env`, `~/.ssh`, `~/.aws`, `.netrc`…) is refused,
+  with a shell command or a file tool.
 - Checks (verify commands) obey the same lists: a never-allowed or
   gated check is a failed check, never run.
 - Editable globally, per project and per job. More specific wins. Deny
@@ -101,8 +110,9 @@ sandbox limits damage, but it doesn't make that safe.
   read passes; a send is the gated action `send`; anything else is
   `external-write` (waivable per job). What an untrusted tool returns is
   wrapped as data, and the task is untrusted from then on.
-- The classifier and the second look get the command or a Leg's report
-  as JSON data, never as instructions; the classifier reads no files.
+- The judge and the second look get the command or a Leg's report as
+  JSON data, never as instructions; the judge reads no files and sees
+  none of the agent's prose or tool output (reasoning-blind, ADR-053).
 - Suspicious content (instructions aimed at the agent) is flagged in
   the UI.
 

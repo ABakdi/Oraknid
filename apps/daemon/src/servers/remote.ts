@@ -1,4 +1,5 @@
 import { decide, type PolicyContext, type PolicyVerdict } from "@oraknid/core";
+import { readsOnlyProgram } from "@oraknid/guard";
 
 // Commands a job runs on one of its servers (ADR-049): `ssh <alias> …`,
 // read as what runs there. Root on a server is the server's business (sudo
@@ -117,60 +118,6 @@ function core(w: string[]): string[] {
   }
 }
 
-/** Programs that only read whatever their arguments. */
-const READERS = new Set(
-  `cat ls head tail less more grep egrep fgrep zgrep zcat stat wc du df free uptime uname hostname hostnamectl
-   whoami id ps pgrep top ss netstat ip ifconfig lsof journalctl dmesg date which whereis type file readlink
-   realpath printenv echo printf test true false sort uniq cut tr jq nl diff cmp sha256sum md5sum dig host
-   nslookup ping getent lsblk findmnt last w who apt-cache dpkg-query rpm timedatectl loginctl lscpu nproc
-   vmstat iostat`.split(/\s+/),
-);
-
-/** For programs that can also change things: the arguments with which they only read. */
-const READS_WITH: Record<string, (args: string[]) => boolean> = {
-  systemctl: (a) =>
-    /^(status|is-active|is-enabled|is-failed|list-units|list-unit-files|list-timers|list-sockets|show|cat|list-dependencies)$/.test(
-      a.find((x) => !x.startsWith("-")) ?? "status",
-    ),
-  docker: (a) => readsDocker(a),
-  podman: (a) => readsDocker(a),
-  nginx: (a) => a.some((x) => /^-[tTvV]$/.test(x)),
-  apache2ctl: (a) => a.some((x) => /^(-t|-S|-M|configtest)$/.test(x)),
-  caddy: (a) => /^(version|validate|list-modules)$/.test(a[0] ?? ""),
-  sed: (a) => !a.some((x) => /^-[a-zA-Z]*i/.test(x) || x.startsWith("--in-place")),
-  find: (a) => !a.some((x) => /^-(delete|exec|execdir|ok|okdir|fprint|fprintf|fls)$/.test(x)),
-  curl: (a) =>
-    !a.some((x) =>
-      /^(-[a-zA-Z]*[XdTFoO]|--(data|request|upload|form|output|remote-name).*)$/.test(x),
-    ),
-  apt: (a) => /^(list|show|search|policy|depends|rdepends)$/.test(a[0] ?? ""),
-  "apt-get": () => false,
-  dpkg: (a) =>
-    a.some((x) =>
-      /^(-l|-L|-s|-S|--list|--listfiles|--status|--search|--print-architecture)$/.test(x),
-    ),
-  crontab: (a) => a.includes("-l"),
-  ufw: (a) => a[0] === "status",
-  "fail2ban-client": (a) => /^(status|ping|get|version|-V|--version)$/.test(a[0] ?? ""),
-  certbot: (a) => a[0] === "certificates",
-  pm2: (a) =>
-    /^(list|ls|status|show|describe|jlist|prettylist|logs|info|-v|--version)$/.test(a[0] ?? ""),
-  git: (a) => /^(log|status|diff|show|branch|remote|rev-parse|describe|tag)$/.test(a[0] ?? ""),
-  psql: (a) => a.some((x) => x === "-l" || x === "--list" || x === "--version" || x === "-V"),
-  mysql: (a) => a.some((x) => x === "--version" || x === "-V"),
-  "redis-cli": (a) =>
-    /^(ping|info|dbsize|--version)$/i.test(a.find((x) => !x.startsWith("-")) ?? ""),
-};
-
-function readsDocker(a: string[]): boolean {
-  const args = a.filter((x) => !x.startsWith("-"));
-  const [sub, next] = args;
-  if (sub === "compose") return /^(ps|logs|config|ls|images|top|version)$/.test(next ?? "");
-  if (sub === "volume" || sub === "network" || sub === "image" || sub === "container")
-    return /^(ls|inspect|list)$/.test(next ?? "");
-  return /^(ps|logs|inspect|images|stats|version|info|top|port|events|history)$/.test(sub ?? "");
-}
-
 /** Writing to a file with `>` or `>>` (but not `2>&1` or `>/dev/null`). */
 const WRITES_FILE = (segment: string) =>
   /(^|[^0-9&<])>>?\s*(?!&|\/dev\/null\b)\S/.test(segment.replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, ""));
@@ -183,10 +130,8 @@ export function readsOnly(remote: string): boolean {
     if (WRITES_FILE(segment)) return false;
     const [program, ...args] = core(words(segment));
     if (!program) return false;
-    const name = program.split("/").at(-1) as string;
-    const rule = READS_WITH[name];
-    if (rule) return rule(args);
-    return READERS.has(name);
+    // The read-only list is the guard's, the same here and over ssh (ADR-053).
+    return readsOnlyProgram(program.split("/").at(-1) as string, args);
   });
 }
 

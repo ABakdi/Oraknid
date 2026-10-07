@@ -218,7 +218,7 @@ One page, two sides ([[Phase-8-Daily-Use]]):
 | Project | last used | An existing project, or a **new** one, with New project's form (Projects → Making a project): its name, then **New** (a new folder made a git repo, and a **new GitHub repo** too if I ask), **a folder on this computer** (a repo or not; one that isn't is made one), or **from GitHub** (one of my repos, or any public **git URL**, cloned) — [[ADR-023-GitHub-By-Token]]. |
 | Skills | the project's | The skills The Eye may use; it picks the one that fits ([[Skills]]). |
 | Legs | all healthy Legs | Any subset. |
-| Autonomy | Standard | See [[Approvals-and-Autonomy]]. |
+| Autonomy | Auto | See [[Approvals-and-Autonomy]] ([[ADR-053-Auto-Mode]]). |
 | Budget | the project's budget, else no money and tokens unlimited; time alarm 8 h | See [[Budgets-and-Quotas]]. |
 | Inputs, verification | none; from the skill and the project | Inputs: a repo, a folder or documents, each can be marked untrusted. Verification: commands that must pass, on top of the skill's and the project's. |
 
