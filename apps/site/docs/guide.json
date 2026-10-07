@@ -2,6 +2,7 @@
   ["getting-started", "Getting started", "Install it, open it, set your PIN, add a Leg."],
   ["jobs", "Jobs and The Eye", "Starting work, following it, talking to The Eye."],
   ["legs", "Legs", "The agents and models Oraknid hands work to."],
+  ["models", "Local models", "Models on your own computer: find, download, run, give roles."],
   ["projects", "Projects, repos and servers", "Where work happens, and what it may reach."],
   ["backups", "Backups", "Your servers' databases, on a schedule, encrypted, checked."],
   ["storage", "Cloud storage", "Your storage accounts as one pool, through rclone."],

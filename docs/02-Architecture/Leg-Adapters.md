@@ -81,8 +81,10 @@ The adapter is therefore a **minimal agent loop owned by Oraknid**:
 - The history is held by the adapter for the session's life only.
   Rotation and handoff work through Silk like every other Leg.
 - Models without reliable tool calling get profile strengths limited to
-  `summarize`, `classify` and `mechanical` text tasks (no file tools).
-  `probe` tests tool calling.
+  `summarize` and `classify` (no file tools). `probe` tests tool calling
+  with one tiny request per model (the first eight, once a day) and says
+  `toolCalls: native | none` on each model offered (2026-10-07: it said
+  `tools: true` for every server before).
 
 | Need | How |
 | :-- | :-- |
@@ -93,6 +95,27 @@ The adapter is therefore a **minimal agent loop owned by Oraknid**:
 | Context window | Ollama: `/api/ps` `context_length` (set by `num_ctx` / Modelfile); llama.cpp: `/props` `n_ctx`; vLLM: `/v1/models` `max_model_len`; LM Studio: `/api/v1/models`. |
 | Models / VRAM | Ollama `/api/ps` (`size_vram`), `/api/tags`; others via `nvidia-smi`. |
 | Quota | None. Rate limits don't apply. |
+
+## Oraknid's own agent — Phase 15
+
+`oraknid-agent` ([[ADR-052-A-Harness-For-Any-Model]] §6): Oraknid's tool
+loop over any OpenAI-compatible endpoint, built on the Vercel AI SDK's
+loop (`ai` 7 `streamText`, `@ai-sdk/openai-compatible`, `@ai-sdk/mcp`).
+The adapter it replaces for agent work is the minimal loop above; that
+one stays for plain servers.
+
+| Need | How |
+| :-- | :-- |
+| Config | `baseUrl` and `models` (empty: what `/models` lists), or `endpoints` (each model at its own address: the Local Leg of [[ADR-054-Local-Models]]); `contextWindow`, `maxSteps` (200), `commandTimeoutMs`; an API key in the keychain. |
+| Tools | `read` (line numbers, `offset`/`limit`), `edit` (exact, unique or `replace_all`), `write`, `glob`, `grep` (ripgrep when found), `bash` (in the sandbox, like any Leg's commands, with a timeout), `todo_write`, `web_fetch` (HTML to text, marked as data). File tools stay inside the worktree by real path; errors say what to do next. The job's MCP servers (Oraknid's bridges) add their tools as `mcp__<server>__<tool>`. |
+| Permissions | Write, Edit, Bash and WebFetch ask the policy by those names, before they run; reads and the todo list don't. A denial goes back to the model with "don't repeat this call". |
+| Stream | `text-delta` → `text.delta`, reasoning → `thinking.delta`, `tool-call` → `tool.called`; the permission and the result are given out in the stream's order when the call's result arrives; `finish-step` → `usage`. |
+| Compaction | In `prepareStep`: past 80% of the window (the last step's reported tokens, else estimated), the middle is summarised by the same model (a list of the calls if it can't) and the task kept word for word, roles alternating. |
+| Checks | `SessionStart.checks`, when given, run in the sandbox at a turn's end; a failing one is handed back (three rounds at most). |
+| Resume | Native: `nativeSessionId()` is `oa-<uuid>`; the messages and todo list are kept in `<data>/legs/oraknid-agent-sessions/<id>.json` after each turn and read back on `resumeFrom`. |
+| Interrupt / kill | Abort the request and the command running; what the model said is kept, marked interrupted. |
+| Probe | Lists the models; tests tool calling: native calls, else a JSON grammar (`response_format: json_schema`, enforced by llama.cpp and Ollama, the answer turned back into a tool call by a fetch shim), else none (`toolCalls` on each model; the profile's `probed` keeps it to text work). Context from `/props` (llama.cpp) or `/api/show` (Ollama). |
+| Quota | A 429 is a `rate_limit` with `retry-after`. |
 
 ## OpenCode — Phase 2
 

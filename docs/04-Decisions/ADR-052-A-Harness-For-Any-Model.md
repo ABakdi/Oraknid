@@ -128,6 +128,30 @@ an OpenAI-compatible API (local llama.cpp or Ollama through
 - Built on an open-source loop if one fits a Node daemon (the Vercel AI
   SDK's tool loop, `@openai/agents`), our own only where none does.
 
+**As built (2026-10-07, M15.4).** `packages/legs/oraknid-agent`, on the
+Vercel AI SDK's loop (`ai` 7: `streamText` with tools, a step limit and
+`prepareStep`; `@ai-sdk/openai-compatible`; `@ai-sdk/mcp` for the job's
+tools). Oraknid's tools run in the daemon: `read` (line numbers, pages),
+`edit` (exact and unique, or `replace_all`), `write`, `glob`, `grep`
+(ripgrep when there is one) and `bash` inside the job's sandbox like any
+Leg's commands, `todo_write`, `web_fetch` (marked as data). Writes,
+edits, commands and fetches ask the policy by Claude Code's names
+(Write, Edit, Bash, WebFetch); file tools stay inside the worktree by
+real path. The job's MCP bridges (github, email, local-models) are its
+tools too. Near 80% of the window the earlier work is summarised by the
+same model (a list of the calls if it can't), the task kept word for
+word. A session's messages are kept in
+`<data>/legs/oraknid-agent-sessions` and resumed. `SessionStart.checks`
+(new, optional) are run in the sandbox when a turn ends done; a failing
+one is handed back, up to three rounds; the daemon doesn't pass them yet
+(M15.3). The probe sends one tiny request per model (the first eight,
+once a day): native tool calls, else a JSON grammar
+(`response_format: json_schema`, which llama.cpp and Ollama enforce),
+else none; the result is stored on the model's profile (`probed`) and a
+model without tool calls is kept to summarising and sorting. The
+OpenAI-compatible adapter's probe tests tool calling the same way
+instead of claiming it.
+
 ### 7. Fast
 The criterion: **my piano project (React, every feature of its spec)
 built in under 30 minutes** from the spec, with free models doing the
