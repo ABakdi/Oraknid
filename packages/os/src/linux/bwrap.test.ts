@@ -1,8 +1,8 @@
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { SandboxSpec } from "../sandbox.ts";
 import { bwrapArgs, createBwrapSandbox } from "./bwrap.ts";
@@ -202,3 +202,31 @@ function pgrep(pattern: string): number {
   const r = spawnSync("pgrep", ["-fc", `sleep ${pattern}`], { encoding: "utf8" });
   return Number(r.stdout.trim() || 0);
 }
+
+describe("the sandbox's variables (ADR-059)", () => {
+  it("never puts a variable's value on a command line: a private file the launch reads and deletes", () => {
+    const sb = createBwrapSandbox({ landlock: false, pasta: false });
+    const w = sb.wrap({
+      command: "true",
+      args: [],
+      cwd: "/w",
+      home: "/h",
+      writable: ["/w", "/h"],
+      readonly: [],
+      env: { API_KEY: "sk-very-secret", ODD: 'it\'s "q" $x' },
+    });
+    const line = [w.command, ...w.args].join(" ");
+    expect(line).not.toContain("sk-very-secret");
+    expect(w.command).toBe("env");
+    expect(w.args.slice(0, 1)).toEqual(["-i"]);
+    const file = w.args[w.args.indexOf("-c") + 2] as string;
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    const body = readFileSync(file, "utf8");
+    expect(body).toContain("export API_KEY='sk-very-secret'");
+    expect(body).toContain(`export ODD='it'\\''s "q" $x'`);
+    expect(body).toContain("export HOME='/h'");
+    expect(w.args).not.toContain("--clearenv");
+    expect(w.args).not.toContain("--setenv");
+    rmSync(dirname(file), { recursive: true, force: true });
+  });
+});

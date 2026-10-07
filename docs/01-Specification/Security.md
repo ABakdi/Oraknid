@@ -36,10 +36,11 @@ sandbox limits damage, but it doesn't make that safe.
 - A job's sessions get its own project's secrets of its environment as
   variables in the sandbox's clean environment; another project's never.
   Unsandboxed jobs, The Eye's planning, chats and the helper get none.
-  Like the Legs' own keys, they are passed to `bwrap` as `--setenv`, so
-  software running as me on this computer could read them from its
-  command line while the session runs (this computer is mine alone,
-  above).
+  Like the Legs' own keys, they reach the sandbox through a private
+  0600 file read and deleted at its start, never its command line,
+  which every user of the computer can read; software running as me
+  could still read a running session's environment (this computer is
+  mine alone, above).
 - On a server they are written by the daemon (the `env` tool's
   `write_env_file`), never by the agent: `umask 077`, a temporary file
   renamed into place, `chmod 600`, the values on the command's stdin,
