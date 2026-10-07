@@ -1,11 +1,13 @@
-import type { Event, JobView } from "@oraknid/contracts";
-import { AlertTriangle, Cpu, HardDrive, MemoryStick, Network } from "lucide-react";
+import type { JobView } from "@oraknid/contracts";
+import { AlertTriangle } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "wouter";
-import { Sparkline, TokensChart } from "@/components/charts";
+import { TokensChart } from "@/components/charts";
 import { Empty, ErrorNote, Loading, PageHeader, Stat, StateBadge } from "@/components/common";
 import { LegAvatar } from "@/components/leg-avatar";
 import { MachineHealthCard } from "@/components/machine-health";
+import { OverviewActivity } from "@/components/overview-activity";
+import { ResourcesCard } from "@/components/overview-resources";
 import { PlanUsageCard } from "@/components/plan-usage";
 import { PauseResume } from "@/components/project-work";
 import { AddLegButtons } from "@/components/setup";
@@ -16,7 +18,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { UpdateNotice } from "@/components/updates";
 import { api } from "@/lib/api";
-import { ago, bytes, clock, tokens } from "@/lib/format";
+import { describe, isProblem } from "@/lib/events";
+import { ago, tokens } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { jobHref, jobIdHref } from "@/lib/links";
 import { useEvents, useLive, useMetrics } from "@/lib/live";
@@ -77,7 +80,6 @@ export function OverviewPage() {
   const where = new Map((jobs.data ?? []).map((j) => [j.id, j.projectId]));
   const names = new Map((projects.data ?? []).map((p) => [p.id, p.name]));
   const problems = stream.filter(isProblem).slice(0, 8);
-  const last = metrics.at(-1);
 
   return (
     <div className="space-y-4">
@@ -180,25 +182,11 @@ export function OverviewPage() {
 
       {/* min-w-0: a grid cell may shrink below its content, so nothing pushes past a phone's width. */}
       <div className="grid gap-4 xl:grid-cols-3">
-        <Card className="min-w-0 xl:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-sm">{t("Activity")}</CardTitle>
-          </CardHeader>
-          <CardContent className="max-h-96 space-y-1 overflow-y-auto font-mono text-xs">
-            {stream.length === 0 ? (
-              <div className="text-muted-foreground">{t("Nothing yet.")}</div>
-            ) : null}
-            {stream.slice(0, 120).map((e) => (
-              <div key={e.seq} className="flex flex-wrap gap-x-2">
-                <span className="shrink-0 text-muted-foreground">{clock(e.at)}</span>
-                <span className="shrink-0 text-primary">{e.type}</span>
-                <span className="min-w-0 basis-full text-muted-foreground [overflow-wrap:anywhere] sm:basis-0 sm:flex-1">
-                  {describe(e)}
-                </span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+        <OverviewActivity
+          events={stream}
+          jobs={(jobs.data ?? []).filter((j) => j.state !== "draft")}
+          legs={legs.data ?? []}
+        />
         <div className="min-w-0 space-y-4">
           <MachineHealthCard />
           <Card data-help="overview.problems">
@@ -228,66 +216,7 @@ export function OverviewPage() {
               ))}
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">{t("Resources")}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-xs">
-              {last ? (
-                <>
-                  <Resource
-                    icon={Cpu}
-                    label={t("CPU")}
-                    value={`${last.system.cpuPercent}%`}
-                    values={metrics.map((m) => m.system.cpuPercent)}
-                  />
-                  <Resource
-                    icon={MemoryStick}
-                    label={t("Memory")}
-                    value={`${bytes(last.system.memoryUsedBytes)} / ${bytes(last.system.memoryTotalBytes)}`}
-                    values={metrics.map((m) => m.system.memoryUsedBytes)}
-                  />
-                  <Resource
-                    icon={HardDrive}
-                    label={t("Disk")}
-                    value={`${bytes(last.system.diskReadBytesPerSec)}/s ↓ ${bytes(last.system.diskWriteBytesPerSec)}/s ↑`}
-                    values={metrics.map(
-                      (m) => m.system.diskWriteBytesPerSec + m.system.diskReadBytesPerSec,
-                    )}
-                  />
-                  <Resource
-                    icon={Network}
-                    label={t("Network")}
-                    value={`${bytes(last.system.netRxBytesPerSec)}/s ↓ ${bytes(last.system.netTxBytesPerSec)}/s ↑`}
-                    values={metrics.map(
-                      (m) => m.system.netRxBytesPerSec + m.system.netTxBytesPerSec,
-                    )}
-                  />
-                  {last.gpus.map((g) => (
-                    <Resource
-                      key={g.index}
-                      icon={Cpu}
-                      label={`${g.name}`}
-                      value={`${g.utilizationPercent}% · ${bytes(g.memoryUsedBytes)} / ${bytes(g.memoryTotalBytes)}`}
-                      values={metrics.map((m) => m.gpus[g.index]?.utilizationPercent ?? 0)}
-                    />
-                  ))}
-                  <div className="pt-1 text-muted-foreground">{t("Processes")}</div>
-                  {last.processes.map((p) => (
-                    <div key={p.id} className="flex min-w-0 justify-between gap-2">
-                      <span className="min-w-0 truncate">{p.label}</span>
-                      <span className="shrink-0 tabular-nums text-muted-foreground">
-                        {p.cpuPercent}% · {bytes(p.rssBytes)}
-                        {p.vramBytes ? ` · VRAM ${bytes(p.vramBytes)}` : ""}
-                      </span>
-                    </div>
-                  ))}
-                </>
-              ) : (
-                <div className="text-muted-foreground">{t("Waiting for the first sample…")}</div>
-              )}
-            </CardContent>
-          </Card>
+          <ResourcesCard samples={metrics} sessions={activity.data ?? []} legs={legs.data ?? []} />
         </div>
       </div>
 
@@ -411,60 +340,4 @@ function TileLink({
       {children}
     </Link>
   );
-}
-
-function Resource({
-  icon: Icon,
-  label,
-  value,
-  values,
-}: {
-  icon: typeof Cpu;
-  label: string;
-  value: string;
-  values: number[];
-}) {
-  return (
-    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2">
-      <span className="flex min-w-0 items-center gap-1.5 truncate">
-        <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-        {label}
-      </span>
-      <span className="text-right tabular-nums text-muted-foreground [overflow-wrap:anywhere]">
-        {value}
-      </span>
-      <div className="col-span-2 min-w-0">
-        <Sparkline values={values.slice(-120)} />
-      </div>
-    </div>
-  );
-}
-
-export function isProblem(e: Event): boolean {
-  const p = (e.payload ?? {}) as Record<string, unknown>;
-  return (
-    e.type === "job.error" ||
-    e.type === "task.drift" ||
-    e.type === "budget.reached" ||
-    e.type === "job.suspicious-input" ||
-    e.type === "job.safe-point-overdue" ||
-    (e.type === "job.state" && p.to === "blocked") ||
-    (e.type === "session.ended" && (p.reason === "crashed" || p.reason === "rate-limited")) ||
-    (e.type === "leg.health" && (p.to === "unavailable" || p.to === "rate-limited"))
-  );
-}
-
-/** One line per event, in words where the payload allows. */
-export function describe(e: Event): string {
-  const p = (e.payload ?? {}) as Record<string, unknown>;
-  if (typeof p.text === "string") return p.text;
-  if (typeof p.message === "string") return p.message;
-  if (typeof p.title === "string") return p.title;
-  if (typeof p.evidence === "string") return `${p.code}: ${p.evidence} → ${p.step}`;
-  if (typeof p.reason === "string" && p.to) return `→ ${p.to}: ${p.reason}`;
-  if (p.to) return `→ ${String(p.to)}`;
-  if (typeof p.detail === "string") return p.detail;
-  if (typeof p.tool === "string")
-    return `${p.tool} ${typeof p.input === "object" && p.input && "command" in p.input ? String((p.input as { command: string }).command) : ""}`;
-  return "";
 }

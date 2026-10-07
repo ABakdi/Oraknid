@@ -26,18 +26,54 @@ import { cn } from "@/lib/utils";
 
 const ALL = "all";
 
+/** An item's states, as the State filter lists them (Web-UI → Inbox). */
+export const INBOX_STATES = [
+  { state: "open", name: "Open" },
+  { state: "answered", name: "Answered" },
+  { state: "withdrawn", name: "Withdrawn" },
+  { state: "expired", name: "Expired" },
+] as const;
+
+export interface InboxFilters {
+  project: string;
+  job: string;
+  kind: string;
+  /** "open", "answered", "withdrawn", "expired", or "all". */
+  state: string;
+  q: string;
+}
+
+export const NO_FILTERS: InboxFilters = { project: ALL, job: ALL, kind: ALL, state: "open", q: "" };
+
+/** The items the filters keep; the one I came to see is always kept. */
+export function filterInbox(items: InboxItem[], f: InboxFilters, focus?: string): InboxItem[] {
+  const words = f.q.toLowerCase().split(/\s+/).filter(Boolean);
+  return items.filter(
+    (i) =>
+      i.id === focus ||
+      ((f.project === ALL || i.projectId === f.project) &&
+        (f.job === ALL || i.jobId === f.job) &&
+        (f.kind === ALL || i.kind === f.kind) &&
+        (f.state === ALL || i.state === f.state) &&
+        words.every((w) =>
+          [i.title, i.detail, i.jobTitle, i.projectName, i.taskTitle, i.answer]
+            .join("\n")
+            .toLowerCase()
+            .includes(w),
+        )),
+  );
+}
+
 /**
  * One list for every approval and question, open and blocking ones first
- * (Approvals → The inbox). Filters by project, job and kind, and a search,
- * for when several projects run at once (Checkpoint 1 → F1-2).
+ * (Approvals → The inbox). Filters by project, job, kind and state, and a
+ * search, for when several projects run at once (Checkpoint 1 → F1-2).
  */
 export function InboxPage({ focus }: { focus?: string }) {
   const items = useLive(() => api.inbox.list({}), { topics: ["inbox"] });
-  const [showDone, setShowDone] = useState(false);
-  const [project, setProject] = useState(ALL);
-  const [job, setJob] = useState(ALL);
-  const [kind, setKind] = useState(ALL);
-  const [q, setQ] = useState("");
+  const [f, setF] = useState<InboxFilters>(NO_FILTERS);
+  const set = (p: Partial<InboxFilters>) => setF((x) => ({ ...x, ...p }));
+  const { project, job, kind, state, q } = f;
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll again once the items have arrived
   useEffect(() => {
     if (focus) document.getElementById(`item-${focus}`)?.scrollIntoView({ block: "center" });
@@ -51,23 +87,13 @@ export function InboxPage({ focus }: { focus?: string }) {
       .filter((i) => project === ALL || i.projectId === project)
       .map((i) => [i.jobId, i.jobTitle ?? i.jobId]),
   );
-  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-  const shown = data.filter(
-    (i) =>
-      i.id === focus ||
-      ((project === ALL || i.projectId === project) &&
-        (job === ALL || i.jobId === job) &&
-        (kind === ALL || i.kind === kind) &&
-        words.every((w) =>
-          [i.title, i.detail, i.jobTitle, i.projectName, i.taskTitle, i.answer]
-            .join("\n")
-            .toLowerCase()
-            .includes(w),
-        )),
-  );
-  const filtered = shown.length !== data.length;
+  const shown = filterInbox(data, f, focus);
+  const filtered =
+    project !== ALL || job !== ALL || kind !== ALL || state !== "open" || q.trim() !== "";
   const open = shown.filter((i) => i.state === "open");
   const rest = shown.filter((i) => i.state !== "open");
+  // Answered and the rest, when the filter is on open ones: a step away.
+  const settled = data.filter((i) => i.state !== "open").length;
   const waiting = data.filter((i) => i.state === "open").length;
   return (
     <div className="mx-auto max-w-3xl space-y-3">
@@ -83,16 +109,10 @@ export function InboxPage({ focus }: { focus?: string }) {
             className="w-full sm:w-auto sm:min-w-48 sm:flex-1"
             placeholder={t("Search the inbox…")}
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={(e) => set({ q: e.target.value })}
             aria-label={t("Search the inbox")}
           />
-          <Select
-            value={project}
-            onValueChange={(v) => {
-              setProject(v);
-              setJob(ALL);
-            }}
-          >
+          <Select value={project} onValueChange={(v) => set({ project: v, job: ALL })}>
             <SelectTrigger
               data-help="inbox.project"
               className="min-w-0 flex-1 sm:w-40 sm:flex-none"
@@ -109,7 +129,7 @@ export function InboxPage({ focus }: { focus?: string }) {
               ))}
             </SelectContent>
           </Select>
-          <Select value={job} onValueChange={setJob}>
+          <Select value={job} onValueChange={(v) => set({ job: v })}>
             <SelectTrigger
               data-help="inbox.job"
               className="min-w-0 flex-1 sm:w-40 sm:flex-none"
@@ -126,7 +146,7 @@ export function InboxPage({ focus }: { focus?: string }) {
               ))}
             </SelectContent>
           </Select>
-          <Select value={kind} onValueChange={setKind}>
+          <Select value={kind} onValueChange={(v) => set({ kind: v })}>
             <SelectTrigger
               data-help="inbox.kind"
               className="min-w-0 flex-1 sm:w-40 sm:flex-none"
@@ -140,42 +160,46 @@ export function InboxPage({ focus }: { focus?: string }) {
               <SelectItem value="question">{t("Questions")}</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={state} onValueChange={(v) => set({ state: v })}>
+            <SelectTrigger
+              data-help="inbox.state"
+              className="min-w-0 flex-1 sm:w-36 sm:flex-none"
+              aria-label={t("State")}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {INBOX_STATES.map((x) => (
+                <SelectItem key={x.state} value={x.state}>
+                  {t(x.name)}
+                </SelectItem>
+              ))}
+              <SelectItem value={ALL}>{t("Every state")}</SelectItem>
+            </SelectContent>
+          </Select>
           {filtered ? (
             <Button
               variant="ghost"
               size="sm"
               className="self-center"
-              onClick={() => {
-                setProject(ALL);
-                setJob(ALL);
-                setKind(ALL);
-                setQ("");
-              }}
+              onClick={() => setF(NO_FILTERS)}
             >
               {t("Clear")}
             </Button>
           ) : null}
         </div>
       ) : null}
-      {open.length === 0 ? (
+      {shown.length === 0 ? (
         filtered ? (
           <Empty
             title={t("Nothing matches")}
             action={
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setProject(ALL);
-                  setJob(ALL);
-                  setKind(ALL);
-                  setQ("");
-                }}
-              >
+              <Button variant="secondary" onClick={() => setF(NO_FILTERS)}>
                 {t("Clear the filters")}
               </Button>
             }
           >
-            {t("No open item matches these filters.")}
+            {t("No item matches these filters.")}
           </Empty>
         ) : (
           <Empty title={t("All clear")}>
@@ -186,12 +210,14 @@ export function InboxPage({ focus }: { focus?: string }) {
       {open.map((i) => (
         <InboxItemCard key={i.id} item={i} highlight={i.id === focus} />
       ))}
-      {rest.length ? (
-        <Button variant="ghost" size="sm" onClick={() => setShowDone((s) => !s)}>
-          {showDone ? t("Hide answered") : t("Show answered ({n})", { n: rest.length })}
+      {rest.map((i) => (
+        <InboxItemCard key={i.id} item={i} highlight={i.id === focus} />
+      ))}
+      {state === "open" && settled ? (
+        <Button variant="ghost" size="sm" onClick={() => set({ state: ALL })}>
+          {t("Show answered ({n})", { n: settled })}
         </Button>
       ) : null}
-      {showDone ? rest.map((i) => <InboxItemCard key={i.id} item={i} />) : null}
     </div>
   );
 }
