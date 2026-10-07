@@ -54,6 +54,11 @@ export type ProfileSettings = z.infer<typeof ProfileSettings>;
 export const StoredProfile = z.object({
   overrides: ProfileSettings.partial(),
   observed: z.partialRecord(TaskKind, Observation),
+  /**
+   * What the Leg's probe found of this model (ADR-052 §6): how it calls
+   * tools. A model that can't is kept to text work.
+   */
+  probed: z.object({ toolCalls: z.enum(["native", "json", "none"]) }).optional(),
 });
 export type StoredProfile = z.infer<typeof StoredProfile>;
 

@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   type AdmissionInput,
   admit,
+  admitModel,
   assess,
   autoTasksAtOnce,
   defaultLegSessions,
@@ -64,6 +65,45 @@ const input = (o: Partial<AdmissionInput> = {}): AdmissionInput => ({
   thresholds: TH,
   pauseForMyWork: false,
   ...o,
+});
+
+describe("the GPU (ADR-016, ADR-054)", () => {
+  const gpu = (used: number) => [{ name: "RTX", usedBytes: used * GB, totalBytes: 12 * GB }];
+
+  it("holds a task only local models can do while every GPU is 90% full", () => {
+    const local = [{ name: "Local", running: 0, limit: 1, local: true }];
+    expect(admit(input({ legs: local, reading: reading({ gpus: gpu(11) }) }))).toMatchObject({
+      ok: false,
+      why: "gpu",
+      reason: "waiting for the GPU: its memory is 92% used",
+    });
+    expect(admit(input({ legs: local, reading: reading({ gpus: gpu(6) }) }))).toEqual({ ok: true });
+    // A task a remote agent can also do doesn't wait for the GPU.
+    expect(
+      admit(
+        input({
+          legs: [...local, { name: "Claude", running: 0, limit: 3 }],
+          reading: reading({ gpus: gpu(11) }),
+        }),
+      ),
+    ).toEqual({ ok: true });
+  });
+
+  it("loads a model only with its GPU under 90% after it and memory above its floor", () => {
+    const m = { name: "qwen", vramBytes: 5 * GB, gpuIndex: 0, ramBytes: 1 * GB };
+    expect(admitModel(m, reading({ gpus: gpu(2) }), TH, null)).toEqual({ ok: true });
+    expect(admitModel(m, reading({ gpus: gpu(6) }), TH, null)).toMatchObject({
+      ok: false,
+      why: "gpu",
+    });
+    expect(
+      admitModel({ ...m, ramBytes: 9 * GB }, reading({ gpus: gpu(2) }), TH, null),
+    ).toMatchObject({ ok: false, why: "memory" });
+    expect(admitModel(m, reading({ gpus: gpu(2) }), TH, "Memory is nearly full.")).toMatchObject({
+      ok: false,
+      why: "danger",
+    });
+  });
 });
 
 describe("what a task costs", () => {

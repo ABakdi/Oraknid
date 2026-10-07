@@ -1,3 +1,4 @@
+import { testToolCalling } from "@oraknid/leg-oraknid-agent";
 import {
   Channel,
   emptyUsage,
@@ -42,8 +43,20 @@ interface ToolCall {
 /** Roughly four characters a token, for servers that report no usage. */
 const estimateTokens = (s: string) => Math.ceil(s.length / 4);
 
-export function createOpenAICompatibleAdapter(deps: { fetch?: typeof fetch } = {}): LegAdapter {
+export function createOpenAICompatibleAdapter(
+  deps: { fetch?: typeof fetch; probeLimit?: number } = {},
+): LegAdapter {
   const http = deps.fetch ?? fetch;
+  /** Tool calling per model as tested, once a day: this loop takes native calls only. */
+  const tested = new Map<string, { native: boolean; at: number }>();
+  const nativeTools = async (baseUrl: string, model: string) => {
+    const key = `${baseUrl}\n${model}`;
+    const hit = tested.get(key);
+    if (hit && Date.now() - hit.at < 86400_000) return hit.native;
+    const { mode } = await testToolCalling(http, baseUrl, model, {});
+    tested.set(key, { native: mode === "native", at: Date.now() });
+    return mode === "native";
+  };
 
   return {
     kind: "openai-compatible",
@@ -52,7 +65,7 @@ export function createOpenAICompatibleAdapter(deps: { fetch?: typeof fetch } = {
       const cfg = readConfig(leg);
       const features = {
         resume: false,
-        tools: true,
+        tools: false,
         usage: "reported" as const,
         quotaWindows: false,
       };
@@ -60,21 +73,27 @@ export function createOpenAICompatibleAdapter(deps: { fetch?: typeof fetch } = {
         const res = await http(`${cfg.baseUrl}/models`, { signal: AbortSignal.timeout(5000) });
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
         const body = (await res.json()) as { data?: { id: string; max_model_len?: number }[] };
+        const limit = deps.probeLimit ?? 8;
         const models: ModelOffer[] = await Promise.all(
-          (body.data ?? []).map(async (m) => ({
+          (body.data ?? []).map(async (m, i) => ({
             model: m.id,
             displayName: m.id,
             effortLevels: [],
             contextWindow: m.max_model_len ?? (await contextWindowOf(http, cfg.baseUrl, m.id)),
+            // Tested with one tiny request (ADR-052 §6); untested beyond the first few.
+            ...(i < limit
+              ? { toolCalls: (await nativeTools(cfg.baseUrl, m.id)) ? "native" : "none" }
+              : {}),
           })),
         );
+        const none = models.filter((m) => m.toolCalls === "none").length;
         return {
           ok: true,
           detail: models.length
-            ? `${models.length} model${models.length === 1 ? "" : "s"} at ${cfg.baseUrl}.`
+            ? `${models.length} model${models.length === 1 ? "" : "s"} at ${cfg.baseUrl}${none ? `; ${none} without tool calls, kept to text work` : ""}.`
             : `The server at ${cfg.baseUrl} answers but has no models loaded or installed.`,
           models,
-          features,
+          features: { ...features, tools: models.some((m) => m.toolCalls !== "none") },
         };
       } catch (error) {
         return {

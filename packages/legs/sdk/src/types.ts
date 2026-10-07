@@ -17,6 +17,11 @@ export interface ModelOffer {
   displayName: string;
   effortLevels: string[];
   contextWindow: number | null;
+  /**
+   * How the model calls tools, where the probe tested it (ADR-052 §6):
+   * natively, through a JSON grammar, or not at all (text work only).
+   */
+  toolCalls?: "native" | "json" | "none";
 }
 
 export interface ProbeResult {
@@ -120,6 +125,12 @@ export interface SessionStart {
    * broker, so the Leg-level permission for them is allowed.
    */
   mcpServers?: Record<string, McpServer>;
+  /**
+   * Check commands the session runs itself before it ends a turn as done
+   * (ADR-052 §2), where the adapter can: Oraknid's own agent runs them in
+   * the sandbox and keeps working while they fail.
+   */
+  checks?: string[];
 }
 
 /** A stdio MCP server a Leg starts: here always Oraknid's bridge. */

@@ -10,6 +10,31 @@ import {
   record,
 } from "./profiles.ts";
 
+describe("Oraknid's own agent (ADR-052 §6)", () => {
+  it("starts a model by its family, an unknown local one low and unproven", () => {
+    const local = defaultProfile("oraknid-agent", "qwen2.5-7b-instruct-q4_k_m");
+    expect(local).toMatchObject({ costModel: "local", maxDifficulty: "low", prior: "unproven" });
+    expect(local.tools.edits).toBe(true);
+    expect(defaultProfile("oraknid-agent", "qwen3-coder-30b").maxDifficulty).toBe("medium");
+  });
+
+  it("keeps a model that can't call tools to text work", () => {
+    const p = effectiveProfile("oraknid-agent", "gemma-2b", {
+      ...emptyStoredProfile(),
+      probed: { toolCalls: "none" },
+    });
+    expect(p.tools).toEqual({ edits: false, shell: false, mcp: false, browse: false });
+    expect(p.strengths.implementation).toBe(0);
+    expect(p.strengths.summarize).toBeGreaterThan(0);
+    expect(p.knownFailures).toContain("doesn't call tools: text work only");
+    const json = effectiveProfile("oraknid-agent", "gemma-2b", {
+      ...emptyStoredProfile(),
+      probed: { toolCalls: "json" },
+    });
+    expect(json.strengths.implementation).toBeGreaterThan(0);
+  });
+});
+
 describe("default profiles", () => {
   it("ranks Claude models by strength and quota cost", () => {
     const opus = defaultProfile("claude-code", "opus");
