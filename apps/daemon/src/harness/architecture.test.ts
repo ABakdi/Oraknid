@@ -14,11 +14,12 @@ const ATTEMPT = join(here, "..", "eye", "attempt.ts");
 const SRC = join(here, "..");
 
 /**
- * attempt.ts's lines when the Verifier and the attempt log were extracted
- * (ADR-056 stage 3; 2,165 after the Gate, 2,973 before). Lower it when a
- * stage moves more out; never raise it.
+ * attempt.ts's lines when the turn's end went to `decideOutcome` and
+ * `applyOutcome` (ADR-056 stage 4; 2,100 after the Verifier, 2,165 after
+ * the Gate, 2,973 before). Lower it when a stage moves more out; never
+ * raise it.
  */
-const CEILING = 2100;
+const CEILING = 1420;
 
 /** Modules only the Gate may use: the guard, the judge and the rules, the policy, the task's memory. */
 const GATE_ONLY_MODULES = [
@@ -87,6 +88,63 @@ describe("the attempt goes through the Gate (ADR-056 §3, §9)", () => {
   it(`doesn't grow: at most ${CEILING} lines`, () => {
     const lines = source.split("\n").length - (source.endsWith("\n") ? 1 : 0);
     expect(lines).toBeLessThanOrEqual(CEILING);
+  });
+});
+
+/**
+ * What decides a turn's end (ADR-056 §5–§7): the drift detectors and the
+ * ladder, the agent's words read for what isn't the task's or what it needs
+ * of me, the answers to my questions. Only core's `decideOutcome` and the
+ * harness use them; the attempt gathers, decides through it and applies.
+ */
+const DECISION_NAMES = [
+  "detect",
+  "nextEscalation",
+  "SEVERITY",
+  "worstDrift",
+  "correctivePrompt",
+  "claimsDone",
+  "saysOwnerNeeded",
+  "usageLimitOf",
+  "deprecationOf",
+  "providerFailure",
+  "unusableOf",
+  "verdictOf",
+  "keepsGoingWrong",
+  "readKeepsGoingWrong",
+  "agentNeedsAnswer",
+  "keepsGoingWrongAnswer",
+  "drift",
+  "stall",
+  "budget",
+  "stuck",
+];
+
+describe("the attempt decides no turn's end itself (ADR-056 §6, §9)", () => {
+  const source = readFileSync(ATTEMPT, "utf8");
+  const imports = importsOf(source);
+
+  it("decides through core's decideOutcome and applies through the harness", () => {
+    expect(imports.find((i) => i.from === "@oraknid/core")?.names).toContain("decideOutcome");
+    expect(imports.find((i) => i.from === "../harness/apply.ts")?.names).toContain("applyOutcome");
+  });
+
+  it("imports none of the decision's parts: drift, the ladder, the agent's words, my answers", () => {
+    const named = imports.flatMap((i) => i.names.map((n) => `${n} (from ${i.from})`));
+    expect(named.filter((n) => DECISION_NAMES.includes(n.split(" ")[0] as string))).toEqual([]);
+    expect(imports.map((i) => i.from)).not.toContain("./questions.ts");
+  });
+
+  it("reads no turn's end reason nor counts an attempt itself", () => {
+    expect(source).not.toMatch(/\bend\.reason\s*===/);
+    expect(source).not.toMatch(/"redirected"|"reassigned"/);
+  });
+
+  it("the job's program applies an attempt's outcome from a table, its counting from core", () => {
+    const program = readFileSync(join(SRC, "eye", "program.ts"), "utf8");
+    expect(program).not.toMatch(/switch \(outcome\.kind\)/);
+    expect(program).toMatch(/SPENDS_ATTEMPT/);
+    expect(program).not.toMatch(/\["failed", "reassigned"\]/);
   });
 });
 

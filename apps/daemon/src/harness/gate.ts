@@ -950,6 +950,8 @@ export function createGate(c: GateContext) {
       pending = null;
       return s;
     },
+    /** The stuck question not raised yet, left in place: what the turn's end decides from. */
+    peekStuck: (): Pending | null => pending,
 
     plain,
     askOwner,
@@ -971,8 +973,8 @@ export function createGate(c: GateContext) {
      * "allow" Oraknid only sees here (stage 2's limit). A failed result says
      * nothing: a refusal comes back as one.
      */
-    ran(actionId: string, ok: boolean) {
-      log.append("ActionResult", { actionId, ok });
+    ran(actionId: string, ok: boolean, out?: string) {
+      log.append("ActionResult", { actionId, ok, ...(out !== undefined ? { out } : {}) });
       if (ok) endRow();
     },
   };

@@ -1,46 +1,36 @@
 import { createHash } from "node:crypto";
-import {
-  type Autonomy,
-  type Budget,
+import type {
+  Autonomy,
+  Budget,
   choiceQuestion,
-  type Difficulty,
-  type MetricsSample,
-  type TaskKind,
+  Difficulty,
+  MetricsSample,
+  TaskKind,
 } from "@oraknid/contracts";
 import {
   buildContextPack,
   busyMachine,
-  claimsDone,
-  correctivePrompt,
-  DEFAULT_THRESHOLDS,
-  type Drift,
-  type DriftCode,
-  deprecationOf,
-  detect,
+  countOf,
+  decideOutcome,
+  type Ending,
   fence,
   type GatedAction,
   guidanceFromOthers,
   HANDOFF_REQUEST,
-  inScope,
-  nextEscalation,
-  type Observed,
-  oraknidOwn,
-  providerFailure,
+  nextRung,
   type Route,
   type RouteCandidate,
   record,
   route,
   rungOf,
   saysCheckBroken,
-  saysOwnerNeeded,
   skillExcerpt,
   taskScope,
-  usageLimitOf,
   type WorkKind,
   whenSaid,
   workKindOf,
 } from "@oraknid/core";
-import type { LegEvent, PermissionRequest, UsageSnapshot } from "@oraknid/leg-sdk";
+import type { LegEvent, PermissionRequest } from "@oraknid/leg-sdk";
 import type { Sandbox } from "@oraknid/os";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
@@ -48,7 +38,9 @@ import type { Db } from "../db/open.ts";
 import { attempts, jobs, sessions, tasks } from "../db/schema.ts";
 import { SideEffects } from "../engine/effects.ts";
 import type { EventBus } from "../events/bus.ts";
-import { ALLOW, asPermission, asPreTool, createGate } from "../harness/gate.ts";
+import { applyOutcome, EndAttempt, markUnusable } from "../harness/apply.ts";
+import { type AttemptCtx, type AttemptState, beginTurn, factsOf } from "../harness/facts.ts";
+import { asPermission, asPreTool, createGate } from "../harness/gate.ts";
 import { AttemptLog } from "../harness/log.ts";
 import { handoffFromAttempt, recordEvents, takeOver } from "../harness/record.ts";
 import { type CheckReport, createVerifier, type RunOptions } from "../harness/verifier.ts";
@@ -59,7 +51,7 @@ import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor, Supervised } from "../legs/supervisor.ts";
 import { legSessionLimit } from "../resources/work.ts";
 import { serversForLeg } from "../servers/for-leg.ts";
-import { type JobServerRef, parseSsh, plainServerCheck } from "../servers/remote.ts";
+import { type JobServerRef, plainServerCheck } from "../servers/remote.ts";
 import type { Servers } from "../servers/service.ts";
 import { CLAUDE_SHARE, readSetting, writeSetting } from "../settings.ts";
 import { handoffFromLog } from "../silk/handoff.ts";
@@ -71,18 +63,11 @@ import type { GitHub } from "../workspace/github.ts";
 import { githubLinkOf, githubLinksOf } from "../workspace/github-tool.ts";
 import type { WorkTree } from "../workspace/tree.ts";
 import { BrainStopped, type CheckRepair, type EyeBrain, type GitHubForRepair } from "./brain.ts";
-import { giveToLeg, LegStop, legLimits, stopWaiting, trackAttempt } from "./leg-work.ts";
-import { dependentsOf, keepsGoingWrong, readKeepsGoingWrong } from "./questions.ts";
-import { addMessage, guidanceMark, takeGuidance } from "./talk.ts";
-import type { VerifyResult } from "./verify.ts";
+import { LegStop, legLimits, stopWaiting, trackAttempt } from "./leg-work.ts";
+import { addMessage, guidanceMark } from "./talk.ts";
 
 /** The providers (Leg kinds) for which I allowed same-provider fallback (ADR-009). */
 export const SAME_PROVIDER_FALLBACK = "fallback.sameProvider";
-
-/** The other answers when the agent says it can't finish without me. */
-export const ILL_DO_IT = "I'll do it";
-export const LEAVE_IT_OUT = "Leave it out";
-export const STOP_JOB = "Stop the job";
 
 export type TaskRow = typeof tasks.$inferSelect;
 
@@ -157,33 +142,6 @@ export type AttemptOutcome =
   | { kind: "cancel-job"; reason: string }
   /** Its Leg was paused, or its work in the job cancelled: stopped at a safe point, the job goes on. */
   | { kind: "leg-stopped"; how: "pause" | "cancel" | "room"; reason: string };
-
-/** Ladder steps that end the attempt, and why. */
-class EndAttempt extends Error {
-  constructor(
-    readonly outcome: AttemptOutcome,
-    /** The Leg or its model couldn't be used, not the task failing: not counted (ADR-052 §4). */
-    readonly unavailable = false,
-    /**
-     * Ended by my answer: a "try again" isn't counted against the task (bug 10), and no
-     * choice of mine is learned as the model's failure (bug 11).
-     */
-    readonly byOwner = false,
-  ) {
-    super(outcome.kind);
-  }
-}
-
-const SEVERITY: DriftCode[] = ["D8", "D7", "D1", "D4", "D3", "D2", "D6", "D5"];
-const PREFIX: Record<TaskKind, string> = {
-  plan: "docs",
-  research: "docs",
-  implement: "feat",
-  test: "test",
-  review: "refactor",
-  mechanical: "chore",
-  external: "chore",
-};
 
 const hash = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 12);
 
@@ -451,14 +409,36 @@ export async function runAttempt(
           .find((s) => s.native)?.native ?? null)
       : null;
 
-  const escalations: string[] = [];
   const started = now();
-  /** Tokens of the current session when progress was last made or a drift was acted on (D6 counts from here). */
-  let tokensBaseline = 0;
-  let sessionTokens = 0;
-  let level = task.escalation;
-  // Only messages written after this attempt began: older ones are in Silk, in its context pack.
-  let guidanceSeen = guidanceAtStart;
+  /** What the attempt carries from turn to turn (harness/facts.ts): the ladder, what was observed. */
+  const st: AttemptState = {
+    level: task.escalation,
+    escalations: [],
+    observed: {
+      scope: scopeOf(task),
+      changedPaths: [],
+      commands: [],
+      verifyFailures: [],
+      falseClaim: null,
+      lastActivityAt: now(),
+      tokensSinceProgress: 0,
+      taskBudgetTokens: null,
+      forbidden: [],
+      gateBypass: [],
+      local: leg.profile.costModel === "local",
+    },
+    tokensBaseline: 0,
+    sessionTokens: 0,
+    usage: null,
+    turns: 0,
+    ownerAsked: new Set(),
+    // Only messages written after this attempt began: older ones are in Silk, in its context pack.
+    guidanceSeen: guidanceAtStart,
+    stuckFrom: 0,
+    nudged: false,
+    signalled: new Set(),
+  };
+  const observed = st.observed;
   // Typed by assertion: they change inside closures, which narrowing cannot follow.
   let session = null as Supervised | null;
   let sessionLog: string | null = null;
@@ -482,26 +462,10 @@ export async function runAttempt(
     // Claude Code's own auto mode refused a call (ADR-053): the Gate counts it like any other block.
     if (e.type === "permission.denied" && e.by === "leg") gate.legRefused(e.request, e.reason);
     if (e.type === "usage") {
-      sessionTokens = e.usage.inputTokens + e.usage.outputTokens;
-      observed.tokensSinceProgress = Math.max(0, sessionTokens - tokensBaseline);
-      usage = e.usage;
+      st.sessionTokens = e.usage.inputTokens + e.usage.outputTokens;
+      observed.tokensSinceProgress = Math.max(0, st.sessionTokens - st.tokensBaseline);
+      st.usage = e.usage;
     }
-  };
-
-  let usage = null as UsageSnapshot | null;
-
-  const observed: Observed = {
-    scope: scopeOf(task),
-    changedPaths: [],
-    commands: [],
-    verifyFailures: [],
-    falseClaim: null,
-    lastActivityAt: now(),
-    tokensSinceProgress: 0,
-    taskBudgetTokens: null,
-    forbidden: [],
-    gateBypass: [],
-    local: leg.profile.costModel === "local",
   };
 
   const event = (type: string, payload: Record<string, unknown>) =>
@@ -772,8 +736,8 @@ export async function runAttempt(
     observed.lastActivityAt = now();
     const tools = await openTools();
     // A new session counts its tokens from zero.
-    sessionTokens = 0;
-    tokensBaseline = 0;
+    st.sessionTokens = 0;
+    st.tokensBaseline = 0;
     try {
       session = await d.supervisor.start({
         legId: leg.legId,
@@ -802,13 +766,13 @@ export async function runAttempt(
       if (signal.aborted) throw error;
       // A Leg that fails to start is unusable for now, never the task failing (ADR-052 §4).
       const why = error instanceof Error ? error.message : String(error);
-      const outcome = notTheTask(why, true);
+      const outcome = markUnusable({ d, task, leg, event }, why, true);
       throw new EndAttempt(
         outcome ?? {
           kind: "retry",
           reason: `${leg.legName} could not start a session (${why}); the attempt doesn't count against the task`,
         },
-        true,
+        { kind: "CouldNotStart" },
       );
     }
     const row = d.db
@@ -1061,7 +1025,6 @@ export async function runAttempt(
    * gave to a Leg, or with nothing stronger allowed.
    */
   const higherRung = (): Route | null => {
-    if (task.pinnedModelId || back.length) return null;
     const mine = rungOf(leg.profile, work, task.kind as TaskKind);
     const now = candidatesFor(d.registry, job.allowedLegIds).filter(
       (c) =>
@@ -1072,89 +1035,10 @@ export async function runAttempt(
       ...routeOptions,
       claudeShare: claudeShareOf(d, job.id, budget),
     });
-    return r.ranked.find((x) => (x.rung ?? 0) > mine) ?? null;
+    const up = nextRung(mine, r.ranked, !!task.pinnedModelId || back.length > 0);
+    return up === "top" ? null : up;
   };
 
-  /** A usage limit on this Leg: another account of its provider isn't a fallback unless I allowed it (ADR-009). */
-  const markLimited = () => {
-    task.limitedKinds = [
-      ...new Set([...task.limitedKinds, `${d.registry.require(leg.legId).kind}:${leg.legId}`]),
-    ];
-    // Not "avoid": a quota is no failure, and the ladder climbs only on failures (ADR-052 §3).
-    d.db.update(tasks).set({ limitedKinds: task.limitedKinds }).where(eq(tasks.id, taskId)).run();
-  };
-
-  /**
-   * An end that isn't the task's, read from the Leg's own words (ADR-052
-   * §4, M13.22): a model its provider deprecated (hidden, the one it names
-   * offered instead), a usage limit (the Leg out of quota until the reset it
-   * says, kept until then), its provider or its program failing (a rest).
-   * Each makes the Leg or model unusable until it clears; the attempt
-   * doesn't count against the task. Null: the task's own failure.
-   */
-  const notTheTask = (error: string | null, atStart = false): AttemptOutcome | null => {
-    if (!error) return null;
-    const what = `${leg.legName} · ${leg.model}`;
-    const old = deprecationOf(error);
-    if (old && (!old.model || leg.model === old.model || leg.model.endsWith(`/${old.model}`))) {
-      const replacementId = d.registry.deprecateModel(leg.legModelId, old.replacement);
-      event("task.model-deprecated", {
-        legId: leg.legId,
-        legModelId: leg.legModelId,
-        model: leg.model,
-        replacement: old.replacement,
-        replacementId,
-      });
-      return {
-        kind: "retry",
-        reason: `${what} was deprecated by its provider${old.replacement ? `; ${old.replacement} takes its place` : "; it is hidden"}, and the attempt doesn't count against the task`,
-      };
-    }
-    const limit = usageLimitOf(error, now());
-    if (limit) {
-      const until = limit.until ?? now() + 15 * 60_000;
-      const l = d.registry.require(leg.legId);
-      if (!l.limitedUntil || l.limitedUntil < until)
-        d.registry.setHealth(
-          leg.legId,
-          "rate-limited",
-          `Out of quota until ${new Date(until).toISOString()}: ${limit.reason}`,
-          until,
-        );
-      markLimited();
-      event("task.leg-limited", { legId: leg.legId, until, reason: limit.reason });
-      return {
-        kind: "retry",
-        reason: `${leg.legName} is out of quota until ${whenSaid(until, now())} (${limit.reason})`,
-      };
-    }
-    const infra =
-      providerFailure(error) ??
-      (atStart
-        ? {
-            scope: "leg" as const,
-            restMs: 2 * 60_000,
-            reason: `could not start: ${error}`.slice(0, 160),
-          }
-        : null);
-    if (!infra) return null;
-    const { until, inARow } = d.registry.providerFailed(leg.legId, leg.legModelId, infra);
-    event("task.provider-failed", {
-      legId: leg.legId,
-      legModelId: leg.legModelId,
-      scope: infra.scope,
-      reason: infra.reason,
-      until,
-      inARow,
-    });
-    return {
-      kind: "retry",
-      reason: `${infra.scope === "leg" ? leg.legName : what} failed at its provider (${infra.reason}); it rests until ${new Date(until).toISOString()}, and the attempt doesn't count against the task`,
-    };
-  };
-
-  /** What the agent said it needs of me, asked once each in this attempt. */
-  const ownerAsked = new Set<string>();
   /** A question of mine said in the project's conversation too (ADR-045). */
   const conversationAsks = (
     text: string,
@@ -1177,335 +1061,65 @@ export async function runAttempt(
       { questions, itemId },
     );
 
-  /**
-   * The agent ended its turn saying it can't finish without me (blocked by a
-   * guard, something only I can do or allow) while a check fails: The Eye
-   * asks that, specifically, not "keeps going wrong" (ADR-053). The command
-   * is the blocked one the agent names, else the last one blocked, else the
-   * one its words give. Allowed, the exact command runs once and the agent
-   * is told to go on (true); my other answers end the attempt. False:
-   * already asked.
-   */
-  const askOwnerNeeded = async (said: string, report: string, failed: VerifyResult) => {
-    const remoteOf = (command: string) =>
-      servers.length
-        ? parseSsh(
-            gate.plain(command),
-            servers.map((s) => s.alias),
-          )
-        : null;
-    const names = (b: { command: string }) => {
-      const ssh = remoteOf(b.command);
-      return report.includes(b.command) || (!!ssh?.remote && report.includes(ssh.remote.trim()));
-    };
-    const blockedHere = gate.blocked();
-    const blocked = [...blockedHere].reverse().find(names) ?? blockedHere.at(-1) ?? null;
-    const worded =
-      /(?:owner action (?:is )?required|the owner (?:must|needs to|has to|should) run|you (?:can|could|need to) run)\s*:?\s*`?([^`\n]+?)`?\s*(?:$|\n)/i.exec(
-        report,
-      )?.[1] ?? null;
-    const command = blocked?.command ?? worded?.trim() ?? null;
-    const key = command ? gate.plain(command) : `said:${said}`;
-    if (ownerAsked.has(key)) return false;
-    ownerAsked.add(key);
-    const ssh = command ? remoteOf(command) : null;
-    const server = ssh ? servers.find((s) => s.alias === ssh.alias) : undefined;
-    const shown = ssh && server ? `${ssh.remote.trim()}\` on ${server.name}` : `${command}\``;
-    const dropped = dependentsOf(d.db, job.id, taskId);
-    const prompt = command
-      ? `${leg.legName} says it can't finish “${task.title}” without \`${shown}${
-          blocked
-            ? blocked.byLeg
-              ? `, which its own auto mode refused (${blocked.reason})`
-              : `, which Oraknid's rules blocked (${blocked.reason})`
-            : ""
-        }. What should I do?`
-      : `${leg.legName} says it can't finish “${task.title}” without you. What should I do?`;
-    const questions = [
-      choiceQuestion(
-        prompt,
-        [
-          ...(command
-            ? [
-                {
-                  label: ALLOW,
-                  detail:
-                    "It runs once, exactly as written; the agent is told to go on and finish.",
-                },
-              ]
-            : []),
-          {
-            label: ILL_DO_IT,
-            detail: `The task is yours: do it yourself; the job waits until you mark the task done or hand it back.`,
-          },
-          {
-            label: LEAVE_IT_OUT,
-            detail: `The task is dropped and the job goes on without it.${
-              dropped.length
-                ? ` The tasks that need it are left out too: ${dropped.map((t) => `“${t.title}”`).join(", ")}.`
-                : ""
-            }`,
-          },
-          { label: STOP_JOB, detail: "The job is cancelled; the work done so far stays." },
-        ],
-        command ? ALLOW : null,
-      ),
-    ];
-    const options = questions[0]?.options.map((o) => o.label) ?? [];
-    const { answer } = (await gate.askOwner(
-      "agent-needs",
-      {
-        kind: "question",
-        jobId: job.id,
-        taskId,
-        raisedBy: "eye",
-        title: command
-          ? `${leg.legName} needs \`${shown.slice(0, 100)} for “${task.title}”`
-          : `${leg.legName} needs you for “${task.title}”`,
-        detail: `${prompt}\n\nIts words: “${said}”\n\nThe check that fails:\n${fence(failed.command)}\n${fence(failed.output.slice(-1500))}${command ? `\n\nThe command:\n${fence(command)}` : ""}`,
-        options,
-        defaultOption: null,
-        questions,
-      },
-      {
-        reason: `the agent needs the owner: ${said.slice(0, 200)}`,
-        // Asked in the project's conversation too (ADR-045); answering there answers the item.
-        opened: (itemId) => conversationAsks(prompt, questions, itemId),
-        throwOnStop: true,
-      },
-    )) as { answer: string };
-    if (answer === ALLOW && command) {
-      // A grant, used by the first run of it (ADR-056 §3).
-      gate.grantOnce(command, "allowed once: the agent said it can't finish without it");
-      // What came of this turn isn't held against the agent: it was waiting on me.
-      observed.falseClaim = null;
-      observed.verifyFailures.pop();
-      await session?.session.send(
-        `The owner allows \`${command}\` to run once. Run it now exactly as written, then finish the task and say DONE.`,
-      );
-      return true;
-    }
-    if (answer !== ILL_DO_IT && answer !== LEAVE_IT_OUT && answer !== STOP_JOB) {
-      // My own words: the agent gets them and goes on. What came of this turn isn't held
-      // against it, as with Allow: it was waiting on me (bug 12).
-      observed.falseClaim = null;
-      observed.verifyFailures.pop();
-      await session?.session.send(`The owner answers: ${answer}`);
-      return true;
-    }
-    await closeSession();
-    // My choices, not the model's failures (bug 11).
-    if (answer === ILL_DO_IT) throw new EndAttempt({ kind: "owner-held" }, false, true);
-    if (answer === LEAVE_IT_OUT)
-      throw new EndAttempt({ kind: "skipped", dependents: true }, false, true);
-    throw new EndAttempt(
-      { kind: "cancel-job", reason: `Stopped by me: "${task.title}" couldn't finish without me.` },
-      false,
-      true,
-    );
-  };
-
-  const ask = async (drift: Drift): Promise<never> => {
-    const jobRow = d.db.select().from(jobs).where(eq(jobs.id, job.id)).get();
-    const others = d.registry
-      .all()
-      .filter(
-        (l) =>
-          l.id !== leg.legId &&
-          !l.paused &&
-          (!job.allowedLegIds.length || job.allowedLegIds.includes(l.id)),
-      );
-    const dropped = dependentsOf(d.db, job.id, taskId);
-    const asking = keepsGoingWrong({
-      task: task.title,
-      leg: `${leg.legName} · ${leg.model}`,
-      evidence: drift.evidence,
-      escalations,
-      others: others.map((l) => ({ id: l.id, name: l.name })),
-      dropped: dropped.map((t) => t.title),
-      folder: ws.cwd,
-      branch: jobRow?.branch ?? null,
-    });
-    // Withdrawn if the attempt stops before I answer (Audit 1 → D1-07).
-    const { itemId, answer: text } = (await gate.askOwner(
-      "keeps-going-wrong",
-      {
-        kind: "question",
-        jobId: job.id,
-        taskId,
-        raisedBy: "eye",
-        title: asking.title,
-        detail: asking.detail,
-        options: [],
-        defaultOption: null,
-        questions: asking.questions,
-      },
-      {
-        // Asked in the project's conversation too (ADR-045); answering there answers the item.
-        opened: (id) =>
-          conversationAsks(
-            `“${task.title}” keeps going wrong on ${leg.legName}: ${drift.evidence}. What should I do?`,
-            asking.questions,
-            id,
-          ),
-        // The session is closed: nothing to watch for a stall meanwhile.
-        waits: false,
-        throwOnStop: true,
-      },
-    )) as { itemId: string; answer: string };
-    const answered = d.inbox.get(itemId);
-    const choice = readKeepsGoingWrong(text, answered?.answers ?? null);
-    // My choices, not the model's failures (bug 11).
-    if (choice.kind === "mine") throw new EndAttempt({ kind: "owner-held" }, false, true);
-    if (choice.kind === "leave-out")
-      throw new EndAttempt({ kind: "skipped", dependents: choice.dependents }, false, true);
-    if (choice.kind === "stop")
-      throw new EndAttempt(
-        {
-          kind: "cancel-job",
-          reason: `Stopped by me after "${task.title}" kept going wrong; the work so far stays on its branch.`,
-        },
-        false,
-        true,
-      );
-    if (choice.advice) {
-      d.silk.add({
-        jobId: job.id,
-        taskId,
-        kind: "decision",
-        title: `Guidance for ${task.title}`,
-        body: choice.advice,
-        authoredBy: "owner",
-      });
-    }
-    d.db
-      .update(tasks)
-      .set({ stepUp: 0, escalation: 0, avoid: [] })
-      .where(eq(tasks.id, taskId))
-      .run();
-    if (choice.kind === "another-leg") {
-      giveToLeg(d.db, job.id, taskId, leg.legId, choice.legId);
-      throw new EndAttempt(
-        {
-          kind: "retry",
-          reason: choice.legId
-            ? `given to ${d.registry.get(choice.legId)?.name ?? "another Leg"} by me`
-            : "given to another Leg by me",
-        },
-        false,
-        true,
-      );
-    }
-    throw new EndAttempt(
-      { kind: "retry", reason: choice.advice ? "retrying with my advice" : "retrying, as I asked" },
-      false,
-      true,
-    );
-  };
-
-  /** Climbs one step of the ladder for the worst drift seen. `failure` is the last check's output, if it failed. */
-  const escalate = async (drifts: Drift[], failure = "") => {
-    const drift = [...drifts].sort(
-      (a, b) => SEVERITY.indexOf(a.code) - SEVERITY.indexOf(b.code),
-    )[0] as Drift;
-    const next = nextEscalation(level, drift.code);
-    level = next.level;
-    escalations.push(`${drift.code}:${next.step}`);
-    d.db.update(tasks).set({ escalation: level }).where(eq(tasks.id, taskId)).run();
-    event("task.drift", { code: drift.code, evidence: drift.evidence, step: next.step, level });
-    trail.append("Signal", { kind: "drift", code: drift.code, evidence: drift.evidence });
-    // Detections are consumed: the same evidence doesn't trigger twice (Audit 1 → Q1-01).
-    observed.forbidden = [];
-    observed.gateBypass = [];
-    observed.falseClaim = null;
-    observed.commands = [];
-    observed.verifyFailures = [];
-    tokensBaseline = sessionTokens;
-    observed.tokensSinceProgress = 0;
-    observed.lastActivityAt = now();
-
-    // Edits outside the task's scope are put back whatever the step: left
-    // there, the next attempt starts out of scope and trips D1 again.
-    if (drift.code === "D1") {
-      const outside = (await ws.tree.changedSince(scopeBase)).filter(
-        (p) => !inTaskScope(p, scopeOf(task)),
-      );
-      ws.tree.restorePaths(scopeBase, outside, ws.trash);
-    }
-    switch (next.step) {
-      case "correct": {
-        await session?.session.send(
-          `${correctivePrompt(drift, scopeOf(task), task.verify)}${failure ? `\n\n${failure}` : ""}`,
-        );
-        return;
-      }
-      case "reset":
-        await handOff(true);
-        await closeSession();
-        await openSession(
-          "Continue the task. The handoff above says where the last session stopped.",
-        );
-        return;
-      case "step-up":
-        await handOff(true);
-        await closeSession();
-        d.db
-          .update(tasks)
-          .set({ stepUp: task.stepUp + 1 })
-          .where(eq(tasks.id, taskId))
-          .run();
-        throw new EndAttempt({ kind: "retry", reason: `stepping up after ${drift.code}` });
-      case "reassign":
-        await handOff(true);
-        await closeSession();
-        d.db
-          .update(tasks)
-          .set({ avoid: [...new Set([...task.avoid, leg.legModelId])] })
-          .where(eq(tasks.id, taskId))
-          .run();
-        throw new EndAttempt({ kind: "retry", reason: `reassigning after ${drift.code}` });
-      case "kill":
-        await closeSession("kill");
-        await ws.tree.rollback(ckpt, ws.trash);
-        d.db
-          .update(tasks)
-          .set({ avoid: [...new Set([...task.avoid, leg.legModelId])] })
-          .where(eq(tasks.id, taskId))
-          .run();
-        await handOff(false);
-        throw new EndAttempt({ kind: "retry", reason: `killed after ${drift.code}` });
-      case "ask":
-        await closeSession();
-        await ask(drift);
-    }
-  };
-
-  const finish = (
-    outcome: "succeeded" | "failed" | "reassigned" | "redirected" | "abandoned" | "unavailable",
-    success: boolean,
-    /** What came of it says something of the model: learned from (the ladder's trust). */
-    learn = true,
-  ) => {
+  /** The attempt ends, recorded as counted (core's `countOf`): learned from when it says something of the model. */
+  const finish = (ending: Ending) => {
+    const c = countOf(ending);
     release();
     gate.withdrawAsked();
-    trail.append("Outcome", { kind: outcome, reason: escalations.at(-1) ?? null });
-    trail.append("AttemptEnded", { reason: outcome });
+    trail.append("Outcome", { kind: c.record, reason: st.escalations.at(-1) ?? null });
+    trail.append("AttemptEnded", { reason: c.record });
     d.db
       .update(attempts)
-      .set({ endedAt: now(), outcome, escalations })
+      .set({ endedAt: now(), outcome: c.record, escalations: st.escalations })
       .where(eq(attempts.id, attemptId))
       .run();
     const m = d.registry.model(leg.legModelId);
     // Its provider failing says nothing of what the model can do (M13.22).
-    if (m && outcome !== "unavailable" && learn) {
+    if (m && c.record !== "unavailable" && c.learn) {
       const stored = record(d.registry.storedProfile(m), task.kind as TaskKind, {
-        success,
-        tokens: observed.tokensSinceProgress,
+        success: c.success,
+        tokens: st.observed.tokensSinceProgress,
         ms: now() - started,
-        escalations: escalations.length,
+        escalations: st.escalations.length,
       });
       d.registry.saveProfile(m.id, stored);
     }
+  };
+
+  /** What the turn's end is decided with (ADR-056 §6): the attempt's parts, for `facts.ts` and `apply.ts`. */
+  const x: AttemptCtx = {
+    d,
+    job,
+    task,
+    leg,
+    effort: pick.effort ?? null,
+    work,
+    ws,
+    gate,
+    log: attemptLog,
+    trail,
+    attemptId,
+    ckpt,
+    scopeBase,
+    signal,
+    servers,
+    st,
+    event,
+    session: () => session,
+    handOff,
+    closeSession,
+    openSession,
+    turnEnd: (ms) => nextTurnEnd(session as Supervised, signal, ms, watch),
+    runChecks,
+    repairBroken: (checked, report, rerun) => repairBroken(checked, report, rerun),
+    treeState,
+    higher: () => {
+      const up = higherRung();
+      return up ? { legName: up.candidate.legName, model: up.candidate.model } : null;
+    },
+    conversationAsks: (text, questions, itemId) =>
+      conversationAsks(text, questions as ReturnType<typeof choiceQuestion>[], itemId),
+    scope: () => scopeOf(task),
   };
 
   try {
@@ -1528,309 +1142,20 @@ export async function runAttempt(
           : `Do the task described above: plan it your own way, in this session. ${checksLine} and summarise what you changed.`,
       resumeFrom,
     );
-    let turns = 0;
     for (;;) {
       if (!session) throw new Error("no session");
       const end = await nextTurnEnd(session, signal, d.stallCheckMs ?? 30_000, watch);
-      if (!end) {
-        // No turn end yet: look for a stall or burn. Waiting for me is neither.
-        if (gate.waiting() > 0) {
-          observed.lastActivityAt = now();
-          continue;
-        }
-        const drifts = detect(observed, now(), DEFAULT_THRESHOLDS);
-        if (drifts.length) await escalate(drifts);
-        continue;
-      }
-      turns++;
+      if (end) st.turns++;
       // What the Stop hook ran as it let this turn end, if it did: used once (bug 5).
-      const ranAtStop = stopRun;
-      stopRun = null;
-      // The job's folder is still a worktree of the project, else put back and the attempt fails
-      // (Jobs-and-Projects → Ending a job, after the piano job).
-      const strayed = safeStrayed(ws.tree);
-      if (strayed.length) {
-        await closeSession("kill");
-        const why = strayed.map((x) => x.problem).join("; ");
-        let restored = true;
-        try {
-          ws.tree.putBack(ws.trash);
-        } catch (error) {
-          restored = false;
-          event("task.folder-not-restored", {
-            reason: error instanceof Error ? error.message : String(error),
-          });
-        }
-        const reason = `The job's folder stopped belonging to the project: ${why}. ${
-          restored
-            ? "Oraknid put it back as a worktree of the project, its files kept, and the task starts again."
-            : "Oraknid couldn't put it back."
-        }`;
-        event("task.folder-restored", { problems: strayed, restored });
-        d.silk.add({
-          jobId: job.id,
-          taskId,
-          kind: "issue",
-          title: `Folder put back: ${task.title}`,
-          body: `${reason} Never run git init, nor move, delete or edit a .git: Oraknid commits the work on the job's branch, and merges and pushes at the end.`,
-          authoredBy: "eye",
-        });
-        d.db
-          .update(tasks)
-          .set({ avoid: [...new Set([...task.avoid, leg.legModelId])] })
-          .where(eq(tasks.id, taskId))
-          .run();
-        finish("failed", false);
-        if (!restored) return { kind: "blocked", reason, until: null };
-        return { kind: "retry", reason };
-      }
-      if (end.reason === "rate-limited") {
-        await handOff(false);
-        await closeSession();
-        // Its own words say until when: kept until then, never routed to before (ADR-052 §4).
-        const limit = usageLimitOf(end.error, now());
-        if (limit?.until) notTheTask(end.error);
-        else markLimited();
-        // A usage limit is the account's, not the task failing: not counted against it (M13.22).
-        finish("unavailable", false);
-        return { kind: "retry", reason: `${leg.legName} hit a usage limit` };
-      }
-      if (end.reason === "error") {
-        await handOff(false);
-        await closeSession();
-        // Its provider failed, not the task (M13.22): the model (or the Leg) rests, a deprecated
-        // model is replaced, a quota is kept until its reset (ADR-052 §4); the attempt isn't
-        // counted against the task, and routing tries elsewhere next.
-        const unusable = notTheTask(end.error);
-        if (unusable) {
-          finish("unavailable", false);
-          return unusable;
-        }
-        d.db
-          .update(tasks)
-          .set({ avoid: [...new Set([...task.avoid, leg.legModelId])] })
-          .where(eq(tasks.id, taskId))
-          .run();
-        finish("failed", false);
-        return { kind: "retry", reason: `${leg.legName} failed: ${end.error ?? "unknown error"}` };
-      }
-
-      // Cut short before it finished (bug 14): not a turn to judge. Stopped by me or its job,
-      // the stop goes on; otherwise it is told to go on where it was.
-      if (end.reason === "interrupted") {
-        if (signal.aborted) throw signal.reason;
-        event("task.turn-interrupted", {});
-        if (turns >= (d.maxTurns ?? 25)) {
-          await escalate([{ code: "D6", evidence: `took ${turns} turns without finishing one` }]);
-          continue;
-        }
-        await session?.session.send(
-          "Your last turn was interrupted before it finished. Go on with the task where you were; say DONE when it is finished.",
-        );
-        continue;
-      }
-      /** Stopped at its own limit of steps in a turn (bug 14): checked, its words not a claim. */
-      const cutShort = end.reason === "max_turns";
-      if (cutShort) event("task.turn-limit", {});
-
-      // A turn went through: its provider works (M13.22).
-      d.registry.providerWorked(leg.legId, leg.legModelId);
-
-      // My messages to The Eye for the work now (Talking to The Eye) go on before any check.
-      const told = takeGuidance(job.id, guidanceSeen);
-      if (told.text && session) {
-        guidanceSeen = told.mark;
-        event("task.guided", {});
-        await session.session.send(told.text);
-        continue;
-      }
-
-      observed.changedPaths = await ws.tree.changedSince(scopeBase);
-      observed.scope = scopeOf(task);
-      let verified = task.verify.length === 0 && !cutShort;
-      let failure =
-        cutShort && !task.verify.length
-          ? "Its turn reached its limit of steps before it finished."
-          : "";
-      if (task.verify.length) {
-        event("task.verifying", {});
-        // A check that is wrong is The Eye's to fix, not the Leg's (The-Eye → A check that is
-        // wrong); so is one the agent shows is broken (ADR-052 §2).
-        // Run once per turn end: what the Stop hook just ran on this same work stands (bug 5).
-        const same =
-          ranAtStop &&
-          ranAtStop.verify.join("\n") === task.verify.join("\n") &&
-          ranAtStop.tree === (await treeState());
-        const report = await repairBroken(
-          same ? ranAtStop.report : await runChecks(task.verify, { why: "turn" }),
-          end.text,
-          () => runChecks(task.verify, { why: "repair" }),
-        );
-        const failed = report.failures[0];
-        verified = !failed;
-        event("task.verified", {
-          ok: verified,
-          results: report.results.map((r) => ({
-            command: r.command,
-            ok: r.ok,
-            exitCode: r.exitCode,
-          })),
-        });
-        if (failed) {
-          failure = `${fence(failed.command)}\nfailed (exit ${failed.exitCode}):\n${fence(failed.output.slice(-3000))}`;
-          observed.verifyFailures.push(failed.signature ?? "");
-          if (claimsDone(end.text) && !cutShort)
-            observed.falseClaim = `said it was done, but \`${failed.command}\` failed`;
-          // It says it can't finish without me (a guard blocked it, only I can do or allow it):
-          // that is asked, specifically, before any ladder or "keeps going wrong" (ADR-053). So is
-          // being stuck on its own auto mode's refusals with nothing after them (bug 7).
-          const byLeg = gate.takeStuck();
-          const said = cutShort
-            ? null
-            : (saysOwnerNeeded(end.text) ??
-              (byLeg ? `${byLeg.why} by its own auto mode: “${end.text.slice(0, 300)}”` : null));
-          if (said && (await askOwnerNeeded(said, end.text, failed))) continue;
-        }
-      }
-
-      // No verify command (research, plan): a second reasoning look decides (The-Eye → Planning).
-      if (!task.verify.length && d.brain && !cutShort) {
-        event("task.evaluating", {});
-        try {
-          const review = await d.brain.evaluate({
-            jobId: job.id,
-            cwd: ws.cwd,
-            task: { title: task.title, instructions: task.instructions, kind: task.kind },
-            report: end.text,
-            changes: await ws.tree.diffStatSince(ckpt),
-            ...(job.skillChecks ? { criteria: job.skillChecks } : {}),
-          });
-          verified = review.accepted;
-          event("task.evaluated", { accepted: review.accepted, reason: review.reason });
-          if (!review.accepted) {
-            failure = `The Eye reviewed the work: ${review.reason}${review.missing.length ? `\nStill missing:\n${review.missing.map((m) => `- ${m}`).join("\n")}` : ""}`;
-            observed.verifyFailures.push(`evaluate:${review.missing.join("|") || review.reason}`);
-            if (claimsDone(end.text))
-              observed.falseClaim = "said it was done, but the review found work missing";
-          }
-        } catch (error) {
-          // I stopped The Eye's thinking (M13.25): the job pauses here, to review it on resume.
-          if (error instanceof BrainStopped) throw error;
-          // No Leg could review it: accepted as before, and said so.
-          event("task.evaluated", {
-            accepted: true,
-            reason: `not reviewed: ${error instanceof Error ? error.message : String(error)}`,
-          });
-        }
-      }
-
-      const drifts = detect(observed, now(), DEFAULT_THRESHOLDS);
-      if (verified && !drifts.some((x) => x.code === "D1")) {
-        await closeSession();
-        // One commit per repo the task changed, each with its own message (ADR-042).
-        const subject = `${task.title.charAt(0).toLowerCase()}${task.title.slice(1)}`;
-        const made = await ws.tree.commit((repo, several) =>
-          several && repo
-            ? `${PREFIX[task.kind as TaskKind]}(${repo}): ${subject}`
-            : `${PREFIX[task.kind as TaskKind]}: ${subject}`,
-        );
-        const commit = made[0]?.sha ?? null;
-        const said = ws.tree.several
-          ? made.length
-            ? ` ${made.length === 1 ? "Commit" : "Commits"} ${made.map((c) => `${c.repo} ${c.sha.slice(0, 10)}`).join(", ")}.`
-            : ""
-          : commit
-            ? ` Commit ${commit.slice(0, 10)}.`
-            : "";
-        d.silk.add({
-          jobId: job.id,
-          taskId,
-          kind: "progress",
-          title: `Done: ${task.title}`,
-          body: `${task.verify.length ? `Verified by ${task.verify.map((v) => `\`${v}\``).join(", ")}` : "No verify command (a planning task)"} on ${leg.legName} · ${leg.model}${pick.effort ? ` (${pick.effort})` : ""}.${said}\n\n${(await ws.tree.diffStatSince(ckpt)).trim() || "No file changes."}`,
-          authoredBy: "eye",
-        });
-        d.db.update(tasks).set({ escalation: 0 }).where(eq(tasks.id, taskId)).run();
-        finish("succeeded", true);
-        return {
-          kind: "done",
-          commit,
-          commits: ws.tree.several ? made.map((c) => ({ repo: c.repo as string, sha: c.sha })) : [],
-        };
-      }
-      // The ladder (ADR-052 §3): the work isn't done after the agent ended its turn (its checks
-      // fail, the review says it's wrong): one failure moves it up a rung at once, with a
-      // handoff, while a stronger model is allowed. Precedence (ADR-056 stage 1, bug 13):
-      // security and scope first — a forbidden action (D7), a refused gate tried again (D8),
-      // edits outside the task's scope (D1) are the drift ladder's, which puts the scope back
-      // before anyone works on; then the climb on a failed check; then the other drifts
-      // (D2–D6), whose ladder runs where there is no rung left to climb.
-      const first = drifts.some((x) => x.code === "D7" || x.code === "D8" || x.code === "D1");
-      // A turn cut at its limit of steps isn't its answer: it goes on in its session first.
-      if (!verified && !first && !cutShort) {
-        const up = higherRung();
-        if (up) {
-          event("task.climbing", {
-            from: `${leg.legName} · ${leg.model}`,
-            to: `${up.candidate.legName} · ${up.candidate.model}`,
-            work,
-          });
-          await handOff(false, failure);
-          await closeSession();
-          task.avoid = [...new Set([...task.avoid, leg.legModelId])];
-          d.db.update(tasks).set({ avoid: task.avoid }).where(eq(tasks.id, taskId)).run();
-          finish("failed", false);
-          return {
-            kind: "retry",
-            reason: `${leg.legName} · ${leg.model} didn't get it done; it climbs to ${up.candidate.legName} · ${up.candidate.model}`,
-          };
-        }
-      }
-      if (drifts.length) {
-        await escalate(drifts, failure);
-        continue;
-      }
-      if (turns >= (d.maxTurns ?? 25)) {
-        await escalate([
-          { code: "D6", evidence: `took ${turns} turns without passing verification` },
-        ]);
-        continue;
-      }
-      // Self-prompting (The-Eye → Self-prompting): the exact failure goes back.
-      await session?.session.send(
-        cutShort
-          ? `Your turn reached its limit of steps before you finished.${task.verify.length ? ` Oraknid ran the checks and the task is not done yet:\n${failure}\n` : " "}Go on with the task, then say DONE.`
-          : `Oraknid ran the checks and the task is not done yet.\n${failure}\nFix it, then say DONE.`,
-      );
-      if (shouldRotate(usage, d.rotateAt ?? 0.6)) {
-        event("task.rotating", {
-          contextTokens: usage?.contextTokens,
-          contextWindow: usage?.contextWindow,
-        });
-        // The turn being finished is watched like any other (Audit 1 → Q1-23).
-        await nextTurnEnd(session as Supervised, signal, 600_000, watch);
-        await handOff(true);
-        await closeSession();
-        await openSession(
-          "Continue the task. The handoff above says where the last session stopped. Say DONE when it is finished.",
-        );
-      }
+      const ranAtStop = end ? stopRun : null;
+      if (end) stopRun = null;
+      const turn = beginTurn(x, end, ranAtStop, () => safeStrayed(ws.tree));
+      // Gather the facts, decide (core's decideOutcome), do what it says (ADR-056 §6).
+      while ((await applyOutcome(decideOutcome(factsOf(x, turn)), x, turn)) === "decide");
     }
   } catch (error) {
     if (error instanceof EndAttempt) {
-      finish(
-        error.unavailable
-          ? "unavailable"
-          : error.outcome.kind === "retry"
-            ? // My "try again": redirected by me, not a failure spending the task's attempts.
-              error.byOwner
-              ? "redirected"
-              : "reassigned"
-            : "abandoned",
-        false,
-        // What I chose (skip it, take it over, stop, try again) says nothing of the model.
-        !error.byOwner,
-      );
+      finish(error.ending);
       return error.outcome;
     }
     // Stopped (pause, cancel, shutdown) or failed: leave a handoff behind, then let the engine decide.
@@ -1859,7 +1184,7 @@ export async function runAttempt(
       } catch {}
     }
     // Stopped by me or its job (a pause, a restart) says nothing of the model (ADR-052 §3).
-    finish("abandoned", false, !signal.aborted);
+    finish({ kind: "Stopped", byJob: signal.aborted });
     if (byLeg) {
       setReady(byLeg.message);
       return { kind: "leg-stopped", how: byLeg.how, reason: byLeg.message };
@@ -1932,10 +1257,6 @@ async function safeDiffStat(ws: { tree: WorkTree }, since: string): Promise<stri
   }
 }
 
-function shouldRotate(u: UsageSnapshot | null, at: number): boolean {
-  return !!u?.contextTokens && !!u.contextWindow && u.contextTokens > u.contextWindow * at;
-}
-
 /** Reads events until a turn ends; null when `ms` pass first (time to look for a stall). */
 /** The read in flight on each session's events, kept across calls. */
 const waiting = new WeakMap<AsyncIterator<LegEvent>, Promise<IteratorResult<LegEvent>>>();
@@ -1995,8 +1316,6 @@ const scopeOf = (task: TaskRow) =>
     verify: task.verify,
     instructions: task.instructions,
   });
-
-const inTaskScope = (path: string, scope: string[]) => oraknidOwn(path) || inScope(path, scope);
 
 /** Every visible Leg model the job may use, as routing candidates. */
 export function candidatesFor(registry: LegRegistry, allowed: string[]): RouteCandidate[] {

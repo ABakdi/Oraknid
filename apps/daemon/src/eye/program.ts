@@ -10,10 +10,12 @@ import {
 } from "@oraknid/contracts";
 import {
   canRunSideBySide,
+  EscalationPolicy,
   freshQuestions,
   type GatedAction,
   readingOf,
   readyTasks,
+  SPENDS_ATTEMPT,
   scopeConflict,
   skillChecks,
   skillExcerpt,
@@ -69,7 +71,7 @@ import type { GitHub } from "../workspace/github.ts";
 import { type Projects, viewOf } from "../workspace/projects.ts";
 import { isSeveral } from "../workspace/repos.ts";
 import { MultiTree, multiTreeOf, singleTree, type WorkTree } from "../workspace/tree.ts";
-import { type AttemptJob, runAttempt } from "./attempt.ts";
+import { type AttemptJob, type AttemptOutcome, runAttempt } from "./attempt.ts";
 import { forgetTaskVerdicts } from "./auto-mode.ts";
 import { BrainStopped, type EyeBrain } from "./brain.ts";
 import { parseBuiltinCheck } from "./builtin-checks.ts";
@@ -735,7 +737,8 @@ async function runTask(
     job,
     task,
   );
-  // Only real failures count: a pause, a restart or a crash cut an attempt short, it didn't fail (Audit 1 → D1-01).
+  // Only real failures count (core's SPENDS_ATTEMPT): a pause, a restart or a crash cut an
+  // attempt short, it didn't fail (Audit 1 → D1-01); my "try again" spends nothing (bug 10).
   const failures =
     d.db
       .select({ n: count() })
@@ -743,7 +746,7 @@ async function runTask(
       .where(
         and(
           eq(attempts.taskId, task.id),
-          inArray(attempts.outcome, ["failed", "reassigned"]),
+          inArray(attempts.outcome, [...SPENDS_ATTEMPT]),
           gte(attempts.startedAt, readSetting(d.db, attemptsFromKey(job.id), z.number(), 0)),
         ),
       )
@@ -940,64 +943,90 @@ async function runTask(
   // Applied first, then marked settled: a crash in between applies it again, which changes nothing.
   const settle = () =>
     d.db.update(tasks).set({ settledAttempt: attemptNo }).where(eq(tasks.id, task.id)).run();
-  // A task settled keeps nothing in memory: the judge's verdicts on it, its blocks (bug 6), nor
-  // what its attempts remembered across restarts (bug 8).
-  const forget = (taskId: string) => {
-    forgetTaskVerdicts(job.id, taskId);
-    forgetTaskMemory(d.db, job.id, taskId, "the task settled");
-  };
-  switch (outcome.kind) {
-    case "done":
-      if (outcome.commit)
-        d.db
-          .update(tasks)
-          .set({ commit: outcome.commit, commits: outcome.commits ?? [] })
-          .where(eq(tasks.id, task.id))
-          .run();
-      setTask(d, job.id, task.id, "done");
-      forget(task.id);
-      break;
-    case "retry":
-      setTask(d, job.id, task.id, "ready", outcome.reason);
-      break;
-    case "skipped": {
-      // Left out by me (ADR-045): with the tasks that need it, when I chose so.
-      const dropped = outcome.dependents ? dependentsOf(d.db, job.id, task.id) : [];
-      setTask(d, job.id, task.id, "skipped", "Left out by me.", {
-        dropped: dropped.map((t) => t.title),
-      });
-      for (const t of dropped)
-        setTask(d, job.id, t.id, "skipped", `Left out with “${task.title}”, which it needs.`, {
-          with: task.id,
-        });
-      for (const t of [task, ...dropped]) forget(t.id);
-      break;
-    }
-    case "owner-held":
-      d.db
-        .update(tasks)
-        .set({ ownerHeld: true, state: "paused" })
-        .where(eq(tasks.id, task.id))
-        .run();
-      d.bus.publish({
-        type: "task.state",
-        topic: `job:${job.id}`,
-        jobId: job.id,
-        payload: { taskId: task.id, to: "paused", reason: "I took it over." },
-      });
-      break;
-    case "cancel-job":
-      ctx.setState("cancelled", outcome.reason);
-      settle();
-      // Read by runTasks: the job's other tasks stop, and none starts (bug 1).
-      return "cancelled";
-    case "leg-stopped":
-      // Paused: it waits for its Leg; cancelled: it goes on without it (Jobs-and-Projects → Controls).
-      setTask(d, job.id, task.id, "ready", outcome.reason);
-      break;
+  // A result from a stale attempt (a later one started, or this one was applied) is dropped
+  // (ADR-056 §7).
+  const now = d.db.select().from(tasks).where(eq(tasks.id, task.id)).get();
+  if (now && EscalationPolicy.stale(attemptNo, now)) return;
+  if ((await APPLY[outcome.kind]({ d, ctx, job, task }, outcome as never)) === "cancelled") {
+    settle();
+    // Read by runTasks: the job's other tasks stop, and none starts (bug 1).
+    return "cancelled";
   }
   settle();
 }
+
+/** What runTask applies an outcome to. */
+interface Applying {
+  d: EyeDeps;
+  ctx: JobContext;
+  job: typeof jobs.$inferSelect;
+  task: ReturnType<typeof taskRows>[number];
+}
+
+/**
+ * A task settled keeps nothing in memory: the judge's verdicts on it, its
+ * blocks (bug 6), nor what its attempts remembered across restarts (bug 8).
+ */
+const forget = (d: EyeDeps, jobId: string, taskId: string) => {
+  forgetTaskVerdicts(jobId, taskId);
+  forgetTaskMemory(d.db, jobId, taskId, "the task settled");
+};
+
+/** An attempt's outcome, applied to its task and job: one row per kind (ADR-056 §8). */
+const APPLY: {
+  [K in Exclude<AttemptOutcome["kind"], "blocked">]: (
+    a: Applying,
+    o: Extract<AttemptOutcome, { kind: K }>,
+  ) => "cancelled" | undefined;
+} = {
+  done: ({ d, job, task }, o) => {
+    if (o.commit)
+      d.db
+        .update(tasks)
+        .set({ commit: o.commit, commits: o.commits ?? [] })
+        .where(eq(tasks.id, task.id))
+        .run();
+    setTask(d, job.id, task.id, "done");
+    forget(d, job.id, task.id);
+    return undefined;
+  },
+  retry: ({ d, job, task }, o) => {
+    setTask(d, job.id, task.id, "ready", o.reason);
+    return undefined;
+  },
+  // Left out by me (ADR-045): with the tasks that need it, when I chose so.
+  skipped: ({ d, job, task }, o) => {
+    const dropped = o.dependents ? dependentsOf(d.db, job.id, task.id) : [];
+    setTask(d, job.id, task.id, "skipped", "Left out by me.", {
+      dropped: dropped.map((t) => t.title),
+    });
+    for (const t of dropped)
+      setTask(d, job.id, t.id, "skipped", `Left out with “${task.title}”, which it needs.`, {
+        with: task.id,
+      });
+    for (const t of [task, ...dropped]) forget(d, job.id, t.id);
+    return undefined;
+  },
+  "owner-held": ({ d, job, task }) => {
+    d.db.update(tasks).set({ ownerHeld: true, state: "paused" }).where(eq(tasks.id, task.id)).run();
+    d.bus.publish({
+      type: "task.state",
+      topic: `job:${job.id}`,
+      jobId: job.id,
+      payload: { taskId: task.id, to: "paused", reason: "I took it over." },
+    });
+    return undefined;
+  },
+  "cancel-job": ({ ctx }, o) => {
+    ctx.setState("cancelled", o.reason);
+    return "cancelled";
+  },
+  // Paused: it waits for its Leg; cancelled: it goes on without it (Jobs-and-Projects → Controls).
+  "leg-stopped": ({ d, job, task }, o) => {
+    setTask(d, job.id, task.id, "ready", o.reason);
+    return undefined;
+  },
+};
 
 export { ENOUGH, INTERVIEW_DONE } from "./interview.ts";
 

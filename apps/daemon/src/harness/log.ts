@@ -51,7 +51,8 @@ export interface AttemptEventData {
     /** What I refused, its key: asked again, it is refused at once (D8). */
     refusal?: string;
   };
-  ActionResult: { actionId: string; ok: boolean };
+  /** `out`: a fingerprint of its output, for the stuck monitor (the same result again). */
+  ActionResult: { actionId: string; ok: boolean; out?: string };
   /** An action with no result after a restart: never re-run blindly (ADR-056 §1). */
   ActionUncertain: { actionId: string; tool: string; input: string };
   QuestionAsked: { itemId: string; ask: string; title: string };
