@@ -3,6 +3,34 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.3.0 — 2026-10-08 (pre-release)
+
+### Codex as an agent ([ADR-057](docs/04-Decisions/ADR-057-Codex-Adapter.md))
+- **Add Codex on the Legs page:**
+  - It's found on this computer, or added by hand with your ChatGPT sign-in or an OpenAI API key (kept in the keychain).
+  - Each Codex Leg has its own CODEX_HOME; your `~/.codex` is never used by jobs.
+  - Sign-in from its card uses a device code: a link and a one-time code.
+- **How it runs:** headless (`codex exec --json`) inside Oraknid's sandbox, resuming its threads.
+- **Every action is asked of Oraknid** through Codex's PreToolUse hook, each file of a patch included, and the task's checks run through its Stop hook.
+- **Fails closed:** if Codex ever runs a tool without asking (its hooks not active), the session is stopped at once.
+- **Models, quota and the ladder:** models and reasoning levels come from Codex itself, plan windows (five-hour and weekly) are read without spending a prompt, and usage-limit messages are read for their reset time. Codex models take their place on the ladder.
+
+### The harness, stage 2: the Gate ([ADR-056](docs/04-Decisions/ADR-056-The-Harness.md))
+- **One path for every action:** the agent's permission prompt, Claude Code's hook, Oraknid's built-in tools and commands on servers. The rules run once per action.
+- **Grants survive a restart:** your approved plan's removals and "allow once".
+- **Every block counts toward the stuck rule,** your own refusals included (shown as "(you)").
+- **Fixed:**
+  - a denied built-in tool call refused every later call of that tool;
+  - three Claude Code blocks on a file tool asked nothing;
+  - a cancelled job's task memory was never cleared.
+
+### The canon
+Specification, architecture and planning brought up to date with the code: glossary, business rules, entities, data map (every table, settings key and migration), the API contract (all procedures), the roadmap and phase notes, the README and the guide.
+
+### Known limits
+- **Codex is unproven on a real job:** it hasn't run a real job yet; its hooks and event formats come from its docs and source. The fail-closed check guards the hooks.
+- **Harness stage 3** (one check runner, the attempt log) is in progress.
+
 ## 0.2.4 — 2026-10-07 (pre-release)
 
 The harness, stage 1 ([ADR-056](docs/04-Decisions/ADR-056-The-Harness.md)): behaviour pinned by scenarios replaying real jobs, and fifteen fixes.
