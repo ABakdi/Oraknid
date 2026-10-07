@@ -161,7 +161,7 @@ export const Charts = z.object({
   bucketMs: z.number(),
   /** Tasks verified (an attempt that succeeded) and attempts that failed, per bucket. */
   throughput: z.array(z.object({ t: z.number(), done: z.number(), failed: z.number() })),
-  /** Per Leg: attempts by outcome ("other": reassigned, abandoned or unavailable), tokens, time. */
+  /** Per Leg: attempts by outcome ("other": reassigned, redirected, abandoned or unavailable), tokens, time. */
   byLeg: z.array(
     z.object({
       legId: z.string(),

@@ -229,6 +229,8 @@ class EndAttempt extends Error {
     readonly outcome: AttemptOutcome,
     /** The Leg or its model couldn't be used, not the task failing: not counted (ADR-052 §4). */
     readonly unavailable = false,
+    /** Ended by my answer (try again, another Leg): not counted against the task (bug 10). */
+    readonly byOwner = false,
   ) {
     super(outcome.kind);
   }
@@ -2234,17 +2236,22 @@ export async function runAttempt(
       .run();
     if (choice.kind === "another-leg") {
       giveToLeg(d.db, job.id, taskId, leg.legId, choice.legId);
-      throw new EndAttempt({
-        kind: "retry",
-        reason: choice.legId
-          ? `given to ${d.registry.get(choice.legId)?.name ?? "another Leg"} by me`
-          : "given to another Leg by me",
-      });
+      throw new EndAttempt(
+        {
+          kind: "retry",
+          reason: choice.legId
+            ? `given to ${d.registry.get(choice.legId)?.name ?? "another Leg"} by me`
+            : "given to another Leg by me",
+        },
+        false,
+        true,
+      );
     }
-    throw new EndAttempt({
-      kind: "retry",
-      reason: choice.advice ? "retrying with my advice" : "retrying, as I asked",
-    });
+    throw new EndAttempt(
+      { kind: "retry", reason: choice.advice ? "retrying with my advice" : "retrying, as I asked" },
+      false,
+      true,
+    );
   };
 
   /** Climbs one step of the ladder for the worst drift seen. `failure` is the last check's output, if it failed. */
@@ -2324,7 +2331,7 @@ export async function runAttempt(
   };
 
   const finish = (
-    outcome: "succeeded" | "failed" | "reassigned" | "abandoned" | "unavailable",
+    outcome: "succeeded" | "failed" | "reassigned" | "redirected" | "abandoned" | "unavailable",
     success: boolean,
     /** What came of it says something of the model: learned from (the ladder's trust). */
     learn = true,
@@ -2630,7 +2637,10 @@ export async function runAttempt(
         error.unavailable
           ? "unavailable"
           : error.outcome.kind === "retry"
-            ? "reassigned"
+            ? // My "try again": redirected by me, not a failure spending the task's attempts.
+              error.byOwner
+              ? "redirected"
+              : "reassigned"
             : "abandoned",
         false,
       );

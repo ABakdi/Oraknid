@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { WebPlan } from "@oraknid/contracts";
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
-import { sessions } from "../db/schema.ts";
+import { attempts, sessions } from "../db/schema.ts";
 import { forgetJobVerdicts, heldFor } from "../eye/auto-mode.ts";
 import { type Harness, harness, waitFor } from "../testing/harness-rig.ts";
 import { scriptedLeg, type TurnContext } from "../testing/scripted-leg.ts";
@@ -524,5 +524,59 @@ describe("questions The Eye raised in an attempt go with it after a crash (bug 9
       rig = undefined;
       await crashed.close();
     }
+  }, 60_000);
+});
+
+describe("my answers to “keeps going wrong” (bugs 10, 11)", () => {
+  /** A task whose agent edits outside its scope every turn until `fixed`, asked of me at last. */
+  async function goingWrong(fixed: () => boolean) {
+    const leg = scriptedLeg((t) => [
+      { write: "parser.js", content: "x\n" },
+      ...(fixed() ? [] : [{ write: "package.json", content: `{"turn":${t.turn}}\n` }]),
+      { say: "DONE" },
+    ]);
+    rig = await harness({
+      legs: [{ kind: "claude-code", name: "Claude A", leg }],
+      plan: {
+        summary: "A parser.",
+        tasks: [task("a", "Build the parser", ["test -f parser.js"], ["parser.js"])],
+        jobVerify: [],
+      },
+    });
+    const { id, projectId } = await rig.repoJob("A parser");
+    const item = await rig.openItem(/keeps going wrong/, 40_000);
+    return { id, projectId, item };
+  }
+  const outcomes = (jobId: string) =>
+    rig?.d.db
+      .select()
+      .from(attempts)
+      .where(eq(attempts.jobId, jobId))
+      .orderBy(attempts.startedAt)
+      .all() ?? [];
+  /** What the models' records say of implement tasks: attempts learned from, in all. */
+  const learned = () =>
+    (rig?.d.registry.models(rig.legIds["Claude A"] as string) ?? []).reduce(
+      (n, m) => n + (rig?.d.registry.storedProfile(m).observed.implement?.attempts ?? 0),
+      0,
+    );
+
+  it("“Try again with my advice” doesn't spend an attempt of the task's limit (bug 10)", async () => {
+    let fixed = false;
+    const { id, item } = await goingWrong(() => fixed);
+    fixed = true;
+    await rig?.api.inbox.answer({
+      id: item.id,
+      answers: [
+        { questionId: "what", options: ["advice"], text: "" },
+        { questionId: "advice", options: [], text: "Only touch parser.js." },
+      ],
+    });
+    const done = await rig?.ended(id);
+    expect(done?.state, done?.blockedReason ?? "").toBe("completed");
+    const all = outcomes(id);
+    // The attempt my answer ended is mine to redirect, not a failure of the task.
+    expect(all.at(-2)?.outcome).toBe("redirected");
+    expect(all.at(-1)?.outcome).toBe("succeeded");
   }, 60_000);
 });
