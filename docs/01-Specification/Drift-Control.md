@@ -86,7 +86,13 @@ model ladder at once, with a handoff, while a stronger model is allowed
 (The-Eye → The ladder). The drift ladder above runs on the top rung, and
 for drift that isn't a failed result (a loop, a stall, a forbidden
 action). A pause, a restart, a quota or a provider's failure is never
-counted against the model.
+counted against the model. One exception to "the work ladder first"
+(2026-10-07, [[ADR-056-The-Harness]] stage 1): a forbidden action (D7),
+a gate bypass (D8) or edits out of scope (D1) at the same turn's end
+are corrected in the same session before any climb, so out-of-scope
+edits are never carried up a rung. An interrupted turn is told to go on,
+not checked as finished; one stopped at the agent's limit of steps is
+checked, its words not taken as a claim.
 
 Steps can be skipped when the evidence calls for it (D8 goes straight
 to step 4). Every step is an event in the activity stream and the audit

@@ -53,11 +53,20 @@ no row.
 | `jobs.maxRunning`, `jobs.maxTasks` | Jobs at once (4 unless set), tasks at once in one job (absent: as many as are admitted) ([[ADR-016-Parallel-Work]], [[ADR-050-Parallel-By-Default]]). |
 | `work.resources` | Tasks at once across all jobs (`"auto"` or a number), my thresholds, pausing for my own work ([[ADR-050-Parallel-By-Default]]). |
 | `work.costs` | What each class of task (`kind:heavy|light`) was seen to take at peak: memory and CPU, a moving average over its sessions ([[ADR-050-Parallel-By-Default]]). |
+| `work.claudeShare` | Every job's Claude share when its tasks climb (0–1; absent: as needed), a job's budget `claudeShare` winning ([[ADR-052-A-Harness-For-Any-Model]] §3). |
 | `fallback.sameProvider` | Same-provider fallback ([[ADR-009-Multiple-Accounts-Per-Provider]]). |
 | `eye.legModelId`, `eye.models` | The Eye's Leg model; the pins per kind of decision and the shadow ([[ADR-022-Eye-Decision-Models]]). |
+| `eye.interviewRounds` | The rounds an interview may take (1–12, 3 unless set; [[Skills]] → The interview). |
+| `eye.checksTried.<task>`, `eye.mergeFailures.<task>` | That a task's checks were tried once before its first attempt ([[ADR-052-A-Harness-For-Any-Model]] §2); how many times a task verified alone failed to merge (three stop the job, [[ADR-056-The-Harness]] stage 1). |
+| `task.memory.<task>` | What a task's attempts learned that outlives one of them and a restart: untrusted, grants, what I refused, the stuck count, what it asked me; removed when the task settles ([[ADR-056-The-Harness]]). |
+| `leg.features.<leg>` | What a Leg's probe found it can do: resume, tools, usage reported or estimated, quota windows ([[ADR-056-The-Harness]] §2). |
 | `policy.global`, `policy.project.<project>` | Command rules, globally and per project ([[Security]]). |
 | `project.localPorts.<project>` | The ports on this computer a project's jobs may reach ([[Sandboxing]]). |
 | `job.startFrom.<job>` | The branch a follow-up job starts from ([[Jobs-and-Projects]] → Follow-up jobs). |
+| `job.server.<job>` | The server chosen for a job ([[ADR-042-Several-Repos-And-Servers]]). |
+| `job.attemptsFrom.<job>` | Since when a job's failed attempts count: set when I resume it after it hit the limit. |
+| `job.legWork.<job>` | Legs whose work I stopped in a job, per task, and the paused Leg a task waits for ([[Jobs-and-Projects]] → Controls). |
+| `job.ending.<job>` | The end steps asked of a job (merge, push, where from) and what they did ([[Jobs-and-Projects]] → Ending a job). |
 | `project.budget.<project>` | A project's limits on tokens and money across its jobs, and a new job's default ([[Budgets-and-Quotas]] → A project's budget). |
 | `project.budgetState.<project>` | Where it stands: the warnings already given, the open inbox question and the jobs it paused. |
 | `lock.pin`, `lock.idleMinutes` | The PIN's hash; the idle lock ([[ADR-029-App-Lock]]). |
@@ -65,6 +74,8 @@ no row.
 | `devices.fullRights` | Devices with full rights ([[ADR-030-Device-Rights]]). |
 | `terminal.enabled` | The terminal's switch ([[ADR-028-Terminal]]). |
 | `nest.config` | The Nest's address and this daemon's id. |
+| `cloud.placement` | Where an upload goes in the pool ([[ADR-046-Cloud-Storage]]). |
+| `updates.state` | When GitHub was last asked, why it wasn't reached, its answers with their ETags, the versions already told about ([[ADR-048-Updates]]). |
 | `notifications`, `notifications.vapidPublicKey` | Channels, routing and quiet hours; the web push public key (the private one is in the keychain). |
 | `audit.exportedSeq` | How far the daily audit export has got. |
 | `models.roles` | Each role's local model by id (translate, ocr, transcribe, embed, mail, code, general); a role without one uses the suggested model ([[ADR-054-Local-Models]]). |

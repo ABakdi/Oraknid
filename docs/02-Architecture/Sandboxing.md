@@ -138,6 +138,13 @@ bwrap --unshare-all --share-net --die-with-parent --new-session \
 
 The deny and allow lists ([[Security]]) are checked in the adapter's
 permission hook before a command reaches the sandbox. The sandbox is
-the second wall, not the first.
+the second wall, not the first. Since 2026-10-07 that check is the Gate
+([[ADR-056-The-Harness]] §3): auto mode's rules, my grants, the judge
+and the autonomy, the same for a permission prompt, Claude Code's
+PreToolUse hook (Claude Code runs in its own auto mode inside the
+sandbox, [[ADR-053-Auto-Mode]]), a job's tool through the broker and
+Oraknid's own agent's tool calls. A check's command on a job's server
+(`ssh <alias> …`) runs over Oraknid's own connection, not in the
+sandbox ([[ADR-049-Server-Chat-And-Server-Jobs]]).
 
 Related: [[ADR-006-Sandbox]] · [[Security]] · [[Drift-Control]]

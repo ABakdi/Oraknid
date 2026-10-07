@@ -11,7 +11,10 @@ for the audit trail and debugging, and is never fed back to a Leg.
 Long sessions waste tokens and degrade. A Leg taking over from another
 Leg shouldn't need that Leg's history, and neither should a Leg
 continuing its own work after a rotation. Silk makes every session
-start clean, with only what it needs.
+start clean, with only what it needs. Since 2026-10-07 the same model
+taking a task up again resumes its own session where its Leg can, told
+what happened ([[ADR-052-A-Harness-For-Any-Model]] §1); Silk still
+carries everything across Legs, models and rotations (BR-2).
 
 ## What it holds
 
