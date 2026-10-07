@@ -3,7 +3,7 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
-## 0.2.4 — 2026-10-08 (pre-release)
+## 0.2.4 — 2026-10-07 (pre-release)
 
 The harness, stage 1 ([ADR-056](docs/04-Decisions/ADR-056-The-Harness.md)): behaviour pinned by scenarios replaying real jobs, and fifteen fixes.
 
