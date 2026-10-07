@@ -766,7 +766,7 @@ export async function startDaemon(options: DaemonOptions) {
     const to = (e.payload as { to?: string } | null)?.to;
     if (e.type === "job.state" && e.jobId && (to === "completed" || to === "cancelled")) {
       for (const item of inbox.list({ jobId: e.jobId, state: "open" })) inbox.withdraw(item.id);
-      forgetJob(e.jobId);
+      forgetJob(db, e.jobId);
       forgetGuidance(e.jobId);
       // Its homes on the Legs go, keys and files (Audit 2, S2-08).
       removeJobHomes(paths.legs, e.jobId, legConfigDir);

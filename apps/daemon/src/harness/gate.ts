@@ -24,7 +24,7 @@ import type { Blocked } from "@oraknid/guard";
 import type { PermissionDecision, PermissionRequest, PreToolDecision } from "@oraknid/leg-sdk";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
-import { jobs } from "../db/schema.ts";
+import { jobs, tasks } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
 import { waitForAnswer } from "../eye/approvals.ts";
 import {
@@ -41,7 +41,7 @@ import {
 import type { EyeBrain } from "../eye/brain.ts";
 import { approveAllLikeThis, policyFor } from "../eye/policy.ts";
 import { addMessage } from "../eye/talk.ts";
-import { readTaskMemory, rememberForTask } from "../eye/task-memory.ts";
+import { forgetTaskMemory, readTaskMemory, rememberForTask } from "../eye/task-memory.ts";
 import type { InboxStore, NewInboxItem } from "../inbox/store.ts";
 import { jobHomeDir, scratchFor } from "../legs/job-home.ts";
 import {
@@ -936,7 +936,13 @@ export function ownRepoPage(
   );
 }
 
-/** A job that ended keeps nothing in memory here (Audit 1 → Q1-19; bug 6): its tasks' verdicts and counts go. */
-export function forgetJob(jobId: string) {
+/**
+ * A job that ended (done or cancelled, for good) keeps nothing (Audit 1 →
+ * Q1-19; bug 6): its tasks' verdicts and counts in memory, and what they
+ * kept across restarts, a task cancelled before it settled included.
+ */
+export function forgetJob(db: Db, jobId: string) {
   forgetJobVerdicts(jobId);
+  for (const t of db.select({ id: tasks.id }).from(tasks).where(eq(tasks.jobId, jobId)).all())
+    forgetTaskMemory(db, t.id);
 }
