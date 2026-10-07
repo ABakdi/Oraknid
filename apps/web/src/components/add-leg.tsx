@@ -33,8 +33,9 @@ export function AddLeg({
   onOpenChange: (o: boolean) => void;
 }) {
   const [kind, setKind] = useState<
-    "claude-code" | "openai-compatible" | "opencode" | "antigravity"
+    "claude-code" | "openai-compatible" | "opencode" | "antigravity" | "oraknid-agent"
   >("claude-code");
+  const [agentUrl, setAgentUrl] = useState("https://openrouter.ai/api/v1");
   const [agyBinary, setAgyBinary] = useState("agy");
   const [providerID, setProviderID] = useState("openrouter");
   const [ocBaseURL, setOcBaseURL] = useState("https://openrouter.ai/api/v1");
@@ -83,12 +84,26 @@ export function AddLeg({
                       },
                   ...(ownProvider && secret ? { secret } : {}),
                 })
-              : await api.legs.create({
-                  kind,
-                  name,
-                  config: { baseUrl },
-                  ...(secret ? { secret } : {}),
-                });
+              : kind === "oraknid-agent"
+                ? await api.legs.create({
+                    kind,
+                    name,
+                    config: {
+                      baseUrl: agentUrl,
+                      models: models
+                        .split(/[\s,]+/)
+                        .map((m) => m.trim())
+                        .filter(Boolean),
+                      endpoints: [],
+                    },
+                    ...(secret ? { secret } : {}),
+                  })
+                : await api.legs.create({
+                    kind,
+                    name,
+                    config: { baseUrl },
+                    ...(secret ? { secret } : {}),
+                  });
       setResult(leg);
     } catch (e) {
       setError(e);
@@ -150,6 +165,9 @@ export function AddLeg({
                     {t("OpenCode, with a provider's API key")}
                   </SelectItem>
                   <SelectItem value="antigravity">{t("Antigravity account (Google)")}</SelectItem>
+                  <SelectItem value="oraknid-agent">
+                    {t("Oraknid's own agent, on any OpenAI-compatible model")}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -166,7 +184,9 @@ export function AddLeg({
                       ? t("Antigravity — personal")
                       : kind === "opencode"
                         ? t("OpenCode — free models")
-                        : t("Ollama on this machine")
+                        : kind === "oraknid-agent"
+                          ? t("Oraknid agent — OpenRouter")
+                          : t("Ollama on this machine")
                 }
               />
             </div>
@@ -208,6 +228,42 @@ export function AddLeg({
                     className="font-mono"
                     value={agyBinary}
                     onChange={(e) => setAgyBinary(e.target.value)}
+                  />
+                </div>
+              </>
+            ) : kind === "oraknid-agent" ? (
+              <>
+                <div className="rounded-md border px-3 py-2 text-xs text-muted-foreground">
+                  {t(
+                    "Oraknid's own tool loop (read, edit, write, glob, grep, bash in the sandbox, a todo list, a web fetch) over any model behind an OpenAI-compatible API. The test checks each model's tool calling; one that can't call tools does text work only. Your local models get a Leg like this by themselves, from the Models page.",
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="au">{t("Endpoint (OpenAI-compatible)")}</Label>
+                  <Input
+                    id="au"
+                    className="font-mono"
+                    value={agentUrl}
+                    onChange={(e) => setAgentUrl(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="am">{t("Models (empty: every model it lists)")}</Label>
+                  <Input
+                    id="am"
+                    className="font-mono"
+                    value={models}
+                    onChange={(e) => setModels(e.target.value)}
+                    placeholder="qwen/qwen3-coder:free"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="ak">{t("API key, if the endpoint needs one")}</Label>
+                  <Input
+                    id="ak"
+                    type="password"
+                    value={secret}
+                    onChange={(e) => setSecret(e.target.value)}
                   />
                 </div>
               </>
