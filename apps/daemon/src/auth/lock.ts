@@ -354,6 +354,9 @@ export const HOME_ONLY = [
   "/mail/updateAccount",
   "/mail/removeAccount",
   "/mail/reconnect",
+  // Mail's OAuth apps and signing in with Google or Microsoft (ADR-063).
+  "/mail/setOAuthApp",
+  "/mail/oauthStart",
   "/tools/create",
   "/tools/update",
   "/tools/remove",

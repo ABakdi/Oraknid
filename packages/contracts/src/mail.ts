@@ -63,11 +63,53 @@ export type MailTestResult = z.infer<typeof MailTestResult>;
 export const MailAccountState = z.enum(["new", "syncing", "ready", "reconnect", "error"]);
 export type MailAccountState = z.infer<typeof MailAccountState>;
 
+/** How an account signs in (ADR-063): a password, or OAuth with Google or Microsoft. */
+export const MailAuth = z.enum(["password", "google", "microsoft"]);
+export type MailAuth = z.infer<typeof MailAuth>;
+
+export const MailOAuthProvider = z.enum(["google", "microsoft"]);
+export type MailOAuthProvider = z.infer<typeof MailOAuthProvider>;
+
+/** The OAuth app I registered with a provider: its id; its secret only said to be there. */
+export const MailOAuthApp = z.object({
+  provider: MailOAuthProvider,
+  clientId: z.string(),
+  hasSecret: z.boolean(),
+  /** The address to register as the app's redirect for the browser sign-in. */
+  redirectUri: z.string(),
+  /** Whether it can sign in: an id, and Google's secret. */
+  ready: z.boolean(),
+});
+export type MailOAuthApp = z.infer<typeof MailOAuthApp>;
+
+/** A sign-in started: a page to open in the browser, or a code to type on the provider's. */
+export const MailOAuthStart = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("browser"), id: z.string(), url: z.string() }),
+  z.object({
+    kind: z.literal("device"),
+    id: z.string(),
+    userCode: z.string(),
+    verificationUri: z.string(),
+    expiresAt: z.number(),
+  }),
+]);
+export type MailOAuthStart = z.infer<typeof MailOAuthStart>;
+
+/** Where a sign-in is: waiting for me, done (the account added or signed in again), or failed. */
+export const MailOAuthStatus = z.object({
+  state: z.enum(["pending", "done", "failed"]),
+  email: z.string().nullable(),
+  error: z.string().nullable(),
+});
+export type MailOAuthStatus = z.infer<typeof MailOAuthStatus>;
+
 export const MailAccountView = z.object({
   id: Id,
   name: z.string(),
   email: z.string(),
   provider: MailProvider,
+  /** A password, or OAuth with Google or Microsoft (ADR-063). */
+  auth: MailAuth,
   protocol: MailProtocol,
   /** The IMAP or POP3 server. */
   incomingHost: z.string(),

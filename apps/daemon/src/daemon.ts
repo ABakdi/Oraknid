@@ -171,7 +171,14 @@ export interface DaemonOptions {
   /** Mail timings and the providers' servers (tests). */
   mail?: Pick<
     MailOptions,
-    "syncEveryMs" | "popEveryMs" | "idleDelayMs" | "initialLimit" | "presets" | "resolveMx"
+    | "syncEveryMs"
+    | "popEveryMs"
+    | "idleDelayMs"
+    | "initialLimit"
+    | "presets"
+    | "resolveMx"
+    | "oauthEndpoints"
+    | "devicePollMs"
   >;
 }
 
@@ -262,6 +269,8 @@ export async function startDaemon(options: DaemonOptions) {
     inbox,
     dataDir: paths.dataDir,
     now,
+    // Where the browser sign-in with Google or Microsoft comes back (ADR-063).
+    baseUrl: () => url,
     // The email tool appears with the first account.
     hasAccounts: () => {
       try {
@@ -923,6 +932,31 @@ export async function startDaemon(options: DaemonOptions) {
       },
     });
     if (!matched) next();
+  });
+
+  // Back from Google's or Microsoft's sign-in (ADR-063): only a sign-in started here is accepted.
+  app.get("/oauth/mail/callback", async (req, res) => {
+    const q = (k: string) =>
+      typeof req.query[k] === "string" ? (req.query[k] as string) : undefined;
+    const page = (title: string, text: string) =>
+      `<!doctype html><meta charset="utf-8"><title>${title}</title><body style="font-family:sans-serif;max-width:32rem;margin:4rem auto;line-height:1.5"><h1 style="font-size:1.25rem">${title}</h1><p>${text}</p></body>`;
+    const esc = (s: string) =>
+      s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+    try {
+      const { email } = await mail.oauthCallback({
+        ...(q("state") ? { state: q("state") } : {}),
+        ...(q("code") ? { code: q("code") } : {}),
+        ...(q("error") ? { error: q("error") } : {}),
+      });
+      res
+        .type("html")
+        .send(page("Connected", `${esc(email)} is connected to Oraknid. You can close this tab.`));
+    } catch (error) {
+      res
+        .status(400)
+        .type("html")
+        .send(page("Not connected", esc(error instanceof Error ? error.message : String(error))));
+    }
   });
 
   app.get("/health", (_req, res) => {

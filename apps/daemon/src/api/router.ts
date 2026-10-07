@@ -51,6 +51,10 @@ import {
   MailDraftView,
   MailFolderView,
   MailMessageView,
+  MailOAuthApp,
+  MailOAuthProvider,
+  MailOAuthStart,
+  MailOAuthStatus,
   MailTestResult,
   MailThreadPage,
   MetricsSample,
@@ -1547,6 +1551,51 @@ export const router = {
     removeAccount: base
       .input(z.object({ id: z.string() }))
       .handler(({ context: c, input }) => guard(() => c.mail.removeAccount(input.id))),
+    /** The OAuth apps I registered with Google and Microsoft (ADR-063); secrets only said to be kept. */
+    oauthApps: base
+      .output(z.array(MailOAuthApp))
+      .handler(({ context: c }) => guard(() => c.mail.oauthApps())),
+    /** An app's client id, and its secret (Google's) kept in the keychain; an empty id forgets it. */
+    setOAuthApp: base
+      .input(
+        z.object({
+          provider: MailOAuthProvider,
+          clientId: z.string().max(300),
+          clientSecret: z.string().min(1).max(300).optional(),
+        }),
+      )
+      .handler(({ context: c, input }) =>
+        guard(() => c.mail.setOAuthApp(input.provider, input.clientId, input.clientSecret)),
+      ),
+    /**
+     * Signs in with Google or Microsoft, for a new account or one to sign in
+     * again: a page to open (back to this daemon), or a code to type on
+     * Microsoft's page while Oraknid waits.
+     */
+    oauthStart: base
+      .input(
+        z.object({
+          provider: MailOAuthProvider,
+          accountId: z.string().optional(),
+          flow: z.enum(["browser", "device"]).optional(),
+        }),
+      )
+      .output(MailOAuthStart)
+      .handler(({ context: c, input }) =>
+        guard(() =>
+          c.mail.oauthStart(input.provider, {
+            accountId: input.accountId ?? null,
+            ...(input.flow ? { flow: input.flow } : {}),
+          }),
+        ),
+      ),
+    oauthStatus: base
+      .input(z.object({ id: z.string() }))
+      .output(MailOAuthStatus)
+      .handler(({ context: c, input }) => c.mail.oauthStatus(input.id)),
+    oauthCancel: base
+      .input(z.object({ id: z.string() }))
+      .handler(({ context: c, input }) => c.mail.oauthCancel(input.id)),
     /** Connecting again ("Reconnect"): with a new password, or the one kept after a network failure. */
     reconnect: base
       .input(z.object({ id: z.string(), password: z.string().min(1).optional() }))

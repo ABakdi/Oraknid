@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
@@ -6,6 +7,10 @@ import type {
   MailDraftView,
   MailFolderView,
   MailMessageView,
+  MailOAuthApp,
+  MailOAuthProvider,
+  MailOAuthStart,
+  MailOAuthStatus,
   MailProtocol,
   MailSecurity,
   MailThreadPage,
@@ -17,6 +22,7 @@ import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { ImapFlow, type ImapFlowOptions } from "imapflow";
 import nodemailer from "nodemailer";
 import MailComposer from "nodemailer/lib/mail-composer/index.js";
+import { z } from "zod";
 import type { Db } from "../db/open.ts";
 import {
   jobs,
@@ -31,8 +37,21 @@ import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 import type { InboxStore } from "../inbox/store.ts";
 import type { Secrets } from "../os/secrets.ts";
+import { readSetting, writeSetting } from "../settings.ts";
 import { detectServers, explain } from "./diagnose.ts";
 import { fetchImages, remoteImages } from "./images.ts";
+import {
+  authorizationUrl,
+  deviceCode,
+  exchangeCode,
+  OAUTH,
+  type OAuthClient,
+  type OAuthEndpoints,
+  OAuthRevoked,
+  pollDevice,
+  refresh,
+  type Tokens,
+} from "./oauth.ts";
 import {
   escapeHtml,
   HEADER_FIELDS,
@@ -61,6 +80,28 @@ export type Actor =
   | { kind: "agent"; jobId: string | null };
 
 const PASSWORD = (id: string) => `mail.${id}.password`;
+/** An OAuth account's refresh token (ADR-063). */
+const REFRESH = (id: string) => `mail.${id}.refresh`;
+/** The OAuth app I registered: its client id in the settings, its secret in the keychain. */
+const OAUTH_CLIENT = (p: MailOAuthProvider) => `mail.oauth.${p}.clientId`;
+const OAUTH_SECRET = (p: MailOAuthProvider) => `mail.oauth.${p}.secret`;
+/** How long a sign-in started waits for me. */
+const SIGN_IN_MS = 15 * 60_000;
+
+/** What signs an account in: its password, or an OAuth access token (XOAUTH2). */
+type Cred = { pass: string } | { accessToken: string };
+
+interface SignIn {
+  provider: MailOAuthProvider;
+  /** Signing in again to this account. */
+  accountId: string | null;
+  createdAt: number;
+  /** The browser flow's PKCE verifier and redirect. */
+  verifier?: string;
+  redirectUri?: string;
+  status: MailOAuthStatus;
+  stop?: () => void;
+}
 
 /** Gmail and Outlook as they are (with an app password); any other server as I describe it. */
 const PRESETS: Record<"gmail" | "outlook", Preset> = {
@@ -118,6 +159,12 @@ export interface MailOptions {
   hasAccounts?: () => void;
   /** Gmail's and Outlook's servers, for tests against a stand-in. */
   presets?: Partial<Record<"gmail" | "outlook", Preset>>;
+  /** Google's and Microsoft's sign-in addresses, for tests against a stand-in (ADR-063). */
+  oauthEndpoints?: Partial<Record<MailOAuthProvider, OAuthEndpoints>>;
+  /** The daemon's own address, which the browser sign-in comes back to. */
+  baseUrl?: () => string;
+  /** Between polls of a device code, at least (tests: shorter). */
+  devicePollMs?: number;
 }
 
 type Server = { host: string; port: number; security: MailSecurity };
@@ -141,6 +188,10 @@ class NeedsReconnect extends Error {}
 
 export class MailService {
   readonly #links = new Map<string, Link>();
+  /** Sign-ins started, by id (the browser flow's state). */
+  readonly #signIns = new Map<string, SignIn>();
+  /** Access tokens, in memory only, by account. */
+  readonly #tokens = new Map<string, Tokens>();
   #unsubscribe: (() => void) | undefined;
 
   constructor(private readonly o: MailOptions) {}
@@ -174,9 +225,6 @@ export class MailService {
 
   /** Connects every account, answers approvals, and settles sends a crash interrupted. */
   start() {
-    // OAuth app secrets saved before sign-in by OAuth was taken out (ADR-032 → Changed after building).
-    for (const p of ["google", "microsoft"])
-      void this.o.secrets.delete(`mail.oauth.${p}.secret`).catch(() => {});
     // At most once (BR-6): a send caught mid-way may have gone out; I check Sent before retrying.
     this.o.db
       .update(mailDrafts)
@@ -210,6 +258,7 @@ export class MailService {
 
   async stop() {
     this.#unsubscribe?.();
+    for (const s of this.#signIns.values()) s.stop?.();
     for (const id of [...this.#links.keys()]) await this.#close(id);
   }
 
@@ -232,6 +281,7 @@ export class MailService {
       name: a.name,
       email: a.email,
       provider: a.provider,
+      auth: a.auth,
       protocol: a.protocol,
       incomingHost: a.incomingHost,
       smtpHost: a.smtpHost,
@@ -279,6 +329,7 @@ export class MailService {
       provider: input.provider,
       protocol,
       login: input.login?.trim() || email,
+      auth: "password",
       incomingHost: incoming.host,
       incomingPort: incoming.port,
       incomingSecurity: incoming.security as MailSecurity,
@@ -314,10 +365,13 @@ export class MailService {
     };
     const [incoming, smtp] = await Promise.all([
       run(
-        () => this.#checkIncoming(row, input.password),
+        () => this.#checkIncoming(row, { pass: input.password }),
         `${row.protocol === "pop" ? "POP3" : "IMAP"} (${row.incomingHost}) accepted the login.`,
       ),
-      run(() => this.#checkSmtp(row, input.password), `SMTP (${row.smtpHost}) accepted the login.`),
+      run(
+        () => this.#checkSmtp(row, { pass: input.password }),
+        `SMTP (${row.smtpHost}) accepted the login.`,
+      ),
     ]);
     return { incoming, smtp };
   }
@@ -334,8 +388,8 @@ export class MailService {
       throw new Error(`${row.email} is already connected.`);
     const id = row.id;
     try {
-      await this.#checkIncoming(row, input.password);
-      await this.#checkSmtp(row, input.password);
+      await this.#checkIncoming(row, { pass: input.password });
+      await this.#checkSmtp(row, { pass: input.password });
     } catch (error) {
       // A failed add leaves a trace I can read later, never the password.
       console.error(`mail: adding ${row.email} failed: ${(error as Error).message}`);
@@ -358,7 +412,7 @@ export class MailService {
   }
 
   /** The incoming server (IMAP or POP3) accepts the login, or it says why in plain words. */
-  async #checkIncoming(row: AccountRow, pass: string) {
+  async #checkIncoming(row: AccountRow, pass: Cred) {
     const server = {
       host: row.incomingHost,
       port: row.incomingPort,
@@ -387,7 +441,7 @@ export class MailService {
   }
 
   /** SMTP accepts the login, or it says why in plain words. */
-  async #checkSmtp(row: AccountRow, pass: string) {
+  async #checkSmtp(row: AccountRow, pass: Cred) {
     const server = { host: row.smtpHost, port: row.smtpPort, security: row.smtpSecurity };
     const transport = this.#transport(row, pass, CHECK_MS);
     try {
@@ -418,6 +472,8 @@ export class MailService {
     const a = this.account(id);
     await this.#close(id);
     await this.o.secrets.delete(PASSWORD(id));
+    await this.o.secrets.delete(REFRESH(id));
+    this.#tokens.delete(id);
     for (const d of this.o.db.select().from(mailDrafts).where(eq(mailDrafts.accountId, id)).all())
       this.#dropDraft(d);
     this.o.bus.atomically(() => {
@@ -437,9 +493,17 @@ export class MailService {
    */
   async reconnect(id: string, password?: string) {
     const a = this.account(id);
-    if (password) {
-      await this.#checkIncoming(a, password);
-      await this.#checkSmtp(a, password);
+    if (a.auth !== "password") {
+      // Signed in with Google or Microsoft: a password is no use; signing in again is (oauthStart).
+      if (password)
+        throw new Error(
+          `${a.email} signs in with ${OAUTH[a.auth].name}: sign in again instead of giving a password.`,
+        );
+      if (a.state === "reconnect")
+        throw new Error(`Sign in again with ${OAUTH[a.auth].name} to reconnect ${a.email}.`);
+    } else if (password) {
+      await this.#checkIncoming(a, { pass: password });
+      await this.#checkSmtp(a, { pass: password });
       await this.o.secrets.set(PASSWORD(id), password);
     } else if (a.state === "reconnect") throw new Error("Give the new password.");
     this.#state(id, "new", null);
@@ -454,14 +518,35 @@ export class MailService {
     this.#publish("mail.account.state", { id, state, error });
   }
 
-  /** The password kept in the keychain for this account. */
-  async #password(a: AccountRow): Promise<string> {
-    const pass = await this.o.secrets.get(PASSWORD(a.id));
-    if (!pass) throw new NeedsReconnect("Its password is missing from the keychain.");
-    return pass;
+  /** What signs this account in now: its password, or a fresh access token. */
+  async #password(a: AccountRow): Promise<Cred> {
+    if (a.auth === "password") {
+      const pass = await this.o.secrets.get(PASSWORD(a.id));
+      if (!pass) throw new NeedsReconnect("Its password is missing from the keychain.");
+      return { pass };
+    }
+    const kept = this.#tokens.get(a.id);
+    if (kept && kept.expiresAt > this.#now() + 60_000) return { accessToken: kept.accessToken };
+    const refreshToken = await this.o.secrets.get(REFRESH(a.id));
+    if (!refreshToken) throw new NeedsReconnect("Sign in again: no token is kept for it.");
+    try {
+      const tokens = await refresh(
+        { client: await this.#client(a.auth), refreshToken, provider: a.auth },
+        this.#endpoints(a.auth),
+        this.#now(),
+      );
+      // A provider may turn its refresh token over: the new one is kept.
+      if (tokens.refreshToken && tokens.refreshToken !== refreshToken)
+        await this.o.secrets.set(REFRESH(a.id), tokens.refreshToken);
+      this.#tokens.set(a.id, tokens);
+      return { accessToken: tokens.accessToken };
+    } catch (error) {
+      if (error instanceof OAuthRevoked) throw new NeedsReconnect(error.message);
+      throw error;
+    }
   }
 
-  #imapOptions(a: AccountRow, pass: string, watch: boolean): ImapFlowOptions {
+  #imapOptions(a: AccountRow, pass: Cred, watch: boolean): ImapFlowOptions {
     return {
       host: a.incomingHost,
       port: a.incomingPort,
@@ -475,14 +560,16 @@ export class MailService {
               ? false
               : undefined,
       } as object),
-      auth: { user: a.login, pass },
+      auth: { user: a.login, ...pass },
       logger: false,
       disableAutoIdle: !watch,
       ...(watch ? { autoIdleDelay: this.o.idleDelayMs ?? 1000 } : {}),
     };
   }
 
-  #popOptions(a: AccountRow, pass: string) {
+  #popOptions(a: AccountRow, cred: Cred) {
+    if (!("pass" in cred)) throw new NeedsReconnect("POP3 signs in with a password only.");
+    const pass = cred.pass;
     return {
       host: a.incomingHost,
       port: a.incomingPort,
@@ -492,7 +579,7 @@ export class MailService {
     };
   }
 
-  #transport(a: AccountRow, pass: string, timeoutMs?: number) {
+  #transport(a: AccountRow, pass: Cred, timeoutMs?: number) {
     return nodemailer.createTransport({
       ...(timeoutMs ? { connectionTimeout: timeoutMs, greetingTimeout: timeoutMs } : {}),
       host: a.smtpHost,
@@ -500,8 +587,288 @@ export class MailService {
       secure: a.smtpSecurity === "tls",
       requireTLS: a.smtpSecurity === "starttls",
       ignoreTLS: a.smtpSecurity === "plain",
-      auth: { user: a.login, pass },
+      auth:
+        "pass" in pass
+          ? { user: a.login, pass: pass.pass }
+          : { type: "OAuth2", user: a.login, accessToken: pass.accessToken },
     });
+  }
+
+  // ── OAuth: Gmail and Outlook signed in with Google or Microsoft (ADR-063) ──
+
+  #endpoints(p: MailOAuthProvider): OAuthEndpoints {
+    return this.o.oauthEndpoints?.[p] ?? OAUTH[p];
+  }
+
+  /** Where the browser sign-in comes back: this daemon, on this computer. */
+  redirectUri(): string {
+    return `${this.o.baseUrl?.() ?? "http://127.0.0.1:7417"}/oauth/mail/callback`;
+  }
+
+  /** The apps I registered with Google and Microsoft: their ids, and whether a secret is kept. */
+  async oauthApps(): Promise<MailOAuthApp[]> {
+    const out: MailOAuthApp[] = [];
+    for (const provider of ["google", "microsoft"] as const) {
+      const clientId = readSetting(this.o.db, OAUTH_CLIENT(provider), z.string(), "");
+      const hasSecret = (await this.o.secrets.get(OAUTH_SECRET(provider))) !== undefined;
+      out.push({
+        provider,
+        clientId,
+        hasSecret,
+        redirectUri: this.redirectUri(),
+        // Google's desktop apps have a secret; Microsoft's public clients have none.
+        ready: !!clientId && (provider === "microsoft" || hasSecret),
+      });
+    }
+    return out;
+  }
+
+  /** Keeps an app's client id (a setting) and secret (the keychain); an empty id forgets both. */
+  async setOAuthApp(p: MailOAuthProvider, clientId: string, clientSecret?: string) {
+    if (!clientId.trim()) {
+      writeSetting(this.o.db, OAUTH_CLIENT(p), z.string().nullable(), null);
+      await this.o.secrets.delete(OAUTH_SECRET(p));
+    } else {
+      writeSetting(this.o.db, OAUTH_CLIENT(p), z.string(), clientId.trim());
+      if (clientSecret?.trim()) await this.o.secrets.set(OAUTH_SECRET(p), clientSecret.trim());
+    }
+    this.#publish("mail.oauth.updated", { provider: p }, { kind: "owner" });
+  }
+
+  async #client(p: MailOAuthProvider): Promise<OAuthClient> {
+    const clientId = readSetting(this.o.db, OAUTH_CLIENT(p), z.string(), "");
+    const clientSecret = (await this.o.secrets.get(OAUTH_SECRET(p))) ?? null;
+    if (!clientId || (p === "google" && !clientSecret))
+      throw new Error(
+        `Sign-in with ${OAUTH[p].name} isn't set up: add your app's client id${p === "google" ? " and secret" : ""} in Mail → OAuth apps.`,
+      );
+    return { clientId, clientSecret };
+  }
+
+  /**
+   * Starts a sign-in with Google or Microsoft, for a new account or one to
+   * sign in again: a page to open in the browser (back to this daemon), or
+   * (Microsoft) a code to type on its page while Oraknid waits.
+   */
+  async oauthStart(
+    p: MailOAuthProvider,
+    o: { accountId?: string | null; flow?: "browser" | "device" } = {},
+  ): Promise<MailOAuthStart> {
+    const client = await this.#client(p);
+    const account = o.accountId ? this.account(o.accountId) : null;
+    if (account && account.auth !== p)
+      throw new Error(`${account.email} doesn't sign in with ${OAUTH[p].name}.`);
+    for (const [k, s] of this.#signIns)
+      if (s.createdAt < this.#now() - SIGN_IN_MS) {
+        s.stop?.();
+        this.#signIns.delete(k);
+      }
+    const pending: MailOAuthStatus = { state: "pending", email: null, error: null };
+    if ((o.flow ?? (p === "microsoft" ? "device" : "browser")) === "device") {
+      const code = await deviceCode({ client, provider: p }, this.#endpoints(p), this.#now());
+      const id = randomBytes(18).toString("base64url");
+      const signIn: SignIn = {
+        provider: p,
+        accountId: account?.id ?? null,
+        createdAt: this.#now(),
+        status: pending,
+      };
+      this.#signIns.set(id, signIn);
+      this.#pollDevice(id, signIn, client, code.deviceCode, code.interval, code.expiresAt);
+      return {
+        kind: "device",
+        id,
+        userCode: code.userCode,
+        verificationUri: code.verificationUri,
+        expiresAt: code.expiresAt,
+      };
+    }
+    const redirectUri = this.redirectUri();
+    const { url, state, verifier } = authorizationUrl(
+      {
+        provider: p,
+        clientId: client.clientId,
+        redirectUri,
+        ...(account ? { loginHint: account.email } : {}),
+      },
+      this.#endpoints(p),
+    );
+    this.#signIns.set(state, {
+      provider: p,
+      accountId: account?.id ?? null,
+      createdAt: this.#now(),
+      verifier,
+      redirectUri,
+      status: pending,
+    });
+    return { kind: "browser", id: state, url };
+  }
+
+  /** Polls a device code until I typed it, it expired, or the sign-in was dropped. */
+  #pollDevice(
+    id: string,
+    s: SignIn,
+    client: OAuthClient,
+    code: string,
+    interval: number,
+    expiresAt: number,
+  ) {
+    let every = Math.max(this.o.devicePollMs ?? 0, interval * 1000);
+    let timer: NodeJS.Timeout | undefined;
+    let stopped = false;
+    s.stop = () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+    const tick = async () => {
+      if (stopped) return;
+      if (this.#now() > expiresAt) {
+        s.status = { state: "failed", email: null, error: "The code expired before it was used." };
+        return;
+      }
+      try {
+        const r = await pollDevice(
+          { client, deviceCode: code },
+          this.#endpoints(s.provider),
+          this.#now(),
+        );
+        if (r === "pending" || r === "slow_down") {
+          if (r === "slow_down") every += 5000;
+          timer = setTimeout(() => void tick(), every);
+          timer.unref();
+          return;
+        }
+        const email = await this.#signedIn(s, r);
+        s.status = { state: "done", email, error: null };
+      } catch (error) {
+        s.status = { state: "failed", email: null, error: (error as Error).message };
+      }
+      if (s.status.state !== "pending")
+        this.#publish("mail.oauth.done", { id, state: s.status.state }, { kind: "owner" });
+    };
+    timer = setTimeout(() => void tick(), every);
+    timer.unref();
+  }
+
+  /** Where a sign-in started here is. */
+  oauthStatus(id: string): MailOAuthStatus {
+    const s = this.#signIns.get(id);
+    if (!s)
+      return {
+        state: "failed",
+        email: null,
+        error: "This sign-in expired or wasn't started here.",
+      };
+    return s.status;
+  }
+
+  oauthCancel(id: string) {
+    this.#signIns.get(id)?.stop?.();
+    this.#signIns.delete(id);
+  }
+
+  /** Back from Google or Microsoft in the browser: the account is added, or signed in again. */
+  async oauthCallback(q: { state?: string; code?: string; error?: string }): Promise<{
+    email: string;
+  }> {
+    const s = q.state ? this.#signIns.get(q.state) : undefined;
+    if (!s?.verifier || !s.redirectUri || s.status.state !== "pending")
+      throw new Error("This sign-in expired or wasn't started here.");
+    try {
+      if (q.error || !q.code)
+        throw new Error(`The sign-in was cancelled (${q.error ?? "no code"}).`);
+      const tokens = await exchangeCode(
+        {
+          client: await this.#client(s.provider),
+          code: q.code,
+          verifier: s.verifier,
+          redirectUri: s.redirectUri,
+        },
+        this.#endpoints(s.provider),
+        this.#now(),
+      );
+      const email = await this.#signedIn(s, tokens);
+      s.status = { state: "done", email, error: null };
+      return { email };
+    } catch (error) {
+      s.status = { state: "failed", email: null, error: (error as Error).message };
+      throw error;
+    } finally {
+      this.#publish("mail.oauth.done", { id: q.state, state: s.status.state }, { kind: "owner" });
+    }
+  }
+
+  /** Tokens in hand: the account signed in again, or added with its provider's servers. */
+  async #signedIn(s: SignIn, tokens: Tokens): Promise<string> {
+    if (!tokens.refreshToken) throw new Error("The provider gave no refresh token: try again.");
+    const cred = { accessToken: tokens.accessToken };
+    if (s.accountId) {
+      const a = this.account(s.accountId);
+      if (tokens.email && tokens.email.toLowerCase() !== a.email)
+        throw new Error(`That was ${tokens.email}, not ${a.email}.`);
+      await this.#checkIncoming(a, cred);
+      await this.o.secrets.set(REFRESH(a.id), tokens.refreshToken);
+      this.#tokens.set(a.id, tokens);
+      this.#state(a.id, "new", null);
+      await this.#close(a.id);
+      this.#open(a.id);
+      return a.email;
+    }
+    const email = tokens.email?.toLowerCase();
+    if (!email) throw new Error("The provider didn't say which address signed in.");
+    const existing = this.o.db
+      .select()
+      .from(mailAccounts)
+      .where(eq(mailAccounts.email, email))
+      .get();
+    if (existing) {
+      if (existing.auth !== s.provider)
+        throw new Error(
+          `${email} is already connected with a password: remove it first to sign in with ${OAUTH[s.provider].name}.`,
+        );
+      return this.#signedIn({ ...s, accountId: existing.id }, tokens);
+    }
+    const provider = OAUTH[s.provider].provider;
+    const preset = this.#preset(provider);
+    const id = newId(this.#now());
+    const row: AccountRow = {
+      id,
+      name: email,
+      email,
+      provider,
+      protocol: "imap",
+      login: email,
+      auth: s.provider,
+      incomingHost: preset.imap.host,
+      incomingPort: preset.imap.port,
+      incomingSecurity: preset.imap.security,
+      smtpHost: preset.smtp.host,
+      smtpPort: preset.smtp.port,
+      smtpSecurity: preset.smtp.security,
+      autoSend: false,
+      appendSent: preset.appendSent,
+      deleteFromServer: false,
+      state: "new",
+      error: null,
+      lastSyncAt: null,
+      createdAt: this.#now(),
+    };
+    try {
+      await this.#checkIncoming(row, cred);
+      await this.#checkSmtp(row, cred);
+    } catch (error) {
+      console.error(`mail: signing in ${email} failed: ${(error as Error).message}`);
+      throw error;
+    }
+    await this.o.secrets.set(REFRESH(id), tokens.refreshToken);
+    this.#tokens.set(id, tokens);
+    this.o.bus.atomically(() => {
+      this.o.db.insert(mailAccounts).values(row).run();
+      this.#publish("mail.account.added", { id, email, auth: s.provider }, { kind: "owner" });
+    });
+    this.o.hasAccounts?.();
+    this.#open(id);
+    return email;
   }
 
   // ── Connections and sync ─────────────────────────────────────────────
