@@ -3,6 +3,19 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.3.1 — 2026-10-08 (pre-release)
+
+The harness, stage 3 ([ADR-056](docs/04-Decisions/ADR-056-The-Harness.md)). Also the first published release of 0.3.0's work (Codex, the Gate): v0.3.0 was tagged but not published, because its clean install check failed on a full disk on the build machine.
+
+- **One Verifier for every check:** the task's, the stop hook's, the ones tried before the work, the merge's and the job's. Its report tells a broken check from a failing one.
+- **The attempt log:** every action, the Gate's decision, each check run, the questions, the handoffs and the outcome are recorded per attempt. The task's memory (grants, refusals, stuck count, the untrusted mark) is read from it.
+- **Handoffs to the next agent** now say what was tried, what the Gate refused and the last check report.
+- **After a crash,** an action left without a result is marked uncertain and never re-run blindly.
+- **Fixed:**
+  - a job-level check on a server (`ssh <server> …`) didn't go through the rules;
+  - the merge's and the job's GitHub checks misread a wrong repo name;
+  - a successful built-in tool call didn't end a stuck row.
+
 ## 0.3.0 — 2026-10-08 (pre-release)
 
 ### Codex as an agent ([ADR-057](docs/04-Decisions/ADR-057-Codex-Adapter.md))

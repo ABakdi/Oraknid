@@ -43,5 +43,6 @@ what is in it, and a command that installs exactly that.
 - v0.2.4 (2026-10-07): the harness, stage 1 ([[ADR-056-The-Harness]]): scenarios from my real jobs, fifteen fixes.
 - Oraknid tells me of a new release and installs it from inside (2026-10-04, [[ADR-048-Updates]]): an install from `dev` counts pre-releases and new work on dev, one from `main` or a tag only releases, so a release meant for `main`'s installs is published as a release, not a pre-release.
 - v0.3.0 (2026-10-08): Codex as a Leg, the harness's Gate (ADR-056 stage 2), the canon brought up to date.
+- v0.3.1 (2026-10-08): the harness's Verifier and attempt log (ADR-056 stage 3), and the first published release of 0.3.0's work (v0.3.0's install check failed on the build machine's full disk, so it was tagged, not published).
 
 Related: [[ADR-036-One-Script-Install]] · [[ADR-048-Updates]]
