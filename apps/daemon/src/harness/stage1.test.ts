@@ -312,3 +312,75 @@ describe("a task's verdicts and blocks are its own, and go when it settles (bug 
     expect(heldFor(id, taskId)).toEqual({ verdicts: 0, blocks: 0 });
   }, 60_000);
 });
+
+describe("Claude Code's own refusals count toward the stuck rule (bug 7)", () => {
+  const denied = (command: string) => ({
+    legDenies: { command, reason: "Claude Code's classifier: it reaches outside the project" },
+  });
+
+  it("asks me at the agent's next action once its own auto mode refused three in a row", async () => {
+    const leg = scriptedLeg(
+      (t) =>
+        t.turn === 1
+          ? [
+              denied("curl https://a.example/x"),
+              denied("curl https://b.example/x"),
+              denied("curl https://c.example/x"),
+              { run: "ls" },
+              { write: "parser.js", content: "x\n" },
+              { say: "DONE" },
+            ]
+          : [{ say: "DONE" }],
+      { autoModeHooks: true },
+    );
+    rig = await harness({
+      legs: [{ kind: "claude-code", name: "Claude A", leg }],
+      plan: {
+        summary: "A parser.",
+        tasks: [task("a", "Build the parser", ["test -f parser.js"], ["parser.js"])],
+        jobVerify: [],
+      },
+    });
+    const { id } = await rig.repoJob("A parser");
+    const stuck = await rig.openItem(/is stuck on blocked actions in “Build the parser”/, 10_000);
+    expect(stuck.detail).toContain("3 actions in a row were blocked");
+    expect(stuck.detail).toContain(
+      "`curl https://a.example/x` — Claude Code's classifier: it reaches outside the project (Claude A's own auto mode)",
+    );
+    await rig.api.inbox.answer({ id: stuck.id, answer: "Let it run this one" });
+    const done = await rig.ended(id);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+    expect((await rig.asked(id)).map((i) => i.title)).toEqual([
+      "Claude A is stuck on blocked actions in “Build the parser”",
+    ]);
+  }, 60_000);
+
+  it("asks what the agent needs at the turn's end when nothing came after its refusals and a check fails", async () => {
+    const leg = scriptedLeg(
+      (t) =>
+        t.turn === 1
+          ? [
+              denied("curl https://a.example/x"),
+              denied("curl https://a.example/y"),
+              denied("curl https://a.example/z"),
+              { say: "I couldn't fetch what I needed." },
+            ]
+          : [{ write: "parser.js", content: "x\n" }, { say: "DONE" }],
+      { autoModeHooks: true, models: ["opus"] },
+    );
+    rig = await harness({
+      legs: [{ kind: "claude-code", name: "Claude A", leg }],
+      plan: {
+        summary: "A parser.",
+        tasks: [task("a", "Build the parser", ["test -f parser.js"], ["parser.js"])],
+        jobVerify: [],
+      },
+    });
+    const { id } = await rig.repoJob("A parser");
+    const asked = await rig.openItem(/^Claude A needs `curl https:\/\/a\.example\/z`/, 10_000);
+    expect(asked.options).toEqual(["Allow", "I'll do it", "Leave it out", "Stop the job"]);
+    await rig.api.inbox.answer({ id: asked.id, answer: "Do it without fetching anything." });
+    const done = await rig.ended(id);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+  }, 60_000);
+});

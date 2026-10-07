@@ -49,6 +49,7 @@ import {
   whenSaid,
   workKindOf,
 } from "@oraknid/core";
+import type { Blocked } from "@oraknid/guard";
 import type {
   LegEvent,
   PermissionDecision,
@@ -588,7 +589,7 @@ export async function runAttempt(
   /** What the PreToolUse hook sent on to canUseTool to be asked of me there, by its plain form. */
   const hookAsks = new Map<string, () => Promise<PermissionDecision>>();
   /** What layer 1 blocked in this attempt, oldest first: for the agent's "the owner must…". */
-  const blockedHere: { command: string; reason: string }[] = [];
+  const blockedHere: { command: string; reason: string; byLeg?: boolean }[] = [];
   /** Planned changes and commands I kept blocked when asked: not asked again in this attempt. */
   const keptBlocked = new Set<string>();
   /** Approvals this attempt asked for: withdrawn if it ends before I answer. */
@@ -625,7 +626,16 @@ export async function runAttempt(
         layer: "leg",
       });
       // What the agent may say it needs of me (askOwnerNeeded).
-      if (e.request.command) blockedHere.push({ command: e.request.command, reason: e.reason });
+      if (e.request.command)
+        blockedHere.push({ command: e.request.command, reason: e.reason, byLeg: true });
+      // Its blocks count toward the stuck rule like any other (ADR-053; bug 7). It can't be held
+      // for my answer: I'm asked at its next action, or at the turn's end if a check fails.
+      const stuckNow = stuck.blocked(stuckKey, {
+        action: (e.request.command ? plainOf(e.request.command) : action).slice(0, 200),
+        reason: e.reason,
+        layer: "leg",
+      });
+      if (stuckNow) stuckByLeg = stuckNow;
     }
     if (e.type === "usage") {
       sessionTokens = e.usage.inputTokens + e.usage.outputTokens;
@@ -635,6 +645,14 @@ export async function runAttempt(
   };
 
   let usage = null as UsageSnapshot | null;
+  /** Stuck on the agent's own auto mode's refusals, not asked yet (bug 7). */
+  let stuckByLeg = null as { why: string; blocks: Blocked[] } | null;
+  /** Asked of me at the agent's next action that comes through Oraknid: it waits for my answer. */
+  const takeStuckByLeg = () => {
+    const s = stuckByLeg;
+    stuckByLeg = null;
+    return s;
+  };
 
   const observed: Observed = {
     scope: scopeOf(task),
@@ -952,6 +970,9 @@ export async function runAttempt(
   ): Promise<PermissionDecision> => {
     // The broker judges every call to a job's tool: the Leg's own ask for it passes (ADR-021).
     if (isBrokered(r.tool, brokered)) return { allow: true };
+    // Stuck on its own auto mode's refusals: asked now, with this action held (bug 7).
+    const byLeg = takeStuckByLeg();
+    if (byLeg) return askWhenStuck(r, byLeg, { allow: true });
     if (r.command) {
       // What I let run once runs (ADR-053); never what is never allowed.
       if (allowOnce.length) {
@@ -1137,6 +1158,12 @@ export async function runAttempt(
    */
   const onPreToolUse = async (r: PermissionRequest): Promise<PreToolDecision> => {
     if (isBrokered(r.tool, brokered)) return null;
+    // Stuck on its own auto mode's refusals: this action waits for my answer there (bug 7).
+    if (r.command && stuckByLeg) {
+      const byLeg = takeStuckByLeg() as NonNullable<typeof stuckByLeg>;
+      hookAsks.set(plainOf(r.command), () => askWhenStuck(r, byLeg, { allow: true }));
+      return { decision: "ask" };
+    }
     const { first, policy } = await rulesVerdict(r);
     // What I let run once runs, Claude Code's classifier not asked (ADR-053); never what is
     // never allowed.
@@ -1213,14 +1240,15 @@ export async function runAttempt(
    */
   const askWhenStuck = async (
     r: PermissionRequest,
-    s: { why: string; blocks: { action: string; reason: string; layer: 1 | 2 }[] },
+    s: { why: string; blocks: Blocked[] },
     refused: PermissionDecision,
   ): Promise<PermissionDecision> => {
+    const by = (l: Blocked["layer"]) =>
+      l === 1 ? "rules" : l === 2 ? "judge" : `${leg.legName}'s own auto mode`;
     const list = s.blocks
       .slice(-10)
       .map(
-        (b) =>
-          `- \`${b.action.replace(/`/g, "'").slice(0, 160)}\` — ${b.reason} (${b.layer === 1 ? "rules" : "judge"})`,
+        (b) => `- \`${b.action.replace(/`/g, "'").slice(0, 160)}\` — ${b.reason} (${by(b.layer)})`,
       )
       .join("\n");
     const itemId = d.inbox.open({
@@ -1994,7 +2022,11 @@ export async function runAttempt(
     const dropped = dependentsOf(d.db, job.id, taskId);
     const prompt = command
       ? `${leg.legName} says it can't finish “${task.title}” without \`${shown}${
-          blocked ? `, which Oraknid's rules blocked (${blocked.reason})` : ""
+          blocked
+            ? blocked.byLeg
+              ? `, which its own auto mode refused (${blocked.reason})`
+              : `, which Oraknid's rules blocked (${blocked.reason})`
+            : ""
         }. What should I do?`
       : `${leg.legName} says it can't finish “${task.title}” without you. What should I do?`;
     const questions = [
@@ -2442,8 +2474,12 @@ export async function runAttempt(
           if (claimsDone(end.text))
             observed.falseClaim = `said it was done, but \`${failed.command}\` failed`;
           // It says it can't finish without me (a guard blocked it, only I can do or allow it):
-          // that is asked, specifically, before any ladder or "keeps going wrong" (ADR-053).
-          const said = saysOwnerNeeded(end.text);
+          // that is asked, specifically, before any ladder or "keeps going wrong" (ADR-053). So is
+          // being stuck on its own auto mode's refusals with nothing after them (bug 7).
+          const byLeg = takeStuckByLeg();
+          const said =
+            saysOwnerNeeded(end.text) ??
+            (byLeg ? `${byLeg.why} by its own auto mode: “${end.text.slice(0, 300)}”` : null);
           if (said && (await askOwnerNeeded(said, end.text, failed))) continue;
         }
       }

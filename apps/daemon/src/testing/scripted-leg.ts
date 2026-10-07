@@ -26,7 +26,9 @@ export type Action =
   /** Asks permission as the Leg would (an OpenCode ask for its own tmp), doing nothing else. */
   | { ask: { tool: string; path?: string; command?: string } }
   /** The turn ends on an error, as a provider's 500 ends it. */
-  | { fail: string };
+  | { fail: string }
+  /** A command Claude Code's own auto mode refused before it ran, Oraknid never asked (ADR-053). */
+  | { legDenies: { command: string; reason: string } };
 
 export interface TurnContext {
   leg: string;
@@ -213,6 +215,20 @@ export function scriptedLeg(
               path: a.ask.path ?? null,
             });
             asks.push({ tool: a.ask.tool, path: a.ask.path ?? null, allow: d.allow });
+          } else if ("legDenies" in a) {
+            events.push({
+              type: "permission.denied",
+              request: {
+                tool: "Bash",
+                input: { command: a.legDenies.command },
+                command: a.legDenies.command,
+                path: null,
+              },
+              by: "leg",
+              reason: a.legDenies.reason,
+            });
+            // The model reads the refusal before it acts again.
+            await new Promise((r) => setTimeout(r, 30));
           } else if ("fail" in a) {
             events.push({ type: "turn.ended", reason: "error", text, error: a.fail });
             return;

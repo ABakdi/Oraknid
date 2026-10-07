@@ -5,7 +5,8 @@
 export interface Blocked {
   action: string;
   reason: string;
-  layer: 1 | 2;
+  /** Layer 1 (the rules), 2 (the judge), or the agent's own auto mode (Claude Code's classifier). */
+  layer: 1 | 2 | "leg";
 }
 
 export const IN_A_ROW = 3;
