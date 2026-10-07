@@ -129,6 +129,9 @@ Each with its one line of help (`/help`):
 - `/usage` (Oraknid's use, the plan windows), `/health` (this computer:
   state, tasks running of the limit, the reading, incidents, tasks paused
   for room).
+- `/ci` (2026-10-07, [[ADR-058-CI-In-Oraknid]]): the current project's
+  linked repos' latest GitHub Actions runs; a number shows a run's jobs
+  and steps and its failing step's last 40 lines.
 - `/mail` (accounts, then a number: their threads), `/repos` (GitHub),
   `/storage` (Oraknid's disk use, the biggest jobs' logs, cloud storage),
   `/chats` (a number: the conversation), `/skills`.

@@ -17,6 +17,7 @@ import type {
   GitHubTree,
 } from "@oraknid/contracts";
 import type { GitHubRepo, RepoInfo } from "../github.ts";
+import type { Ci } from "../github-ci.ts";
 
 // A git host (ADR-062): what Oraknid does on GitHub, GitLab or Gitea and
 // Forgejo through an account's token. GitHub's client satisfies the core
@@ -98,8 +99,8 @@ export interface GitHost extends GitHostCore {
   /** Where a branch is shown on the host's own site. */
   branchUrl(fullName: string, branch: string): string;
   browse: RepoBrowser;
-  /** CI (checks and workflows), GitHub's first, added by its own work: not part of this interface yet. */
-  ci?: unknown;
+  /** CI: GitHub's Actions (ADR-058) on GitHub; other hosts have none here yet. */
+  ci?: Ci;
 }
 
 /** A refusal from a host, said in words, with its HTTP status. */

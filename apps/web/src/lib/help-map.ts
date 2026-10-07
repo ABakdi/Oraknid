@@ -92,6 +92,11 @@ export const PAGES: HelpPage[] = [
         does: "The project's GitHub repo: which one and through which account, its latest commits, branches and open pull requests, Browse the code (in Repos), and linking, changing or unlinking it.",
       },
       {
+        id: "ci",
+        name: "CI",
+        does: "The linked repos' GitHub Actions: each repo's release and work branch passing or failing, its runs; a run with its jobs and steps, the failing step's log first (searchable), its artifacts, Re-run failed jobs, Re-run all, Cancel, and Run workflow (a workflow run by hand with its inputs).",
+      },
+      {
         id: "work",
         name: "Work",
         does: "The jobs, newest first; one opens in place (item/work/<job id>).",
@@ -302,6 +307,11 @@ export const PAGES: HelpPage[] = [
         does: "A branch's history; a commit with its changes file by file.",
       },
       { id: "branches", name: "Branches", does: "The repository's branches." },
+      {
+        id: "ci",
+        name: "CI",
+        does: "Its GitHub Actions runs, by branch; a run's jobs, steps, log by step (the failing step first, searchable) and artifacts; re-run, cancel, run a workflow by hand.",
+      },
       {
         id: "pulls",
         name: "Pull requests",
@@ -546,6 +556,14 @@ export const CONTROLS: HelpControl[] = [
     name: "The project's GitHub repo",
     does: "Links the project to a GitHub repo (an account, a new or existing repo, public or private), changes or unlinks it; Oraknid pushes and opens pull requests there without asking.",
     where: "A project's Repo tab, under what's on the repo",
+  },
+  {
+    id: "ci.badge",
+    page: "projects",
+    needsItem: true,
+    name: "The CI badge",
+    does: "Whether the project's linked repo's CI passes on its release branch (else its work branch): passing, failing (the failing step on hover) or running; it opens the CI tab. A job's page shows its pull request's or pushed branch's the same way.",
+    where: "A project's header, after its name; a job's page, after its branch",
   },
   {
     id: "project.repo",

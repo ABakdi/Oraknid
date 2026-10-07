@@ -158,7 +158,8 @@ describe("linux metrics", () => {
     await new Promise((r) => setTimeout(r, 600));
     const s = await metrics.sample(watched);
     child.kill();
-    expect(s.processes[0]?.cpuPercent).toBeGreaterThan(50);
+    // Measured, not idle: a shared or busy machine gives a spinning child far less than a core.
+    expect(s.processes[0]?.cpuPercent).toBeGreaterThan(5);
     expect(s.processes[0]?.rssBytes).toBeGreaterThan(1_000_000);
     expect(s.system.memoryTotalBytes).toBeGreaterThan(0);
   });

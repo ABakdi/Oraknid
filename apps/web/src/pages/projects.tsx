@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import { Link, Redirect, useLocation } from "wouter";
 import { ActivityFeed } from "@/components/activity-feed";
 import { LegComparison, TokensChart } from "@/components/charts";
+import { ProjectCiBadge } from "@/components/ci-badge";
+import { ProjectCiTab } from "@/components/ci-panel";
 import { BackButton, Empty, ErrorNote, Loading, PageHeader, Stat } from "@/components/common";
 import { EyeChat } from "@/components/eye-chat";
 import { ProjectBudgetCard } from "@/components/job-budget";
@@ -168,6 +170,8 @@ function ProjectDetail({
       <h2 className="min-w-0 truncate text-lg font-semibold" title={project.name}>
         {project.name}
       </h2>
+      {/* Its linked repo's CI at a glance (ADR-058). */}
+      <ProjectCiBadge projectId={id} />
       {project.archivedAt ? (
         <span className="flex shrink-0 items-center gap-1 rounded border px-1.5 text-xs text-muted-foreground">
           <Archive className="size-3" />
@@ -239,6 +243,17 @@ function ProjectDetail({
       id: "repo",
       label: t("Repo"),
       content: () => <ProjectRepoTab project={project} />,
+    },
+    {
+      id: "ci",
+      label: t("CI"),
+      content: () => (
+        <ProjectCiTab
+          project={project}
+          runId={tab === "ci" && job && /^\d+$/.test(job) ? Number(job) : undefined}
+          repo={tab === "ci" && sub ? decodeURIComponent(sub) : undefined}
+        />
+      ),
     },
     {
       id: "inbox",

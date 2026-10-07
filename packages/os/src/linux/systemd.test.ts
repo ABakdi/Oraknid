@@ -124,7 +124,9 @@ describe("systemd: what doctor says to run", () => {
   });
 });
 
+// A user's systemd, and not on a CI runner (ORAKNID_CI), which has no user session (ADR-058).
 const userSystemd =
+  !process.env.ORAKNID_CI &&
   spawnSync("systemctl", ["--user", "is-system-running"]).status !== null &&
   spawnSync("systemd-run", ["--version"]).status === 0;
 

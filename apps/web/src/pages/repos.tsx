@@ -22,6 +22,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Link, useLocation } from "wouter";
+import { CiRuns } from "@/components/ci-panel";
 import { BackButton, Empty, ErrorNote, Loading, Markdown } from "@/components/common";
 import { useConfirm } from "@/components/confirm";
 import { DiffList } from "@/components/diff-view";
@@ -167,6 +168,7 @@ export function parseRest(tab: string | undefined, rest: string | undefined) {
       state: parts[0] === "closed" ? ("closed" as const) : ("open" as const),
       number: parts[1] ? Number(parts[1]) : undefined,
     };
+  if (tab === "ci") return { runId: /^\d+$/.test(parts[0] ?? "") ? Number(parts[0]) : undefined };
   return {};
 }
 
@@ -746,6 +748,23 @@ function RepoDetail({
         />
       ),
     },
+    // GitHub Actions: GitHub's only (ADR-058); another host's repo has no CI tab here.
+    ...(at.host
+      ? []
+      : [
+          {
+            id: "ci",
+            label: t("CI"),
+            content: () => (
+              <CiRuns
+                r={ref}
+                defaultBranch={repo.defaultBranch}
+                runId={"runId" in sub ? sub.runId : undefined}
+                hrefFor={(id) => `${repoHref.base(owner, name)}/ci${id ? `/${id}` : ""}`}
+              />
+            ),
+          },
+        ]),
     { id: "project", label: t("Project"), content: () => <ProjectTab repo={linked} /> },
   ];
   return (

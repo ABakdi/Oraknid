@@ -27,6 +27,8 @@ export class GitHubError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /** When GitHub may be asked again (its allowance full again, or the time it asked to wait), ms. */
+    readonly retryAt: number | null = null,
   ) {
     super(message);
   }
@@ -37,6 +39,21 @@ function inWords(at: number, now = Date.now()): string {
   const min = Math.max(1, Math.ceil((at - now) / 60_000));
   const clock = new Date(at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
   return `at ${clock}, in ${min} minute${min === 1 ? "" : "s"}`;
+}
+
+/** GitHub asked to wait: its allowance used up (`limit`), or slow down (no limit), until when. */
+interface Pause {
+  until: number;
+  limit: number | null;
+}
+
+/** Why an account waits, in words, the time said from now. */
+function pauseWords(who: string | undefined, p: Pause): string {
+  const name = who ?? "this account";
+  if (p.limit !== null)
+    return `GitHub's hourly allowance for ${name} is used up (${p.limit} requests); it fills again ${inWords(p.until)}.`;
+  const seconds = Math.max(1, Math.ceil((p.until - Date.now()) / 1000));
+  return `GitHub asks Oraknid to slow down for ${name}: try again in ${seconds} seconds.`;
 }
 
 const Stored = z.array(
@@ -232,17 +249,23 @@ export class GitHub {
     if (
       (res.status === 403 || res.status === 429) &&
       res.headers.get("x-ratelimit-remaining") === "0"
-    )
-      throw new GitHubError(
-        `GitHub's hourly allowance for ${who ?? "this account"} is used up (${limit || 5000} requests); it fills again ${inWords(reset * 1000)}.`,
-        res.status,
-      );
-    if ((res.status === 403 || res.status === 429) && res.headers.has("retry-after"))
-      throw new GitHubError(
-        `GitHub asks Oraknid to slow down for ${who ?? "this account"}: try again in ${Number(res.headers.get("retry-after")) || 60} seconds.`,
-        res.status,
-      );
-    if (!res.ok && res.status !== 304) {
+    ) {
+      // Nothing more is asked with this account until it is full again (ADR-058).
+      const p = {
+        until: reset > 0 ? reset * 1000 : Date.now() + 60 * 60_000,
+        limit: limit || 5000,
+      };
+      if (who) this.#paused.set(who, p);
+      throw new GitHubError(pauseWords(who, p), res.status, p.until);
+    }
+    if ((res.status === 403 || res.status === 429) && res.headers.has("retry-after")) {
+      const seconds = Number(res.headers.get("retry-after")) || 60;
+      const p = { until: Date.now() + seconds * 1000, limit: null };
+      if (who) this.#paused.set(who, p);
+      throw new GitHubError(pauseWords(who, p), res.status, p.until);
+    }
+    const redirected = init.redirect === "manual" && res.status >= 300 && res.status < 400;
+    if (!res.ok && res.status !== 304 && !redirected) {
       const body = (await res.json().catch(() => ({}))) as {
         message?: string;
         errors?: { message?: string }[];
@@ -253,6 +276,8 @@ export class GitHub {
     return res;
   }
 
+  /** Accounts GitHub asked to wait, until when (ms): nothing is asked of it with them till then. */
+  readonly #paused = new Map<string, Pause>();
   /** What GitHub said last of each account's hourly allowance. */
   readonly #limits = new Map<string, { remaining: number; limit: number; resetsAt: number }>();
   /** Reads, briefly kept (ADR-040): an account and a path, with GitHub's ETag to ask again cheaply. */
@@ -284,14 +309,30 @@ export class GitHub {
    * unchanged answer (304) costs nothing of the allowance. `next` says
    * GitHub has another page.
    */
-  async read<T>(path: string, login?: string | null): Promise<{ data: T; next: boolean }> {
+  async read<T>(
+    path: string,
+    login?: string | null,
+    o: { ttl?: number } = {},
+  ): Promise<{ data: T; next: boolean; stale: boolean; retryAt: number | null }> {
     const list = await this.#list();
     const a = login ? list.find((x) => x.login === login) : list[0];
     if (!a) await this.#token(login);
     const account = a as Stored[number];
     const key = `${account.login}\n${path}`;
     const kept = this.#cache.get(key);
-    if (kept && Date.now() - kept.at < READ_TTL) return { data: kept.data as T, next: kept.next };
+    const fresh = (x: NonNullable<typeof kept>) => ({
+      data: x.data as T,
+      next: x.next,
+      stale: false,
+      retryAt: null,
+    });
+    if (kept && Date.now() - kept.at < (o.ttl ?? READ_TTL)) return fresh(kept);
+    // GitHub asked to wait (ADR-058): what was read is served as it was, nothing new is asked.
+    const until = this.pausedUntil(account.login);
+    if (until) {
+      if (kept) return { data: kept.data as T, next: kept.next, stale: true, retryAt: until };
+      this.#refuseWhilePaused(account.login);
+    }
     const res = await this.#request(
       path,
       {},
@@ -301,7 +342,7 @@ export class GitHub {
     );
     if (res.status === 304 && kept) {
       kept.at = Date.now();
-      return { data: kept.data as T, next: kept.next };
+      return fresh(kept);
     }
     const data = (await res.json()) as T;
     const next = /<[^>]+>;\s*rel="next"/.test(res.headers.get("link") ?? "");
@@ -311,7 +352,69 @@ export class GitHub {
     }
     this.#cache.delete(key);
     this.#cache.set(key, { at: Date.now(), etag: res.headers.get("etag"), data, next });
-    return { data, next };
+    return { data, next, stale: false, retryAt: null };
+  }
+
+  /** Until when GitHub asked Oraknid to wait with an account (ms), or null. */
+  pausedUntil(login: string): number | null {
+    const p = this.#paused.get(login);
+    if (p === undefined) return null;
+    if (p.until <= Date.now()) {
+      this.#paused.delete(login);
+      return null;
+    }
+    return p.until;
+  }
+
+  /** While GitHub asked to wait, the same refusal again, GitHub not asked. */
+  #refuseWhilePaused(login: string) {
+    const p = this.pausedUntil(login) ? this.#paused.get(login) : undefined;
+    if (p) throw new GitHubError(pauseWords(login || undefined, p), 429, p.until);
+  }
+
+  /**
+   * A change through an account's token (ADR-058: a re-run, a cancel, a
+   * workflow run by hand): GitHub's answer, or null when it has none (202,
+   * 204). What was read is forgotten.
+   */
+  async send<T = unknown>(
+    path: string,
+    init: { method: "POST" | "PATCH" | "PUT" | "DELETE"; body?: unknown },
+    login: string,
+  ): Promise<T | null> {
+    this.#refuseWhilePaused(login);
+    try {
+      const res = await this.#request(
+        path,
+        {
+          method: init.method,
+          ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
+        },
+        await this.#token(login),
+        login,
+      );
+      const text = await res.text();
+      return text ? (JSON.parse(text) as T) : null;
+    } finally {
+      this.forget();
+    }
+  }
+
+  /**
+   * Something GitHub hands over at another address (a job's log, an
+   * artifact's zip): asked with the token, the address it redirects to
+   * fetched without it. The response's body is the caller's to read.
+   */
+  async raw(path: string, login: string): Promise<Response> {
+    this.#refuseWhilePaused(login);
+    const res = await this.#request(path, { redirect: "manual" }, await this.#token(login), login);
+    const to = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
+    if (!to) return res;
+    // The signed address needs no token: it is never sent there.
+    const next = await (this.o.fetch ?? fetch)(to, { signal: AbortSignal.timeout(5 * 60_000) });
+    if (!next.ok)
+      throw new GitHubError(`GitHub's file couldn't be fetched (${next.status}).`, next.status);
+    return next;
   }
 
   /** An account's repos, most recently pushed first. */

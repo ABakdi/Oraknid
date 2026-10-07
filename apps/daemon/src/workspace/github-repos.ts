@@ -265,6 +265,11 @@ export class Repos {
     return accounts[0] as string;
   }
 
+  /** The account a repository is read with (ADR-040's rule), for its CI too (ADR-058). */
+  accountFor(ref: GitHubRepoRef): Promise<string> {
+    return this.#account(ref);
+  }
+
   /** A read about one repository, a 404 said in words. */
   async #read<T>(ref: GitHubRepoRef, path: string): Promise<{ data: T; next: boolean }> {
     const account = await this.#account(ref);

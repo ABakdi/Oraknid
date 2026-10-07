@@ -101,6 +101,7 @@ other hosts must come in beside it, not by rewriting it.
   the login and token, and the token in no request line, event, remote or
   config; `apps/web/src/pages/repos.test.tsx` (a GitLab project in the
   list and at its address).
+- **CI** (merged with [[ADR-058-CI-In-Oraknid]], 2026-10-08): GitHub's `GitHost` carries its Actions as the `ci` facet; the github tool's `ci_*` calls and `oraknid github-ci` on a GitLab, Gitea or Forgejo link say that only GitHub Actions are read, and Repos shows no CI tab for another host's repository.
 - **Not yet**: The Eye's question when a project has no link offers
   GitHub's accounts only (the tool's note to a task still says GitHub);
   CI on the other hosts; archiving or deleting their repos from Oraknid;

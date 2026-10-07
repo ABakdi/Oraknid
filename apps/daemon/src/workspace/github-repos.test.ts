@@ -228,11 +228,19 @@ describe("Repos (ADR-040)", () => {
       { account: "me", error: expect.stringMatching(/allowance for me is used up/) },
     ]);
     expect(all.repos.map((r) => r.fullName)).toContain("acme/site");
+    // Backing off (ADR-058): until it fills again, nothing more is asked of GitHub with that
+    // account; what was read is served as it was, the rest refused in the same words.
     gh.setRemaining("me", 100);
-    gh.slowDown(30);
+    const asked = gh.hits.length;
+    expect((await api.github.repoInfo(piano)).fullName).toBe("me/piano");
     await expect(api.github.commits({ ...piano, branch: "dev" })).rejects.toThrow(
-      "GitHub asks Oraknid to slow down for me: try again in 30 seconds.",
+      /allowance for me is used up/,
     );
+    expect(gh.hits.length).toBe(asked);
+    gh.slowDown(30);
+    await expect(
+      api.github.commits({ owner: "acme", name: "site", account: "work", branch: "trunk" }),
+    ).rejects.toThrow("GitHub asks Oraknid to slow down for work: try again in 30 seconds.");
   });
 
   it("never sends a token to the browser", async () => {

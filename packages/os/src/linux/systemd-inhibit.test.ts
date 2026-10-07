@@ -82,7 +82,9 @@ describe("systemd inhibitor", () => {
   });
 });
 
-const realInhibit = spawnSync("systemd-inhibit", ["--list", "--no-pager"]).status === 0;
+// A real logind, and not on a CI runner (ORAKNID_CI), whose session can't take the lock (ADR-058).
+const realInhibit =
+  !process.env.ORAKNID_CI && spawnSync("systemd-inhibit", ["--list", "--no-pager"]).status === 0;
 
 describe.runIf(realInhibit)("systemd inhibitor, for real", () => {
   it("shows up in systemd-inhibit --list while held, and is gone after release", async () => {

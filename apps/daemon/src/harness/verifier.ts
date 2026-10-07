@@ -117,6 +117,8 @@ export function createVerifier(d: VerifierDeps, job: { id: string }, where: Veri
         link: githubLinkOf(d.db, job.id),
         linkFor,
         localCommit: where.localCommit,
+        // `oraknid github-ci` waits for GitHub Actions; stopping the job stops the wait (ADR-058).
+        signal: where.signal,
       })
     );
   };

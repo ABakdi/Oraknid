@@ -43,6 +43,7 @@ Type `/` and the commands are listed; keep typing to narrow them, **↑↓** to 
 | `/backups` | Backup plans and their runs (the server's, when one is chosen); run one now |
 | `/agents`, `/models` | Your Legs, their models, plan windows and quota; local models |
 | `/usage`, `/health` | Tokens and plan windows; this computer: danger, tasks running, tasks paused for room |
+| `/ci` | The project's GitHub Actions runs; a number shows a run's jobs and its failing step's last lines |
 | `/mail`, `/repos`, `/storage`, `/chats`, `/skills` | Mail accounts and threads, GitHub repositories, disk and cloud storage, chats, skills |
 | `/settings` | The common settings by name: `/settings max-running-jobs 3`, `/settings terminal on` |
 | `/update`, `/doctor` | A newer Oraknid, and updating to it; what is wrong with this computer |

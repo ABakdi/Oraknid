@@ -235,6 +235,7 @@ import type { Asker, Updates } from "../updates/service.ts";
 import { VERSION } from "../version.ts";
 import { listFolders, makeFolder } from "../workspace/folders.ts";
 import { type GitHub, GitHubError } from "../workspace/github.ts";
+import type { Ci } from "../workspace/github-ci.ts";
 import type { Repos } from "../workspace/github-repos.ts";
 import type { GitHosts } from "../workspace/hosts/registry.ts";
 import { hostFor } from "../workspace/hosts/registry.ts";
@@ -244,6 +245,7 @@ import { jobResult, mergeJob, taskDiff } from "../workspace/result.ts";
 import { projectFrom } from "../workspace/sources.ts";
 import { cleanFinishedWorktrees, jobWorktrees, removeJobWorktree } from "../workspace/worktrees.ts";
 import { backupsRouter } from "./backups.ts";
+import { ciRouter } from "./ci.ts";
 import { cloudRouter, notAway } from "./cloud.ts";
 import { hostsRouter } from "./hosts.ts";
 import { modelsRouter } from "./models.ts";
@@ -316,6 +318,8 @@ export interface ApiContext {
   repos: Repos;
   /** GitHub and the other git hosts I added an account on (ADR-062). */
   hosts: GitHosts;
+  /** Their GitHub Actions (ADR-058). */
+  ci: Ci;
   /** The Oraknid helper (ADR-024). */
   helper: Helper;
   /** My servers (ADR-026). */
@@ -1358,6 +1362,8 @@ export const router = {
   /** GitLab, Gitea and Forgejo accounts, and reading any host's repositories (ADR-062). */
   hosts: hostsRouter,
   models: modelsRouter,
+  /** GitHub Actions: runs, jobs, logs, artifacts, re-runs, workflows by hand (ADR-058). */
+  ci: ciRouter,
   /** A project's secrets per environment (ADR-059). */
   projectSecrets: projectSecretsRouter,
   /** A text of mine rephrased by a quick model, for any textarea (Chats-and-Helper → Fix wording). */

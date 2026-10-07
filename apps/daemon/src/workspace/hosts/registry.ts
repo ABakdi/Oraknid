@@ -7,6 +7,7 @@ import {
 import type { Db } from "../../db/open.ts";
 import type { Secrets } from "../../os/secrets.ts";
 import type { GitHub } from "../github.ts";
+import { ciOf } from "../github-ci.ts";
 import type { Repos } from "../github-repos.ts";
 import { Gitea } from "./gitea.ts";
 import { GitLab } from "./gitlab.ts";
@@ -51,6 +52,10 @@ export function githubHost(github: GitHub, repos?: Repos): GitHost {
     get browse() {
       if (!browse) throw new Error("GitHub's repositories aren't read here.");
       return browse;
+    },
+    // Its Actions (ADR-058), the optional facet only GitHub fills for now.
+    get ci() {
+      return ciOf(github);
     },
   };
 }

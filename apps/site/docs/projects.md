@@ -35,6 +35,8 @@ In a project of several repos, each repo has its own link, set on its section of
 
 **Repos** (`g r`) shows your repositories from every account: browse their code at any branch, read the commit history with each change, branches and pull requests, and link one to a project or start new work on it.
 
+A project's **CI** tab shows its linked repos' GitHub Actions: see [CI](repos.html#ci-github-actions).
+
 ## GitLab, Gitea and Forgejo
 
 Your repositories on GitLab (gitlab.com or your own), Gitea or Forgejo work the same way. In **Repos → Accounts** (or **Settings → Connections**, under GitHub), **Add a GitLab, Gitea or Forgejo account**: pick the kind, give its address (`https://gitlab.com`, `https://git.example.org`) and paste a token:

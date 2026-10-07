@@ -75,6 +75,7 @@ export const COMMANDS: CommandSpec[] = [
   { name: "health", help: "This computer: danger, tasks running, paused for room", scope: "any" },
   { name: "mail", help: "Mail accounts, then their threads", scope: "any" },
   { name: "repos", help: "Your GitHub repositories", scope: "any" },
+  { name: "ci", help: "The project's GitHub Actions runs; a number shows one's log", scope: "any" },
   { name: "storage", help: "Disk used by Oraknid, and cloud storage", scope: "any" },
   { name: "chats", help: "Your chats with models", scope: "any" },
   { name: "skills", help: "The skills jobs can use", scope: "any" },

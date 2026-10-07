@@ -271,6 +271,17 @@ describe("Git hosts (ADR-062)", () => {
     });
     expect(mr).toMatch(/Opened pull request #1: .*merge_requests\/1/);
     expect(host.mergeRequests[0]).toMatchObject({ source: "feature", target: "main" });
+    // CI stays GitHub's: a GitLab link's pipelines aren't read, said so (ADR-058).
+    await expect(githubCall(deps, jobId, "ci_runs", {})).rejects.toThrow(/GitHub Actions only/);
+    expect(
+      (
+        await runBuiltinCheck("oraknid github-ci main", {
+          github: daemon.github,
+          link: p.github,
+          localCommit: () => null,
+        })
+      )?.output,
+    ).toContain("GitHub Actions only");
 
     // The merge request read on the Repos page, with its commit and diff.
     const prRef = { host: id, owner: "me", name: "piano" };

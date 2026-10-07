@@ -22,7 +22,7 @@ importers:
         version: 7.0.2
       vitest:
         specifier: 5.0.3
-        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))
+        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
 
   apps/daemon:
     dependencies:
@@ -77,9 +77,15 @@ importers:
       '@orpc/client':
         specifier: 1.15.4
         version: 1.15.4
+      '@orpc/openapi':
+        specifier: 1.15.4
+        version: 1.15.4(ws@8.22.0)
       '@orpc/server':
         specifier: 1.15.4
         version: 1.15.4(ws@8.22.0)
+      '@orpc/zod':
+        specifier: 1.15.4
+        version: 1.15.4(@orpc/contract@1.15.4)(@orpc/server@1.15.4(ws@8.22.0))(ws@8.22.0)(zod@4.6.5)
       '@secretlint/core':
         specifier: 13.0.7
         version: 13.0.7
@@ -146,6 +152,9 @@ importers:
       ws:
         specifier: 8.22.0
         version: 8.22.0
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
       zod:
         specifier: 4.6.5
         version: 4.6.5
@@ -222,10 +231,10 @@ importers:
         version: 0.23.0(tsx@4.23.15)(typescript@7.0.2)
       vite:
         specifier: 8.3.1
-        version: 8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)
+        version: 8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1)
       vitest:
         specifier: 5.0.3
-        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))
+        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
 
   apps/site:
     devDependencies:
@@ -346,7 +355,7 @@ importers:
         version: 1.15.4(ws@8.22.0)
       '@tailwindcss/vite':
         specifier: 4.3.3
-        version: 4.3.3(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))
+        version: 4.3.3(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
       '@testing-library/react':
         specifier: 16.3.3
         version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -361,7 +370,7 @@ importers:
         version: 19.3.0(@types/react@19.3.0)
       '@vitejs/plugin-react':
         specifier: 6.1.1
-        version: 6.1.1(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))
+        version: 6.1.1(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
       jsdom:
         specifier: 30.1.1
         version: 30.1.1(@noble/hashes@2.4.0)
@@ -373,13 +382,13 @@ importers:
         version: 1.4.0
       vite:
         specifier: 8.3.1
-        version: 8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)
+        version: 8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1)
       vite-plugin-singlefile:
         specifier: 2.3.3
-        version: 2.3.3(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))
+        version: 2.3.3(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
       vitest:
         specifier: 5.0.3
-        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))
+        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/contracts:
     dependencies:
@@ -428,7 +437,7 @@ importers:
     devDependencies:
       vitest:
         specifier: 5.0.3
-        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))
+        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/legs/claude-code:
     dependencies:
@@ -447,7 +456,7 @@ importers:
     devDependencies:
       vitest:
         specifier: 5.0.3
-        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))
+        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/legs/codex:
     dependencies:
@@ -463,7 +472,7 @@ importers:
     devDependencies:
       vitest:
         specifier: 5.0.3
-        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))
+        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/legs/openai-compatible:
     dependencies:
@@ -482,7 +491,7 @@ importers:
     devDependencies:
       vitest:
         specifier: 5.0.3
-        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))
+        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/legs/opencode:
     dependencies:
@@ -498,7 +507,7 @@ importers:
     devDependencies:
       vitest:
         specifier: 5.0.3
-        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))
+        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/legs/oraknid-agent:
     dependencies:
@@ -526,7 +535,7 @@ importers:
     devDependencies:
       vitest:
         specifier: 5.0.3
-        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))
+        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/legs/sdk:
     dependencies:
@@ -538,7 +547,7 @@ importers:
         version: link:../../os
       vitest:
         specifier: 5.0.3
-        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))
+        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/os:
     dependencies:
@@ -573,7 +582,7 @@ importers:
         version: 0.7.14
       vitest:
         specifier: 5.0.3
-        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))
+        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
 
 packages:
 
@@ -1408,6 +1417,15 @@ packages:
   '@orpc/interop@1.15.4':
     resolution: {integrity: sha512-ZCTNPenr1clZ2RBCJxsCsvS3eS8MJIDSx/LH1AIAKj9RjvfOXI/BnjHmgD4jUEIa6FcG+c2LV/1IXVJpC6NoTw==}
 
+  '@orpc/json-schema@1.15.4':
+    resolution: {integrity: sha512-UIPzRBWuSkWejOJwIAGFkW8H0iOvqobGJnVGRbpKOGAw1kiJW2EqHQ+2ZhE2o/cTi/A+HnQj0YG9tmrk5Vytnw==}
+
+  '@orpc/openapi-client@1.15.4':
+    resolution: {integrity: sha512-z+8gRUp9bhVuA2tFlzJDCaUbLV/whZec25fmYb0VtP2N6iPfY0d7hYZvX47F/WrcuwaLCTqkbVAzK8Xb2cKF/w==}
+
+  '@orpc/openapi@1.15.4':
+    resolution: {integrity: sha512-+J2skkYlqcB7O9nUJ9rhV1IvisimIwxyn21nAWP/jvSg5PN/klqSO2r6XkxiAaCukw/QE5BFMbN8c0ZdLrMEnw==}
+
   '@orpc/server@1.15.4':
     resolution: {integrity: sha512-Ccs2Pdwql2XRtk7bzkiZohoYuUVNcffydbswhz75rdepCQt0HmKosfVhsqjAqCKDDB7c84ct7Q7c5Z/xQak7pQ==}
     peerDependencies:
@@ -1449,6 +1467,13 @@ packages:
 
   '@orpc/standard-server@1.15.4':
     resolution: {integrity: sha512-woaFpUJavYPiqRQ0Eh716jOHRZ7o84mPpmEPS79bBUJNDilGEj2OBSjbHV2ez4FYdVnEnlbg+rYy7sX3PwwENA==}
+
+  '@orpc/zod@1.15.4':
+    resolution: {integrity: sha512-k7W5yvagfcGztACr7qpB7Yyp3iMF9BzCJX9uDH9EEouuM2gt/WzsGtkDw//LTpPPsJQerltdKrdGfaWnbrGBhQ==}
+    peerDependencies:
+      '@orpc/contract': 1.15.4
+      '@orpc/server': 1.15.4
+      zod: '>=3.25.0'
 
   '@oxc-project/types@0.152.0':
     resolution: {integrity: sha512-oM/5rLBm2tPkg0iBgkH/FOeR3PCDpY19GTgAZjMFM8h9WI9VW7cLgzp6nwtarYKmovavIQZ+Fe/RKX/8C8O/Rw==}
@@ -4805,6 +4830,9 @@ packages:
   rope-sequence@1.3.4:
     resolution: {integrity: sha512-UT5EDe2cu2E/6O4igUr5PSFs23nvvukicWHx6GnOPlHAiiYbzNuCRQCuiUdHJQcqKalLKlrYJnjY0ySGsXNQXQ==}
 
+  rou3@0.7.12:
+    resolution: {integrity: sha512-iFE4hLDuloSWcD7mjdCDhx2bKcIsYbtOTpfH5MHHLSKMOUyjqQXTeZVa289uuwEGEKFoE/BAPbhaU4B774nceg==}
+
   router@2.2.0:
     resolution: {integrity: sha512-nLTrUKm2UyiL7rlhapu/Zl45FwNgkZGaCpZbIHajDYgwlJCOzLSk+cIPAnsEqV955GjILJnKbdQC1nVPz+gAYQ==}
     engines: {node: '>= 18'}
@@ -5348,6 +5376,9 @@ packages:
     resolution: {integrity: sha512-U89AsyEeAsyoF0zVJBkG9zBgekjgjK7yk9sje3F4IQpXBJ10TF6ByLlIfjMhcmHMJgHZI4KHt4rdNfktzxIAMA==}
     engines: {node: '>=20'}
 
+  wildcard-match@5.1.6:
+    resolution: {integrity: sha512-Dh5N543my42ynFsbT0v6iPpaqJt95MOK1n/lhojVTe/hS3gpP6e938bbzsfaS0goLlJbhEOCIJPe/Tc3hckoaQ==}
+
   wouter@3.13.0:
     resolution: {integrity: sha512-p1RoCuVyxwb3X5jLjDdkwDzlXj+/UGZqZb+806uaJOVEHvNfGkjET0KiQ/CGiDKC90rLsALMgMj4onNVKxgNdQ==}
     peerDependencies:
@@ -5385,6 +5416,11 @@ packages:
 
   y18n@4.0.3:
     resolution: {integrity: sha512-JKhqTOwSrqNA1NY5lSztJ1GrBiUodLMmIZuLiDaMRJ+itFd+ABVE8XBjOvIWL+rSqNDC74LCSFmlb/U4UZ4hJQ==}
+
+  yaml@2.9.1:
+    resolution: {integrity: sha512-3NxN8+78OdzbT7C/WjGsyfPAtJaN3FNDsWxv7Y7mcDsT/oOmgW8BpyQQFFBnvZE3j9Y2Sdz1ULFLezL7Eb2yFw==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
 
   yargs-parser@18.1.3:
     resolution: {integrity: sha512-o50j0JeToy/4K6OZcaQmW6lyXXKhq7csREXcDwk2omFPJEwUNOVtJKvmDr9EI1fAJZUyZcRF7kxGBWmRXudrCQ==}
@@ -6007,6 +6043,46 @@ snapshots:
 
   '@orpc/interop@1.15.4': {}
 
+  '@orpc/json-schema@1.15.4(ws@8.22.0)':
+    dependencies:
+      '@orpc/contract': 1.15.4
+      '@orpc/interop': 1.15.4
+      '@orpc/openapi': 1.15.4(ws@8.22.0)
+      '@orpc/server': 1.15.4(ws@8.22.0)
+      '@orpc/shared': 1.15.4
+      json-schema-typed: 8.0.2
+    transitivePeerDependencies:
+      - '@opentelemetry/api'
+      - crossws
+      - fastify
+      - ws
+
+  '@orpc/openapi-client@1.15.4':
+    dependencies:
+      '@orpc/client': 1.15.4
+      '@orpc/contract': 1.15.4
+      '@orpc/shared': 1.15.4
+      '@orpc/standard-server': 1.15.4
+    transitivePeerDependencies:
+      - '@opentelemetry/api'
+
+  '@orpc/openapi@1.15.4(ws@8.22.0)':
+    dependencies:
+      '@orpc/client': 1.15.4
+      '@orpc/contract': 1.15.4
+      '@orpc/interop': 1.15.4
+      '@orpc/openapi-client': 1.15.4
+      '@orpc/server': 1.15.4(ws@8.22.0)
+      '@orpc/shared': 1.15.4
+      '@orpc/standard-server': 1.15.4
+      json-schema-typed: 8.0.2
+      rou3: 0.7.12
+    transitivePeerDependencies:
+      - '@opentelemetry/api'
+      - crossws
+      - fastify
+      - ws
+
   '@orpc/server@1.15.4(ws@8.22.0)':
     dependencies:
       '@orpc/client': 1.15.4
@@ -6075,6 +6151,22 @@ snapshots:
       '@orpc/shared': 1.15.4
     transitivePeerDependencies:
       - '@opentelemetry/api'
+
+  '@orpc/zod@1.15.4(@orpc/contract@1.15.4)(@orpc/server@1.15.4(ws@8.22.0))(ws@8.22.0)(zod@4.6.5)':
+    dependencies:
+      '@orpc/contract': 1.15.4
+      '@orpc/json-schema': 1.15.4(ws@8.22.0)
+      '@orpc/openapi': 1.15.4(ws@8.22.0)
+      '@orpc/server': 1.15.4(ws@8.22.0)
+      '@orpc/shared': 1.15.4
+      escape-string-regexp: 5.0.0
+      wildcard-match: 5.1.6
+      zod: 4.6.5
+    transitivePeerDependencies:
+      - '@opentelemetry/api'
+      - crossws
+      - fastify
+      - ws
 
   '@oxc-project/types@0.152.0': {}
 
@@ -6982,12 +7074,12 @@ snapshots:
       '@tailwindcss/oxide-win32-arm64-msvc': 4.3.3
       '@tailwindcss/oxide-win32-x64-msvc': 4.3.3
 
-  '@tailwindcss/vite@4.3.3(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))':
+  '@tailwindcss/vite@4.3.3(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))':
     dependencies:
       '@tailwindcss/node': 4.3.3
       '@tailwindcss/oxide': 4.3.3
       tailwindcss: 4.3.3
-      vite: 8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)
+      vite: 8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1)
 
   '@tanstack/react-virtual@3.14.13(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
@@ -7439,19 +7531,19 @@ snapshots:
 
   '@vercel/oidc@3.2.0': {}
 
-  '@vitejs/plugin-react@6.1.1(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))':
+  '@vitejs/plugin-react@6.1.1(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
-      vite: 8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)
+      vite: 8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1)
 
-  '@vitest/mocker@5.0.3(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))':
+  '@vitest/mocker@5.0.3(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))':
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       '@vitest/spy': 5.0.3
       estree-walker: 3.0.3
       magic-string: 1.4.2
     optionalDependencies:
-      vite: 8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)
+      vite: 8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1)
 
   '@vitest/spy@5.0.3': {}
 
@@ -9534,6 +9626,8 @@ snapshots:
 
   rope-sequence@1.3.4: {}
 
+  rou3@0.7.12: {}
+
   router@2.2.0:
     dependencies:
       debug: 4.4.3
@@ -9974,12 +10068,12 @@ snapshots:
       d3-time: 3.1.0
       d3-timer: 3.0.1
 
-  vite-plugin-singlefile@2.3.3(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)):
+  vite-plugin-singlefile@2.3.3(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1)):
     dependencies:
       micromatch: 4.0.8
-      vite: 8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)
+      vite: 8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1)
 
-  vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15):
+  vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1):
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.7
@@ -9993,11 +10087,12 @@ snapshots:
       jiti: 2.7.0
       terser: 5.51.2
       tsx: 4.23.15
+      yaml: 2.9.1
 
-  vitest@5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)):
+  vitest@5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1)):
     dependencies:
       '@types/chai': 5.2.3
-      '@vitest/mocker': 5.0.3(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))
+      '@vitest/mocker': 5.0.3(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
       chai: 6.3.0
       es-module-lexer: 2.3.2
       expect-type: 1.4.0
@@ -10008,7 +10103,7 @@ snapshots:
       tinybench: 6.2.0
       tinyexec: 1.3.1
       tinyglobby: 0.2.17
-      vite: 8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)
+      vite: 8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1)
       why-is-node-running: 3.2.1
     optionalDependencies:
       '@types/node': 22.20.4
@@ -10066,6 +10161,8 @@ snapshots:
     dependencies:
       string-width: 8.3.0
 
+  wildcard-match@5.1.6: {}
+
   wouter@3.13.0(react@19.3.0):
     dependencies:
       react: 19.3.0
@@ -10092,6 +10189,8 @@ snapshots:
   xmlchars@2.2.0: {}
 
   y18n@4.0.3: {}
+
+  yaml@2.9.1: {}
 
   yargs-parser@18.1.3:
     dependencies:
