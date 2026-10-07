@@ -541,7 +541,12 @@ export class LocalModels {
       throw new Error(`${row.name} isn't paused.`);
     if (this.#pending.has(id)) return this.view(row);
     this.#set(id, { state: "downloading", error: null });
-    const pullName = row.runner === "ollama" ? row.name : null;
+    const pullName =
+      row.runner !== "ollama"
+        ? null
+        : row.source === "huggingface" && row.quant
+          ? `hf.co/${row.repo}:${row.quant}`
+          : row.name;
     const urls = row.parts.map((p) => ({
       ...p,
       url:
