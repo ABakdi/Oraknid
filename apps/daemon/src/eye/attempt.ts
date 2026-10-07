@@ -595,8 +595,12 @@ export async function runAttempt(
   const blockedHere: { command: string; reason: string; byLeg?: boolean }[] = [];
   /** Planned changes and commands I kept blocked when asked: not asked again in this attempt. */
   const keptBlocked = new Set<string>();
-  /** Approvals this attempt asked for: withdrawn if it ends before I answer. */
+  /** Approvals this attempt asked for: withdrawn if it ends before I answer, or after a crash (bug 9). */
   const asked: string[] = [];
+  const raised = (itemId: string) => {
+    asked.push(itemId);
+    rememberForTask(d.db, taskId, { asked });
+  };
   /** Commands waiting for their result, by tool call id. */
   const pending = new Map<string, string>();
   /** What every turn's events tell the drift detectors: commands, results, usage, activity. */
@@ -945,7 +949,7 @@ export async function runAttempt(
         ]),
       ],
     });
-    asked.push(itemId);
+    raised(itemId);
     event("task.waiting", { itemId, reason: `the plan names it: ${reason}` });
     waitingOnOwner++;
     let answer: string;
@@ -1098,7 +1102,7 @@ export async function runAttempt(
         ]),
       ],
     });
-    asked.push(itemId);
+    raised(itemId);
     event("task.waiting", { itemId, reason: v.reason });
     let answer: string;
     waitingOnOwner++;
@@ -1296,7 +1300,7 @@ export async function runAttempt(
         ]),
       ],
     });
-    asked.push(itemId);
+    raised(itemId);
     event("task.waiting", { itemId, reason: s.why });
     waitingOnOwner++;
     let answer: string;
@@ -2108,7 +2112,7 @@ export async function runAttempt(
       },
       { questions, itemId },
     );
-    asked.push(itemId);
+    raised(itemId);
     event("task.waiting", { itemId, reason: `the agent needs the owner: ${said.slice(0, 200)}` });
     waitingOnOwner++;
     let answer: string;
@@ -2201,7 +2205,7 @@ export async function runAttempt(
       { questions: asking.questions, itemId },
     );
     // Withdrawn if the attempt stops before I answer (Audit 1 → D1-07).
-    asked.push(itemId);
+    raised(itemId);
     const text = await waitForAnswer(d.inbox, d.bus, itemId, signal);
     const answered = d.inbox.get(itemId);
     const choice = readKeepsGoingWrong(text, answered?.answers ?? null);
@@ -2327,6 +2331,7 @@ export async function runAttempt(
   ) => {
     release();
     for (const id of asked) d.inbox.withdraw(id);
+    if (asked.length) rememberForTask(d.db, taskId, { asked: [] });
     d.db
       .update(attempts)
       .set({ endedAt: now(), outcome, escalations })

@@ -90,7 +90,7 @@ import {
 import { ensureLinks } from "./links.ts";
 import { policyFor } from "./policy.ts";
 import { dependentsOf } from "./questions.ts";
-import { forgetTaskMemory } from "./task-memory.ts";
+import { forgetTaskMemory, readTaskMemory, rememberForTask } from "./task-memory.ts";
 import { runVerify, verifyRefusal } from "./verify.ts";
 import { storeWeb, taskRows } from "./web-store.ts";
 
@@ -239,6 +239,14 @@ export function eyeProgram(d: EyeDeps): JobProgram {
     // A Leg's permission request dies with its session: one still open is stale.
     for (const item of d.inbox.list("open")) {
       if (item.jobId === ctx.jobId && typeof item.raisedBy === "object") d.inbox.withdraw(item.id);
+    }
+    // So does what The Eye asked for an attempt cut short by a crash: its next attempt asks
+    // again if it must (bug 9).
+    for (const t of taskRows(d.db, ctx.jobId)) {
+      const { asked } = readTaskMemory(d.db, t.id);
+      if (!asked.length) continue;
+      for (const id of asked) if (d.inbox.get(id)?.state === "open") d.inbox.withdraw(id);
+      rememberForTask(d.db, t.id, { asked: [] });
     }
 
     // Only one program runs a job: a task still marked running was cut short (pause, crash, stop).

@@ -478,3 +478,51 @@ describe("what an attempt learned survives a restart (bug 8)", () => {
     ).toHaveLength(1);
   }, 60_000);
 });
+
+describe("questions The Eye raised in an attempt go with it after a crash (bug 9)", () => {
+  it("withdraws the question an attempt cut short by a crash had asked, and asks once again", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "oraknid-crash-"));
+    const db = join(dir, "o.db");
+    const plan: WebPlan = {
+      summary: "A parser.",
+      tasks: [task("a", "Build the parser", ["test -f parser.js"], ["parser.js"])],
+      jobVerify: [],
+    };
+    const needs = () =>
+      scriptedLeg(() => [{ say: "I can't create it: owner action required: touch parser.js" }], {
+        models: ["opus"],
+      });
+    // The first Oraknid asks, then dies: nothing of it runs any more (it is left as it is).
+    const crashed = await harness({
+      legs: [{ kind: "claude-code", name: "Claude A", leg: needs() }],
+      plan,
+      dataDir: dir,
+      dbFile: db,
+    });
+    try {
+      const { id } = await crashed.repoJob("A parser");
+      const stale = await crashed.openItem(/needs `touch parser\.js/);
+      rig = await harness({
+        legs: [{ kind: "claude-code", name: "Claude A", leg: needs() }],
+        plan,
+        dataDir: dir,
+        dbFile: db,
+        again: true,
+      });
+      const fresh = await waitFor("the question asked again", async () =>
+        (await rig?.api.inbox.list({ state: "open" }))?.find(
+          (i) => i.id !== stale.id && /needs `touch parser\.js/.test(i.title),
+        ),
+      );
+      expect((await rig.api.inbox.list({ state: "open" })).map((i) => i.id)).toEqual([fresh.id]);
+      expect((await rig.api.inbox.list({ state: "withdrawn" })).map((i) => i.id)).toContain(
+        stale.id,
+      );
+      expect(fresh.jobId).toBe(id);
+    } finally {
+      await rig?.close();
+      rig = undefined;
+      await crashed.close();
+    }
+  }, 60_000);
+});

@@ -7,8 +7,8 @@ import { readSetting, writeSetting } from "../settings.ts";
 // What a task's attempts learned that must outlive one of them and a restart
 // of Oraknid (ADR-056 stage 1, bug 8): that it read untrusted content (a
 // resumed session is not trusted again), what I let run once and what I
-// refused (D8), and the blocks the stuck rule counts. Kept per task until it
-// settles. ADR-056's attempt log takes this over in a later stage.
+// refused (D8), the blocks the stuck rule counts, and what the attempt asked
+// me. Kept per task until it settles. ADR-056's attempt log takes this over in a later stage.
 
 const Blocked = z.object({
   action: z.string(),
@@ -31,11 +31,13 @@ export const TaskMemory = z.object({
   denied: z.array(z.string()).default([]),
   /** The stuck rule's count of blocks. */
   stuck: StuckState.nullable().default(null),
+  /** What the attempt running now asked me (inbox items): withdrawn if it dies before I answer (bug 9). */
+  asked: z.array(z.string()).default([]),
 });
 export type TaskMemory = z.infer<typeof TaskMemory>;
 
 const keyOf = (taskId: string) => `task.memory.${taskId}`;
-const EMPTY: TaskMemory = { untrusted: null, allowOnce: [], denied: [], stuck: null };
+const EMPTY: TaskMemory = { untrusted: null, allowOnce: [], denied: [], stuck: null, asked: [] };
 
 export function readTaskMemory(db: Db, taskId: string): TaskMemory {
   return readSetting(db, keyOf(taskId), TaskMemory, EMPTY);
