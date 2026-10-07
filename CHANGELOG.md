@@ -3,6 +3,21 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.2.4 — 2026-10-08 (pre-release)
+
+The harness, stage 1 ([ADR-056](docs/04-Decisions/ADR-056-The-Harness.md)): behaviour pinned by scenarios replaying real jobs, and fifteen fixes.
+
+- **Stop the job** now stops its other running tasks and starts no new one.
+- **Re-checking after a merge** uses the task's own runners (server, GitHub), so a parallel task with such checks no longer loops.
+- **Checks:** every agent receives the task's checks (Oraknid's own agent didn't), and Claude Code's checks run once per turn end, not twice.
+- **Resume** follows what each agent can do (Oraknid's own agent resumes too).
+- **Kept across a restart:** the "read untrusted content" mark (security), allow-once grants, refused actions and stuck counts. Questions an attempt raised are withdrawn when the job starts again.
+- **Claude Code's own refusals** count toward the stuck rule.
+- **Your "try again" or "another agent"** no longer uses up the job's attempt limit; skipping or taking a task yourself no longer counts as the model failing.
+- **Scope and security drifts** are corrected in the same session before any climb to a stronger model.
+- **An interrupted turn** is told to go on rather than checked as finished.
+- **One list of credential paths and lockfiles** shared by every rule.
+
 ## 0.2.3 — 2026-10-07 (pre-release)
 
 Server jobs that did the work but ended asking "keeps going wrong… what should I do?".
