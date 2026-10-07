@@ -170,3 +170,15 @@ A `codex` Leg kind, `packages/legs/codex`, passing the Leg contract kit.
   rule): the event shapes, the hook's input, the device-code output and
   the limit wording are from the docs and source above, and the
   stand-in follows them.
+
+## Fail closed (2026-10-08)
+The hook is how every Codex action reaches Oraknid's policy, and it was
+built from Codex's docs and source, not seen in a live run. So the
+adapter checks it: a command, a patch or an MCP call Codex runs before
+any PreToolUse hook call in the session means its hooks aren't active
+(a release that changed them, a config form it no longer reads). The
+session is then stopped at once ("Codex ran … without asking Oraknid"),
+a `permission.denied` recorded, and the attempt ends as the Leg's fault,
+so nothing runs unchecked. Tested with the stand-in told to skip its
+hooks.
+

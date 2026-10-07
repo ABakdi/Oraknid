@@ -230,7 +230,9 @@ function exec() {
 
   const runHook = (event, payload) => {
     const command = hookOf(event);
-    if (!command) return { exit: 0, stdout: "", stderr: "" };
+    // A Codex whose hooks don't run (a release that changed them): .fake-codex-no-hooks.
+    if (!command || existsSync(join(home, ".fake-codex-no-hooks")))
+      return { exit: 0, stdout: "", stderr: "" };
     const r = spawnSync("/bin/sh", ["-c", command], {
       input: JSON.stringify({
         session_id: thread,

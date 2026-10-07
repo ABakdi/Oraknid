@@ -312,6 +312,22 @@ describe("Codex adapter", () => {
     await allowed.kill();
   });
 
+  it("stops the session when Codex runs a tool without asking Oraknid (its hooks not active)", async () => {
+    const home = codexHomeIn("tool");
+    writeFileSync(join(home, ".fake-codex-no-hooks"), "");
+    const rec = permissionRecorder({ allow: true });
+    const s = await start(home, { permissionMode: "auto", onPermission: rec.onPermission });
+    const events = await readUntil(s, (e) => e.type === "session.ended");
+    expect(events.find((e) => e.type === "permission.denied")).toMatchObject({ by: "oraknid" });
+    expect(events.at(-1)).toMatchObject({
+      type: "session.ended",
+      reason: "crashed",
+      error: expect.stringContaining("without asking Oraknid"),
+    });
+    expect(events.some((e) => e.type === "tool.result" && e.ok)).toBe(false);
+    await s.kill();
+  });
+
   it("passes MCP calls to the policy by their tool name", async () => {
     const rec = permissionRecorder({ allow: true });
     const s = await start(codexHomeIn("mcp"), {

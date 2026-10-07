@@ -412,6 +412,13 @@ export function createCodexAdapter(): LegAdapter {
       /** Actions Oraknid refused and already reported: Codex's own report of them is not repeated. */
       const refused = new Set<string>();
       let refusals = 0;
+      /**
+       * Tool calls Codex put through Oraknid's PreToolUse hook. The hook is how every action
+       * is judged (ADR-057): a command or a patch Codex runs before any hook call means its
+       * hooks aren't active (a release that changed them), and the session is stopped at
+       * once rather than run unchecked.
+       */
+      let hookCalls = 0;
 
       const endSession = (reason: "completed" | "killed" | "crashed", error: string | null) => {
         if (ended) return;
@@ -458,6 +465,7 @@ export function createCodexAdapter(): LegAdapter {
           return { exit: 0, stdout: JSON.stringify({ decision: "block", reason }) };
         }
         if (input.hook_event_name !== "PreToolUse") return { exit: 0 };
+        hookCalls++;
         const requests = requestsOf(String(input.tool_name ?? ""), input.tool_input);
         for (const request of requests) {
           const decision = await decide(request);
@@ -543,6 +551,30 @@ export function createCodexAdapter(): LegAdapter {
           }
           const tool = toolOf(it);
           if (!tool) return;
+          if (
+            hookCalls === 0 &&
+            (it.type === "command_execution" ||
+              it.type === "file_change" ||
+              it.type === "mcp_tool_call") &&
+            !ended
+          ) {
+            const what = it.type === "command_execution" ? `\`${it.command ?? ""}\`` : tool.tool;
+            const why = `Codex ran ${what} without asking Oraknid: its PreToolUse hook isn't active in this Codex version. The session was stopped so nothing runs unchecked.`;
+            events.push({
+              type: "permission.denied",
+              request: {
+                tool: tool.tool,
+                input: tool.input,
+                command: it.type === "command_execution" ? (it.command ?? null) : null,
+                path: null,
+              },
+              by: "oraknid",
+              reason: why,
+            });
+            current?.kill("SIGKILL");
+            endSession("crashed", why);
+            return;
+          }
           // What Oraknid refused was reported when it refused it.
           if (it.type === "command_execution" && refused.has(it.command ?? "")) {
             if (phase === "item.completed") refused.delete(it.command ?? "");
