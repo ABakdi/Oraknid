@@ -32,6 +32,7 @@ Settings → Notifications.
 | A backup failed, with its error in words ([[ADR-044-Backups]]) | ✓ | ✓ | ✓ |
 | A new version of Oraknid, once per release on my channel ([[ADR-048-Updates]]) | ✓ | ✓ | — |
 | The computer in danger (`machine.danger`): memory and swap, a full disk, the OOM killer, heat, a session running away; once per incident, with what Oraknid did ([[ADR-050-Parallel-By-Default]]) | ✓ | ✓ | — |
+| CI failed (`ci.failed`): a GitHub Actions run on a linked repo's release or work branch ended failing (failure, timed out, startup failure), with the failing job and step; once per run and attempt, looked for every 3 minutes ([[ADR-058-CI-In-Oraknid]]) | ✓ | ✓ | — |
 
 I can change every cell. **Quiet hours** hold everything except
 approvals for running jobs, security alerts and the computer in danger. Repeated events are grouped

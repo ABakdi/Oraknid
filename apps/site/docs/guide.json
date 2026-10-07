@@ -4,7 +4,7 @@
   ["terminal", "Oraknid in a terminal", "The conversation and every command, without a browser."],
   ["legs", "Legs", "The agents and models Oraknid hands work to."],
   ["models", "Local models", "Models on your own computer: find, download, run, give roles."],
-  ["projects", "Projects, repos and servers", "Where work happens, and what it may reach."],
+  ["projects", "Projects, repos and servers", "Where work happens, its CI, and what it may reach."],
   ["backups", "Backups", "Your servers' databases, on a schedule, encrypted, checked."],
   ["storage", "Cloud storage", "Your storage accounts as one pool, through rclone."],
   ["phone", "Your phone, from anywhere", "Pairing, the PIN, and The Nest."],

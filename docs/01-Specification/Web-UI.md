@@ -153,8 +153,11 @@ Eye tab at the project's Eye tab; a draft opens on New work.
 description): the job's name with a pencil to rename it (a dialog: name
 and description, either kept as mine from then on), its description
 (what it's for, then what it did; "The Eye names and describes it as
-soon as a model can" until then), its state, branch and tokens, and
-**What I asked**: my goal as I wrote it, folded until I open it.
+soon as a model can" until then), its state, branch and tokens, a
+**CI badge** for its pull request's branch or the branch it pushed
+(2026-10-07, [[ADR-058-CI-In-Oraknid]]: passing, failing with the
+failing job and step on hover, running; opens the run; nothing when the
+job put nothing on GitHub), and **What I asked**: my goal as I wrote it, folded until I open it.
 
 - **The Web**, an animated graph that updates live. Nodes are tasks,
   coloured by state, showing the Leg's avatar while assigned. When a
@@ -232,6 +235,10 @@ has a **…** menu (Archive or Unarchive, Delete); archived projects are
 in their own **Archived projects** section at the bottom, closed until
 I open it or one of them is open (2026-10-04). The project's header has
 an "Archived" mark when it is, and the same **…** menu after New work.
+After its name, a **CI badge** (2026-10-07, [[ADR-058-CI-In-Oraknid]]):
+its first linked repo's release branch (else its work branch) passing,
+failing or running, opening the CI tab; nothing without a linked repo
+or a run.
 Its page is in tabs, in the address (`/projects/<id>/<tab>`):
 
 - **The Eye**: the project's one conversation with The Eye, filling the
@@ -325,6 +332,10 @@ Its page is in tabs, in the address (`/projects/<id>/<tab>`):
   and its own link card ("GitHub repo of api"). Add a repo is a dialog:
   where from (a folder of the project that is a repo, a new empty repo,
   a clone of my GitHub repo or of a git URL), the folder, its name.
+- **CI** (after Repo; 2026-10-07, [[ADR-058-CI-In-Oraknid]]): each
+  linked repo with its release and work branches' badges and its
+  GitHub Actions runs (below, under Repos → CI); a run opens at
+  `/projects/<id>/ci/<run>/<repo>`. No linked repo: a way to the Repo tab.
 - **Settings**: its **servers**, each ticked one with its role (a word,
   suggestions testing, staging, production, saved when I leave the
   field, as wide as its word; on a phone under the name) and a
@@ -460,6 +471,24 @@ browse.
   - **Pull requests** (`/pulls/open|closed/<number>`): open or closed
     (merged said), one with its description (Markdown), its commits and
     its diff.
+  - **CI** (`/ci/<run>`; 2026-10-07, [[ADR-058-CI-In-Oraknid]]): its
+    GitHub Actions runs, newest first, 20 a page, by branch (all, or one
+    picked), each with its mark (passed, failed, running), workflow,
+    title, branch, commit, event, actor, attempt, duration and when;
+    **Run workflow** (when a workflow can be run by hand) opens a dialog:
+    the workflow, the branch or tag, and its inputs as its file declares
+    them (a switch for a boolean, a list for a choice, a field otherwise,
+    the required ones marked). A run: its header (state, title, branch,
+    commit, event, actor, attempt, duration, pull requests) with **Re-run
+    failed jobs**, **Re-run all** or **Cancel** (each a second step
+    saying what happens) and On GitHub; its jobs on the left (the failing
+    one chosen), the chosen job's steps and its **log by step**, the
+    failing step first and open, the others folded, line numbers, error
+    lines red, a search that keeps only the matching lines and says how
+    many; its **artifacts** (size, expired), each downloaded through a
+    one-time link (not away from home). While something runs the page
+    asks every 5 s, else every minute, never while out of sight; when
+    GitHub asked Oraknid to wait it shows what it had and says until when.
   - **Project**: the project linking it (Open the project, New work on
     it, which opens its Eye tab; change or unlink in its Settings), or
     Link to a project (an existing repository through the account that

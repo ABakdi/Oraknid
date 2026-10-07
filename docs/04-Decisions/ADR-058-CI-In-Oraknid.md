@@ -27,7 +27,7 @@ release (ADR-047) is still a dozen commands typed by hand.
   line's time against the steps' times, GitHub's `##[group]` markers as a
   fallback), **the failing step first** and open, the others folded;
   searchable (the matching lines and their step). A completed job's log
-  is kept in memory (it doesn't change), at most 20 and the last 4 MB of
+  is kept in memory (it doesn't change), at most 20 and the last 8 MB of
   each.
 - **Artifacts**: a run's list (name, size, expired); a download is a
   one-time link (ADR-046's `Downloads`) that streams GitHub's zip through
@@ -67,8 +67,9 @@ release (ADR-047) is still a dozen commands typed by hand.
   step and the **last 40 lines of that step's log**; fails when they are
   still running at the timeout (20 minutes by default, 60 at most), or
   when the repository has no workflows. Like `github-branch`, it runs
-  after the job's end steps (push). The branch defaults to the repo's
-  work branch.
+  after the job's end steps (push). The branch (`--branch`, or the first
+  word) defaults to the repository's default branch on GitHub. A cancelled
+  run fails it too.
 - **The Eye's job report** shows CI for the job's pull request (or its
   pushed branch): the badge and the failing step.
 - **The helper**: `list_ci_runs` and `ci_failing_log` (reads),
@@ -79,11 +80,13 @@ release (ADR-047) is still a dozen commands typed by hand.
 ### 2. Oraknid's own CI
 `.github/workflows/ci.yml` on push and pull request to `dev` and `main`:
 Node 22, pnpm 9 with its store cached, `pnpm install --frozen-lockfile`,
-Biome, typecheck, tests. Tests that need what a CI runner lacks (bwrap,
-Docker, a real systemd, a keychain, a GPU, a real network service) are
-skipped when `ORAKNID_CI=1` is set, each with `skipIf(process.env.ORAKNID_CI)`
-or by the probe it already has; the perf test runs too (it measures
-startup, not the machine).
+Biome, typecheck, tests, and the OpenAPI document checked against the
+router. Tests that need what a CI runner lacks are skipped: with
+`ORAKNID_CI=1` set, those that would otherwise find it there (Docker's
+databases and MinIO, a logind inhibitor lock, a user's systemd); the
+others by the probe they already have (bubblewrap, a real keychain,
+rclone, OpenCode, live models). The startup perf test stays in
+`pnpm check` on my machine: a shared runner's speed varies.
 
 ### 3. Releases by script
 `scripts/release.mjs <version> [--publish] [--dry-run]`: checks the tree
@@ -101,10 +104,12 @@ tag, so a tag pushed by hand gets them too.
 
 ### 4. The OpenAPI document
 Generated from the oRPC router with `@orpc/openapi` and `@orpc/zod`'s
-Zod 4 converter: written to `docs/02-Architecture/openapi.json` at build
-(`pnpm --filter @oraknid/daemon openapi`, part of the daemon's build) and
-served by the daemon at `GET /api/openapi.json`, behind pairing like
-every `/api` call. It describes every procedure's input and output; the
+Zod 4 converter: served by the daemon at `GET /api/openapi.json`, behind
+pairing like every `/api` call, and written to
+`docs/02-Architecture/openapi.json` by `pnpm --filter @oraknid/daemon
+openapi`, which the release script runs and CI checks (`--check`). Not
+by the plain build: an install builds in its own checkout, and a file
+changed there would make the next update refuse it as local changes. It describes every procedure's input and output; the
 wire stays oRPC's RPC protocol (`POST /api/<path>` with `{"json": input}`),
 which the document says in its description. No second, REST-shaped
 handler is mounted.
@@ -124,13 +129,58 @@ handler is mounted.
   `GitHub.read` takes a time to keep (`ttl`) and, after a refusal for the
   allowance or a slow-down, serves what it has until GitHub's time
   (`GitHubError.retryAt`), for every read, the Repos page's too.
+  `GitHub.send` (a change) and `GitHub.raw` (a log or a zip: asked with
+  the token, GitHub's redirect followed without it) are new.
 - API `ci.*` in `apps/daemon/src/api/ci.ts` ([[API-Contract]] → CI).
+  Re-run, cancel and dispatch from the page are mine and audited, allowed
+  away from home like a job's own controls; an artifact's download isn't
+  (the tunnel carries text).
+- **Logs**: GitHub's job log is plain text with a timestamp per line and
+  step times to the second. A line goes to the last step started by its
+  second; when several started in that second, the first of them is
+  entered and each `##[group]` line moves to the next. Colours and the
+  timestamps are taken off. A step longer than 2,000 lines keeps its
+  last 2,000 and says how many it left out. A workflow's inputs are read
+  from its file with `yaml` (2.9.1).
+- **The badge**: a branch's latest commit is the head of its newest run;
+  failing when any of that commit's runs failed, running when any still
+  runs, else passing.
+- **The watcher** starts 20 s after the daemon and looks every 3 minutes;
+  a refused account is skipped until the next look. A project archived
+  or a server's own is not watched.
+- **The github tool**: `ci_runs` and `ci_log` are reads (the log wrapped
+  as untrusted data); `ci_rerun` is judged `external-write`, never
+  "linked", so it goes through the approvals of ADR-053 whatever the link.
+- **The helper**: `list_ci_runs` and `ci_failing_log` read (a project's
+  first linked repo, or owner/name); `rerun_ci` is proposed and waits
+  for my Confirm.
+- **Terminal app**: `/ci` (`apps/daemon/src/tui/ci.ts`).
 - Web: `components/ci-panel.tsx` (runs, a run, logs, artifacts, the
-  dispatch dialog) and `components/ci-badge.tsx`.
-- Tested against the stand-in GitHub (`testing/fake-github.ts`, with
-  Actions): runs, jobs, logs cut by step, ETags and the backoff, re-run
-  gated, the check passing, failing and timing out, the notification and
-  quiet hours, the release script in a temporary repository, the OpenAPI
-  document.
+  dispatch dialog, the project's CI tab) and `components/ci-badge.tsx`
+  (the project's header, the job's header, The Eye's job-done report).
+- Tested against the stand-in GitHub (`testing/fake-github.ts`, now with
+  Actions on me/piano: runs, jobs, logs behind a signed redirect,
+  artifacts, workflows and their files, re-runs, cancels, dispatches) in
+  `apps/daemon/src/workspace/github-ci.test.ts`: runs, jobs, logs cut by
+  step and searched, the signed address never getting the token,
+  artifacts downloaded once, re-run, cancel and dispatch with their
+  refusals, the badge, ETags (a 304 costs nothing) and the backoff, the
+  watcher telling a failure once and a re-run's failure again, quiet
+  hours holding it, the OpenAPI document served to paired devices only,
+  the github tool's reads free and its re-run gated, the helper's
+  actions, `/ci`, and the check passing, failing with the log's tail,
+  waiting for a push, timing out and finding no workflows. The web in
+  `components/ci-panel.test.tsx`; the release script in
+  `apps/daemon/src/release-script.test.ts`.
+
+## Limits
+- Live updates are polling, not GitHub's webhooks: Oraknid isn't
+  reachable from GitHub, and a webhook needs a public address.
+- A log longer than 4 MB loses its start; a job's log is fetched whole
+  each time while the job runs (GitHub has no ranged log).
+- The check waits on the runs GitHub lists for the branch; a workflow
+  that runs only on a pull request's merge ref isn't seen on the branch.
+- Only GitHub Actions: other CI services (their commit statuses) aren't
+  read.
 
 Related: [[ADR-040-Repos-Page]] · [[ADR-038-Project-Accounts]] · [[ADR-053-Auto-Mode]] · [[Notifications]] · [[Web-UI]]
