@@ -4,8 +4,8 @@
 
 | Topic | Content | Rate |
 | :-- | :-- | :-- |
-| `overview` | Leg cards, totals, problems, inhibitor state; and what has no topic of its own: `server.*`, `chat.*`, `helper.*`, `device.*`, `lock.*`, `terminal.*`, `settings.updated`, `project.localPorts`. | On change, coalesced 4/s. |
-| `job:<id>` | Web changes, task states, activity, Silk changes, budgets. | On change. |
+| `overview` | Leg cards, totals, problems, inhibitor state; and what has no topic of its own: `server.*`, `chat.*`, `helper.*`, `device.*`, `lock.*`, `terminal.*`, `settings.updated`, `project.localPorts`, `project.*` (archived, deleted, restored, 2026-10-04), `update.*` ([[ADR-048-Updates]]), `machine.health` and `machine.incident` ([[ADR-050-Parallel-By-Default]]), `model.*` (a download's progress, a model's state, roles; [[ADR-054-Local-Models]]). | On change, coalesced 4/s. |
+| `job:<id>` | Web changes, task states, activity, Silk changes, budgets; what a task waits for (`task.waiting`), its climb (`task.climbing`), The Eye's thinking (`eye.thinking.started` / `ended`, with its reasoning streamed under its session). | On change. |
 | `leg:<id>` | Condensed output stream of the Leg's current session. | Coalesced 4/s. |
 | `inbox` | Items opened, answered, withdrawn. | On change. |
 | `mail` | Accounts' state, `mail.new` (from IDLE on INBOX), `mail.synced`, `mail.changed`, drafts and sends, `mail.agent.*` (Phase 12). | On change; a sync pass is one event, not one per message. |

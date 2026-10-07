@@ -3,7 +3,7 @@
 SQLite with better-sqlite3 and Drizzle ([[ADR-002-Persistence]]). The
 durable step engine runs on the same database ([[ADR-003-Job-Execution-Engine]]).
 
-## Tables (as built, 2026-10-03)
+## Tables (as built, 2026-10-07; migrations 0000 to 0039)
 
 | Table | Holds |
 | :-- | :-- |
@@ -26,9 +26,18 @@ durable step engine runs on the same database ([[ADR-003-Job-Execution-Engine]])
 | `chats`, `chat_messages`, `helper_messages` | Chats and the helper ([[Chats-and-Helper]]). |
 | `servers`, `server_states`, `server_samples` | My servers (with my Production mark), their state documents (each with the job whose end wrote it), oraknid-monitor's readings ([[Servers]]). |
 | `mail_accounts`, `mail_folders`, `mail_messages`, `mail_drafts`, `mail_image_senders`, `mail_pop_uidls` | Mail ([[ADR-032-Email]]). |
+| `backup_plans`, `backup_runs`, `backup_keys` | Database backups: plans, each run, the age public keys (migration 0033, [[ADR-044-Backups]]). |
+| `cloud_providers` | My storage accounts in the pool (migration 0034, [[ADR-046-Cloud-Storage]]). |
+| `local_models` | Models downloaded to this computer, their files' checksums, run settings and measurements (migration 0038, [[ADR-054-Local-Models]]). |
 
 Git checkpoints are refs in the repository, not rows ([[Sandboxing]]).
 Unlocked sessions are in memory only ([[ADR-029-App-Lock]]).
+
+Since 2026-10-03: `jobs` carries its name and description (0035);
+`projects` what archiving did (`archived_with`, 0036) and a server's own
+project (`server_id`, 0037, which also gave `server_states` its job and
+let an `eye_messages` row have none); 0039 renamed the autonomy levels
+(`standard` to `auto`, `supervised` to `careful`).
 
 ## Write discipline
 
@@ -54,7 +63,8 @@ The order is set out in [[Durability]]. Implementation notes:
 ## Backups and pruning
 
 - `.backup()` before every migration (10 kept), and nightly: the first
-  check of each day takes `nightly-YYYY-MM-DD.db` (7 kept).
+  check of each day takes `nightly-YYYY-MM-DD.db` (7 kept); before an
+  update, `pre-update-<time>-v<version>.db` (3 kept, [[ADR-048-Updates]]).
 - Storage (Settings): the size of the database, Leg logs per job,
   backups, the audit export and the daemon log.
 - Pruning (Settings): drop raw Leg logs last written before a date, for
