@@ -90,6 +90,7 @@ import {
 import { ensureLinks } from "./links.ts";
 import { policyFor } from "./policy.ts";
 import { dependentsOf } from "./questions.ts";
+import { forgetTaskMemory } from "./task-memory.ts";
 import { runVerify, verifyRefusal } from "./verify.ts";
 import { storeWeb, taskRows } from "./web-store.ts";
 
@@ -976,8 +977,12 @@ async function runTask(
   // Applied first, then marked settled: a crash in between applies it again, which changes nothing.
   const settle = () =>
     d.db.update(tasks).set({ settledAttempt: attemptNo }).where(eq(tasks.id, task.id)).run();
-  // A task settled keeps nothing in memory: the judge's verdicts on it, its blocks (bug 6).
-  const forget = (taskId: string) => forgetTaskVerdicts(job.id, taskId);
+  // A task settled keeps nothing in memory: the judge's verdicts on it, its blocks (bug 6), nor
+  // what its attempts remembered across restarts (bug 8).
+  const forget = (taskId: string) => {
+    forgetTaskVerdicts(job.id, taskId);
+    forgetTaskMemory(d.db, taskId);
+  };
   switch (outcome.kind) {
     case "done":
       if (outcome.commit)

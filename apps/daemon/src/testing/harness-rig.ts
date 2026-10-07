@@ -41,6 +41,8 @@ export interface RigOptions {
   dbFile?: string;
   /** The daemon's data folder; a fresh one when left out. */
   dataDir?: string;
+  /** Started again on a database that has its Legs already (a restart). */
+  again?: boolean;
 }
 
 const sh = (cwd: string, ...a: string[]) => spawnSync("git", a, { cwd, encoding: "utf8" });
@@ -147,12 +149,14 @@ export async function harness(o: RigOptions) {
     new RPCLink({ url: `${d.url}/api`, headers: { authorization: `Bearer ${d.cliToken}` } }),
   );
   const legIds: Record<string, string> = {};
-  for (const l of o.legs)
-    legIds[l.name] = (
-      await api.legs.create({ kind: l.kind, name: l.name, config: {} } as Parameters<
-        Api["legs"]["create"]
-      >[0])
-    ).id;
+  if (o.again) for (const l of await api.legs.list()) legIds[l.name] = l.id;
+  else
+    for (const l of o.legs)
+      legIds[l.name] = (
+        await api.legs.create({ kind: l.kind, name: l.name, config: {} } as Parameters<
+          Api["legs"]["create"]
+        >[0])
+      ).id;
   let server: { id: string } | null = null;
   if (ssh) {
     server = await api.servers.add({

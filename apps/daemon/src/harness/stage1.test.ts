@@ -5,7 +5,7 @@ import type { WebPlan } from "@oraknid/contracts";
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import { sessions } from "../db/schema.ts";
-import { heldFor } from "../eye/auto-mode.ts";
+import { forgetJobVerdicts, heldFor } from "../eye/auto-mode.ts";
 import { type Harness, harness, waitFor } from "../testing/harness-rig.ts";
 import { scriptedLeg, type TurnContext } from "../testing/scripted-leg.ts";
 
@@ -382,5 +382,99 @@ describe("Claude Code's own refusals count toward the stuck rule (bug 7)", () =>
     await rig.api.inbox.answer({ id: asked.id, answer: "Do it without fetching anything." });
     const done = await rig.ended(id);
     expect(done.state, done.blockedReason ?? "").toBe("completed");
+  }, 60_000);
+});
+
+describe("what an attempt learned survives a restart (bug 8)", () => {
+  it("keeps a task untrusted after it read the web, and its blocks counted, across a restart of Oraknid", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "oraknid-restart-"));
+    const db = join(dir, "o.db");
+    const plan: WebPlan = {
+      summary: "A parser.",
+      tasks: [task("a", "Build the parser", ["test -f parser.js"], ["parser.js"])],
+      jobVerify: [],
+    };
+    const judge = (command: string) =>
+      command.startsWith("scp")
+        ? { decision: "block" as const, reason: "copying files out" }
+        : { decision: "allow" as const, reason: "harmless" };
+    // Before the restart: it reads the web, two of its commands are blocked, then it works on.
+    const first = scriptedLeg(() => [
+      { run: "curl --version >/dev/null; true" },
+      { run: "scp a b" },
+      { run: "scp c d" },
+      { hang: true },
+    ]);
+    rig = await harness({
+      legs: [{ kind: "claude-code", name: "Claude A", leg: first }],
+      plan,
+      judge,
+      dataDir: dir,
+      dbFile: db,
+    });
+    const { id } = await rig.repoJob("A parser");
+    await waitFor(
+      "two blocks",
+      () => rig?.events(id, "task.refused").length === 2 && first.log.length > 0,
+    );
+    await rig.close();
+    // A new process: nothing of the old one in memory.
+    forgetJobVerdicts(id);
+
+    // After it: a third block in a row is the stuck rule's; a gated action asks, untrusted.
+    const again = scriptedLeg(() => [
+      { run: "scp e f" },
+      { run: "git merge --help >/dev/null 2>&1; true" },
+      { write: "parser.js", content: "x\n" },
+      { say: "DONE" },
+    ]);
+    rig = await harness({
+      legs: [{ kind: "claude-code", name: "Claude A", leg: again }],
+      plan,
+      judge,
+      dataDir: dir,
+      dbFile: db,
+      again: true,
+    });
+    const stuck = await rig.openItem(/is stuck on blocked actions/, 10_000);
+    expect(stuck.detail).toContain("3 actions in a row were blocked");
+    await rig.api.inbox.answer({ id: stuck.id, answer: "Keep it blocked" });
+    const merge = await rig.openItem(/wants to run `git merge --help/, 10_000);
+    expect(merge.detail).toContain("untrusted");
+    await rig.api.inbox.answer({ id: merge.id, answer: "Approve" });
+    const done = await rig.ended(id);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+  }, 60_000);
+
+  it("keeps what I refused refused across attempts: not asked again, refused at once (D8)", async () => {
+    let hang = true;
+    const leg = scriptedLeg(() =>
+      hang
+        ? [{ run: "nmap localhost" }, { hang: true }]
+        : [{ run: "nmap localhost" }, { write: "parser.js", content: "x\n" }, { say: "DONE" }],
+    );
+    rig = await harness({
+      legs: [{ kind: "claude-code", name: "Claude A", leg }],
+      plan: {
+        summary: "A parser.",
+        tasks: [task("a", "Build the parser", ["test -f parser.js"], ["parser.js"])],
+        jobVerify: [],
+      },
+    });
+    const { id } = await rig.repoJob("A parser", { autonomy: "careful" });
+    const plan = await rig.openItem(/^Approve the plan/);
+    await rig.api.inbox.answer({ id: plan.id, answer: "Approve" });
+    const nmap = await rig.openItem(/wants to run `nmap localhost`/);
+    await rig.api.inbox.answer({ id: nmap.id, answer: "Deny" });
+    await new Promise((r) => setTimeout(r, 200));
+    await rig.api.jobs.pause({ id });
+    hang = false;
+    await rig.api.jobs.resume({ id });
+    // Refused at once, not asked again: the task goes on and is done.
+    const done = await rig.ended(id);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+    expect(
+      (await rig.asked(id)).filter((i) => /wants to run `nmap localhost`/.test(i.title)),
+    ).toHaveLength(1);
   }, 60_000);
 });

@@ -146,6 +146,7 @@ const READS = new Set([
 import { summarizeShortened } from "../silk/summarize.ts";
 import { dependentsOf, keepsGoingWrong, readKeepsGoingWrong } from "./questions.ts";
 import { addMessage, guidanceMark, takeGuidance } from "./talk.ts";
+import { readTaskMemory, rememberForTask } from "./task-memory.ts";
 import { looksBroken, runVerify, type VerifyResult, verifyRefusal } from "./verify.ts";
 
 export type TaskRow = typeof tasks.$inferSelect;
@@ -579,13 +580,15 @@ export async function runAttempt(
   // Typed by assertion: they change inside closures, which narrowing cannot follow.
   let session = null as Supervised | null;
   let sessionLog: string | null = null;
-  const deniedGates = new Set<string>();
+  // What earlier attempts of this task learned, kept across a restart (bug 8).
+  const memory = readTaskMemory(d.db, taskId);
+  const deniedGates = new Set<string>(memory.denied);
   /**
    * Commands I let run once (ADR-053): a change the plan names, a command
    * the stuck rule or the agent's own words asked me about. Each is used
    * by the first run that matches it, in its plain form.
    */
-  const allowOnce: string[] = [];
+  const allowOnce: string[] = [...memory.allowOnce];
   /** What the PreToolUse hook sent on to canUseTool to be asked of me there, by its plain form. */
   const hookAsks = new Map<string, () => Promise<PermissionDecision>>();
   /** What layer 1 blocked in this attempt, oldest first: for the agent's "the owner must…". */
@@ -630,7 +633,7 @@ export async function runAttempt(
         blockedHere.push({ command: e.request.command, reason: e.reason, byLeg: true });
       // Its blocks count toward the stuck rule like any other (ADR-053; bug 7). It can't be held
       // for my answer: I'm asked at its next action, or at the turn's end if a check fails.
-      const stuckNow = stuck.blocked(stuckKey, {
+      const stuckNow = stuckBlocked({
         action: (e.request.command ? plainOf(e.request.command) : action).slice(0, 200),
         reason: e.reason,
         layer: "leg",
@@ -671,12 +674,34 @@ export async function runAttempt(
   const event = (type: string, payload: Record<string, unknown>) =>
     d.bus.publish({ type, topic: `job:${job.id}`, jobId: job.id, payload: { taskId, ...payload } });
 
-  /** This attempt read something from the web: untrusted from here on (BR-15; Audit 1 → S1-09). */
-  let readTheWeb = false;
+  /**
+   * The task read something from the web: untrusted from here on (BR-15; Audit 1 → S1-09), in
+   * every later attempt too, a resumed session included (bug 8).
+   */
+  let readTheWeb = memory.untrusted !== null;
+  const markUntrusted = (reason: string) => {
+    if (readTheWeb) return;
+    readTheWeb = true;
+    rememberForTask(d.db, taskId, { untrusted: reason });
+    event("task.untrusted", { reason });
+  };
   const toolRows = d.tools && job.tools.length ? d.tools.registry.byNames(job.tools) : [];
   const brokered = toolRows.map((t) => `oraknid-${t.name}`);
-  /** The stuck rule's key: blocks are counted per task (ADR-053). */
+  /** The stuck rule's key: blocks are counted per task (ADR-053), and kept across a restart (bug 8). */
   const stuckKey = `${job.id}:${taskId}`;
+  stuck.restore(stuckKey, memory.stuck);
+  const keepStuck = () => rememberForTask(d.db, taskId, { stuck: stuck.snapshot(stuckKey) });
+  const stuckBlocked = (b: Blocked) => {
+    const s = stuck.blocked(stuckKey, b);
+    keepStuck();
+    return s;
+  };
+  /** An action ran: the row ends (written only when there was one). */
+  const stuckAllowed = () => {
+    if (!stuck.snapshot(stuckKey)?.row.length) return;
+    stuck.allowed(stuckKey);
+    keepStuck();
+  };
   /** What layer 1 knows of this attempt: the folder, its scratch, the job's servers, the task. */
   const guardCtx = () =>
     guardContext({
@@ -717,12 +742,8 @@ export async function runAttempt(
       (r.tool === "WebFetch" && !ownRepoPage(fetchedUrl(r), githubLinksOf(d.db, job.id))) ||
       r.tool === "WebSearch" ||
       (r.command ? /\b(curl|wget)\b/.test(r.command) : false);
-    if (fetches && first.verdict !== "deny" && !readTheWeb) {
-      readTheWeb = true;
-      event("task.untrusted", {
-        reason: `read from the web (${r.tool}): gated actions ask me from now on`,
-      });
-    }
+    if (fetches && first.verdict !== "deny")
+      markUntrusted(`read from the web (${r.tool}): gated actions ask me from now on`);
     return { first, policy };
   };
   /** Layer 1, 2 or 3 settles one request of the Leg (ADR-053). */
@@ -840,6 +861,7 @@ export async function runAttempt(
     );
     if (i < 0) return false;
     allowOnce.splice(i, 1);
+    rememberForTask(d.db, taskId, { allowOnce });
     return true;
   };
 
@@ -853,7 +875,7 @@ export async function runAttempt(
       layer: "owner",
       reason: "let it run once",
     });
-    stuck.allowed(stuckKey);
+    stuckAllowed();
   };
 
   /**
@@ -945,7 +967,7 @@ export async function runAttempt(
         layer: "owner",
         reason: `allowed once: ${where}`,
       });
-      stuck.allowed(stuckKey);
+      stuckAllowed();
       return { allow: true, why: `owner: allowed once, ${where}` };
     }
     keptBlocked.add(plainOf(action));
@@ -1002,7 +1024,7 @@ export async function runAttempt(
         reason: v.reason,
       });
     if (v.verdict === "allow") {
-      stuck.allowed(stuckKey);
+      stuckAllowed();
       return { allow: true, why: `${layer}: ${v.reason}` };
     }
     if (v.verdict === "deny") {
@@ -1030,7 +1052,7 @@ export async function runAttempt(
       }
       // Stuck on blocks (3 in a row, 20 in the task): The Eye asks me, with what was blocked and why.
       if (v.drift === null && layer !== "owner") {
-        const stuckNow = stuck.blocked(stuckKey, {
+        const stuckNow = stuckBlocked({
           action: (r.command ? plainOf(r.command) : r.tool).slice(0, 200),
           reason: v.reason,
           layer: layer === "judge" ? 2 : 1,
@@ -1104,7 +1126,7 @@ export async function runAttempt(
         layer: "owner",
         reason: "approved, with all like it",
       });
-      stuck.allowed(stuckKey);
+      stuckAllowed();
       return { allow: true };
     }
     if (answer === "Approve") {
@@ -1116,7 +1138,7 @@ export async function runAttempt(
         layer: "owner",
         reason: "approved",
       });
-      stuck.allowed(stuckKey);
+      stuckAllowed();
       return { allow: true };
     }
     logDecision(d.bus, job.id, {
@@ -1128,6 +1150,7 @@ export async function runAttempt(
       reason: "denied",
     });
     deniedGates.add(key);
+    rememberForTask(d.db, taskId, { denied: [...deniedGates] });
     // The consequence, said in the project's conversation (ADR-045).
     addMessage(
       d,
@@ -1203,7 +1226,7 @@ export async function runAttempt(
           }
         }
         // Blocks here count toward the stuck rule like any other; stuck, I'm asked (ADR-053).
-        const stuckNow = stuck.blocked(stuckKey, {
+        const stuckNow = stuckBlocked({
           action: (r.command ? plainOf(r.command) : r.tool).slice(0, 200),
           reason: first.reason,
           layer: 1,
@@ -1295,7 +1318,7 @@ export async function runAttempt(
         layer: "owner",
         reason: "let it run, stuck on blocks",
       });
-      stuck.allowed(stuckKey);
+      stuckAllowed();
       return { allow: true };
     }
     logDecision(d.bus, job.id, {
@@ -1447,12 +1470,8 @@ export async function runAttempt(
             ...(o.flags.length ? { flags: o.flags } : {}),
           });
           // What came from outside makes the task untrusted (BR-15).
-          if (o.allowed && tool.untrusted && !readTheWeb) {
-            readTheWeb = true;
-            event("task.untrusted", {
-              reason: `read from ${tool.name} (${name}): gated actions ask me from now on`,
-            });
-          }
+          if (o.allowed && tool.untrusted)
+            markUntrusted(`read from ${tool.name} (${name}): gated actions ask me from now on`);
         },
       },
       { jobId: job.id },
@@ -2101,6 +2120,7 @@ export async function runAttempt(
     observed.lastActivityAt = now();
     if (answer === ALLOW && command) {
       allowOnce.push(plainOf(command));
+      rememberForTask(d.db, taskId, { allowOnce });
       logDecision(d.bus, job.id, {
         taskId,
         tool: "Bash",

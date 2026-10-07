@@ -57,6 +57,19 @@ export class StuckWatch {
     return null;
   }
 
+  /** A task's counts as they stand, to keep across a restart; null when it has none. */
+  snapshot(task: string): { row: Blocked[]; total: Blocked[]; askedAtTotal: boolean } | null {
+    const t = this.#tasks.get(task);
+    return t ? { row: [...t.row], total: [...t.total], askedAtTotal: t.askedAtTotal } : null;
+  }
+
+  /** A task's counts as kept, in place of what is in memory. */
+  restore(task: string, s: { row: Blocked[]; total: Blocked[]; askedAtTotal: boolean } | null) {
+    if (!s) this.#tasks.delete(task);
+    else
+      this.#tasks.set(task, { row: [...s.row], total: [...s.total], askedAtTotal: s.askedAtTotal });
+  }
+
   /** Blocks counted for a task so far. */
   count(task: string): number {
     return this.#tasks.get(task)?.total.length ?? 0;
