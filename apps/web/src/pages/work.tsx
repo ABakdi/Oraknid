@@ -63,6 +63,10 @@ export function WorkPage({ draftId }: { draftId?: string }) {
     topics: ["overview"],
     refreshOn: (e) => e.type.startsWith("tool."),
   });
+  // No sandbox here: a job starts only if I explicitly run it without one (ADR-006).
+  const system = useLive(() => api.system.status(), { topics: ["overview"] });
+  const noSandbox = system.data ? !system.data.sandbox.available : false;
+  const [unsandboxed, setUnsandboxed] = useState(false);
   const draftJob = useLive(
     () => (draftId ? api.jobs.get({ id: draftId }) : Promise.resolve(null)),
     {
@@ -305,7 +309,26 @@ export function WorkPage({ draftId }: { draftId?: string }) {
         inputs: jobInputs,
         ...(skill !== "auto" ? { skillId: skill } : {}),
       });
-      await api.jobs.start({ id: draftId });
+      if (noSandbox && !draftJob.data?.unsandboxed) {
+        if (!unsandboxed)
+          throw new Error(
+            t(
+              "The sandbox doesn't work on this computer. Fix it (oraknid doctor says how), or choose to run this job without the sandbox.",
+            ),
+          );
+        if (
+          !(await confirm(
+            t("Run this job without the sandbox?"),
+            t(
+              "Its agents will run with your own rights on this computer: they can read and change any of your files. It is recorded, and the job is shown in red.",
+            ),
+            t("Run without the sandbox"),
+            { keep: t("Don't start") },
+          ))
+        )
+          return;
+        await api.jobs.start({ id: draftId, unsandboxed: true, confirm: true });
+      } else await api.jobs.start({ id: draftId });
       // Started, it is followed in its project's Eye tab (ADR-034).
       go(`/projects/${draftJob.data?.projectId ?? effectiveProject}/eye`);
     } catch (e) {
@@ -552,6 +575,30 @@ export function WorkPage({ draftId }: { draftId?: string }) {
           </CardContent>
         </Card>
 
+        {noSandbox ? (
+          <div
+            className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm lg:col-span-2"
+            data-testid="no-sandbox"
+          >
+            <div className="font-medium text-destructive">
+              {t("The sandbox doesn't work on this computer: jobs don't start without it.")}
+            </div>
+            <div className="text-muted-foreground">
+              {system.data?.sandbox.detail} {t("oraknid doctor says how to fix it.")}
+            </div>
+            {draftId ? (
+              <label htmlFor="w-unsandboxed" className="mt-2 flex items-center gap-2">
+                <Switch
+                  id="w-unsandboxed"
+                  checked={unsandboxed || !!draftJob.data?.unsandboxed}
+                  disabled={!!draftJob.data?.unsandboxed}
+                  onCheckedChange={setUnsandboxed}
+                />
+                {t("Run this job without the sandbox (asks first)")}
+              </label>
+            ) : null}
+          </div>
+        ) : null}
         {/* ── Right: the prompt and the conversation. */}
         <Card className="flex min-h-[60vh] min-w-0 flex-col">
           {draftId ? (

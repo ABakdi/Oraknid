@@ -2,6 +2,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Loading } from "@/components/common";
 import { useConfirm } from "@/components/confirm";
+import { ImportRecordsButton } from "@/components/moving";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -12,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { WorktreesSection } from "@/components/worktrees-card";
 import { api, message } from "@/lib/api";
 import { ago, bytes } from "@/lib/format";
 import { t } from "@/lib/i18n";
@@ -135,6 +137,13 @@ export function StorageCard() {
           <Button variant="destructive" disabled={busy || !chosen.length} onClick={prune}>
             {t("Prune {n} job(s)", { n: chosen.length })}
           </Button>
+        </div>
+        <WorktreesSection />
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-muted-foreground">
+            {t("Jobs exported from another Oraknid come back as ended records.")}
+          </span>
+          <ImportRecordsButton />
         </div>
         {dialog}
       </CardContent>

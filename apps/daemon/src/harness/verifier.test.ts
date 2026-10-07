@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -22,7 +22,7 @@ afterEach(() => {
 
 const SERVER = { id: "srv-1", name: "Staging", alias: "staging", production: false };
 
-async function setup(o: { production?: boolean } = {}) {
+async function setup(o: { production?: boolean; scope?: (path: string) => boolean } = {}) {
   const db = await openDatabase({ file: ":memory:" });
   open.push(db);
   const bus = new EventBus(db);
@@ -63,6 +63,7 @@ async function setup(o: { production?: boolean } = {}) {
       refuse: checkRefusal(db, jobId, cwd, refs),
       signal: stop.signal,
       log: log.at({ jobId, taskId: "t1", attemptId: "a1" }),
+      ...(o.scope ? { scope: { inScope: o.scope } } : {}),
     },
   );
   return { db, cwd, verifier, ran, log, stop };
@@ -180,5 +181,54 @@ describe("the Verifier (ADR-056 §4)", () => {
       broken: [],
       guards: [],
     });
+  });
+});
+
+describe("a check passes because the work is done, not another way (ADR-052 §2)", () => {
+  const inSrc = (path: string) => path.startsWith("src/") || path.startsWith("notes/");
+
+  it("fails a check that passes only with a file made outside the task's scope after it failed", async () => {
+    const s = await setup({ scope: inSrc });
+    const first = await s.verifier.run(["grep -q yes result.txt"]);
+    expect(first.passed).toBe(false);
+    // The agent writes what the check reads, outside its scope.
+    writeFileSync(join(s.cwd, "result.txt"), "yes\n");
+    const r = await s.verifier.run(["grep -q yes result.txt"]);
+    expect(r.passed).toBe(false);
+    expect(r.failures[0]?.output).toMatch(
+      /^This check failed, then passed only with files created outside the task's scope after it failed \(result\.txt\)\. Run without them, it fails\./,
+    );
+    // The file is back where the agent left it.
+    expect(readFileSync(join(s.cwd, "result.txt"), "utf8")).toBe("yes\n");
+    expect(existsSync(join(s.cwd, "..", "result.txt"))).toBe(false);
+  });
+
+  it("passes a check the work inside the scope makes pass", async () => {
+    const s = await setup({ scope: inSrc });
+    expect((await s.verifier.run(["grep -q yes src/result.txt"])).passed).toBe(false);
+    mkdirSync(join(s.cwd, "src"), { recursive: true });
+    writeFileSync(join(s.cwd, "src", "result.txt"), "yes\n");
+    // Something else outside the scope the check doesn't name changes nothing.
+    writeFileSync(join(s.cwd, "scratch.log"), "x\n");
+    expect((await s.verifier.run(["grep -q yes src/result.txt"])).passed).toBe(true);
+  });
+
+  it("fails a check that needs a named file outside the scope, and passes one that does not", async () => {
+    const s = await setup({ scope: inSrc });
+    expect((await s.verifier.run(["test -f src/app.txt && test -f extra.txt"])).passed).toBe(false);
+    mkdirSync(join(s.cwd, "src"), { recursive: true });
+    writeFileSync(join(s.cwd, "src", "app.txt"), "ok\n");
+    writeFileSync(join(s.cwd, "extra.txt"), "ok\n");
+    // extra.txt is named and outside: hidden, the check fails, so it is flagged.
+    expect((await s.verifier.run(["test -f src/app.txt && test -f extra.txt"])).passed).toBe(false);
+    // A check that doesn't need it passes, hidden or not.
+    expect((await s.verifier.run(["test -f src/app.txt"])).passed).toBe(true);
+  });
+
+  it("looks at nothing without a scope (as before)", async () => {
+    const s = await setup();
+    expect((await s.verifier.run(["grep -q yes result.txt"])).passed).toBe(false);
+    writeFileSync(join(s.cwd, "result.txt"), "yes\n");
+    expect((await s.verifier.run(["grep -q yes result.txt"])).passed).toBe(true);
   });
 });

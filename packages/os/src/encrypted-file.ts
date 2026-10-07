@@ -72,6 +72,9 @@ export function createEncryptedFileStore(file: string, passphrase: string): Secr
       contents = { ...contents, entries: { ...contents.entries, [name]: seal(key, value) } };
       save();
     },
+    async names() {
+      return Object.keys(contents.entries);
+    },
     async delete(name) {
       if (!(name in contents.entries)) return false;
       const { [name]: _gone, ...rest } = contents.entries;

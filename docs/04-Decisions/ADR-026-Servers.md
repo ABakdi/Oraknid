@@ -51,4 +51,19 @@ makes another when it doesn't parse; a test makes 2,000.
 - A server Oraknid can't reach keeps its last document and readings,
   marked stale.
 
+### As built (2026-10-07)
+- **A job that stopped without completing** (cancelled, or blocked by an
+  error, not by quota or a budget) refreshes its servers' documents as
+  one that completed does, when a task that wasn't research or planning
+  had an attempt since the last refresh (`servers/after-end.ts`, the
+  setting `servers.refreshedAfter.<job>`); the server's own job names its
+  tasks as not finished. Before, only a completed job did.
+- **Stale**: a ready server whose last connection failed, or with no
+  reading for three rounds of oraknid-monitor (at least two minutes), is
+  `stale` in its view; its last reading is kept past the 24 hours (and
+  read back after a restart), its state document stays; `server.stale`
+  is said once, `server.reached` when a reading comes again. A
+  connection that stopped answering is dropped so the next round
+  connects again.
+
 Related: [[Servers]] · [[Security]] · [[ADR-027-Oraknid-Monitor]] · [[ADR-028-Terminal]]

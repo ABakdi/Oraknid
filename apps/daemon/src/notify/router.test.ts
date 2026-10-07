@@ -158,6 +158,42 @@ describe("notification routing", () => {
     });
   });
 
+  it("tells me when a job paused for quota resumes by itself (Budgets-and-Quotas)", async () => {
+    const { d, sent } = await start();
+    const job = seedJob(d.db, "running");
+    d.bus.publish({
+      type: "job.auto-resumed",
+      topic: `job:${job}`,
+      jobId: job,
+      payload: { reason: "Its agents have quota again; it goes on by itself." },
+    });
+    await wait(20);
+    expect(sent.map((s) => s.channel)).toEqual(["desktop"]);
+    expect(sent[0]?.n).toMatchObject({
+      body: "Its agents have quota again; it goes on by itself.",
+      urgency: "normal",
+    });
+    expect(sent[0]?.n.title).toMatch(/^Resumed: /);
+  });
+
+  it("tells me once that the computer can't be kept awake, again only after it was held (Durability)", async () => {
+    const { d, sent } = await start();
+    const failed = { held: false, mode: null, why: null, problem: "logind refused the lock." };
+    const publish = (payload: unknown) =>
+      d.bus.publish({ type: "system.inhibitor", topic: "overview", jobId: null, payload });
+    publish(failed);
+    publish(failed);
+    await wait(20);
+    expect(sent.map((s) => s.n.title)).toEqual(["Can't keep the computer awake"]);
+    expect(sent[0]?.n.body).toBe(
+      "logind refused the lock. The jobs go on, but the computer may sleep.",
+    );
+    publish({ held: true, mode: "block", why: "1 job running", problem: null });
+    publish(failed);
+    await wait(20);
+    expect(sent).toHaveLength(2);
+  });
+
   it("follows my changes to the routing table", async () => {
     const { d, sent } = await start();
     d.notifications.update({

@@ -95,6 +95,8 @@ Legs (2026-10-07).
   a job opened in a project's Work tab) fold it by themselves while
   they are open. Above the fold button, Oraknid's version and whether
   an update waits (2026-10-04, [[ADR-048-Updates]]; Settings → About & updates).
+  When the sleep lock can't be taken, **may sleep** in the header (yellow,
+  its reason in a tooltip; [[Durability]] → Sleep inhibition, 2026-10-07).
 - **Pages use their space** (2026-10-03): a page with more than one
   concern is in tabs, the tab in the address; each tab fills the height
   it needs, a conversation takes the whole height like Chats; changing
@@ -209,6 +211,14 @@ soon as a model can" until then), its state, branch and tokens, and
   branch, with a confirmation; conflicting files are listed.
 - **Plan editor:** drag to reorder dependencies, edit task text, add and
   remove tasks. Running tasks are paused before an edit is applied.
+
+A finished job's **result** (the folder, branch, commits, Merge) also
+has **Remove worktree** (its folder goes, its branch stays; work not
+merged or not committed is said and asked again) and **Export** (the
+job as a zip, [[ADR-061-Moving-Oraknid]]), 2026-10-07. A project's page
+has **Export** (every job of it) and, for a project with GitHub-linked
+repos, **Clone again** (a folder missing on this computer, after a
+move).
 
 ### Charts (job, project and global level)
 
@@ -372,6 +382,15 @@ Its page is in tabs, in the address (`/projects/<id>/<tab>`):
   when it waits for a new server).
 - **Skills**, **Servers**, **Network** (the ports on this computer its
   jobs may reach, like a local database; [[Sandboxing]]).
+- **Secrets** (2026-10-07, [[ADR-059-Project-Secrets]]): the project's API
+  keys and `.env` values for one environment at a time (`dev`, `testing`,
+  `production`, chosen at the top), and which one new jobs run in. Each
+  is a row: its name, `••••••••`, when it was set, **Replace** (a
+  password box, empty: the old value is never shown) and **Remove**
+  (asked first). **Add** takes a name (upper case, an environment
+  variable's) and a value; a pasted `.env` sets many at once and says
+  the lines it skipped, by number, never by value. Changing them away
+  from home needs a device with full rights.
 
 **Open folder** and **Terminal here** in its header (2026-10-04): the
 project's folder in this computer's file manager, to look at or test the
@@ -395,6 +414,12 @@ I go; **Start** and **Delete**. **Start** stays disabled until there is
 a goal and a project, and says why; what it waits for that can be set
 up (a Leg, a tool) is offered beside it. Its budget starts as the
 chosen project's. Once started, it lands in the project's Eye tab.
+When the sandbox doesn't work on this computer (2026-10-07,
+[[ADR-006-Sandbox]]) a red note says so with why and that `oraknid
+doctor` says how to fix it; a draft then has the switch **Run this job
+without the sandbox (asks first)**, and Start asks "Run this job without
+the sandbox?" (its agents get my rights on this computer; recorded,
+shown in red). Without the switch Start is refused in words.
 
 ### New project (2026-10-04, M13.19)
 
@@ -524,6 +549,22 @@ end wrote it). A server marked production, on its page or in a project,
 has a red **production** badge in its header. Each part shows when it was read and a Refresh; what it
 couldn't read is in a yellow box with why. On a phone everything is a
 list that wraps, nothing scrolls sideways.
+
+A server not reached for a while ([[ADR-026-Servers]]) keeps its last
+document and readings, with a **stale since …** badge in its header and a
+yellow dot in the list (2026-10-07).
+
+**Sites** (2026-10-07, [[ADR-060-Sites-Domains-And-Uptime]]), first in
+the Servers list (`/servers/sites`): every domain across my servers, a
+row each: up, down (since when) or not checked; its server and proxy, or
+"added by hand"; the last check (status, latency, or the error in
+words) and its uptime over 24 hours and 7 days, with the last day's
+latency as a sparkline; the certificate's end (red under two weeks, or
+ended) and issuer; DNS (its addresses, a CNAME, whether it points at
+its server). **Find sites** reads my servers' proxies; a domain or a URL
+can be added by hand; each row has Check now, Remove (asked first), a
+switch to stop checking it and how often (1 to 60 minutes). It reads
+again every minute while in sight.
 
 ### Cloud storage (2026-10-03, [[ADR-046-Cloud-Storage]])
 
@@ -784,7 +825,13 @@ In tabs, each one concern in sections; the tab is in the address
 (`/settings/<tab>`), and changing tabs keeps the way back to the page
 that opened Settings:
 - **General**: this computer (keychain, sandbox, sleep inhibition),
-  storage use and pruning, notifications, theme.
+  storage use and pruning, notifications, theme. Storage also lists
+  **Finished jobs' worktrees** with their sizes, what each would lose
+  (commits not merged, files not committed), a remove button each (it
+  asks, and says what is lost) and **Clean up finished jobs' worktrees**
+  (the ones with nothing to lose; the others named), and **Import a job
+  or project zip** (2026-10-07, [[Sandboxing]] → Worktrees,
+  [[ADR-061-Moving-Oraknid]]).
 - **Eye & jobs**: The Eye's models and the interview's rounds; **Jobs at
   once** (jobs at once, tasks at once in a job, and **Claude share of a
   job**, 2026-10-07, [[ADR-052-A-Harness-For-Any-Model]] §3: Claude as
@@ -833,6 +880,14 @@ that opened Settings:
   for its kept secrets) and lists Server, Database and Where to, each
   ✓, ✗ or not tried with its words; a database it lists is one click
   away. At 390 px every field is one column, nothing scrolls sideways.
+- **About & updates → Moving** (2026-10-07, [[ADR-061-Moving-Oraknid]]):
+  **Move to another computer**: a passphrase typed twice (12 characters
+  or more) and **Export everything** (a one-time download of the
+  encrypted archive, with what it holds); on a fresh install, an archive
+  and its passphrase and **Import** (its secrets and settings now; "Restart
+  Oraknid to finish", and how many projects' folders aren't here).
+  Otherwise it says importing is for a fresh install, or `oraknid import
+  --replace`.
 - **About & updates** (2026-10-04, [[ADR-048-Updates]]): the version
   running, its channel (dev or stable) and how it was installed
   (install.sh, from which ref, into which folder; or "running from a

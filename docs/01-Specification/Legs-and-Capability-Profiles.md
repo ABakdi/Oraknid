@@ -133,7 +133,11 @@ installs nothing.
 3. **Test.** Oraknid runs a tiny health prompt, reads the model and
    context window, and reports usage support. A failed test says
    exactly what failed and saves nothing until it passes, or until I
-   save it as disabled.
+   save it as disabled (2026-10-07: tested before it is saved, "The test
+   failed, so nothing was saved: …", with **Save it disabled** in the
+   dialog. A Claude Code, Antigravity or Codex Leg signs in, or keeps
+   its key, in a home of its own made when it is saved: it is saved,
+   and tested at once and again after its sign-in.)
 4. A default capability profile for that kind and model is attached. I
    can edit it.
 

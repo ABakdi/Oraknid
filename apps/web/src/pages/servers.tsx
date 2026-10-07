@@ -1,5 +1,5 @@
 import type { ServerSample, ServerView } from "@oraknid/contracts";
-import { Pencil, Plus, RefreshCw, Server, SquareTerminal, Trash2 } from "lucide-react";
+import { Globe, Pencil, Plus, RefreshCw, Server, SquareTerminal, Trash2 } from "lucide-react";
 import { lazy, Suspense, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -15,6 +15,7 @@ import {
   ServerProxyTab,
 } from "@/components/server-insight";
 import { ServerChatTab, ServerJobsTab } from "@/components/server-jobs";
+import { SitesPanel } from "@/components/sites";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -54,6 +55,8 @@ export function ServersPage({ id, tab }: { id?: string; tab?: string }) {
       {t("Add a server")}
     </Button>
   );
+  // Sites added by hand need no server of mine (ADR-060).
+  if (list.length === 0 && id === "sites") return <SitesPanel />;
   if (list.length === 0)
     return (
       <div className="space-y-4">
@@ -69,8 +72,10 @@ export function ServersPage({ id, tab }: { id?: string; tab?: string }) {
         <AddServer open={adding} onOpenChange={setAdding} onAdded={(x) => go(`/servers/${x.id}`)} />
       </div>
     );
+  // Sites across every server (ADR-060): `/servers/sites`.
+  const onSites = id === "sites";
   // A server open: its id in the address; on a computer the first one by default.
-  const selected = list.find((x) => x.id === id);
+  const selected = onSites ? undefined : list.find((x) => x.id === id);
   const shown =
     selected ?? (typeof window !== "undefined" && window.innerWidth >= 768 ? list[0] : undefined);
   return (
@@ -78,7 +83,7 @@ export function ServersPage({ id, tab }: { id?: string; tab?: string }) {
       <aside
         className={cn(
           "flex min-h-0 w-full shrink-0 flex-col gap-2 md:w-64",
-          selected && "hidden md:flex",
+          (selected || onSites) && "hidden md:flex",
         )}
       >
         <div className="flex items-center gap-2">
@@ -86,6 +91,19 @@ export function ServersPage({ id, tab }: { id?: string; tab?: string }) {
           {add}
         </div>
         <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+          <button
+            type="button"
+            data-help="servers.sites"
+            onClick={() => go("/servers/sites")}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm hover:bg-accent",
+              onSites && "border-primary bg-accent",
+            )}
+          >
+            <Globe className="size-4 shrink-0" />
+            <span className="flex-1 font-medium">{t("Sites")}</span>
+            <span className="text-xs text-muted-foreground">{t("domains, uptime")}</span>
+          </button>
           {list.map((x) => {
             const l = x.latest;
             return (
@@ -108,9 +126,11 @@ export function ServersPage({ id, tab }: { id?: string; tab?: string }) {
                       "size-2 shrink-0 rounded-full",
                       x.error
                         ? "bg-destructive"
-                        : x.setup === "ready"
-                          ? "bg-success"
-                          : "bg-warning",
+                        : x.stale
+                          ? "bg-warning"
+                          : x.setup === "ready"
+                            ? "bg-success"
+                            : "bg-warning",
                     )}
                   />
                 </span>
@@ -128,8 +148,12 @@ export function ServersPage({ id, tab }: { id?: string; tab?: string }) {
           })}
         </div>
       </aside>
-      <section className={cn("min-h-0 min-w-0 flex-1", !selected && "hidden md:block")}>
-        {shown ? <ServerDetail key={shown.id} s={shown} tab={tab} /> : null}
+      <section className={cn("min-h-0 min-w-0 flex-1", !selected && !onSites && "hidden md:block")}>
+        {onSites ? (
+          <SitesPanel />
+        ) : shown ? (
+          <ServerDetail key={shown.id} s={shown} tab={tab} />
+        ) : null}
       </section>
       <AddServer open={adding} onOpenChange={setAdding} onAdded={(x) => go(`/servers/${x.id}`)} />
     </div>
@@ -191,6 +215,11 @@ function ServerDetail({ s, tab }: { s: ServerView; tab?: string }) {
           {s.busy ??
             (s.error ? t("unreachable") : s.setup === "ready" ? t("ready") : t("not set up"))}
         </Badge>
+        {s.stale ? (
+          <Badge variant="secondary" title={t("Its document and readings are the last ones read.")}>
+            {s.lastSeenAt ? t("stale since {when}", { when: ago(s.lastSeenAt) }) : t("stale")}
+          </Badge>
+        ) : null}
         {s.production || s.productionIn.length ? (
           <Badge variant="destructive">{t("production")}</Badge>
         ) : null}

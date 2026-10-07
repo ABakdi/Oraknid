@@ -9,6 +9,7 @@ import type { Servers } from "../servers/service.ts";
 import type { GitHub } from "../workspace/github.ts";
 import { githubLinkOf, githubLinksOf } from "../workspace/github-tool.ts";
 import type { CheckLine } from "./log.ts";
+import { anotherWay, filesUnder, suspectFiles, withHidden } from "./scope-guard.ts";
 
 // The Verifier (ADR-056 §4): one runner for checks, used by the task, the
 // stop hook, the checks tried before the work, the merge and the job. Built
@@ -66,6 +67,13 @@ export interface VerifierWhere {
   signal: AbortSignal;
   /** The attempt log: every run is recorded as `ChecksRan`. */
   log?: { append: (kind: "ChecksRan", data: ChecksRanData) => unknown };
+  /**
+   * The task's scope and notes (paths relative to `cwd`): given, a check
+   * that failed and then passes only with files the attempt made outside
+   * them, which its command names, fails (scope-guard.ts). Not given, no
+   * such look.
+   */
+  scope?: { inScope: (path: string) => boolean };
 }
 
 type ChecksRanData = { passed: boolean; results: CheckLine[]; why: string };
@@ -113,15 +121,68 @@ export function createVerifier(d: VerifierDeps, job: { id: string }, where: Veri
     );
   };
 
+  /** The files there when each check last failed, for the scope's rule. */
+  const failedWith = new Map<string, Set<string>>();
+
+  /**
+   * "Not another way" (ADR-052 §2): a check that failed and now passes
+   * only thanks to files made outside the task's scope since, which it
+   * names, is run again without them; failing then, it failed.
+   */
+  const notAnotherWay = async (
+    results: VerifyResult[],
+    again: (command: string) => Promise<VerifyResult | undefined>,
+  ): Promise<VerifyResult[]> => {
+    const scope = where.scope;
+    if (!scope) return results;
+    const out: VerifyResult[] = [];
+    for (const r of results) {
+      const before = failedWith.get(r.command);
+      if (!r.ok) {
+        if (!before) {
+          const now = filesUnder(where.cwd);
+          if (now) failedWith.set(r.command, now);
+        }
+        out.push(r);
+        break;
+      }
+      if (before) {
+        const now = filesUnder(where.cwd);
+        const suspects = now ? suspectFiles(r.command, before, now, scope.inScope) : [];
+        if (suspects.length) {
+          const hidden = await withHidden(where.cwd, suspects, () => again(r.command));
+          if (hidden && !hidden.ok) {
+            out.push({
+              ...r,
+              ok: false,
+              exitCode: hidden.exitCode,
+              output: `${anotherWay(suspects)}\n${hidden.output}`.slice(-8000),
+              signature: `another-way:${r.command}`,
+            });
+            break;
+          }
+        }
+        failedWith.delete(r.command);
+      }
+      out.push(r);
+    }
+    return out;
+  };
+
   return {
     /** Runs the checks, in order, stopping at the first failure; recorded in the attempt log. */
     async run(checks: string[], o: RunOptions = {}): Promise<CheckReport> {
       await where.prepare?.();
-      const results = await runVerify(checks, where.cwd, where.plan(), {
-        signal: where.signal,
-        ...(o.timeoutMs ? { timeoutMs: o.timeoutMs } : {}),
-        refuse: (command) => where.refuse(command, "local"),
-        builtin,
+      const verify = (commands: string[]) =>
+        runVerify(commands, where.cwd, where.plan(), {
+          signal: where.signal,
+          ...(o.timeoutMs ? { timeoutMs: o.timeoutMs } : {}),
+          refuse: (command) => where.refuse(command, "local"),
+          builtin,
+        });
+      const results = await notAnotherWay(await verify(checks), async (command) => {
+        const [r] = await verify([command]);
+        return r;
       });
       const report = reportOf(results, !!o.before);
       where.log?.append("ChecksRan", {

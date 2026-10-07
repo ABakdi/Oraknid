@@ -35,6 +35,7 @@ import {
   readSetting,
   writeSetting,
 } from "../settings.ts";
+import type { Sites } from "../sites/service.ts";
 import type { SkillStore } from "../skills/store.ts";
 import { TERMINAL_SETTING } from "../term/server.ts";
 import type { ToolRegistry } from "../tools/registry.ts";
@@ -44,6 +45,7 @@ import { projectFrom } from "../workspace/sources.ts";
 import { API_ACTIONS, SETTINGS } from "./api-actions.ts";
 import { BACKUP_ACTIONS } from "./backups-actions.ts";
 import { CLOUD_ACTIONS } from "./cloud-actions.ts";
+import { SITE_ACTIONS } from "./sites-actions.ts";
 
 // The Oraknid helper (ADR-024): I say what I want in words; one reasoning
 // call answers and names actions from a fixed catalogue, which run through
@@ -86,6 +88,8 @@ export interface HelperDeps {
     | "createKey"
     | "describe"
   >;
+  /** Sites across my servers (ADR-060): read only. */
+  sites?: Pick<Sites, "list">;
   /** Cloud storage (ADR-046): read, upload what I name, move, download; deletes asked. */
   cloud?: Pick<
     Cloud,
@@ -656,6 +660,7 @@ const ACTIONS: Record<string, ActionDef> = {
   ...API_ACTIONS,
   ...BACKUP_ACTIONS,
   ...CLOUD_ACTIONS,
+  ...SITE_ACTIONS,
 };
 
 for (const name of HELPER_CLIENT_ACTIONS)
