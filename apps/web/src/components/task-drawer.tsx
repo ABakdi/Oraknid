@@ -411,8 +411,8 @@ function EditTaskDialog({
         <DialogHeader>
           <DialogTitle>{t("Edit the task")}</DialogTitle>
           <DialogDescription>
-            {job.autonomy === "supervised"
-              ? t("At Supervised, the edited plan asks for your approval again.")
+            {job.autonomy === "careful"
+              ? t("At Careful, the edited plan asks for your approval again.")
               : t("The next attempt uses it.")}
           </DialogDescription>
         </DialogHeader>

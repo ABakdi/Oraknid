@@ -164,8 +164,8 @@ export function JobDetail({ id, sub }: { id: string; sub?: string }) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="supervised">{t("Supervised")}</SelectItem>
-                  <SelectItem value="standard">{t("Standard")}</SelectItem>
+                  <SelectItem value="auto">{t("Auto")}</SelectItem>
+                  <SelectItem value="careful">{t("Careful")}</SelectItem>
                   <SelectItem value="full">{t("Full")}</SelectItem>
                 </SelectContent>
               </Select>
