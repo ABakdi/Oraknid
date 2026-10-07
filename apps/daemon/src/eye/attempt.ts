@@ -11,8 +11,6 @@ import {
   type TaskKind,
 } from "@oraknid/contracts";
 import {
-  allowRuleFor,
-  blockedMessage,
   buildContextPack,
   busyMachine,
   claimsDone,
@@ -20,7 +18,6 @@ import {
   DEFAULT_THRESHOLDS,
   type Drift,
   type DriftCode,
-  decide,
   deprecationOf,
   detect,
   fence,
@@ -31,9 +28,6 @@ import {
   nextEscalation,
   type Observed,
   oraknidOwn,
-  type PolicyContext,
-  type PolicyVerdict,
-  programsOf,
   providerFailure,
   type Route,
   type RouteCandidate,
@@ -49,14 +43,7 @@ import {
   whenSaid,
   workKindOf,
 } from "@oraknid/core";
-import type { Blocked } from "@oraknid/guard";
-import type {
-  LegEvent,
-  PermissionDecision,
-  PermissionRequest,
-  PreToolDecision,
-  UsageSnapshot,
-} from "@oraknid/leg-sdk";
+import type { LegEvent, PermissionRequest, UsageSnapshot } from "@oraknid/leg-sdk";
 import type { Sandbox } from "@oraknid/os";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
@@ -64,90 +51,40 @@ import type { Db } from "../db/open.ts";
 import { attempts, jobs, sessions, tasks } from "../db/schema.ts";
 import { SideEffects } from "../engine/effects.ts";
 import type { EventBus } from "../events/bus.ts";
+import { ALLOW, asPermission, asPreTool, createGate } from "../harness/gate.ts";
 import { newId } from "../ids.ts";
 import type { InboxStore } from "../inbox/store.ts";
-import { jobHomeDir, scratchFor } from "../legs/job-home.ts";
+import { jobHomeDir } from "../legs/job-home.ts";
 import { sandboxPlan } from "../legs/plan.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor, Supervised } from "../legs/supervisor.ts";
 import { legSessionLimit } from "../resources/work.ts";
 import { runServerCheck } from "../servers/checks.ts";
-import {
-  isGuardCheck,
-  type JobServerRef,
-  namedIn,
-  parseSsh,
-  plainServerCheck,
-  removalTargets,
-  serverVerdict,
-} from "../servers/remote.ts";
-import { jobPlan } from "../servers/server-jobs.ts";
+import { isGuardCheck, type JobServerRef, parseSsh, plainServerCheck } from "../servers/remote.ts";
 import type { Servers } from "../servers/service.ts";
 import { CLAUDE_SHARE, readSetting, writeSetting } from "../settings.ts";
 import { handoffFromLog } from "../silk/handoff.ts";
 import type { SilkStore } from "../silk/store.ts";
+import { summarizeShortened } from "../silk/summarize.ts";
 import type { BrokerSession, McpBroker } from "../tools/broker.ts";
-import {
-  BUILT_IN,
-  type McpDeclaration,
-  type ToolRegistry,
-  type ToolRow,
-} from "../tools/registry.ts";
+import { BUILT_IN, type ToolRegistry, type ToolRow } from "../tools/registry.ts";
 import type { GitHub } from "../workspace/github.ts";
 import { githubLinkOf, githubLinksOf } from "../workspace/github-tool.ts";
 import type { WorkTree } from "../workspace/tree.ts";
-import { waitForAnswer } from "./approvals.ts";
-import {
-  type DecisionLayer,
-  forgetJobVerdicts,
-  guardContext,
-  judgeAction,
-  layer1,
-  logDecision,
-  ownerWords,
-  shapeApproved,
-  shapeRuleFor,
-  stuck,
-} from "./auto-mode.ts";
 import { BrainStopped, type CheckRepair, type EyeBrain, type GitHubForRepair } from "./brain.ts";
 import { runBuiltinCheck } from "./builtin-checks.ts";
 import { giveToLeg, LegStop, legLimits, stopWaiting, trackAttempt } from "./leg-work.ts";
+import { dependentsOf, keepsGoingWrong, readKeepsGoingWrong } from "./questions.ts";
+import { addMessage, guidanceMark, takeGuidance } from "./talk.ts";
+import { looksBroken, runVerify, type VerifyResult } from "./verify.ts";
 
 /** The providers (Leg kinds) for which I allowed same-provider fallback (ADR-009). */
 export const SAME_PROVIDER_FALLBACK = "fallback.sameProvider";
 
-import { approveAllLikeThis, policyFor } from "./policy.ts";
-
-/** The third answer to a Leg's permission request (Approvals → The inbox). */
-export const ALL_LIKE_THIS = "Approve all like this for this job";
-/** The answers when an agent is stuck on blocks (ADR-053). */
-export const LET_IT_RUN = "Let it run this one";
-export const KEEP_BLOCKED = "Keep it blocked";
-/** Letting one blocked command run, once: a change the plan names, what the agent needs (ADR-049). */
-export const ALLOW = "Allow";
 /** The other answers when the agent says it can't finish without me. */
 export const ILL_DO_IT = "I'll do it";
 export const LEAVE_IT_OUT = "Leave it out";
 export const STOP_JOB = "Stop the job";
-/** Shell tools, whose command layer 1 reads (ADR-053). */
-const SHELL_TOOLS = new Set(["Bash", "run_command"]);
-/** Tools that only read: their allows aren't each in the audit log. */
-const READS = new Set([
-  "Read",
-  "Glob",
-  "Grep",
-  "LS",
-  "read_file",
-  "list_dir",
-  "search",
-  "TodoWrite",
-]);
-
-import { summarizeShortened } from "../silk/summarize.ts";
-import { dependentsOf, keepsGoingWrong, readKeepsGoingWrong } from "./questions.ts";
-import { addMessage, guidanceMark, takeGuidance } from "./talk.ts";
-import { readTaskMemory, rememberForTask } from "./task-memory.ts";
-import { looksBroken, runVerify, type VerifyResult, verifyRefusal } from "./verify.ts";
 
 export type TaskRow = typeof tasks.$inferSelect;
 
@@ -258,46 +195,6 @@ const hash = (s: string) => createHash("sha256").update(s).digest("hex").slice(0
  * work itself, self-prompt, watch for drift and climb the ladder, rotate
  * sessions, and on success commit and record progress in Silk.
  */
-/** The address a fetch reads: OpenCode puts it as the request's path, Claude Code in its input. */
-function fetchedUrl(r: { path: string | null; input: Record<string, unknown> }): string | null {
-  const url = r.input.url;
-  return typeof url === "string" ? url : r.path;
-}
-
-/**
- * A page of the project's own linked GitHub repo (its page, its API, its raw
- * files) isn't content from outside: reading it doesn't make the task
- * untrusted. Anything else on the web still does (BR-15). Seen 2026-10-04:
- * OpenCode looked at the piano repo's page and its push to that same repo
- * then asked me.
- */
-export function ownRepoPage(
-  url: string | null,
-  repos: { github?: { owner: string; name: string } | null }[],
-): boolean {
-  if (!url) return false;
-  let u: URL;
-  try {
-    u = new URL(url);
-  } catch {
-    return false;
-  }
-  if (u.protocol !== "https:") return false;
-  const parts = u.pathname.split("/").filter(Boolean);
-  const [owner, name] =
-    u.hostname === "api.github.com" && parts[0] === "repos"
-      ? [parts[1], parts[2]]
-      : u.hostname === "github.com" || u.hostname === "raw.githubusercontent.com"
-        ? [parts[0], parts[1]]
-        : [undefined, undefined];
-  if (!owner || !name) return false;
-  const repo = name.replace(/\.git$/, "").toLowerCase();
-  return repos.some(
-    (r) =>
-      r.github?.owner.toLowerCase() === owner.toLowerCase() && r.github.name.toLowerCase() === repo,
-  );
-}
-
 export async function runAttempt(
   d: AttemptDeps,
   job: AttemptJob,
@@ -577,35 +474,14 @@ export async function runAttempt(
   /** Tokens of the current session when progress was last made or a drift was acted on (D6 counts from here). */
   let tokensBaseline = 0;
   let sessionTokens = 0;
-  /** Waiting for my answer is not a stall (Audit 1 → Q1-02). */
-  let waitingOnOwner = 0;
   let level = task.escalation;
   // Only messages written after this attempt began: older ones are in Silk, in its context pack.
   let guidanceSeen = guidanceAtStart;
   // Typed by assertion: they change inside closures, which narrowing cannot follow.
   let session = null as Supervised | null;
   let sessionLog: string | null = null;
-  // What earlier attempts of this task learned, kept across a restart (bug 8).
-  const memory = readTaskMemory(d.db, taskId);
-  const deniedGates = new Set<string>(memory.denied);
-  /**
-   * Commands I let run once (ADR-053): a change the plan names, a command
-   * the stuck rule or the agent's own words asked me about. Each is used
-   * by the first run that matches it, in its plain form.
-   */
-  const allowOnce: string[] = [...memory.allowOnce];
-  /** What the PreToolUse hook sent on to canUseTool to be asked of me there, by its plain form. */
-  const hookAsks = new Map<string, () => Promise<PermissionDecision>>();
-  /** What layer 1 blocked in this attempt, oldest first: for the agent's "the owner must…". */
-  const blockedHere: { command: string; reason: string; byLeg?: boolean }[] = [];
-  /** Planned changes and commands I kept blocked when asked: not asked again in this attempt. */
-  const keptBlocked = new Set<string>();
-  /** Approvals this attempt asked for: withdrawn if it ends before I answer, or after a crash (bug 9). */
-  const asked: string[] = [];
-  const raised = (itemId: string) => {
-    asked.push(itemId);
-    rememberForTask(d.db, taskId, { asked });
-  };
+  /** The job's servers as its commands name them, production marked (ADR-049): filled by prepareServers. */
+  const servers: JobServerRef[] = [];
   /** Commands waiting for their result, by tool call id. */
   const pending = new Map<string, string>();
   /** What every turn's events tell the drift detectors: commands, results, usage, activity. */
@@ -620,35 +496,8 @@ export async function runAttempt(
       });
       pending.delete(e.id);
     }
-    // Claude Code's own auto mode refused a call (ADR-053): in the job's events and the audit log.
-    if (e.type === "permission.denied" && e.by === "leg") {
-      const action = e.request.command ?? e.request.path ?? e.request.tool;
-      logDecision(d.bus, job.id, {
-        taskId,
-        tool: e.request.tool,
-        action,
-        verdict: "block",
-        layer: "leg",
-        reason: e.reason,
-      });
-      event("task.refused", {
-        command: action.slice(0, 300),
-        reason: e.reason,
-        drift: null,
-        layer: "leg",
-      });
-      // What the agent may say it needs of me (askOwnerNeeded).
-      if (e.request.command)
-        blockedHere.push({ command: e.request.command, reason: e.reason, byLeg: true });
-      // Its blocks count toward the stuck rule like any other (ADR-053; bug 7). It can't be held
-      // for my answer: I'm asked at its next action, or at the turn's end if a check fails.
-      const stuckNow = stuckBlocked({
-        action: (e.request.command ? plainOf(e.request.command) : action).slice(0, 200),
-        reason: e.reason,
-        layer: "leg",
-      });
-      if (stuckNow) stuckByLeg = stuckNow;
-    }
+    // Claude Code's own auto mode refused a call (ADR-053): the Gate counts it like any other block.
+    if (e.type === "permission.denied" && e.by === "leg") gate.legRefused(e.request, e.reason);
     if (e.type === "usage") {
       sessionTokens = e.usage.inputTokens + e.usage.outputTokens;
       observed.tokensSinceProgress = Math.max(0, sessionTokens - tokensBaseline);
@@ -657,14 +506,6 @@ export async function runAttempt(
   };
 
   let usage = null as UsageSnapshot | null;
-  /** Stuck on the agent's own auto mode's refusals, not asked yet (bug 7). */
-  let stuckByLeg = null as { why: string; blocks: Blocked[] } | null;
-  /** Asked of me at the agent's next action that comes through Oraknid: it waits for my answer. */
-  const takeStuckByLeg = () => {
-    const s = stuckByLeg;
-    stuckByLeg = null;
-    return s;
-  };
 
   const observed: Observed = {
     scope: scopeOf(task),
@@ -683,667 +524,42 @@ export async function runAttempt(
   const event = (type: string, payload: Record<string, unknown>) =>
     d.bus.publish({ type, topic: `job:${job.id}`, jobId: job.id, payload: { taskId, ...payload } });
 
-  /**
-   * The task read something from the web: untrusted from here on (BR-15; Audit 1 → S1-09), in
-   * every later attempt too, a resumed session included (bug 8).
-   */
-  let readTheWeb = memory.untrusted !== null;
-  const markUntrusted = (reason: string) => {
-    if (readTheWeb) return;
-    readTheWeb = true;
-    rememberForTask(d.db, taskId, { untrusted: reason });
-    event("task.untrusted", { reason });
-  };
   const toolRows = d.tools && job.tools.length ? d.tools.registry.byNames(job.tools) : [];
-  const brokered = toolRows.map((t) => `oraknid-${t.name}`);
-  /** The stuck rule's key: blocks are counted per task (ADR-053), and kept across a restart (bug 8). */
-  const stuckKey = `${job.id}:${taskId}`;
-  stuck.restore(stuckKey, memory.stuck);
-  const keepStuck = () => rememberForTask(d.db, taskId, { stuck: stuck.snapshot(stuckKey) });
-  const stuckBlocked = (b: Blocked) => {
-    const s = stuck.blocked(stuckKey, b);
-    keepStuck();
-    return s;
-  };
-  /** An action ran: the row ends (written only when there was one). */
-  const stuckAllowed = () => {
-    if (!stuck.snapshot(stuckKey)?.row.length) return;
-    stuck.allowed(stuckKey);
-    keepStuck();
-  };
-  /** What layer 1 knows of this attempt: the folder, its scratch, the job's servers, the task. */
-  const guardCtx = () =>
-    guardContext({
-      cwd: ws.cwd,
-      scratch: scratchFor(d.legsDir, leg.legId, job.id),
-      home: jobHomeDir(d.legsDir, leg.legId, job.id),
-      servers: servers.map((s) => ({ alias: s.alias, name: s.name, production: s.production })),
-      sshConfig: servers.length
-        ? join(jobHomeDir(d.legsDir, leg.legId, job.id), ".ssh", "config")
-        : null,
-      taskText: [
-        job.goal,
-        task.title,
-        task.instructions,
-        ...(task.scope ?? []),
-        ...ownerWords(d.db, job.id),
-      ].join("\n"),
-      verify: task.verify ?? [],
-    });
-  /** Layer 1: the rules' verdict on one request of the Leg, the guard's included (ADR-053). */
-  const rulesVerdict = async (r: PermissionRequest, judged?: McpDeclaration) => {
-    const policy = policyFor(d.db, job.id, ws.cwd);
-    // Its own /tmp, this job's home and the Leg's tmp and cache are its scratch (M13.22).
-    policy.scratch = scratchFor(d.legsDir, leg.legId, job.id);
-    if (readTheWeb) policy.untrusted = true;
-    if (toolRows.length) {
-      const declared = d.tools?.registry.declarations(toolRows) ?? new Map();
-      if (judged) declared.set(r.tool, judged);
-      policy.mcp = declared;
-    }
-    // Layer 1: the guard reads the command as the shell does, before the policy (ADR-053).
-    if (r.command && SHELL_TOOLS.has(r.tool)) policy.layer1 = await layer1(r.command, guardCtx());
-    // A command on one of the job's servers is judged as what runs there; production asks (ADR-049).
-    const first =
-      (r.command && servers.length ? serverVerdict(r.command, servers, policy) : null) ??
-      decide(r, policy);
-    const fetches =
-      (r.tool === "WebFetch" && !ownRepoPage(fetchedUrl(r), githubLinksOf(d.db, job.id))) ||
-      r.tool === "WebSearch" ||
-      (r.command ? /\b(curl|wget)\b/.test(r.command) : false);
-    if (fetches && first.verdict !== "deny")
-      markUntrusted(`read from the web (${r.tool}): gated actions ask me from now on`);
-    return { first, policy };
-  };
-  /** Layer 1, 2 or 3 settles one request of the Leg (ADR-053). */
-  const judgeRequest = async (
-    r: PermissionRequest,
-    judged?: McpDeclaration,
-  ): Promise<{
-    v: Exclude<PolicyVerdict, { verdict: "judge" }>;
-    layer: DecisionLayer;
-    /** The rules' context, when the rules settled it. */
-    policy?: PolicyContext;
-  }> => {
-    const { first, policy } = await rulesVerdict(r, judged);
-    if (first.verdict !== "judge")
-      return { v: first, layer: first.verdict === "ask" ? "owner" : "rules", policy };
-    // Careful: a shape I approved for the job passes without the judge.
-    const row = d.db
-      .select({ allowRules: jobs.allowRules })
-      .from(jobs)
-      .where(eq(jobs.id, job.id))
-      .get();
-    if (
-      policy.autonomy === "careful" &&
-      r.command &&
-      (await shapeApproved(r.command, row?.allowRules ?? []))
-    )
-      return {
-        v: { verdict: "allow", reason: "a command like one I approved for this job" },
-        layer: "owner",
-      };
-    // Layer 2: the judge, reasoning-blind.
-    const verdict = await judgeAction(
-      d.brain,
-      {
-        ownerMessages: ownerWords(d.db, job.id),
-        goal: job.goal,
-        task: task.title,
-        scope: scopeOf(task),
-        action: { tool: r.tool, command: r.command, input: r.command ? undefined : r.input },
-        workspace: ws.cwd,
-        servers: servers.map((s) => ({ name: s.name, alias: s.alias, production: s.production })),
-        repos: githubLinksOf(d.db, job.id)
-          .map((x) => (x.github ? `${x.github.owner}/${x.github.name}` : ""))
-          .filter(Boolean),
-        notes: {
-          allow: (row?.allowRules ?? []).filter((x) => !x.startsWith("shape:")),
-          deny: policy.rules?.flatMap((l) => l.deny) ?? [],
-        },
-        why: first.reason,
+  /**
+   * Every action of the agent, from every source, is decided by the Gate
+   * (ADR-056 §3): the adapters below only translate its decision.
+   */
+  const gate = createGate({
+    db: d.db,
+    bus: d.bus,
+    inbox: d.inbox,
+    silk: d.silk,
+    now,
+    ...(d.brain ? { brain: d.brain } : {}),
+    ...(d.tools ? { tools: d.tools.registry } : {}),
+    toolRows,
+    legsDir: d.legsDir,
+    job,
+    task,
+    leg,
+    cwd: ws.cwd,
+    servers,
+    signal,
+    on: {
+      activity: () => {
+        observed.lastActivityAt = now();
       },
-      { jobId: job.id, taskId, cwd: ws.cwd },
-    );
-    d.bus.publish({
-      type: "policy.judged",
-      topic: `job:${job.id}`,
-      jobId: job.id,
-      payload: {
-        taskId,
-        action: (r.command ?? r.tool).slice(0, 300),
-        decision: verdict.verdict,
-        reason: verdict.reason,
-        stage: verdict.stage,
-        cached: verdict.cached,
-        timedOut: verdict.verdict === "block" ? !!verdict.timedOut : false,
-      },
-      actor: "eye",
-    });
-    if (verdict.verdict === "block")
-      return {
-        v: {
-          verdict: "deny",
-          reason: verdict.reason,
-          drift: null,
-          message: blockedMessage(verdict.reason),
-        },
-        layer: "judge",
-      };
-    // Careful: what the judge allows and the rules didn't is mine to approve (the old behaviour).
-    if (policy.autonomy === "careful")
-      return {
-        v: {
-          verdict: "ask",
-          reason: `${first.reason}; the judge would allow it, and at Careful I approve it`,
-          gated: null,
-        },
-        layer: "owner",
-      };
-    return {
-      v: { verdict: "allow", reason: `the judge allowed it: ${verdict.reason}` },
-      layer: "judge",
-    };
-  };
-
-  /** A command in its plain form (`ssh <alias>` alone, ADR-049): how what I let run is matched. */
-  const plainOf = (command: string) =>
-    servers.length
-      ? plainServerCheck(
-          command.trim(),
-          servers.map((s) => s.alias),
-        )
-      : command.trim();
-
-  /** Whether I let this command run once (ADR-053); used up when it does. */
-  const takeAllowOnce = (command: string): boolean => {
-    if (!allowOnce.length) return false;
-    const plain = plainOf(command);
-    const ssh = servers.length
-      ? parseSsh(
-          plain,
-          servers.map((s) => s.alias),
-        )
-      : null;
-    const i = allowOnce.findIndex(
-      (x) => x === plain || (!!ssh?.whole && x.replace(/^'(.*)'$/, "$1") === ssh.remote.trim()),
-    );
-    if (i < 0) return false;
-    allowOnce.splice(i, 1);
-    rememberForTask(d.db, taskId, { allowOnce });
-    return true;
-  };
-
-  /** Ran because I let it, once: in the audit log; the stuck row ends. */
-  const ranOnce = (r: PermissionRequest) => {
-    logDecision(d.bus, job.id, {
-      taskId,
-      tool: r.tool,
-      action: r.command ?? r.tool,
-      verdict: "allow",
-      layer: "owner",
-      reason: "let it run once",
-    });
-    stuckAllowed();
-  };
-
-  /**
-   * A block of layer 1's own: CC Safety Net or our rules, not a secret going
-   * out and not what is never allowed. What a plan names may lift it (ADR-049).
-   */
-  const ownBlock = (v: PolicyVerdict, policy: PolicyContext) =>
-    v.verdict === "deny" &&
-    v.drift === null &&
-    policy.layer1?.verdict === "block" &&
-    !(policy.layer1.rule ?? "").startsWith("secret.");
-
-  /**
-   * A change on one of the job's servers that its plan names (ADR-049): it
-   * removes only paths, a compose project, volumes or containers, each named
-   * in the plan. The server, the plan's words that name it, and whether I
-   * approved the plan; null for anything else.
-   */
-  const plannedChange = (command: string) => {
-    if (!servers.length) return null;
-    const ssh = parseSsh(
-      command,
-      servers.map((s) => s.alias),
-    );
-    if (!ssh?.whole) return null;
-    const targets = removalTargets(ssh.remote);
-    if (!targets) return null;
-    const plan = jobPlan(d.db, d.silk, job.id);
-    const named = targets.map((t) => namedIn(t, plan.text));
-    if (named.some((x) => !x)) return null;
-    return {
-      server: servers.find((s) => s.alias === ssh.alias) as JobServerRef,
-      remote: ssh.remote.trim(),
-      quote: (named[0] as string).replace(/^[-*\s]+/, "").slice(0, 200),
-      approved: plan.approved,
-    };
-  };
-
-  /**
-   * A block of layer 1 on a change the plan names (ADR-049): one specific
-   * approval, at once. Allowed, the exact command runs once; kept blocked,
-   * the agent is told so and it isn't asked again in this attempt.
-   */
-  const askPlanned = async (
-    r: PermissionRequest,
-    p: NonNullable<ReturnType<typeof plannedChange>>,
-    reason: string,
-  ): Promise<PermissionDecision> => {
-    const where = p.approved ? "in the plan you approved" : "in the job's plan";
-    const prompt = `${leg.legName} wants to run \`${p.remote}\` on ${p.server.name} (${where}: “${p.quote}”). Run it?`;
-    const itemId = d.inbox.open({
-      kind: "approval",
-      jobId: job.id,
-      taskId,
-      raisedBy: { legId: leg.legId },
-      title: `${leg.legName} wants to run \`${p.remote.slice(0, 80)}\` on ${p.server.name}, as the plan says`,
-      detail: `${prompt}\n\nOraknid's rules block it on their own (${reason}); the plan names what it removes, so it is yours to allow. Task: ${task.title}.${p.server.production ? ` ${p.server.name} is production.` : ""}\n\n${fence(r.command ?? "")}\n\n**If you keep it blocked:** ${leg.legName} is told so and finds another way, or says the task can't be done without it.`,
-      options: [ALLOW, KEEP_BLOCKED],
-      defaultOption: null,
-      questions: [
-        choiceQuestion(prompt, [
-          { label: ALLOW, detail: "It runs once, exactly as written; the task goes on." },
-          {
-            label: KEEP_BLOCKED,
-            detail: `${leg.legName} goes another way, or says it can't be done without it.`,
-          },
-        ]),
-      ],
-    });
-    raised(itemId);
-    event("task.waiting", { itemId, reason: `the plan names it: ${reason}` });
-    waitingOnOwner++;
-    let answer: string;
-    try {
-      answer = await waitForAnswer(d.inbox, d.bus, itemId, signal);
-    } catch {
-      return { allow: false, message: "Oraknid is pausing this session." };
-    } finally {
-      waitingOnOwner--;
-    }
-    observed.lastActivityAt = now();
-    const action = r.command ?? r.tool;
-    if (answer === ALLOW) {
-      logDecision(d.bus, job.id, {
-        taskId,
-        tool: r.tool,
-        action,
-        verdict: "allow",
-        layer: "owner",
-        reason: `allowed once: ${where}`,
-      });
-      stuckAllowed();
-      return { allow: true, why: `owner: allowed once, ${where}` };
-    }
-    keptBlocked.add(plainOf(action));
-    logDecision(d.bus, job.id, {
-      taskId,
-      tool: r.tool,
-      action,
-      verdict: "block",
-      layer: "owner",
-      reason: "kept blocked, though the plan names it",
-    });
-    return {
-      allow: false,
-      message: `${blockedMessage(reason)} The owner was asked and keeps it blocked: find another way, or say the task can't be done without it and why, then stop.`,
-    };
-  };
-
-  const onPermission = async (
-    r: PermissionRequest,
-    /** What Oraknid's own tool made of this very call (ADR-038). */
-    judged?: McpDeclaration,
-  ): Promise<PermissionDecision> => {
-    // The broker judges every call to a job's tool: the Leg's own ask for it passes (ADR-021).
-    if (isBrokered(r.tool, brokered)) return { allow: true };
-    // Stuck on its own auto mode's refusals: asked now, with this action held (bug 7).
-    const byLeg = takeStuckByLeg();
-    if (byLeg) return askWhenStuck(r, byLeg, { allow: true });
-    if (r.command) {
-      // What I let run once runs (ADR-053); never what is never allowed.
-      if (allowOnce.length) {
-        const { first } = await rulesVerdict(r, judged);
-        if (!(first.verdict === "deny" && first.drift) && takeAllowOnce(r.command)) {
-          ranOnce(r);
-          return { allow: true, why: "owner: let it run once" };
-        }
-      }
-      // What the PreToolUse hook sent here to be asked of me (ADR-053).
-      const fromHook = hookAsks.get(plainOf(r.command));
-      if (fromHook) {
-        hookAsks.delete(plainOf(r.command));
-        return fromHook();
-      }
-    }
-    const { v, layer, policy } = await judgeRequest(r, judged);
-    const action = r.command ?? r.path ?? r.tool;
-    // Every decision but a plain read is in the audit log, with its layer and reason (ADR-053).
-    if (r.command || v.verdict !== "allow" || !READS.has(r.tool))
-      logDecision(d.bus, job.id, {
-        taskId,
-        tool: r.tool,
-        action,
-        verdict: v.verdict === "deny" ? "block" : v.verdict,
-        layer,
-        reason: v.reason,
-      });
-    if (v.verdict === "allow") {
-      stuckAllowed();
-      return { allow: true, why: `${layer}: ${v.reason}` };
-    }
-    if (v.verdict === "deny") {
-      // A forbidden action counts against the Leg (D7); Oraknid's own check is only answered.
-      if (v.drift) observed.forbidden.push(`tried \`${r.command ?? r.tool}\` (${v.reason})`);
-      event("task.refused", {
-        command: (r.command ?? r.tool).slice(0, 300),
-        reason: v.reason,
-        drift: v.drift,
-        layer,
-      });
-      const refused: PermissionDecision = {
-        allow: false,
-        message: v.message ?? `Not allowed: ${v.reason}.`,
-        why: `${layer}: ${v.reason}`,
-      };
-      if (v.drift === null && layer !== "owner" && r.command) {
-        blockedHere.push({ command: r.command, reason: v.reason });
-        // A change the plan names is asked of me at once (ADR-049).
-        const planned =
-          policy && ownBlock(v, policy) && !keptBlocked.has(plainOf(r.command))
-            ? plannedChange(r.command)
-            : null;
-        if (planned) return askPlanned(r, planned, v.reason);
-      }
-      // Stuck on blocks (3 in a row, 20 in the task): The Eye asks me, with what was blocked and why.
-      if (v.drift === null && layer !== "owner") {
-        const stuckNow = stuckBlocked({
-          action: (r.command ? plainOf(r.command) : r.tool).slice(0, 200),
-          reason: v.reason,
-          layer: layer === "judge" ? 2 : 1,
-        });
-        if (stuckNow) return askWhenStuck(r, stuckNow, refused);
-      }
-      return refused;
-    }
-    // Asked once; trying the same refused action again is a gate bypass attempt (D8).
-    const key = `${r.tool}:${r.command ?? r.path}`;
-    if (deniedGates.has(key)) {
-      observed.gateBypass.push(`tried \`${r.command ?? r.tool}\` again after I refused it`);
-      return { allow: false, message: "I already refused that." };
-    }
-    const what = r.command ? `run \`${r.command.slice(0, 80)}\`` : `use ${r.tool}`;
-    // "Approve all like this": a gate becomes a waiver; a command, its shape at Careful (ADR-053).
-    const shape = !v.gated && r.command ? await shapeRuleFor(r.command) : null;
-    const itemId = d.inbox.open({
-      kind: "approval",
-      jobId: job.id,
-      taskId,
-      raisedBy: { legId: leg.legId },
-      title: `${leg.legName} wants to ${what}`,
-      detail: `Task: ${task.title}\nWhy it asks: ${v.reason}.\n\n${r.command ? fence(r.command) : fence(JSON.stringify(r.input, null, 2), "json")}\n\n**If you deny it:** ${leg.legName} is told no and tries another way; if the task can't be done without it, it keeps going wrong and I ask you what to do.`,
-      options: ["Approve", "Deny", ALL_LIKE_THIS],
-      defaultOption: null,
-      // What each answer does (ADR-045).
-      questions: [
-        choiceQuestion(`Let ${leg.legName} ${what}?`, [
-          { label: "Approve", detail: "It runs this once; the task goes on." },
-          {
-            label: "Deny",
-            detail: `${leg.legName} is told no and tries another way; if it can't, I ask you what to do.`,
-          },
-          {
-            label: ALL_LIKE_THIS,
-            detail: v.gated
-              ? `Every ${v.gated} in this job runs without asking from now on.`
-              : shape
-                ? `Every command shaped like this one (${shape.slice("shape:".length)}) runs without asking in this job.`
-                : `Every command using ${(r.command ? [...new Set(programsOf(r.command))].join(", ") : r.tool) || "this"} runs without asking in this job.`,
-          },
-        ]),
-      ],
-    });
-    raised(itemId);
-    event("task.waiting", { itemId, reason: v.reason });
-    let answer: string;
-    waitingOnOwner++;
-    try {
-      answer = await waitForAnswer(d.inbox, d.bus, itemId, signal);
-    } catch {
-      // Paused or stopped while waiting: a permission hook always answers; the attempt stops anyway.
-      return { allow: false, message: "Oraknid is pausing this session." };
-    } finally {
-      waitingOnOwner--;
-    }
-    observed.lastActivityAt = now();
-    if (answer === ALL_LIKE_THIS) {
-      approveAllLikeThis(
-        d.db,
-        d.bus,
-        job.id,
-        v.gated ? { gated: v.gated } : { allowRule: shape ?? allowRuleFor(r.command ?? r.tool) },
-      );
-      logDecision(d.bus, job.id, {
-        taskId,
-        tool: r.tool,
-        action,
-        verdict: "allow",
-        layer: "owner",
-        reason: "approved, with all like it",
-      });
-      stuckAllowed();
-      return { allow: true };
-    }
-    if (answer === "Approve") {
-      logDecision(d.bus, job.id, {
-        taskId,
-        tool: r.tool,
-        action,
-        verdict: "allow",
-        layer: "owner",
-        reason: "approved",
-      });
-      stuckAllowed();
-      return { allow: true };
-    }
-    logDecision(d.bus, job.id, {
-      taskId,
-      tool: r.tool,
-      action,
-      verdict: "block",
-      layer: "owner",
-      reason: "denied",
-    });
-    deniedGates.add(key);
-    rememberForTask(d.db, taskId, { denied: [...deniedGates] });
-    // The consequence, said in the project's conversation (ADR-045).
-    addMessage(
-      d,
-      job.id,
-      "eye",
-      `You said no to ${leg.legName}'s request to ${what} (“${task.title}”). I told it, and it tries another way; if the task can't be done without it, I'll ask you what to do.`,
-      {
-        intent: "report",
-        did: [],
-        silkIds: [],
-        taskIds: [taskId],
-        jobId: null,
-        report: { kind: "denied", taskId, facts: [], todo: [] },
-      },
-    );
-    return {
-      allow: false,
-      message:
-        "The owner denied it. Don't try it again: find another way to finish the task, or, if it can't be done without it, say so and why, then stop.",
-    };
-  };
-
-  /**
-   * In the Leg's own auto mode (Claude Code, ADR-053): Oraknid's rules before
-   * every tool. A block is denied with its reason, a production change or
-   * what is never automatic asks (through onPermission), the rest is left
-   * to the Leg's own classifier.
-   */
-  const onPreToolUse = async (r: PermissionRequest): Promise<PreToolDecision> => {
-    if (isBrokered(r.tool, brokered)) return null;
-    // Stuck on its own auto mode's refusals: this action waits for my answer there (bug 7).
-    if (r.command && stuckByLeg) {
-      const byLeg = takeStuckByLeg() as NonNullable<typeof stuckByLeg>;
-      hookAsks.set(plainOf(r.command), () => askWhenStuck(r, byLeg, { allow: true }));
-      return { decision: "ask" };
-    }
-    const { first, policy } = await rulesVerdict(r);
-    // What I let run once runs, Claude Code's classifier not asked (ADR-053); never what is
-    // never allowed.
-    if (r.command && !(first.verdict === "deny" && first.drift) && takeAllowOnce(r.command)) {
-      ranOnce(r);
-      return { decision: "allow", reason: "The owner let it run once." };
-    }
-    if (first.verdict === "deny") {
-      if (first.drift)
-        observed.forbidden.push(`tried \`${r.command ?? r.tool}\` (${first.reason})`);
-      logDecision(d.bus, job.id, {
-        taskId,
-        tool: r.tool,
-        action: r.command ?? r.path ?? r.tool,
-        verdict: "block",
-        layer: "rules",
-        reason: first.reason,
-      });
-      event("task.refused", {
-        command: (r.command ?? r.tool).slice(0, 300),
-        reason: first.reason,
-        drift: first.drift,
-        layer: "rules",
-      });
-      const message = first.message ?? `Not allowed: ${first.reason}.`;
-      if (first.drift === null) {
-        // Asked of me through canUseTool, where the Leg can wait for my answer: the hook can't.
-        const key = r.command ? plainOf(r.command) : null;
-        if (r.command && key) {
-          blockedHere.push({ command: r.command, reason: first.reason });
-          // A change the plan names: one specific approval, at once (ADR-049).
-          const planned =
-            ownBlock(first, policy) && !keptBlocked.has(key) ? plannedChange(r.command) : null;
-          if (planned) {
-            hookAsks.set(key, () => askPlanned(r, planned, first.reason));
-            return { decision: "ask" };
-          }
-        }
-        // Blocks here count toward the stuck rule like any other; stuck, I'm asked (ADR-053).
-        const stuckNow = stuckBlocked({
-          action: (r.command ? plainOf(r.command) : r.tool).slice(0, 200),
-          reason: first.reason,
-          layer: 1,
-        });
-        if (stuckNow && key) {
-          const refused: PermissionDecision = {
-            allow: false,
-            message,
-            why: `rules: ${first.reason}`,
-          };
-          hookAsks.set(key, () => askWhenStuck(r, stuckNow, refused));
-          return { decision: "ask" };
-        }
-      }
-      return { decision: "deny", message };
-    }
-    if (first.verdict === "ask") return { decision: "ask" };
-    if (r.command && first.verdict === "allow")
-      logDecision(d.bus, job.id, {
-        taskId,
-        tool: r.tool,
-        action: r.command,
-        verdict: "allow",
-        layer: "rules",
-        reason: first.reason,
-      });
-    return null;
-  };
-
-  /**
-   * The agent is stuck on blocks (ADR-053): I'm asked, with the blocked
-   * actions and their reasons. The Leg waits: "Let it run this one" runs
-   * the last one; "Keep it blocked" tells it to go another way.
-   */
-  const askWhenStuck = async (
-    r: PermissionRequest,
-    s: { why: string; blocks: Blocked[] },
-    refused: PermissionDecision,
-  ): Promise<PermissionDecision> => {
-    const by = (l: Blocked["layer"]) =>
-      l === 1 ? "rules" : l === 2 ? "judge" : `${leg.legName}'s own auto mode`;
-    const list = s.blocks
-      .slice(-10)
-      .map(
-        (b) => `- \`${b.action.replace(/`/g, "'").slice(0, 160)}\` — ${b.reason} (${by(b.layer)})`,
-      )
-      .join("\n");
-    const itemId = d.inbox.open({
-      kind: "approval",
-      jobId: job.id,
-      taskId,
-      raisedBy: { legId: leg.legId },
-      title: `${leg.legName} is stuck on blocked actions in “${task.title}”`,
-      detail: `${s.why}, so I'm asking you. What was blocked, and why:\n\n${list}\n\nThe last one:\n\n${r.command ? fence(r.command) : fence(JSON.stringify(r.input, null, 2), "json")}\n\n**If you keep it blocked:** ${leg.legName} is told to find another way, or to say the task can't be done without it.`,
-      options: [LET_IT_RUN, KEEP_BLOCKED],
-      defaultOption: null,
-      questions: [
-        choiceQuestion(`Let ${leg.legName} run the last one?`, [
-          {
-            label: LET_IT_RUN,
-            detail: "It runs once, this time; the rules and the judge stay as they are.",
-          },
-          {
-            label: KEEP_BLOCKED,
-            detail: `${leg.legName} goes another way, or says it can't be done without it.`,
-          },
-        ]),
-      ],
-    });
-    raised(itemId);
-    event("task.waiting", { itemId, reason: s.why });
-    waitingOnOwner++;
-    let answer: string;
-    try {
-      answer = await waitForAnswer(d.inbox, d.bus, itemId, signal);
-    } catch {
-      return { allow: false, message: "Oraknid is pausing this session." };
-    } finally {
-      waitingOnOwner--;
-    }
-    observed.lastActivityAt = now();
-    const action = r.command ?? r.path ?? r.tool;
-    if (answer === LET_IT_RUN) {
-      logDecision(d.bus, job.id, {
-        taskId,
-        tool: r.tool,
-        action,
-        verdict: "allow",
-        layer: "owner",
-        reason: "let it run, stuck on blocks",
-      });
-      stuckAllowed();
-      return { allow: true };
-    }
-    logDecision(d.bus, job.id, {
-      taskId,
-      tool: r.tool,
-      action,
-      verdict: "block",
-      layer: "owner",
-      reason: "kept blocked, stuck on blocks",
-    });
-    return {
-      allow: false,
-      message: `${refused.allow ? "" : refused.message} The owner looked at what was blocked and keeps it so: find another way, or say the task can't be done without it and why, then stop.`,
-    };
-  };
-
+      forbidden: (what) => observed.forbidden.push(what),
+      gateBypass: (what) => observed.gateBypass.push(what),
+      event,
+    },
+  });
+  /** The Leg's permission prompt. */
+  const onPermission = async (r: PermissionRequest) =>
+    asPermission(await gate.decide({ source: "prompt", request: r }));
+  /** Claude Code's PreToolUse hook, in its own auto mode (ADR-053). */
+  const onPreToolUse = async (r: PermissionRequest) =>
+    asPreTool(await gate.decide({ source: "hook", request: r }));
   const pack = (): string => {
     const window = leg.profile.contextWindow ?? 200_000;
     const built = buildContextPack({
@@ -1438,14 +654,17 @@ export async function runAttempt(
               };
           }
           const judged = d.tools?.registry.judge(tool, { jobId: job.id }, name, args);
-          const v = await onPermission(
-            {
-              tool: `mcp__${tool.name}__${name}`,
-              input: args,
-              command: null,
-              path: null,
-            },
-            judged,
+          const v = asPermission(
+            await gate.decide({
+              source: "mcp",
+              request: {
+                tool: `mcp__${tool.name}__${name}`,
+                input: args,
+                command: null,
+                path: null,
+              },
+              ...(judged !== undefined ? { judged } : {}),
+            }),
           );
           // Work on the project's linked repo passes without asking: said in the job's events (ADR-038).
           if (v.allow && typeof judged === "object")
@@ -1480,7 +699,9 @@ export async function runAttempt(
           });
           // What came from outside makes the task untrusted (BR-15).
           if (o.allowed && tool.untrusted)
-            markUntrusted(`read from ${tool.name} (${name}): gated actions ask me from now on`);
+            gate.markUntrusted(
+              `read from ${tool.name} (${name}): gated actions ask me from now on`,
+            );
         },
       },
       { jobId: job.id },
@@ -1494,8 +715,6 @@ export async function runAttempt(
    */
   let serversText = "";
   let serversReady = false;
-  /** The job's servers as its commands name them, production marked (ADR-049). */
-  const servers: JobServerRef[] = [];
   const prepareServers = async () => {
     if (serversReady) return;
     serversReady = true;
@@ -1565,20 +784,15 @@ export async function runAttempt(
     return runVerify(commands, ws.cwd, plan, {
       signal,
       ...(timeoutMs ? { timeoutMs } : {}),
-      refuse: (command) =>
-        verifyRefusal(
-          decide({ tool: "Bash", command, path: null }, policyFor(d.db, job.id, ws.cwd)),
-        ),
+      // A check's command goes through the Gate too, as Oraknid's own (ADR-056 §3).
+      refuse: (command) => gate.check(command, "local"),
       builtin: async (command) =>
         // A check on one of the job's servers runs there, over Oraknid's connection (ADR-049).
         (servers.length && d.servers
           ? await runServerCheck(command, {
               servers,
               run: (id, remote) => (d.servers as Servers).run(id, remote),
-              refuse: (c) => {
-                const v = serverVerdict(c, servers, policyFor(d.db, job.id, ws.cwd));
-                return v ? verifyRefusal(v) : null;
-              },
+              refuse: (c) => gate.check(c, "server"),
             })
           : null) ??
         runBuiltinCheck(command, {
@@ -2013,6 +1227,27 @@ export async function runAttempt(
 
   /** What the agent said it needs of me, asked once each in this attempt. */
   const ownerAsked = new Set<string>();
+  /** A question of mine said in the project's conversation too (ADR-045). */
+  const conversationAsks = (
+    text: string,
+    questions: ReturnType<typeof choiceQuestion>[],
+    itemId: string,
+  ) =>
+    addMessage(
+      d,
+      job.id,
+      "eye",
+      text,
+      {
+        intent: "report",
+        did: [],
+        silkIds: [],
+        taskIds: [taskId],
+        jobId: null,
+        report: { kind: "waiting", taskId, facts: [], todo: [] },
+      },
+      { questions, itemId },
+    );
 
   /**
    * The agent ended its turn saying it can't finish without me (blocked by a
@@ -2027,7 +1262,7 @@ export async function runAttempt(
     const remoteOf = (command: string) =>
       servers.length
         ? parseSsh(
-            plainOf(command),
+            gate.plain(command),
             servers.map((s) => s.alias),
           )
         : null;
@@ -2035,13 +1270,14 @@ export async function runAttempt(
       const ssh = remoteOf(b.command);
       return report.includes(b.command) || (!!ssh?.remote && report.includes(ssh.remote.trim()));
     };
+    const blockedHere = gate.blocked();
     const blocked = [...blockedHere].reverse().find(names) ?? blockedHere.at(-1) ?? null;
     const worded =
       /(?:owner action (?:is )?required|the owner (?:must|needs to|has to|should) run|you (?:can|could|need to) run)\s*:?\s*`?([^`\n]+?)`?\s*(?:$|\n)/i.exec(
         report,
       )?.[1] ?? null;
     const command = blocked?.command ?? worded?.trim() ?? null;
-    const key = command ? plainOf(command) : `said:${said}`;
+    const key = command ? gate.plain(command) : `said:${said}`;
     if (ownerAsked.has(key)) return false;
     ownerAsked.add(key);
     const ssh = command ? remoteOf(command) : null;
@@ -2088,56 +1324,31 @@ export async function runAttempt(
       ),
     ];
     const options = questions[0]?.options.map((o) => o.label) ?? [];
-    const itemId = d.inbox.open({
-      kind: "question",
-      jobId: job.id,
-      taskId,
-      raisedBy: "eye",
-      title: command
-        ? `${leg.legName} needs \`${shown.slice(0, 100)} for “${task.title}”`
-        : `${leg.legName} needs you for “${task.title}”`,
-      detail: `${prompt}\n\nIts words: “${said}”\n\nThe check that fails:\n${fence(failed.command)}\n${fence(failed.output.slice(-1500))}${command ? `\n\nThe command:\n${fence(command)}` : ""}`,
-      options,
-      defaultOption: null,
-      questions,
-    });
-    // Asked in the project's conversation too (ADR-045); answering there answers the item.
-    addMessage(
-      d,
-      job.id,
-      "eye",
-      prompt,
+    const { answer } = (await gate.askOwner(
+      "agent-needs",
       {
-        intent: "report",
-        did: [],
-        silkIds: [],
-        taskIds: [taskId],
-        jobId: null,
-        report: { kind: "waiting", taskId, facts: [], todo: [] },
-      },
-      { questions, itemId },
-    );
-    raised(itemId);
-    event("task.waiting", { itemId, reason: `the agent needs the owner: ${said.slice(0, 200)}` });
-    waitingOnOwner++;
-    let answer: string;
-    try {
-      answer = await waitForAnswer(d.inbox, d.bus, itemId, signal);
-    } finally {
-      waitingOnOwner--;
-    }
-    observed.lastActivityAt = now();
-    if (answer === ALLOW && command) {
-      allowOnce.push(plainOf(command));
-      rememberForTask(d.db, taskId, { allowOnce });
-      logDecision(d.bus, job.id, {
+        kind: "question",
+        jobId: job.id,
         taskId,
-        tool: "Bash",
-        action: command,
-        verdict: "allow",
-        layer: "owner",
-        reason: "allowed once: the agent said it can't finish without it",
-      });
+        raisedBy: "eye",
+        title: command
+          ? `${leg.legName} needs \`${shown.slice(0, 100)} for “${task.title}”`
+          : `${leg.legName} needs you for “${task.title}”`,
+        detail: `${prompt}\n\nIts words: “${said}”\n\nThe check that fails:\n${fence(failed.command)}\n${fence(failed.output.slice(-1500))}${command ? `\n\nThe command:\n${fence(command)}` : ""}`,
+        options,
+        defaultOption: null,
+        questions,
+      },
+      {
+        reason: `the agent needs the owner: ${said.slice(0, 200)}`,
+        // Asked in the project's conversation too (ADR-045); answering there answers the item.
+        opened: (itemId) => conversationAsks(prompt, questions, itemId),
+        throwOnStop: true,
+      },
+    )) as { answer: string };
+    if (answer === ALLOW && command) {
+      // A grant, used by the first run of it (ADR-056 §3).
+      gate.grantOnce(command, "allowed once: the agent said it can't finish without it");
       // What came of this turn isn't held against the agent: it was waiting on me.
       observed.falseClaim = null;
       observed.verifyFailures.pop();
@@ -2187,36 +1398,33 @@ export async function runAttempt(
       folder: ws.cwd,
       branch: jobRow?.branch ?? null,
     });
-    const itemId = d.inbox.open({
-      kind: "question",
-      jobId: job.id,
-      taskId,
-      raisedBy: "eye",
-      title: asking.title,
-      detail: asking.detail,
-      options: [],
-      defaultOption: null,
-      questions: asking.questions,
-    });
-    // Asked in the project's conversation too (ADR-045); answering there answers the item.
-    addMessage(
-      d,
-      job.id,
-      "eye",
-      `“${task.title}” keeps going wrong on ${leg.legName}: ${drift.evidence}. What should I do?`,
-      {
-        intent: "report",
-        did: [],
-        silkIds: [],
-        taskIds: [taskId],
-        jobId: null,
-        report: { kind: "waiting", taskId, facts: [], todo: [] },
-      },
-      { questions: asking.questions, itemId },
-    );
     // Withdrawn if the attempt stops before I answer (Audit 1 → D1-07).
-    raised(itemId);
-    const text = await waitForAnswer(d.inbox, d.bus, itemId, signal);
+    const { itemId, answer: text } = (await gate.askOwner(
+      "keeps-going-wrong",
+      {
+        kind: "question",
+        jobId: job.id,
+        taskId,
+        raisedBy: "eye",
+        title: asking.title,
+        detail: asking.detail,
+        options: [],
+        defaultOption: null,
+        questions: asking.questions,
+      },
+      {
+        // Asked in the project's conversation too (ADR-045); answering there answers the item.
+        opened: (id) =>
+          conversationAsks(
+            `“${task.title}” keeps going wrong on ${leg.legName}: ${drift.evidence}. What should I do?`,
+            asking.questions,
+            id,
+          ),
+        // The session is closed: nothing to watch for a stall meanwhile.
+        waits: false,
+        throwOnStop: true,
+      },
+    )) as { itemId: string; answer: string };
     const answered = d.inbox.get(itemId);
     const choice = readKeepsGoingWrong(text, answered?.answers ?? null);
     // My choices, not the model's failures (bug 11).
@@ -2350,8 +1558,7 @@ export async function runAttempt(
     learn = true,
   ) => {
     release();
-    for (const id of asked) d.inbox.withdraw(id);
-    if (asked.length) rememberForTask(d.db, taskId, { asked: [] });
+    gate.withdrawAsked();
     d.db
       .update(attempts)
       .set({ endedAt: now(), outcome, escalations })
@@ -2396,7 +1603,7 @@ export async function runAttempt(
       const end = await nextTurnEnd(session, signal, d.stallCheckMs ?? 30_000, watch);
       if (!end) {
         // No turn end yet: look for a stall or burn. Waiting for me is neither.
-        if (waitingOnOwner > 0) {
+        if (gate.waiting() > 0) {
           observed.lastActivityAt = now();
           continue;
         }
@@ -2542,7 +1749,7 @@ export async function runAttempt(
           // It says it can't finish without me (a guard blocked it, only I can do or allow it):
           // that is asked, specifically, before any ladder or "keeps going wrong" (ADR-053). So is
           // being stuck on its own auto mode's refusals with nothing after them (bug 7).
-          const byLeg = takeStuckByLeg();
+          const byLeg = gate.takeStuck();
           const said = cutShort
             ? null
             : (saysOwnerNeeded(end.text) ??
@@ -2748,16 +1955,6 @@ export async function runAttempt(
   }
 }
 
-/**
- * A Leg's name for a call to one of Oraknid's bridges: `mcp__<server>__<tool>`
- * (Claude Code) or `<server>_<tool>` (OpenCode, which may turn `-` into `_`).
- */
-export function isBrokered(tool: string, servers: string[]): boolean {
-  const norm = (x: string) => x.replace(/[^A-Za-z0-9_]/g, "_");
-  const t = norm(tool);
-  return servers.some((s) => t.startsWith(`mcp__${norm(s)}__`) || t.startsWith(`${norm(s)}_`));
-}
-
 /** What every Leg is told about git: the folder stays a worktree, the repo's part is Oraknid's. */
 const GIT_TEXT = `# Git
 
@@ -2798,11 +1995,6 @@ async function safeDiffStat(ws: { tree: WorkTree }, since: string): Promise<stri
   } catch {
     return "";
   }
-}
-
-/** A job that ended keeps nothing in memory here (Audit 1 → Q1-19; bug 6): its tasks' verdicts and counts go. */
-export function forgetJob(jobId: string) {
-  forgetJobVerdicts(jobId);
 }
 
 function shouldRotate(u: UsageSnapshot | null, at: number): boolean {
