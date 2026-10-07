@@ -18,10 +18,14 @@ terminal alone.
 ## Milestones
 
 ### M15.1 — What sank the two jobs
-- [ ] A check is run once before it judges; a broken check (syntax, quoting, a missing tool) is repaired, never counted against an agent; an agent's evidence that a check is broken gets it reviewed
-- [ ] Unusable agents never routed to (out of quota, rate-limited, paused, failing to start, deprecated model), the reason read from their own words and kept until it clears; a deprecated model replaced by the one named
-- [ ] A blocked job says the real reason and what to do ("Claude is paused in Oraknid: unpause it", "Antigravity is out of quota until …")
-- [ ] Scope drift ignores Oraknid's own files (`notes/handoff.md`, `.oraknid/`)
+- [x] A check is run once before it judges; a broken check (syntax, quoting, a missing tool) is repaired, never counted against an agent; an agent's evidence that a check is broken gets it reviewed
+  Tested: core `harness.test.ts` (`brokenCheckHint`: a `test` broken by its quoting, an unterminated quote, a missing tool, a program refusing its options, against a missing file or a failing test that are the work's; `saysCheckBroken` on the misahaty agent's words); `eye.test.ts` → agents that deliver: a check with an unterminated quote is repaired before the first session starts (`task.checks-tried`, `task.check-reviewed` with `before`), one attempt, one turn; an agent saying "Oraknid's check is wrong" gets it repaired, no climb, one attempt.
+- [x] Unusable agents never routed to (out of quota, rate-limited, paused, failing to start, deprecated model), the reason read from their own words and kept until it clears; a deprecated model replaced by the one named
+  Tested: core `harness.test.ts` (`usageLimitOf`/`resetsAtFrom`: "Resets in 51h49m11s", "try again in 2 hours and 5 minutes", an ISO time, a `reset_at`; `deprecationOf`); Antigravity's `quotaError` keeps the 51 hours; `simple-work.test.ts`: an agent saying "Individual quota reached … Resets in 51h49m11s" is rate-limited until then, its attempt `unavailable`, the next route says so; "Model mimo-v2.5-free has been deprecated. Use mimo-v2.6-flash-free instead." hides it and adds mimo-v2.6-flash-free, never chosen again. A Leg that fails to start rests 2 min (`notTheTask`), not tested end to end.
+- [x] A blocked job says the real reason and what to do ("Claude is paused in Oraknid: unpause it", "Antigravity is out of quota until …")
+  Tested: `eye.test.ts` → a paused Leg: "No Leg can take "Write hello.sh": Claude A is paused in Oraknid: unpause it on its card (Legs) to go on. Unpause one to go on.", no "quota", and the conversation says to unpause it; the quota block still says "out of quota until …".
+- [x] Scope drift ignores Oraknid's own files (`notes/handoff.md`, `.oraknid/`)
+  Tested: core `harness.test.ts` (`oraknidOwn`, `detect` sees only README.md); `eye.test.ts`: a task that writes `notes/handoff.md` beside its work has no drift, one attempt.
 
 ### M15.2 — Auto mode ([[ADR-053-Auto-Mode]])
 - [ ] The rule layer from open-source parts: allow at once, block at once, judge the rest; read-only commands over ssh recognised
@@ -30,12 +34,18 @@ terminal alone.
 - [ ] Approvals per command gone from the default autonomy; one approval of a server job's plan, production per change
 
 ### M15.3 — Whole goals, checks in the loop, the ladder ([[ADR-052-A-Harness-For-Any-Model]] §1–3, §5)
-- [ ] The planner makes substantial, independent tasks; chains of crumbs merged; a goal one agent can do is one task
-- [ ] The agent gets the goal, the acceptance criteria and the check commands, runs them itself; Claude Code's Stop hook
-- [ ] Retries resume the session with what failed
-- [ ] The ladder: rungs per kind of work, one failure moves the task up with a handoff, the top rung the strongest allowed, a Claude share per job
-- [ ] The Eye's own calls on the strongest model allowed for it
-- [ ] One interview round when the spec is complete
+- [x] The planner makes substantial, independent tasks; chains of crumbs merged; a goal one agent can do is one task
+  Tested: core `harness.test.ts` → whole goals: the misahaty removal's five crumbs become one task (steps numbered, checks and scopes joined, said in the notes); an API, a web app and e2e tests stay apart; two small steps stay two; what came after the chain depends on the merged task. The planner's rules say it with examples (prompt only, not testable without a model).
+- [x] The agent gets the goal, the acceptance criteria and the check commands, runs them itself; Claude Code's Stop hook
+  Tested: `claude-code/adapter.test.ts`: the Stop hook blocks the end with the failing check three times, then lets it end; no hook without checks. The context pack and the first message ask the agent to run its checks itself (`eye.test.ts` → resumed session's message). Other Legs: prompt only.
+- [x] Retries resume the session with what failed
+  Tested: `eye.test.ts` → a task paused mid-turn and resumed continues the same model's native session (`resumeFrom`), told why it stopped; a pause is no longer recorded against the model. Climbing to another model starts fresh with the handoff and what failed (`eye.test.ts` → the ladder).
+- [x] The ladder: rungs per kind of work, one failure moves the task up with a handoff, the top rung the strongest allowed, a Claude share per job
+  Tested: core `harness.test.ts` → the ladder (rungs per kind; after a failure only higher rungs; at the top the strongest again; the Claude share); `eye.test.ts`: a failing first turn climbs Haiku → Sonnet → Opus (`task.climbing`), each told what failed, then Opus corrects in its session; a check The Eye keeps is reviewed on each rung. Settings → Jobs at once → Claude share (`settings.claudeShare`), and a job's `budget.claudeShare`.
+- [x] The Eye's own calls on the strongest model allowed for it
+  Tested: `brain.test.ts`: a check repaired and a review go to Opus, not Sonnet; planning and the interview already did. Resting models are left out of The Eye's choice.
+- [x] One interview round when the spec is complete
+  Tested: core `specComplete`; `eye.test.ts`: a goal with a feature list is asked one round, then only played back (rounds 1, final), one inbox round.
 
 ### M15.4 — Oraknid's own agent ([[ADR-052-A-Harness-For-Any-Model]] §6)
 - [ ] The oraknid-agent Leg: a tool loop over any OpenAI-compatible model, Claude-Code-like tools, compaction, checks on "done"

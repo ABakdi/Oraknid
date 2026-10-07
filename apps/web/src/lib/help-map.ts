@@ -1000,6 +1000,14 @@ export const CONTROLS: HelpControl[] = [
     where: "Settings → Eye & jobs → Jobs at once",
   },
   {
+    id: "settings.claude-share",
+    page: S,
+    tab: "work",
+    name: "Claude share of a job",
+    does: "How much of a job may run on Claude when its tasks climb the ladder; as needed by default.",
+    where: "Settings → Eye & jobs → Jobs at once",
+  },
+  {
     id: "settings.lock",
     page: S,
     tab: "security",

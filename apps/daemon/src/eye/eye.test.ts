@@ -601,7 +601,8 @@ describe("The Eye, end to end", () => {
           : good(t),
       { legs: ["Claude A", "Claude B"], sameProviderFallback: true },
     );
-    const job = await until(api, id, ["completed", "blocked"]);
+    // Slow under a loaded machine (each task's checks are tried first): more time to finish.
+    const job = await until(api, id, ["completed", "blocked"], 20_000);
     expect(job.state).toBe("completed");
     const a = await api.legs.get({ id: legIds[0] as string });
     expect(a).toMatchObject({ health: "rate-limited", limitedUntil: resetsAt });
@@ -2262,10 +2263,11 @@ describe("after a crash, the next attempt knows where the last one stopped (Audi
         ? [{ run: "echo trying >/dev/null" }, { hang: true }]
         : good(t),
     );
+    // Its session is under way (its checks were tried first): the command ran.
     const end = Date.now() + 5000;
-    while ((await api.jobs.get({ id })).tasks[0]?.state !== "running" && Date.now() < end)
+    while (!leg.log.some((t) => task(t) === "Write hello.sh") && Date.now() < end)
       await new Promise((r) => setTimeout(r, 20));
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 150));
     await api.jobs.pause({ id });
     // As after a crash: the attempt was cut short and no handoff was written.
     d.db
@@ -2284,13 +2286,14 @@ describe("after a crash, the next attempt knows where the last one stopped (Audi
 describe("a task's diff (Phase 2 → M2.0)", () => {
   it("shows a done task's own commit, and a running task's work so far", async () => {
     let hang = true;
-    const { api, id } = await eye((t) =>
+    const { api, id, leg } = await eye((t) =>
       task(t) === "Test hello.sh" && hang
         ? [{ write: "test.sh", content: "draft\n" }, { hang: true }]
         : good(t),
     );
+    // Its session is under way (its checks were tried first).
     const end = Date.now() + 5000;
-    while ((await api.jobs.get({ id })).tasks[1]?.state !== "running" && Date.now() < end)
+    while (!leg.log.some((t) => task(t) === "Test hello.sh") && Date.now() < end)
       await new Promise((r) => setTimeout(r, 20));
     await new Promise((r) => setTimeout(r, 150));
     const [t1, t2] = (await api.jobs.get({ id })).tasks;

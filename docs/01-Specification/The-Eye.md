@@ -33,7 +33,10 @@ profile. I can change it any time in Settings, or per job.
   strongest at planning, then proven on real tasks, quota and health
   breaking ties. An unproven free model never plans while a known strong
   one (Claude Opus or Sonnet, Gemini Pro) is healthy; it does when it is
-  all there is.
+  all there is. Since M15.3 (ADR-052 §5) its **judging** calls too (a
+  check repaired, a review of a result) run on the strongest model it may
+  use, a known family before an unproven one at the same level, never on
+  a model resting after its provider failed.
 - A **shadow planner** can also plan every job, in the background,
   never used: the job page shows its plans beside the ones that ran,
   with their measures and how the real ones fared, so I can judge a
@@ -102,6 +105,24 @@ the dependencies.
 The planner always plans a job once, whatever came before it: tasks
 that didn't come from a plan never stand in for one.
 
+**Whole goals, not crumbs** (M15.3, ADR-052 §1, after the misahaty job of
+2026-10-06, when one `docker compose down` became eight tasks). The
+planner is told, with examples, that a goal one agent can do in one
+session is one task, which the agent plans itself; it splits only where
+pieces are substantial and truly independent, and ends each task's
+instructions with its acceptance criteria. Its checks are few and
+meaningful, written to parse in POSIX sh. `shapeWeb` merges what is left
+of a plan of crumbs (`mergeCrumbs`): three or more small tasks (not rated
+high), each the only one after the one before and needing nothing else,
+on the same place (scopes that can meet, or only notes) and in the same
+phase, become one task, its steps numbered in order, scopes, checks and
+capabilities joined; said in the plan's Silk entry.
+
+**One interview round for a complete spec** (M15.3): a goal that reads as
+a complete spec (`specComplete`: a long text, a list of six features or
+more, or sections) is interviewed in one round at most, told to ask only
+what the spec truly leaves open.
+
 Plans are versioned. A replan never discards done tasks. It adds,
 removes or rewrites pending ones, and the change is shown in the UI. A
 replan's task that is already in The Web unfinished isn't added again.
@@ -135,10 +156,31 @@ The highest score wins. The scores and the reason are recorded on the
 task, so I can see why a Leg, model and effort were chosen. I can pin
 a task to a Leg, or to a Leg model.
 
-**Stepping up and down.** A task that fails verification or drifts on a
-cheaper model is retried one step up (a higher effort, then a stronger
-model on the same Leg, then another Leg) before the escalation ladder
-goes further ([[Drift-Control]]). Success at a lower tier is recorded,
+**The ladder** (M15.3, [[ADR-052-A-Harness-For-Any-Model]] §3). Every
+model has a rung per kind of work (code, server, research, docs, review,
+planning: [[Legs-and-Capability-Profiles]] → The ladder). A task starts on
+the cheapest model likely to do it; when the agent ends its turn and the
+work isn't done (its checks fail, the review says it's wrong), **one
+failure moves it up at once**: the session hands over (what was tried,
+what failed, in Silk), the model is recorded as having failed that kind
+of work, and the next attempt goes only to a model on a higher rung
+(`task.climbing`), whose first message says what the one before didn't
+get done. At the top, the strongest allowed model takes it again and
+corrects in its own session; the drift ladder ([[Drift-Control]]) runs
+there. A broken check, the machine, a network error, a quota or a pause
+never counts against a model. A job's **Claude share** caps how much of
+it runs on Claude when it climbs.
+
+**Retries resume the session** (ADR-052 §1). When the same model takes a
+task up again (after a pause or a restart, a step up in effort, the top
+of the ladder), its own native session is resumed (Claude Code's
+`--resume`, OpenCode's session, Antigravity's conversation) with why it
+stopped, never after its work was rolled back. A model taking over from
+another starts fresh, with the handoff.
+
+**Stepping up and down.** Drift on a model is retried one step up (a
+higher effort, then a stronger model on the same Leg, then another Leg)
+before the escalation ladder goes further ([[Drift-Control]]). Success at a lower tier is recorded,
 so similar tasks start lower next time. The Eye's own reasoning calls
 follow the same rule: planning gets a strong model, while summarising
 and classifying get a cheap one.
@@ -146,7 +188,13 @@ and classifying get a cheap one.
 **Fallback.** When a Leg becomes rate-limited, fails or runs out of
 quota mid-task, The Eye writes a handoff to Silk and reassigns the task
 to the next-best Leg. When none is left, the job goes `blocked` until
-the earliest quota reset, and resumes on its own. A usage limit or a
+the earliest quota reset, and resumes on its own. An agent that can't
+work (out of quota until the reset its own words give, paused, failing
+to start, on a deprecated model) is never routed to (M15.1,
+[[Legs-and-Capability-Profiles]] → Unusable agents), and a blocked job
+says per Leg the real reason and what to do ("Claude A is paused in
+Oraknid: unpause it on its card (Legs) to go on"), never "out of quota"
+for a Leg that is paused. A usage limit or a
 provider's failure is not the task failing: the attempt isn't counted
 against it, and the failing model or Leg rests (M13.22).
 
@@ -169,8 +217,24 @@ tool that isn't installed where checks run. The Leg's work can't make
 it pass, and sending the Leg after it only burns its time (seen live
 2026-10-02: a free model spent twenty minutes on `grep -qx5`).
 
+- **Checks in the loop** (M15.3, ADR-052 §2): the agent gets the goal,
+  the task's acceptance criteria (the end of its instructions) and its
+  checks, and runs them itself until they pass. For Claude Code they are
+  also a Stop hook, in process through the Agent SDK: while a check fails
+  (and doesn't look broken) its turn can't end, three times at most per
+  turn (`task.checks-held`). Other Legs have the prompt only. Oraknid
+  runs the checks again after (BR-1).
+- **Tested before they judge** (M15.1): each check runs once in the
+  task's folder before its first attempt (three minutes at most each).
+  Failing on work not done yet is what it should do; one that looks
+  broken (a syntax or quoting error, `[: too many arguments`, a tool not
+  installed, a program refusing its arguments: `brokenCheckHint`) is
+  repaired now, before any agent can be failed by it. What the run left
+  in the folder is put back; `task.checks-tried` lists each check's state.
 - The Leg is told the checks are Oraknid's: when one looks wrong, it
-  finishes the work and says why, instead of investigating.
+  finishes the work and says why, instead of investigating. **An agent
+  that shows a check is broken** ("check #1 fails due to a quoting issue",
+  `saysCheckBroken`) gets that check reviewed, not a failed attempt.
 - When a check fails the way a broken one does (a program refusing its
   own arguments, exit 2 with its usage; or `not found`, exit 127), The
   Eye looks at it with one reasoning call before the Leg hears of it:

@@ -218,6 +218,54 @@ handoff and its rule on other accounts of the same provider (ADR-009).
 Rests are kept in memory: a restart forgets them, and a model that
 still fails rests again at its next failure.
 
+### Unusable agents, from their own words (M15.1, 2026-10-07)
+
+What sank two jobs on 2026-10-06: Antigravity out of quota for 51 hours
+was routed to four times, a model OpenCode had deprecated was chosen, and
+a paused Claude was reported as "out of quota". An agent is never routed
+to while it is unusable, and the reason is read from its own words and
+kept until it clears ([[ADR-052-A-Harness-For-Any-Model]] §4):
+
+| Its words | What Oraknid does |
+| :-- | :-- |
+| A quota or usage limit with its reset ("Individual quota reached … Resets in 51h49m11s", "try again in 2 hours", "resets at 2026-10-09T14:00Z", a `reset_at`) | The Leg is `rate-limited` until that moment (`usageLimitOf`, `resetsAtFrom`), kept in its row across restarts; without a time, 15 minutes. Antigravity's own reading of its errors reads the same durations. |
+| A deprecated model ("Model mimo-v2.5-free has been deprecated. Use mimo-v2.6-flash-free instead.") | The model is hidden for good (`deprecateModel`) and the one its provider names is offered in its place: a new row the next probe fills in, or its row shown again (`leg.model-deprecated`, `task.model-deprecated`). |
+| A session that can't start | The Leg rests 2 minutes, as a program that broke (above). |
+| Paused by me | Never routed to; a blocked job says it is paused and to unpause it. |
+
+None of these counts against the task or the model's record. A job with
+nothing usable for a task says, per Leg, the real reason and what to do:
+"Claude A is paused in Oraknid: unpause it on its card (Legs) to go on",
+"Antigravity is out of quota until Thursday 14:00", "Opencode can't be
+used: not logged in", and when it goes on by itself.
+
+### The ladder (M15.3, 2026-10-07)
+
+Every model has a **rung per kind of work**: code, server, research,
+docs, review, planning (`rungOf`, `workKindOf`). The first order comes
+from its profile: the hardest work it is made for first, then its
+strength at what that work needs (code: implementation, debugging,
+tests; research: summarize, docs, review; planning: planning,
+architecture…), moved by its trust on that kind of task. Until a model
+has outcomes the order is its profile's, an estimate.
+
+A task starts on the cheapest model likely to do it (routing above).
+When a model fails it (a real failure: its checks fail after it ended
+its turn, the review says it's wrong, drift that reassigns or kills),
+the task's next route leaves out every model on that rung or below
+(`not above the model that failed this task (the ladder goes up)`), and
+the next one up takes it with a handoff saying what failed. At the top
+of the ladder, the strongest allowed model takes it again, and corrects
+in its own session. Its failure is recorded in the model's `observed`
+record, so a model that needed help on a kind of work starts it lower in
+trust next time, and one that succeeds is trusted more. A pause, a
+restart, a quota or a provider failure is never recorded against it.
+
+**A job's Claude share** (budget `claudeShare`, else Settings → Work,
+`work.claudeShare`; unset: as needed) is the most of its attempts that
+may run on Claude: past it, Claude takes a task only when nothing else
+can.
+
 ## Leg adapter contract
 
 Every Leg kind implements the same operations (detailed in

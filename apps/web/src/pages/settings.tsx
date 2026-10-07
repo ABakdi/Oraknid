@@ -678,6 +678,11 @@ function JobsLimitCard() {
     topics: ["overview"],
     refreshOn: (e) => e.type === "settings.updated",
   });
+  // The ladder's top: how much of a job may run on Claude (ADR-052 §3).
+  const share = useLive(() => api.settings.claudeShare(), {
+    topics: ["overview"],
+    refreshOn: (e) => e.type === "settings.updated",
+  });
   return (
     <Card>
       <CardHeader>
@@ -741,6 +746,38 @@ function JobsLimitCard() {
         <p className="w-full text-xs text-muted-foreground">
           {t(
             "Tasks that need nothing of each other run together by default, each in its own worktree, merged and checked again; only tasks that change the same files wait for each other.",
+          )}
+        </p>
+        <Select
+          value={share.data == null ? "auto" : String(share.data)}
+          onValueChange={(v) =>
+            act(
+              () => api.settings.setClaudeShare({ share: v === "auto" ? null : Number(v) }),
+              t("Saved; it applies to the next tasks."),
+            )
+          }
+        >
+          <SelectTrigger
+            data-help="settings.claude-share"
+            className="w-60"
+            aria-label={t("Claude share of a job")}
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="auto">{t("Claude as needed")}</SelectItem>
+            {[0, 0.25, 0.5, 0.75].map((n) => (
+              <SelectItem key={n} value={String(n)}>
+                {n === 0
+                  ? t("Claude only when nothing else can")
+                  : t("Claude for at most {n}% of a job", { n: n * 100 })}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="w-full text-xs text-muted-foreground">
+          {t(
+            "A task starts on the cheapest model likely to do it and climbs to a stronger one when it fails; Claude is the top. Its share caps how much of a job may run on Claude.",
           )}
         </p>
       </CardContent>
