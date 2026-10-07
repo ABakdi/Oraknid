@@ -4,7 +4,10 @@ import { programsIn } from "./shell.ts";
 
 // The permission policy (Approvals-and-Autonomy → Leg permission prompts,
 // Security → Command allow/deny list). The sandbox is the second wall;
-// this is the first.
+// this is the first. With auto mode (ADR-053) this is layer 1's frame:
+// the never-allowed list, my rules, the gates, the file tools; a shell
+// command's own verdict comes from the guard (@oraknid/guard), run before
+// and handed in as `layer1`, and what neither settles goes to the judge.
 
 export type GatedAction =
   | "send"
@@ -15,6 +18,18 @@ export type GatedAction =
   | "spend"
   | "external-write"
   | "install";
+
+/**
+ * What is never automatic (Approvals-and-Autonomy, ADR-053): sending,
+ * publishing, deleting a repository, paying. Asked at every level unless
+ * I waived it for the job.
+ */
+export const NEVER_AUTOMATIC =
+  /\b(npm|pnpm|yarn|cargo|twine|gem|poetry|bun)\s+publish\b|\bgh\s+(release\s+create|repo\s+delete)\b|\bdocker\s+push\b|\b(sendmail|mailx?|msmtp)\b/;
+
+/** An MCP call whose name sends, publishes, deletes or pays: never automatic either. */
+export const NEVER_AUTOMATIC_TOOL =
+  /(^|_)(send|publish|delete|remove|destroy|drop|pay|charge|purchase|transfer|refund)(_|$)/i;
 
 /** Gated at every level unless I waive them for the job (BR-5). */
 export const ALWAYS_GATED: ReadonlySet<GatedAction> = new Set([
@@ -60,6 +75,13 @@ export interface PolicyContext {
   /** The task's context holds untrusted content: gated actions always ask, whatever the autonomy (BR-15). */
   untrusted?: boolean;
   /**
+   * Layer 1's verdict on this shell command (ADR-053), from the guard: its
+   * blocks stand above my allow rules, its allows settle the command, a
+   * production change asks, the rest goes to the judge. Absent (tests, the
+   * guard not loaded), the fixed program lists below decide.
+   */
+  layer1?: Layer1Verdict | null;
+  /**
    * What the job's tools declared about their calls, by `mcp__<tool>__<name>`
    * (ADR-021): a read passes, a send is the gated action `send`. Anything
    * else is an external write. "held": Oraknid's own tool holds the call
@@ -77,6 +99,14 @@ export interface PolicyContext {
  */
 export type McpDeclaration = "read" | "held" | GatedAction | { linked: GatedAction };
 
+/** The guard's verdict on a shell command, as the policy reads it. */
+export type Layer1Verdict =
+  | { verdict: "allow" | "block" | "ask"; reason: string; rule?: string }
+  | { verdict: "judge"; reason: string; reach: Reach };
+
+/** Where a command reaches: the job's folder, its non-production servers, or anything else. */
+export type Reach = "local" | "servers" | "outside";
+
 export type PolicyVerdict =
   | { verdict: "allow"; reason: string }
   /**
@@ -86,8 +116,8 @@ export type PolicyVerdict =
    */
   | { verdict: "deny"; reason: string; drift: "D7" | null; message?: string }
   | { verdict: "ask"; reason: string; gated: GatedAction | null }
-  /** Auto approval (ADR-014): a classifier decides between allow and ask. */
-  | { verdict: "classify"; reason: string; programs: string[] };
+  /** Auto mode (ADR-053): the judge, a model, decides between allow and block. */
+  | { verdict: "judge"; reason: string; programs: string[]; reach: Reach };
 
 /** A `.git` path as an argument: `.git`, `./.git`, `x/.git/…`, never `.gitignore` or `.github`. */
 const GIT_PATH = String.raw`(^|[\s/'"=])\.git(/|['"]|\s|;|&|\||\)|$)`;
@@ -156,8 +186,10 @@ export const GATED: { action: GatedAction; pattern: RegExp }[] = [
   { action: "merge", pattern: /\bgit\s+merge\b/ },
   {
     action: "deploy",
+    // `deploy` as a word of its own (`make deploy`, `./deploy.sh`, `fly deploy`), never a
+    // part of a name: `/root/spinet-deploy` and `-p spinet-deploy` asked on 2026-10-06 (ADR-053).
     pattern:
-      /\b(deploy|kubectl\s+apply|terraform\s+apply|helm\s+(install|upgrade)|docker\s+push)\b/,
+      /(^|[\s;&|(])(\.\/|scripts\/|bin\/)?deploy(\.sh)?(?=$|[\s;&|)])|\b(kubectl\s+apply|terraform\s+apply|helm\s+(install|upgrade)|docker\s+push)\b/,
   },
   {
     action: "external-write",
@@ -170,7 +202,10 @@ export const GATED: { action: GatedAction; pattern: RegExp }[] = [
     pattern:
       /\b(pacman|apt(-get)?|dnf|yum|zypper|brew|snap|flatpak)\s+(-\S+\s+)*(install|-S)\b|\b(npm|pnpm|yarn)\s+(i|install|add)\s+(-g|--global)\b|\bpip\s+install\s+--user\b/,
   },
-  { action: "delete", pattern: /\bgit\s+branch\s+-[dD]\b|\bgit\s+push\s+\S+\s+--delete\b/ },
+  {
+    action: "delete",
+    pattern: /\bgit\s+branch\s+-[dD]\b|\bgit\s+push\s+\S+\s+--delete\b|\bgh\s+repo\s+delete\b/,
+  },
 ];
 
 /** Programs a coding task normally runs. Anything else is unknown. */
@@ -265,7 +300,8 @@ function mine(command: string, rules: RuleLevel[]): PolicyVerdict | null {
         reason: `matches my ${level.level} deny rule /${denied}/`,
         drift: "D7",
       };
-    const allowed = level.allow.find((src) => safeTest(src, command));
+    // A `shape:` rule is matched on the parsed command by the daemon (ADR-053), not as a pattern.
+    const allowed = level.allow.find((src) => !src.startsWith("shape:") && safeTest(src, command));
     if (allowed)
       return { verdict: "allow", reason: `matches my ${level.level} allow rule /${allowed}/` };
   }
@@ -300,10 +336,15 @@ export function withoutGlobalOptions(command: string): string {
 const FETCHES_OR_INLINE =
   /\b(npx|bunx|uvx)\s+(-\S+\s+)*(?!(vitest|tsc|tsx|eslint|prettier|biome|jest|playwright|vite|next|astro|turbo)\b)[@\w]|\b(pnpm|yarn)\s+dlx\b|\bnpm\s+exec\b|\b(pip3?|uv\s+pip)\s+install\b|\b(python3?|node|perl|ruby|php)\s+(-\S+\s+)*-[ce]\b/;
 
+/** What a refused command tells the agent: why, and to find another way. */
+export const blockedMessage = (reason: string) =>
+  `Blocked: ${reason}. Don't try it again in another form: find another way the task allows, or say it can't be done without it and why.`;
+
 export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
   const raw = r.command ?? "";
   const command = raw ? `${raw}\n${withoutGlobalOptions(raw)}` : "";
   const own = raw ? mine(raw, ctx.rules ?? []) : null;
+  const l1 = raw && SHELL_TOOLS.has(r.tool) ? (ctx.layer1 ?? null) : null;
 
   // Oraknid's own checks: answered to the Leg, never asked about, not a drift.
   if (raw && ORAKNID_CHECK.test(raw))
@@ -320,6 +361,14 @@ export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
       if (d.pattern.test(command))
         return { verdict: "deny", reason: `never allowed: it ${d.why}`, drift: "D7" };
     }
+    // Layer 1's blocks (CC Safety Net, our rules, secrets going out) stand above my allow rules.
+    if (l1?.verdict === "block")
+      return {
+        verdict: "deny",
+        reason: l1.reason,
+        drift: null,
+        message: blockedMessage(l1.reason),
+      };
     if (own?.verdict === "deny") return own;
     for (const g of GATED) {
       if (!g.pattern.test(command)) continue;
@@ -334,14 +383,38 @@ export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
         return { verdict: "allow", reason: `${g.action} waived for this job` };
       // An allow rule of mine is a waiver for exactly what it matches.
       if (own?.verdict === "allow") return own;
-      if (ctx.autonomy === "full" && !ALWAYS_GATED.has(g.action)) {
+      if (g.action === "send" || g.action === "spend" || NEVER_AUTOMATIC.test(command))
+        return {
+          verdict: "ask",
+          reason: `${g.action} is never automatic: it needs my approval`,
+          gated: g.action,
+        };
+      if (ctx.autonomy === "careful")
+        return { verdict: "ask", reason: `${g.action} needs my approval`, gated: g.action };
+      if (ctx.autonomy === "full" && !ALWAYS_GATED.has(g.action))
         return { verdict: "allow", reason: `${g.action} allowed at Full autonomy` };
-      }
-      return { verdict: "ask", reason: `${g.action} needs my approval`, gated: g.action };
+      // Auto: the judge decides, reasoning-blind (ADR-053).
+      return {
+        verdict: "judge",
+        reason: `it is a ${g.action}`,
+        programs: [...new Set(programsOf(raw))],
+        reach: g.action === "merge" || g.action === "install" ? "local" : "outside",
+      };
     }
   }
 
-  if (READ_ONLY_TOOLS.has(r.tool)) return { verdict: "allow", reason: "reads only" };
+  if (READ_ONLY_TOOLS.has(r.tool)) {
+    // Reading a credential is refused, as `cat .env` is (ADR-053).
+    const secret = r.path && READ_TOOLS_WITH_PATH.has(r.tool) ? sensitivePath(r.path) : null;
+    if (secret)
+      return {
+        verdict: "deny",
+        reason: `[Exfiltrating data] it reads ${r.path}, which holds credentials`,
+        drift: null,
+        message: blockedMessage(`${r.path} holds credentials`),
+      };
+    return { verdict: "allow", reason: "reads only" };
+  }
 
   // OpenCode asks whether to go on after the same call failed three times: Oraknid's own
   // drift control watches for that (D2, D3) and climbs its ladder; a classifier or I need not.
@@ -383,40 +456,43 @@ export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
 
   if (SHELL_TOOLS.has(r.tool)) {
     if (own?.verdict === "allow") return own;
-    const unknown = [...new Set(programsOf(raw).filter((p) => !ALLOWED_PROGRAMS.has(p)))];
-    const fetches = FETCHES_OR_INLINE.test(raw);
-    if (fetches && ctx.autonomy === "standard")
-      return {
-        verdict: "classify",
-        reason: "it fetches and runs code, or runs inline code, with the network open",
-        programs: [...new Set(programsOf(raw))],
-      };
-    if (unknown.length === 0)
-      return { verdict: "allow", reason: "every program is on the allow list" };
-    // Supervised: every unknown program is my decision.
-    if (ctx.autonomy === "supervised") {
-      return {
-        verdict: "ask",
-        reason: `runs ${unknown.join(", ")}, which is not on the allow list`,
-        gated: null,
+    const programs = [...new Set(programsOf(raw))];
+    // Layer 1 (the guard): a production change asks, its allow list settles the rest.
+    if (l1?.verdict === "ask") return { verdict: "ask", reason: l1.reason, gated: null };
+    if (l1?.verdict === "allow") return { verdict: "allow", reason: l1.reason };
+    let pending: Extract<PolicyVerdict, { verdict: "judge" }>;
+    if (l1?.verdict === "judge") {
+      pending = { verdict: "judge", reason: l1.reason, programs, reach: l1.reach };
+    } else {
+      // Without the guard: the fixed program lists (ADR-014).
+      const unknown = programs.filter((p) => !ALLOWED_PROGRAMS.has(p));
+      const fetches = FETCHES_OR_INLINE.test(raw);
+      if (!fetches && unknown.length === 0)
+        return { verdict: "allow", reason: "every program is on the allow list" };
+      const outward = unknown.filter((p) => REACHES_OUT.has(p));
+      const unfamiliar = unknown.filter((p) => !SANDBOX_SAFE.has(p) && !REACHES_OUT.has(p));
+      if (!fetches && outward.length === 0 && unfamiliar.length === 0 && ctx.autonomy !== "careful")
+        return {
+          verdict: "allow",
+          reason: `${unknown.join(", ")} only work${unknown.length === 1 ? "s" : ""} inside the sandbox`,
+        };
+      const named = unfamiliar.length ? unfamiliar : unknown;
+      pending = {
+        verdict: "judge",
+        reason: fetches
+          ? "it fetches and runs code, or runs inline code, with the network open"
+          : outward.length
+            ? `${outward.join(", ")} can reach outside the machine`
+            : `${named.join(", ")} ${named.length === 1 ? "is" : "are"} not on the allow list`,
+        programs,
+        reach:
+          outward.length || /\b(npx|bunx|uvx|dlx|exec|pip3?)\b/.test(raw) ? "outside" : "local",
       };
     }
-    const outward = unknown.filter((p) => REACHES_OUT.has(p));
-    const unfamiliar = unknown.filter((p) => !SANDBOX_SAFE.has(p) && !REACHES_OUT.has(p));
-    if (outward.length === 0 && unfamiliar.length === 0) {
-      return {
-        verdict: "allow",
-        reason: `${unknown.join(", ")} only work${unknown.length === 1 ? "s" : ""} inside the sandbox`,
-      };
-    }
-    // Full: unfamiliar programs run in the sandbox; only what reaches out is classified.
-    if (ctx.autonomy === "full" && outward.length === 0) {
-      return { verdict: "allow", reason: "unknown, but in the sandbox at Full autonomy" };
-    }
-    const why = outward.length
-      ? `${outward.join(", ")} can reach outside the machine`
-      : `${unfamiliar.join(", ")} ${unfamiliar.length === 1 ? "is" : "are"} unfamiliar`;
-    return { verdict: "classify", reason: why, programs: [...outward, ...unfamiliar] };
+    // Full: the judge is skipped in the job's folder and on servers not marked production.
+    if (ctx.autonomy === "full" && pending.reach !== "outside")
+      return { verdict: "allow", reason: `${pending.reason}, allowed at Full autonomy` };
+    return pending;
   }
 
   // An MCP tool may write outside: gated as an external write, like publishing (Security; Audit 1 → S1-15).
@@ -445,6 +521,21 @@ export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
             : declared === "delete"
               ? "deletes"
               : "may write outside the machine";
+      // Sending, deleting and paying are never automatic; the rest is the judge's at auto.
+      if (
+        !ctx.untrusted &&
+        ctx.autonomy !== "careful" &&
+        declared !== "send" &&
+        declared !== "delete" &&
+        declared !== "spend" &&
+        !NEVER_AUTOMATIC_TOOL.test(r.tool)
+      )
+        return {
+          verdict: "judge",
+          reason: `${r.tool} ${what}`,
+          programs: [r.tool],
+          reach: "outside",
+        };
       return {
         verdict: "ask",
         reason: ctx.untrusted
@@ -455,6 +546,13 @@ export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
     }
     if (ctx.waived.has("external-write") && !ctx.untrusted)
       return { verdict: "allow", reason: "external-write waived for this job" };
+    if (!ctx.untrusted && ctx.autonomy !== "careful" && !NEVER_AUTOMATIC_TOOL.test(r.tool))
+      return {
+        verdict: "judge",
+        reason: `${r.tool} is an MCP tool: it may write outside the machine`,
+        programs: [r.tool],
+        reach: "outside",
+      };
     return {
       verdict: "ask",
       reason: `${r.tool} is an MCP tool: it may write outside the machine`,
@@ -463,11 +561,30 @@ export function decide(r: PolicyRequest, ctx: PolicyContext): PolicyVerdict {
   }
   // A tool Oraknid doesn't know.
   if (ctx.autonomy === "full") return { verdict: "allow", reason: "unknown tool at Full autonomy" };
-  if (ctx.autonomy === "supervised")
+  if (ctx.autonomy === "careful")
     return { verdict: "ask", reason: `uses ${r.tool}, which Oraknid does not know`, gated: null };
   return {
-    verdict: "classify",
+    verdict: "judge",
     reason: `uses ${r.tool}, which Oraknid does not know`,
     programs: [r.tool],
+    reach: "local",
   };
+}
+
+/** Files whose reading is reading a credential (ADR-053; CC Safety Net's secret paths). */
+const SENSITIVE_PATHS = [
+  /(^|\/)\.env(\.(?!example\b|sample\b|template\b|dist\b|defaults\b)[\w-]+)?$/,
+  /(^|\/)\.ssh\/(id_[\w-]+|[\w.-]*key[\w.-]*|authorized_keys)$/,
+  /(^|\/)\.aws\/(credentials|config)$/,
+  /(^|\/)\.gnupg(\/|$)/,
+  /(^|\/)\.(netrc|pgpass|git-credentials|pypirc)$/,
+  /(^|\/)\.docker\/config\.json$/,
+  /(^|\/)\.kube\/config$/,
+  /(^|\/)\.config\/gh\/hosts\.yml$/,
+];
+const READ_TOOLS_WITH_PATH = new Set(["Read", "read_file"]);
+
+/** The credential a path names, or null. */
+export function sensitivePath(path: string): string | null {
+  return SENSITIVE_PATHS.some((re) => re.test(path)) ? path : null;
 }

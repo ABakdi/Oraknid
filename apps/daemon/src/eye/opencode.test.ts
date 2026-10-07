@@ -51,7 +51,7 @@ const brain = {
   triage: async () => {
     throw new Error("unused");
   },
-  classifyCommand: async () => ({ decision: "allow" as const, reason: "ok" }),
+  judgeAction: async () => ({ decision: "allow" as const, category: null, reason: "ok" }),
   interviewRound: async () => ({ done: true, playback: "", questions: [], open: [] }),
 } satisfies EyeBrain;
 
@@ -135,7 +135,7 @@ describe.skipIf(!HAVE)("OpenCode Legs in a job (Phase 2)", () => {
       projectId: project.id,
       goal: "Say hi",
       verify: [],
-      autonomy: "standard",
+      autonomy: "auto",
       inputs: [],
       allowedLegIds: [oc.id],
       unsandboxed: false,
@@ -170,7 +170,7 @@ describe.skipIf(!HAVE)("OpenCode Legs in a job (Phase 2)", () => {
         projectId: project.id,
         goal: "Say hi",
         verify: [],
-        autonomy: "standard",
+        autonomy: "auto",
         inputs: [],
         allowedLegIds: [oc.id],
         unsandboxed: false,
@@ -220,7 +220,7 @@ describe.skipIf(!HAVE)("OpenCode Legs in a job (Phase 2)", () => {
       projectId: project.id,
       goal: "Say hi",
       verify: [],
-      autonomy: "standard",
+      autonomy: "auto",
       inputs: [],
       allowedLegIds: [oc.id, claude.id],
       unsandboxed: false,

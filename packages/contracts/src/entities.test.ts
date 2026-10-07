@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ACTIVE_JOB_STATES, Id, Job, JobState, Topic } from "./index.ts";
+import { ACTIVE_JOB_STATES, Autonomy, Id, Job, JobState, NewJob, Topic } from "./index.ts";
 
 const ULID = "01J9Z3K8W2Q4V6X8Y0A1B2C3D4";
 
@@ -27,7 +27,7 @@ describe("contracts", () => {
       inputs: [],
       skillId: ULID,
       skillVersion: 1,
-      autonomy: "standard",
+      autonomy: "auto",
       allowedLegIds: [],
       budget: { tokens: null, quotaShare: null, wallClockMs: null },
       state: "draft",
@@ -41,6 +41,14 @@ describe("contracts", () => {
     expect(
       Job.safeParse({ ...job, budget: { ...job.budget, money: { limit: 0, hard: true } } }).success,
     ).toBe(true);
+  });
+
+  it("reads the autonomy names from before auto mode (ADR-053)", () => {
+    expect(Autonomy.parse("standard")).toBe("auto");
+    expect(Autonomy.parse("supervised")).toBe("careful");
+    expect(Autonomy.parse("full")).toBe("full");
+    expect(Autonomy.safeParse("reckless").success).toBe(false);
+    expect(NewJob.parse({ projectId: ULID, goal: "g" }).autonomy).toBe("auto");
   });
 
   it("only accepts known live topics", () => {

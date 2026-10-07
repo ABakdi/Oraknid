@@ -1149,7 +1149,7 @@ async function approvePlanIfSupervised(d: EyeDeps, ctx: JobContext) {
     job,
     taskRows(d.db, job.id).filter((t) => t.state !== "done" && t.state !== "skipped"),
   );
-  if (job.autonomy !== "supervised" && !server) return;
+  if (job.autonomy !== "careful" && !server) return;
   const version = job.webVersion;
   const summary = d.silk
     .current(job.id)

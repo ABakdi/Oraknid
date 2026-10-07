@@ -460,7 +460,7 @@ const talkDeps = (c: ApiContext) => ({
       projectId,
       goal,
       inputs: [],
-      autonomy: "standard",
+      autonomy: "auto",
       allowedLegIds: [],
       verify: [],
       unsandboxed: false,

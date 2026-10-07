@@ -211,7 +211,15 @@ async function harness(
     }),
     triage: async () =>
       o.triage?.() ?? { intent: "question", reply: "Fine.", silk: null, tasks: [] },
-    classifyCommand: async () => ({ decision: "allow" as const, reason: "fine" }),
+    // The judge (ADR-053): a push to someone else's repo crosses a trust boundary.
+    judgeAction: async ({ prompt }: { prompt: string }) =>
+      prompt.includes("someone/else")
+        ? {
+            decision: "block" as const,
+            category: "Crossing a trust boundary",
+            reason: "someone/else is not this project's repo",
+          }
+        : { decision: "allow" as const, category: null, reason: "fine" },
     interviewRound: async () => ({ done: true, playback: "Clear.", questions: [], open: [] }),
   } as unknown as EyeBrain;
   daemon = await startDaemon({
@@ -269,7 +277,7 @@ describe("a project's GitHub repo, chosen once (ADR-038)", () => {
             { mcp: { server: "oraknid-github", tool: "repo_info" } },
             { mcp: { server: "oraknid-github", tool: "create_repo" } },
             { mcp: { server: "oraknid-github", tool: "push", args: { branch: "dev" } } },
-            // Anywhere else still asks (BR-5): I deny it below.
+            // Anywhere else goes to the judge, which blocks it (ADR-053).
             {
               mcp: {
                 server: "oraknid-github",
@@ -323,14 +331,17 @@ describe("a project's GitHub repo, chosen once (ADR-038)", () => {
       answers: [{ questionId: "repo", options: ["new"], text: "" }],
     });
 
-    // The Eye saves it to the project and goes on; the Leg's push elsewhere asks me.
-    const approval = await eventually(
-      async () => (await api.inbox.list({ state: "open", kind: "approval" }))[0],
-    );
-    expect(approval.title).toContain("mcp__github__push");
-    expect(approval.detail).toContain("someone/else");
-    await api.inbox.answer({ id: approval.id, answer: "Deny" });
+    // The Eye saves it to the project and goes on; the Leg's push elsewhere is blocked by the judge.
     expect((await until(api, jobId, ["completed", "blocked"])).state).toBe("completed");
+    expect((await api.inbox.list({ kind: "approval" })).length).toBe(0);
+    const refused = d.bus.since(0, [`job:${jobId}`], 5000).filter((e) => e.type === "task.refused");
+    expect(refused.map((e) => e.payload)).toContainEqual(
+      expect.objectContaining({
+        command: "mcp__github__push",
+        reason: "[Crossing a trust boundary] someone/else is not this project's repo",
+        layer: "judge",
+      }),
+    );
 
     const link = (await api.projects.list()).find((p) => p.id === projectId)?.github;
     expect(link).toMatchObject({
@@ -355,8 +366,8 @@ describe("a project's GitHub repo, chosen once (ADR-038)", () => {
       ["push", true],
     ]);
     expect(leg.mcpResults[0]?.text).toContain("doesn't exist yet");
-    // Only one question for the link and one approval for the push elsewhere: nothing else asked.
-    expect((await api.inbox.list({})).map((i) => i.kind).sort()).toEqual(["approval", "question"]);
+    // Only one question for the link; the push elsewhere was the judge's: nothing else asked.
+    expect((await api.inbox.list({})).map((i) => i.kind).sort()).toEqual(["question"]);
 
     // My answer shows as a short list, then The Eye's word that it linked it.
     const talk = await api.projects.conversation({ id: projectId });
@@ -548,6 +559,8 @@ describe("the github tool's policy (ADR-038)", () => {
     const verdict = (name: string, args: Record<string, unknown> = {}) => {
       const judged = judgeGitHub(db, jobId, name, args);
       const policy = policyFor(db, jobId, "/w");
+      // The gates as Careful asks them (ADR-053); at auto the judge has the same calls.
+      policy.autonomy = "careful";
       policy.mcp = new Map(judged ? [[`mcp__github__${name}`, judged]] : []);
       return decide({ tool: `mcp__github__${name}`, command: null, path: null }, policy);
     };

@@ -38,6 +38,9 @@ importers:
       '@oraknid/core':
         specifier: workspace:^
         version: link:../../packages/core
+      '@oraknid/guard':
+        specifier: workspace:^
+        version: link:../../packages/guard
       '@oraknid/leg-antigravity':
         specifier: workspace:^
         version: link:../../packages/legs/antigravity
@@ -65,12 +68,21 @@ importers:
       '@orpc/server':
         specifier: 1.15.4
         version: 1.15.4(ws@8.22.0)
+      '@secretlint/core':
+        specifier: 13.0.7
+        version: 13.0.7
+      '@secretlint/secretlint-rule-preset-recommend':
+        specifier: 13.0.7
+        version: 13.0.7
       age-encryption:
         specifier: 0.3.1
         version: 0.3.1
       better-sqlite3:
         specifier: 13.0.3
         version: 13.0.3
+      cc-safety-net:
+        specifier: 2.6.0
+        version: 2.6.0
       commander:
         specifier: 15.0.0
         version: 15.0.0
@@ -98,12 +110,18 @@ importers:
       ssh2:
         specifier: ^1.17.0
         version: 1.17.0
+      tree-sitter-bash:
+        specifier: 0.25.1
+        version: 0.25.1
       ulid:
         specifier: 3.0.2
         version: 3.0.2
       web-push:
         specifier: 3.6.7
         version: 3.6.7
+      web-tree-sitter:
+        specifier: 0.27.0
+        version: 0.27.0
       ws:
         specifier: 8.22.0
         version: 8.22.0

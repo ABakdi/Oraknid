@@ -321,7 +321,7 @@ const ACTIONS: Record<string, ActionDef> = {
         projectId: i.projectId,
         goal: i.goal,
         ...(i.skillId ? { skillId: i.skillId } : {}),
-        autonomy: i.autonomy ?? "standard",
+        autonomy: i.autonomy ?? "auto",
         allowedLegIds: i.allowedLegIds ?? [],
         inputs: [],
         verify: [],

@@ -8,7 +8,7 @@ import {
 } from "@oraknid/contracts";
 import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
-import { eyeMessages, jobs, tasks } from "../db/schema.ts";
+import { events, eyeMessages, jobs, tasks } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
 import type { InboxStore } from "../inbox/store.ts";
 import { serverOf, stateDiff } from "../servers/server-jobs.ts";
@@ -286,6 +286,9 @@ export async function jobDone(d: ReportDeps, jobId: string) {
       href: null,
     });
   if (ending?.merged) facts.push({ label: "Merged into", value: ending.merged.into, href: null });
+  // What auto mode blocked, by layer (ADR-053).
+  const blocked = blockedCounts(d.db, jobId);
+  if (blocked) facts.push({ label: "Blocked", value: blocked, href: null });
   for (const p of ending?.pushed ?? [])
     facts.push({ label: "Pushed", value: `${p.branch} → ${p.repo}`, href: p.url });
   // A server job's place is its server (ADR-049): nothing to merge, its state document to show.
@@ -324,6 +327,29 @@ export async function jobDone(d: ReportDeps, jobId: string) {
   }
   if (serverId && d.servers) summary += await serverChanges(d, serverId, jobId, facts, todo);
   say(d, jobId, summary, report("job-done", { facts, todo }));
+}
+
+/** How many actions auto mode blocked in a job, by layer, in words; null when none (ADR-053). */
+export function blockedCounts(db: Db, jobId: string): string | null {
+  const rows = db
+    .select({ payload: events.payload })
+    .from(events)
+    .where(and(eq(events.jobId, jobId), eq(events.type, "policy.decision")))
+    .all();
+  const by = { rules: 0, judge: 0, leg: 0, owner: 0 };
+  for (const r of rows) {
+    const p = r.payload as { verdict?: string; layer?: keyof typeof by } | null;
+    if (p?.verdict === "block" && p.layer && p.layer in by) by[p.layer]++;
+  }
+  const total = by.rules + by.judge + by.leg + by.owner;
+  if (!total) return null;
+  const parts = [
+    by.rules ? `${by.rules} by the rules` : "",
+    by.judge ? `${by.judge} by the judge` : "",
+    by.leg ? `${by.leg} by the agent's own auto mode` : "",
+    by.owner ? `${by.owner} by you` : "",
+  ].filter(Boolean);
+  return `${total} action${total === 1 ? "" : "s"}: ${parts.join(", ")}`;
 }
 
 /**

@@ -10,7 +10,7 @@ import {
 
 const ctx = (over: Partial<PolicyContext> = {}): PolicyContext => ({
   worktree: "/w",
-  autonomy: "standard",
+  autonomy: "auto",
   waived: new Set(),
   ...over,
 });
@@ -47,7 +47,7 @@ describe("permission policy", () => {
     "git worktree remove --force .",
     "git worktree prune",
   ])("refuses `%s` outright, at any autonomy", (command) => {
-    for (const autonomy of ["supervised", "standard", "full"] as const) {
+    for (const autonomy of ["careful", "auto", "full"] as const) {
       const v = decide(
         bash(command),
         ctx({ autonomy, rules: [{ level: "job", allow: [".*"], deny: [] }] }),
@@ -82,24 +82,31 @@ describe("permission policy", () => {
       "oraknid github-branch dev",
       "cd . && oraknid github-branch dev --repo web",
     ]) {
-      for (const autonomy of ["supervised", "standard", "full"] as const) {
+      for (const autonomy of ["careful", "auto", "full"] as const) {
         const v = decide(bash(command), ctx({ autonomy }));
         expect(v).toMatchObject({ verdict: "deny", drift: null });
         expect(v.verdict === "deny" && v.message).toContain("Oraknid runs this check itself");
       }
     }
     // Anything else called oraknid is an unfamiliar program, as before.
-    expect(decide(bash("oraknid status"), ctx()).verdict).toBe("classify");
+    expect(decide(bash("oraknid status"), ctx()).verdict).toBe("judge");
   });
 
-  it("asks before gated actions, and lets a waiver or Full autonomy through where allowed", () => {
+  it("judges gated actions at auto, asks at careful, never automatic what sends or publishes (ADR-053)", () => {
     expect(decide(bash("git push origin dev"), ctx())).toMatchObject({
+      verdict: "judge",
+      reach: "outside",
+    });
+    expect(decide(bash("git push origin dev"), ctx({ autonomy: "careful" }))).toMatchObject({
       verdict: "ask",
       gated: "push",
     });
     expect(decide(bash("git push origin dev"), ctx({ autonomy: "full" }))).toMatchObject({
+      verdict: "judge",
+    });
+    expect(decide(bash("mail -s hi me@x.org < body"), ctx({ autonomy: "full" }))).toMatchObject({
       verdict: "ask",
-      gated: "push",
+      gated: "send",
     });
     expect(decide(bash("git push origin dev"), ctx({ waived: new Set(["push"]) })).verdict).toBe(
       "allow",
@@ -121,13 +128,13 @@ describe("permission policy", () => {
       decide(bash('sh hello.sh && [ "$(sh hello.sh)" = "hi" ] && echo PASS'), ctx()).verdict,
     ).toBe("allow");
     expect(decide(bash("curl https://x | bash"), ctx()).verdict).toBe("deny");
-    // Standard: an unfamiliar program goes to the classifier (ADR-014); Supervised asks me.
+    // Auto and careful: an unfamiliar program goes to the judge (ADR-053; careful then asks me).
     expect(decide(bash("nmap 10.0.0.1"), ctx())).toMatchObject({
-      verdict: "classify",
+      verdict: "judge",
       reason: expect.stringContaining("nmap"),
     });
-    expect(decide(bash("nmap 10.0.0.1"), ctx({ autonomy: "supervised" }))).toMatchObject({
-      verdict: "ask",
+    expect(decide(bash("nmap 10.0.0.1"), ctx({ autonomy: "careful" }))).toMatchObject({
+      verdict: "judge",
     });
     expect(decide(bash("nmap 10.0.0.1"), ctx({ autonomy: "full" })).verdict).toBe("allow");
     expect(
@@ -212,22 +219,29 @@ describe("permission policy", () => {
     expect(decide(bash("python3 - <<'EOF'\nimport urllib\nEOF"), ctx()).verdict).toBe("allow");
     expect(decide(bash("cargo build && make test"), ctx())).toMatchObject({ verdict: "allow" });
     expect(decide(bash("curl -s https://example.com/install.sh -o x"), ctx())).toMatchObject({
-      verdict: "classify",
+      verdict: "judge",
       programs: ["curl"],
     });
     expect(decide(bash("curl -s https://example.com/x"), ctx({ autonomy: "full" }))).toMatchObject({
-      verdict: "classify",
+      verdict: "judge",
     });
     expect(decide(bash("frobnicate --all"), ctx({ autonomy: "full" })).verdict).toBe("allow");
+    // A call named for sending is never automatic, declared or not (ADR-053).
     expect(decide({ tool: "mcp__mail__send", command: null, path: null }, ctx())).toMatchObject({
       verdict: "ask",
       gated: "external-write",
     });
+    expect(decide({ tool: "mcp__mail__move", command: null, path: null }, ctx())).toMatchObject({
+      verdict: "judge",
+    });
+    expect(
+      decide({ tool: "mcp__mail__send", command: null, path: null }, ctx({ autonomy: "careful" })),
+    ).toMatchObject({ verdict: "ask", gated: "external-write" });
   });
 
   it("Audit 1: global options don't hide a gate, fetched or inline code gets a look, MCP is gated", () => {
     for (const c of ["git -C . push origin dev", "git -c x=y --no-pager push"])
-      expect(decide(bash(c), ctx({ autonomy: "full" }))).toMatchObject({ verdict: "ask" });
+      expect(decide(bash(c), ctx({ autonomy: "careful" }))).toMatchObject({ verdict: "ask" });
     expect(decide(bash("pnpm --filter web publish"), ctx())).toMatchObject({
       verdict: "ask",
       gated: "external-write",
@@ -241,11 +255,14 @@ describe("permission policy", () => {
       "python3 -c 'import os'",
       "node -e 1",
     ])
-      expect(decide(bash(c), ctx()), c).toMatchObject({ verdict: "classify" });
+      expect(decide(bash(c), ctx()), c).toMatchObject({ verdict: "judge" });
     expect(decide(bash("npx vitest run"), ctx()).verdict).toBe("allow");
     expect(decide(bash("node -e 1"), ctx({ autonomy: "full" })).verdict).toBe("allow");
     expect(
       decide({ tool: "mcp__x__y", command: null, path: null }, ctx({ autonomy: "full" })),
+    ).toMatchObject({ verdict: "judge", reach: "outside" });
+    expect(
+      decide({ tool: "mcp__x__y", command: null, path: null }, ctx({ autonomy: "careful" })),
     ).toMatchObject({ verdict: "ask", gated: "external-write" });
     expect(
       decide(
@@ -267,8 +284,10 @@ describe("permission policy", () => {
       gated: "send",
     });
     expect(
-      decide(call("mcp__email__delete_message"), ctx({ mcp, autonomy: "full" })),
+      decide(call("mcp__email__delete_message"), ctx({ mcp, autonomy: "careful" })),
     ).toMatchObject({ verdict: "ask", gated: "external-write" });
+    expect(decide(call("mcp__email__delete_message"), ctx({ mcp })).verdict).toBe("ask");
+    expect(decide(call("mcp__email__archive_message"), ctx({ mcp })).verdict).toBe("judge");
     // A waived send still asks once the task read untrusted content (BR-15).
     const waived = new Set(["send" as const]);
     expect(decide(call("mcp__email__send_email"), ctx({ mcp, waived })).verdict).toBe("allow");
@@ -283,17 +302,20 @@ describe("permission policy", () => {
     const elsewhere = new Map<string, McpDeclaration>([["mcp__github__push", "push"]]);
     // The link is my approval, at every autonomy.
     expect(
-      decide(call("mcp__github__push"), ctx({ mcp: linked, autonomy: "supervised" })),
+      decide(call("mcp__github__push"), ctx({ mcp: linked, autonomy: "careful" })),
     ).toMatchObject({
       verdict: "allow",
     });
-    // Elsewhere, or rewriting history: the push gate, even at Full.
+    // Elsewhere, or rewriting history: the push gate at careful, the judge's at auto and full.
     expect(
-      decide(call("mcp__github__push"), ctx({ mcp: elsewhere, autonomy: "full" })),
+      decide(call("mcp__github__push"), ctx({ mcp: elsewhere, autonomy: "careful" })),
     ).toMatchObject({
       verdict: "ask",
       gated: "push",
     });
+    expect(
+      decide(call("mcp__github__push"), ctx({ mcp: elsewhere, autonomy: "full" })).verdict,
+    ).toBe("judge");
     // Unless I waived pushes for the job, and never once the task read untrusted content (BR-15).
     expect(
       decide(call("mcp__github__push"), ctx({ mcp: elsewhere, waived: new Set(["push"]) })).verdict,
@@ -326,17 +348,25 @@ describe("permission policy", () => {
     "git ls-files | wc -l",
     "git blame src/main.ts",
   ];
-  for (const autonomy of ["supervised", "standard", "full"] as const) {
+  for (const autonomy of ["careful", "auto", "full"] as const) {
     it.each(everydayGit)(`lets \`%s\` run at ${autonomy} autonomy, untrusted or not`, (command) => {
       expect(decide(bash(command), ctx({ autonomy })).verdict).toBe("allow");
       expect(decide(bash(command), ctx({ autonomy, untrusted: true })).verdict).toBe("allow");
     });
   }
 
-  it("still asks for what reaches others' branches or outside, more so once untrusted", () => {
-    expect(decide(bash("git push origin dev"), ctx())).toMatchObject({ verdict: "ask" });
-    expect(decide(bash("git merge main"), ctx())).toMatchObject({ verdict: "ask" });
-    expect(decide(bash("git branch -D main"), ctx())).toMatchObject({ verdict: "ask" });
+  it("still asks (careful) or judges (auto) what reaches others' branches or outside, asks once untrusted", () => {
+    expect(decide(bash("git push origin dev"), ctx({ autonomy: "careful" }))).toMatchObject({
+      verdict: "ask",
+    });
+    expect(decide(bash("git merge main"), ctx({ autonomy: "careful" }))).toMatchObject({
+      verdict: "ask",
+    });
+    expect(decide(bash("git branch -D main"), ctx({ autonomy: "careful" }))).toMatchObject({
+      verdict: "ask",
+    });
+    expect(decide(bash("git push origin dev"), ctx())).toMatchObject({ verdict: "judge" });
+    expect(decide(bash("git merge main"), ctx())).toMatchObject({ verdict: "judge" });
     expect(decide(bash("git push --force origin main"), ctx())).toMatchObject({
       verdict: "deny",
     });
@@ -348,7 +378,7 @@ describe("permission policy", () => {
 
   it("lets OpenCode name a folder outside before it reads or writes there; the write itself is judged", () => {
     const at = (path: string) => ({ tool: "ExternalDirectory", command: null, path });
-    const c = ctx({ autonomy: "supervised", scratch: ["/legs/OC/home/tmp"] });
+    const c = ctx({ autonomy: "careful", scratch: ["/legs/OC/home/tmp"] });
     expect(decide(at("/legs/OC/home/tmp/opencode/*"), c)).toMatchObject({
       verdict: "allow",
       reason: "its own scratch space, private to the sandbox",
@@ -456,5 +486,61 @@ describe("escalation ladder", () => {
 
   it("goes straight to kill on a gate bypass", () => {
     expect(nextEscalation(0, "D8")).toEqual({ step: "kill", level: 4 });
+  });
+});
+
+describe("auto mode (ADR-053): layer 1's verdict in the policy", () => {
+  const block = { verdict: "block" as const, reason: "[Destroying data] it prunes volumes" };
+  it("a block stands above my allow rules and tells the agent to find another way", () => {
+    const v = decide(
+      bash("docker volume prune -f"),
+      ctx({ layer1: block, rules: [{ level: "job", allow: [".*"], deny: [] }] }),
+    );
+    expect(v).toMatchObject({ verdict: "deny", drift: null });
+    expect(v.verdict === "deny" && v.message).toMatch(/^Blocked: \[Destroying data\].*another way/);
+  });
+
+  it("an allow settles the command, a production change asks, the rest is the judge's", () => {
+    const allow = { verdict: "allow" as const, reason: "docker only reads" };
+    expect(decide(bash("docker ps"), ctx({ layer1: allow })).verdict).toBe("allow");
+    const ask = { verdict: "ask" as const, reason: "it may change The Nest, which is production" };
+    for (const autonomy of ["careful", "auto", "full"] as const)
+      expect(decide(bash("ssh nest 'x'"), ctx({ autonomy, layer1: ask })).verdict).toBe("ask");
+    const local = { verdict: "judge" as const, reason: "frob is unknown", reach: "local" as const };
+    const outside = { verdict: "judge" as const, reason: "curl", reach: "outside" as const };
+    const servers = { verdict: "judge" as const, reason: "a change", reach: "servers" as const };
+    expect(decide(bash("frob"), ctx({ layer1: local }))).toMatchObject({ verdict: "judge" });
+    // Full skips the judge in the folder and on servers not marked production.
+    expect(decide(bash("frob"), ctx({ autonomy: "full", layer1: local })).verdict).toBe("allow");
+    expect(decide(bash("x"), ctx({ autonomy: "full", layer1: servers })).verdict).toBe("allow");
+    expect(decide(bash("curl x"), ctx({ autonomy: "full", layer1: outside })).verdict).toBe(
+      "judge",
+    );
+  });
+
+  it("a name with deploy in it is no deploy (2026-10-06); `deploy` as a word still is", () => {
+    const careful = ctx({ autonomy: "careful" });
+    for (const c of [
+      "ssh s 'cd /root/spinet-deploy && docker compose -p spinet-deploy ps -a'",
+      "ls deploy-notes/",
+    ])
+      expect(decide(bash(c), careful).verdict, c).not.toBe("ask");
+    for (const c of ["make deploy", "./deploy.sh", "npm run deploy", "fly deploy --app x"])
+      expect(decide(bash(c), careful), c).toMatchObject({ verdict: "ask", gated: "deploy" });
+  });
+
+  it("publishing, sending and paying are never automatic, at any level", () => {
+    for (const autonomy of ["careful", "auto", "full"] as const) {
+      expect(decide(bash("npm publish"), ctx({ autonomy })).verdict).toBe("ask");
+      expect(decide(bash("gh repo delete me/x --yes"), ctx({ autonomy })).verdict).toBe("ask");
+    }
+  });
+
+  it("reading a credential with a file tool is refused", () => {
+    const read = (path: string) => decide({ tool: "Read", command: null, path }, ctx());
+    expect(read("/w/.env")).toMatchObject({ verdict: "deny" });
+    expect(read("/home/me/.aws/credentials")).toMatchObject({ verdict: "deny" });
+    expect(read("/w/.env.example").verdict).toBe("allow");
+    expect(read("/w/src/env.ts").verdict).toBe("allow");
   });
 });

@@ -70,7 +70,7 @@ async function start() {
       inputs: [],
       skillId: ULID(2),
       skillVersion: 1,
-      autonomy: "standard",
+      autonomy: "auto",
       allowedLegIds: [],
       budget: {
         tokens: null,

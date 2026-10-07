@@ -392,17 +392,23 @@ describe("mail (ADR-032)", () => {
     expect(declared.get("mcp__email__send")).toBe("held");
     const policy = {
       worktree: "/tmp",
-      autonomy: "standard" as const,
+      autonomy: "auto" as const,
       waived: new Set<never>(),
       mcp: declared,
     };
     expect(decide({ tool: "mcp__email__send", command: null, path: null }, policy).verdict).toBe(
       "allow",
     );
-    expect(decide({ tool: "mcp__email__move", command: null, path: null }, policy)).toMatchObject({
-      verdict: "ask",
-      gated: "external-write",
-    });
+    // An undeclared call goes to the judge at auto, and asks at careful (ADR-053).
+    expect(decide({ tool: "mcp__email__move", command: null, path: null }, policy).verdict).toBe(
+      "judge",
+    );
+    expect(
+      decide(
+        { tool: "mcp__email__move", command: null, path: null },
+        { ...policy, autonomy: "careful" },
+      ),
+    ).toMatchObject({ verdict: "ask", gated: "external-write" });
 
     const broker = new McpBroker({
       registry,

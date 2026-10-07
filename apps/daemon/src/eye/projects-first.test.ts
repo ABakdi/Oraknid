@@ -87,7 +87,7 @@ async function harness(
       reason: "",
     }),
     triage: async ({ message }: { message: string }) => triage(message),
-    classifyCommand: async () => ({ decision: "allow" as const, reason: "fine" }),
+    judgeAction: async () => ({ decision: "allow" as const, category: null, reason: "fine" }),
     interviewRound: async () => ({ done: true, playback: "Clear.", questions: [], open: [] }),
   } as unknown as EyeBrain;
   daemon = await startDaemon({
@@ -326,7 +326,7 @@ describe("Silk per project, kept by job (ADR-034)", () => {
           verify: [],
           inputs: [],
           allowedLegIds: [],
-          autonomy: "standard",
+          autonomy: "auto",
           unsandboxed: false,
         })
       ).id;
@@ -392,7 +392,7 @@ describe("a project budget (ADR-034)", () => {
       verify: [],
       inputs: [],
       allowedLegIds: [],
-      autonomy: "standard",
+      autonomy: "auto",
       unsandboxed: false,
     });
     expect((await api.jobs.get({ id: fresh.id })).budget.tokens).toEqual({

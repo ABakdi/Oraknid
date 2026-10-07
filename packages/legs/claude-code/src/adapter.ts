@@ -19,6 +19,7 @@ import {
   type PermissionRequest,
   type PlanUsageReport,
   type PlanWindowReport,
+  type PreToolDecision,
   type ProbeResult,
   type QuotaReport,
   type SandboxPlan,
@@ -127,7 +128,8 @@ export function toRequest(tool: string, input: Record<string, unknown>): Permiss
 /**
  * Builds the options every session uses: my host setup stays out
  * (`settingSources: []`, explicit MCP servers), permissions go through
- * The Eye (`canUseTool`, mode `default`, never bypass), and the binary
+ * The Eye (`canUseTool`, mode `default`, never bypass; `auto` in auto
+ * mode, with Oraknid's hook before every tool, ADR-053), and the binary
  * runs inside the sandbox.
  */
 function baseOptions(
@@ -177,6 +179,69 @@ function baseOptions(
     };
   }
   return options;
+}
+
+/**
+ * The hooks of a session in Claude Code's own auto mode (ADR-053): PreToolUse
+ * asks Oraknid's layer 1 (deny with its reason, ask through canUseTool, or no
+ * opinion), and PermissionDenied reports what Claude Code's classifier refused.
+ */
+export function autoModeHooks(
+  onPreToolUse: ((r: PermissionRequest) => Promise<PreToolDecision>) | undefined,
+  push: (e: LegEvent) => void,
+): NonNullable<Options["hooks"]> {
+  const requestOf = (tool: string, input: unknown) =>
+    toRequest(tool, (input ?? {}) as Record<string, unknown>);
+  return {
+    PreToolUse: [
+      {
+        hooks: [
+          async (input) => {
+            if (input.hook_event_name !== "PreToolUse" || !onPreToolUse) return {};
+            const request = requestOf(input.tool_name, input.tool_input);
+            let d: PreToolDecision;
+            try {
+              d = await onPreToolUse(request);
+            } catch (error) {
+              // A hook that fails asks, never allows.
+              d = { decision: "ask" };
+              console.error("auto mode: Oraknid's hook failed", error);
+            }
+            if (!d) return {};
+            if (d.decision === "deny") {
+              push({ type: "permission.denied", request, by: "oraknid", reason: d.message });
+              return {
+                hookSpecificOutput: {
+                  hookEventName: "PreToolUse",
+                  permissionDecision: "deny",
+                  permissionDecisionReason: d.message,
+                },
+              };
+            }
+            return {
+              hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "ask" },
+            };
+          },
+        ],
+      },
+    ],
+    PermissionDenied: [
+      {
+        hooks: [
+          async (input) => {
+            if (input.hook_event_name === "PermissionDenied")
+              push({
+                type: "permission.denied",
+                request: requestOf(input.tool_name, input.tool_input),
+                by: "leg",
+                reason: input.reason,
+              });
+            return {};
+          },
+        ],
+      },
+    ],
+  };
 }
 
 export function createClaudeCodeAdapter(deps: { query?: QueryFn } = {}): LegAdapter {
@@ -299,6 +364,7 @@ export function createClaudeCodeAdapter(deps: { query?: QueryFn } = {}): LegAdap
           ? { behavior: "allow", updatedInput: toolInput }
           : { behavior: "deny", message: decision.message };
       };
+      const auto = s.permissionMode === "auto";
 
       const options: Options = {
         ...baseOptions(cfg, s.sandbox, s.cwd, (p) => {
@@ -308,6 +374,13 @@ export function createClaudeCodeAdapter(deps: { query?: QueryFn } = {}): LegAdap
         canUseTool,
         systemPrompt: { type: "preset", preset: "claude_code", append: s.systemPrompt },
       };
+      // Auto mode (ADR-053): Claude Code's own classifier (`--permission-mode auto`), with
+      // Oraknid's layer 1 before every tool as a PreToolUse hook; what Claude Code can't decide,
+      // or the hook sends back as "ask", still comes to canUseTool. Its denials come back as events.
+      if (auto) {
+        options.permissionMode = "auto";
+        options.hooks = autoModeHooks(s.onPreToolUse, (e) => events.push(e));
+      }
       if (s.effort) options.effort = s.effort as EffortLevel;
       if (s.resumeFrom) options.resume = s.resumeFrom;
       // Only Oraknid's bridges to the job's tools (ADR-021); never my own servers.

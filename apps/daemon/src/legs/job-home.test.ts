@@ -221,7 +221,7 @@ describe("a job's scratch on its Leg (M13.22)", () => {
     expect(scratchFor(l.legsDir, "OC", "J")).toContain("/tmp");
     const ctx = {
       worktree: join(l.root, "piano"),
-      autonomy: "standard" as const,
+      autonomy: "auto" as const,
       waived: new Set<never>(),
       scratch,
     };

@@ -67,7 +67,7 @@ export function policyFor(db: Db, jobId: string, worktree: string): PolicyContex
   ];
   return {
     worktree,
-    autonomy: (job?.autonomy ?? "supervised") as Autonomy,
+    autonomy: (job?.autonomy ?? "careful") as Autonomy,
     waived: new Set((job?.waived ?? []) as GatedAction[]),
     rules,
     untrusted: ((job?.inputs ?? []) as { untrusted?: boolean }[]).some((i) => i.untrusted),

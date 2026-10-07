@@ -52,7 +52,7 @@ export function seedJob(db: Db, state = "draft", workspacePath?: string): string
       inputs: [],
       skillId,
       skillVersion: 1,
-      autonomy: "standard",
+      autonomy: "auto",
       allowedLegIds: [],
       budget: {
         tokens: null,

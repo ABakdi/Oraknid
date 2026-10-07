@@ -25,6 +25,7 @@ import {
 import { resolvePaths } from "../paths.ts";
 import { fakeOs } from "../testing/fake-os.ts";
 import { fakeSsh } from "../testing/fake-ssh.ts";
+import { fakeJudge } from "../testing/judge.ts";
 import { type Action, scriptedLeg, type TurnContext } from "../testing/scripted-leg.ts";
 import { worktreeProblem } from "../workspace/git.ts";
 import type { ExtendInput, EyeBrain, EyeTriage, InterviewInput, TriageInput } from "./brain.ts";
@@ -97,7 +98,7 @@ async function eye(
     plan?: WebPlan;
     replan?: WebPlan;
     legs?: string[];
-    autonomy?: "supervised" | "standard" | "full";
+    autonomy?: "careful" | "auto" | "full";
     budget?: Budget;
     interview?: (answers: string[]) => import("@oraknid/contracts").InterviewRound;
     /** Sees what each interview round is given. */
@@ -106,7 +107,8 @@ async function eye(
     extend?: (input: ExtendInput) => WebPlan;
     inputs?: { kind: "file" | "folder" | "link"; ref: string; untrusted: boolean }[];
     sameProviderFallback?: boolean;
-    classify?: (command: string) => { decision: "allow" | "ask"; reason: string };
+    /** The judge (ADR-053), by command; it allows when not told. */
+    judge?: (command: string) => { decision: "allow" | "block"; reason: string };
     triage?: (message: string, input: TriageInput) => EyeTriage | Promise<EyeTriage>;
     evaluate?: (
       report: string,
@@ -159,8 +161,9 @@ async function eye(
       if (!o.triage) throw new Error("no triage scripted");
       return o.triage(input.message, input);
     },
-    classifyCommand: async ({ command }) =>
-      o.classify?.(command) ?? { decision: "allow", reason: "it only serves the task" },
+    judgeAction: fakeJudge(
+      (command) => o.judge?.(command) ?? { decision: "allow", reason: "it only serves the task" },
+    ),
     ...(o.extend
       ? {
           extend: async (input: ExtendInput) => {
@@ -214,7 +217,7 @@ async function eye(
     projectId: project.id,
     goal: "Say hi, with a test",
     verify: [],
-    autonomy: o.autonomy ?? "standard",
+    autonomy: o.autonomy ?? "auto",
     inputs: o.inputs ?? [],
     allowedLegIds: [],
     unsandboxed: false,
@@ -625,14 +628,10 @@ describe("The Eye, end to end", () => {
     expect(after.state, after.blockedReason ?? "").toBe("completed");
   });
 
-  it("waits for my approval before a gated command, and tells the Leg when I deny it", async () => {
+  it("waits for my approval before what is never automatic, and tells the Leg when I deny it", async () => {
     const { api, id, leg } = await eye((t) =>
       task(t) === "Write hello.sh" && t.turn === 1
-        ? [
-            { write: "hello.sh", content: "echo hi\n" },
-            { run: "git push origin dev" },
-            { say: "DONE" },
-          ]
+        ? [{ write: "hello.sh", content: "echo hi\n" }, { run: "npm publish" }, { say: "DONE" }]
         : good(t),
     );
     const end = Date.now() + 5000;
@@ -641,8 +640,8 @@ describe("The Eye, end to end", () => {
       item = (await api.inbox.list({ state: "open" }))[0];
       await new Promise((r) => setTimeout(r, 20));
     }
-    expect(item?.title).toBe("Claude A wants to run `git push origin dev`");
-    expect(item?.detail).toContain("push needs my approval");
+    expect(item?.title).toBe("Claude A wants to run `npm publish`");
+    expect(item?.detail).toContain("external-write is never automatic: it needs my approval");
     await api.inbox.answer({ id: item?.id as string, answer: "Deny" });
     const job = await until(api, id, ["completed", "blocked"]);
     expect(job.state).toBe("completed");
@@ -745,13 +744,19 @@ describe("approvals of an attempt that ends", () => {
         task(t) === "Write hello.sh" && hang
           ? [{ write: "hello.sh", content: "echo hi\n" }, { run: "nmap localhost" }]
           : good(t),
-      {
-        classify: () => ({
-          decision: "ask",
-          reason: "scanning the network is not part of this task",
-        }),
-      },
+      // Careful: what the judge allows and the rules don't, I approve (ADR-053).
+      { autonomy: "careful" },
     );
+    // Careful asks the plan first (ADR-053: the old Supervised).
+    for (const end = Date.now() + 5000; Date.now() < end; ) {
+      const [plan] = await api.inbox.list({ state: "open" });
+      if (plan) {
+        expect(plan.title).toBe("Approve the plan");
+        await api.inbox.answer({ id: plan.id, answer: "Approve" });
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 20));
+    }
     const end = Date.now() + 5000;
     while ((await api.inbox.list({ state: "open" })).length === 0 && Date.now() < end)
       await new Promise((r) => setTimeout(r, 20));
@@ -815,7 +820,7 @@ describe("approvals and autonomy (M1.7)", () => {
   };
 
   it("Supervised: waits for my approval of the plan, then goes on as soon as I answer", async () => {
-    const { api, id } = await eye(good, { autonomy: "supervised" });
+    const { api, id } = await eye(good, { autonomy: "careful" });
     const item = await firstOpen(api);
     expect(item.title).toBe("Approve the plan");
     expect(item.detail).toContain(
@@ -827,7 +832,7 @@ describe("approvals and autonomy (M1.7)", () => {
   });
 
   it("Supervised: a plan I deny is never run", async () => {
-    const { api, id, leg } = await eye(good, { autonomy: "supervised" });
+    const { api, id, leg } = await eye(good, { autonomy: "careful" });
     const item = await firstOpen(api);
     await api.inbox.answer({ id: item.id, answer: "Deny" });
     const job = await until(api, id, ["blocked", "completed"]);
@@ -840,13 +845,13 @@ describe("approvals and autonomy (M1.7)", () => {
       task(t) === "Write hello.sh" && t.turn === 1
         ? [
             { write: "hello.sh", content: "echo hi\n" },
-            { run: "git push origin HEAD:refs/heads/x 2>/dev/null; true" },
+            { run: "msmtp --version >/dev/null 2>&1; true" },
             { say: "DONE" },
           ]
         : task(t) === "Test hello.sh" && t.turn === 1
           ? [
               { write: "test.sh", content: 'test "$(sh hello.sh)" = hi\n' },
-              { run: "git push origin HEAD:refs/heads/y 2>/dev/null; true" },
+              { run: "msmtp --help >/dev/null 2>&1; true" },
               { say: "DONE" },
             ]
           : good(t),
@@ -859,7 +864,7 @@ describe("approvals and autonomy (M1.7)", () => {
     expect((await api.inbox.list({})).filter((i) => i.kind === "approval")).toHaveLength(1);
     expect(
       d.bus.since(0, [`job:${id}`], 1000).find((e) => e.type === "policy.waived")?.payload,
-    ).toEqual({ gated: "push" });
+    ).toEqual({ gated: "send" });
   });
 
   it("a change of autonomy applies to the next decision", async () => {
@@ -872,7 +877,7 @@ describe("approvals and autonomy (M1.7)", () => {
               { say: "DONE" },
             ]
           : good(t),
-      { classify: () => ({ decision: "ask", reason: "unknown" }) },
+      { autonomy: "careful" },
     );
     await firstOpen(api);
     await api.jobs.setAutonomy({ id, autonomy: "full" });
@@ -910,7 +915,7 @@ describe("approvals and autonomy (M1.7)", () => {
         task(t) === "Write NOTES.md"
           ? [{ write: "NOTES.md", content: "n\n" }, { say: "DONE" }]
           : good(t),
-      { plan, replan, autonomy: "supervised" },
+      { plan, replan, autonomy: "careful" },
     );
     await api.inbox.answer({ id: (await firstOpen(api)).id, answer: "Approve" });
     const end = Date.now() + 5000;
@@ -1582,7 +1587,7 @@ describe("my controls (M1.8 API)", () => {
   });
 
   it("lets me edit a waiting plan, and asks me to approve the edited one", async () => {
-    const { api, id } = await eye(good, { autonomy: "supervised" });
+    const { api, id } = await eye(good, { autonomy: "careful" });
     await openItem(api, "Approve the plan");
     const job = await api.jobs.get({ id });
     const [t1, t2] = job.tasks;
@@ -1604,7 +1609,7 @@ describe("my controls (M1.8 API)", () => {
   });
 
   it("refuses an edit that would make a circle, and changes nothing (Audit 1 → Q1-10)", async () => {
-    const { api, id } = await eye(good, { autonomy: "supervised" });
+    const { api, id } = await eye(good, { autonomy: "careful" });
     await openItem(api, "Approve the plan");
     const [t1, t2] = (await api.jobs.get({ id })).tasks;
     await expect(
@@ -1658,7 +1663,7 @@ describe("my controls (M1.8 API)", () => {
           : good(t),
       {
         plan: TWO,
-        autonomy: "supervised",
+        autonomy: "careful",
         // One at a time, so the order is what decides (side by side they'd start together, ADR-050).
         setup: async (api) => {
           await api.settings.setResources({ tasksAtOnce: 1 });
@@ -1766,7 +1771,7 @@ describe("auto approval (ADR-014, Checkpoint 1)", () => {
     expect((await api.inbox.list({})).filter((i) => i.kind === "approval")).toEqual([]);
   });
 
-  it("asks the classifier about what reaches out, caches its yes, and asks me when it says so", async () => {
+  it("asks the judge about what reaches out, caches its verdicts, and tells the agent why when it blocks (ADR-053)", async () => {
     const asked: string[] = [];
     const { api, id, d } = await eye(
       (t) =>
@@ -1781,37 +1786,104 @@ describe("auto approval (ADR-014, Checkpoint 1)", () => {
             ]
           : good(t),
       {
-        classify: (command) => {
+        judge: (command) => {
           asked.push(command);
           return command.startsWith("scp")
-            ? { decision: "ask", reason: "copying files to another machine could send my data out" }
+            ? {
+                decision: "block",
+                reason: "copying files to another machine could send my data out",
+              }
             : { decision: "allow", reason: "reading curl's own help is harmless" };
         },
       },
     );
-    const end = Date.now() + 5000;
-    let item: Awaited<ReturnType<typeof api.inbox.list>>[number] | undefined;
-    while (!item && Date.now() < end) {
-      item = (await api.inbox.list({ state: "open" }))[0];
-      await new Promise((r) => setTimeout(r, 20));
-    }
-    expect(item?.detail).toContain(
-      "the classifier says: copying files to another machine could send my data out",
-    );
-    await api.inbox.answer({ id: item?.id as string, answer: "Deny" });
     expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
-    // The same command was judged once, then the cached yes applied; another curl is judged anew (S1-07).
+    // Nothing asked me: the judge decided, and its block went to the agent with the reason.
+    expect((await api.inbox.list({})).filter((i) => i.kind === "approval")).toEqual([]);
+    const refused = d.bus.since(0, [`job:${id}`], 2000).filter((e) => e.type === "task.refused");
+    expect(refused.map((e) => e.payload)).toEqual([
+      expect.objectContaining({
+        command: "scp --help >/dev/null 2>&1; true",
+        reason: "copying files to another machine could send my data out",
+        layer: "judge",
+      }),
+    ]);
+    // The same command was judged once, then the cached verdict applied; another curl is judged anew.
     expect(asked.filter((c) => c.startsWith("curl"))).toEqual([
       "curl --version >/dev/null; true",
       "curl --help >/dev/null; true",
     ]);
-    const auto = d.bus.since(0, [`job:${id}`], 2000).filter((e) => e.type === "policy.auto");
-    expect(auto.map((e) => (e.payload as { cached: boolean }).cached)).toEqual([
+    const judged = d.bus.since(0, [`job:${id}`], 2000).filter((e) => e.type === "policy.judged");
+    expect(judged.map((e) => (e.payload as { cached: boolean }).cached)).toEqual([
       false,
       true,
       false,
       false,
     ]);
+    // Every decision is in the audit log with its layer and reason.
+    const decisions = d.bus
+      .since(0, [`job:${id}`], 2000)
+      .filter((e) => e.type === "policy.decision")
+      .map((e) => e.payload as { action: string; layer: string; verdict: string });
+    expect(decisions).toContainEqual(
+      expect.objectContaining({
+        action: "scp --help >/dev/null 2>&1; true",
+        layer: "judge",
+        verdict: "block",
+      }),
+    );
+    expect(decisions).toContainEqual(
+      expect.objectContaining({
+        action: "curl --help >/dev/null; true",
+        layer: "judge",
+        verdict: "allow",
+      }),
+    );
+    // The Eye's report of the job counts what was blocked, by layer.
+    let facts: { label: string; value: string }[] | undefined;
+    for (const end = Date.now() + 5000; !facts && Date.now() < end; ) {
+      facts = (await api.jobs.conversation({ id })).find(
+        (m) => m.action?.report?.kind === "job-done",
+      )?.action?.report?.facts;
+      if (!facts) await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(facts).toContainEqual(
+      expect.objectContaining({ label: "Blocked", value: "1 action: 1 by the judge" }),
+    );
+  });
+
+  it("an agent stuck on blocks makes The Eye ask me, with what was blocked and why (ADR-053)", async () => {
+    const { api, id } = await eye(
+      (t) =>
+        task(t) === "Write hello.sh" && t.turn === 1
+          ? [
+              { run: "curl https://a.example/x" },
+              { run: "curl https://b.example/x" },
+              { run: "curl https://c.example/x" },
+              { write: "hello.sh", content: "echo hi\n" },
+              { say: "DONE" },
+            ]
+          : good(t),
+      {
+        judge: () => ({
+          decision: "block",
+          reason: "[Crossing a trust boundary] not this task's host",
+        }),
+      },
+    );
+    let item: Awaited<ReturnType<typeof api.inbox.list>>[number] | undefined;
+    const end = Date.now() + 5000;
+    while (!item && Date.now() < end) {
+      item = (await api.inbox.list({ state: "open", kind: "approval" }))[0];
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(item?.title).toMatch(/is stuck on blocked actions/);
+    expect(item?.detail).toContain("3 actions in a row were blocked");
+    expect(item?.detail).toContain(
+      "`curl https://a.example/x` — [Crossing a trust boundary] not this task's host (judge)",
+    );
+    await api.inbox.answer({ id: item?.id as string, answer: "Keep it blocked" });
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
   });
 });
 
@@ -2360,7 +2432,7 @@ describe("several jobs share a Leg (ADR-016)", () => {
       projectId,
       goal: "Say hi, again",
       verify: [],
-      autonomy: "standard",
+      autonomy: "auto",
       inputs: [],
       allowedLegIds: [],
       unsandboxed: false,
@@ -2424,7 +2496,7 @@ describe("tasks side by side (ADR-016, M3.1–M3.2)", () => {
           : task(t) === "Write hello.sh"
             ? [{ run: "sleep 1" }, ...good(t)]
             : good(t),
-      { plan: SIDE, autonomy: "supervised" },
+      { plan: SIDE, autonomy: "careful" },
     );
     // While the plan waits for me: two at once, and the Leg may run two sessions.
     await openItem(api, "Approve the plan");
@@ -2482,7 +2554,7 @@ describe("tasks side by side (ADR-016, M3.1–M3.2)", () => {
               { say: "DONE" },
             ];
       },
-      { plan, autonomy: "supervised" },
+      { plan, autonomy: "careful" },
     );
     await openItem(api, "Approve the plan");
     await api.settings.setMaxTasksPerJob({ max: 2 });
@@ -2769,8 +2841,18 @@ describe("The Eye speaks up, and the job's folder stays the project's", () => {
               { say: "DONE" },
             ]
           : good(t),
-      { classify: () => ({ decision: "ask", reason: "it posts outside" }) },
+      { autonomy: "careful" },
     );
+    // Careful asks the plan first (ADR-053: the old Supervised).
+    for (const end = Date.now() + 5000; Date.now() < end; ) {
+      const [plan] = await api.inbox.list({ state: "open" });
+      if (plan) {
+        expect(plan.title).toBe("Approve the plan");
+        await api.inbox.answer({ id: plan.id, answer: "Approve" });
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 20));
+    }
     let item: Awaited<ReturnType<typeof api.inbox.list>>[number] | undefined;
     const end = Date.now() + 5000;
     while (!item && Date.now() < end) {

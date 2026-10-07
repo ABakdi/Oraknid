@@ -73,7 +73,7 @@ async function harness() {
       reason: "",
     }),
     triage: async () => ({ intent: "question", reply: "Fine.", silk: null, tasks: [] }),
-    classifyCommand: async () => ({ decision: "allow" as const, reason: "fine" }),
+    judgeAction: async () => ({ decision: "allow" as const, category: null, reason: "fine" }),
     interviewRound: async () => ({ done: true, playback: "Clear.", questions: [], open: [] }),
     summarizeJob: async () => ({ summary: "It wrote a.txt." }),
     nameJob: async (i: JobNameInput) => {

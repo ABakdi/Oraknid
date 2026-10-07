@@ -78,14 +78,26 @@ function toEntry(e: Record<string, unknown>): SessionLogEntry | null {
     case "tool.result":
       return { at, kind: "result", ok: e.ok !== false, text: cut(String(e.output ?? "")) };
     case "permission.requested": {
-      const d = e.decision as { allow?: boolean; message?: string } | undefined;
+      const d = e.decision as { allow?: boolean; message?: string; why?: string } | undefined;
       const r = e.request as { tool?: string; command?: string | null; path?: string | null };
       return {
         at,
         kind: "permission",
         tool: r?.tool,
         ok: d?.allow === true,
-        text: `${d?.allow ? "allowed" : "refused"}: ${r?.command ?? r?.path ?? r?.tool ?? ""}${d?.message ? ` (${d.message})` : ""}`,
+        // Its layer and reason (ADR-053), else what the Leg was told.
+        text: `${d?.allow ? "allowed" : "refused"}: ${r?.command ?? r?.path ?? r?.tool ?? ""}${d?.why ? ` (${d.why})` : d?.message ? ` (${d.message})` : ""}`,
+      };
+    }
+    case "permission.denied": {
+      // Refused before it ran, in the Leg's own auto mode or by Oraknid's hook in it (ADR-053).
+      const r = e.request as { tool?: string; command?: string | null; path?: string | null };
+      return {
+        at,
+        kind: "permission",
+        tool: r?.tool,
+        ok: false,
+        text: `refused by ${e.by === "leg" ? "the Leg's auto mode" : "Oraknid's rules"}: ${r?.command ?? r?.path ?? r?.tool ?? ""} (${String(e.reason ?? "")})`,
       };
     }
     case "question":

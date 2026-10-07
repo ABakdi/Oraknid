@@ -109,8 +109,19 @@ export type Budget = z.infer<typeof Budget>;
 
 // ── Job ─────────────────────────────────────────────────────────────
 
-export const Autonomy = z.enum(["supervised", "standard", "full"]);
-export type Autonomy = z.infer<typeof Autonomy>;
+/**
+ * How much a job does without asking me (ADR-053): `auto` (the default)
+ * lets the rules and the judge decide; `careful` asks me what the judge
+ * allows when it isn't on the allow list; `full` skips the judge in the
+ * job's folder and on servers not marked production. The names before
+ * auto mode still parse: `supervised` is careful, `standard` is auto.
+ */
+export const AutonomyLevel = z.enum(["careful", "auto", "full"]);
+export type Autonomy = z.infer<typeof AutonomyLevel>;
+const LEGACY_AUTONOMY: Record<string, Autonomy> = { supervised: "careful", standard: "auto" };
+export const legacyAutonomy = (v: unknown): unknown =>
+  typeof v === "string" && v in LEGACY_AUTONOMY ? LEGACY_AUTONOMY[v] : v;
+export const Autonomy = z.preprocess(legacyAutonomy, AutonomyLevel);
 
 export const JobState = z.enum([
   "draft",

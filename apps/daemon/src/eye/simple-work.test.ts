@@ -59,7 +59,7 @@ const brain = {
   triage: async () => {
     throw new Error("unused");
   },
-  classifyCommand: async () => ({ decision: "ask" as const, reason: "a test asks" }),
+  judgeAction: async () => ({ decision: "block" as const, category: null, reason: "a test asks" }),
   interviewRound: async () => ({ done: true, playback: "", questions: [], open: [] }),
 } satisfies EyeBrain;
 
@@ -142,7 +142,7 @@ async function world(free: ReturnType<typeof scriptedLeg>, records: Record<strin
     projectId: project.id,
     goal: "Pick the audio library",
     verify: [],
-    autonomy: "standard",
+    autonomy: "auto",
     inputs: [],
     allowedLegIds: [],
     unsandboxed: false,
