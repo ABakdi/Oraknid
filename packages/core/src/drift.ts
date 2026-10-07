@@ -1,111 +1,37 @@
-import { oraknidOwn } from "./harness.ts";
-import { inScope } from "./web.ts";
+import {
+  budget,
+  DEFAULT_THRESHOLDS,
+  type Drift,
+  type DriftCode,
+  type DriftThresholds,
+  drift,
+  driftOf,
+  type Observed,
+  stall,
+} from "./harness/monitors.ts";
 
 // Drift detectors D1–D8 and the escalation ladder (docs/01-Specification/Drift-Control.md).
+// The detectors are the monitors' (harness/monitors.ts, ADR-056 §5); `detect` reads them as drifts.
 
-export type DriftCode = "D1" | "D2" | "D3" | "D4" | "D5" | "D6" | "D7" | "D8";
+export type { Drift, DriftCode, DriftThresholds, Observed };
+export { DEFAULT_THRESHOLDS };
 
-export interface Drift {
-  code: DriftCode;
-  /** What was seen, specific enough to show me and to put in a corrective prompt. */
-  evidence: string;
-}
+const ORDER: DriftCode[] = ["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8"];
 
-export interface DriftThresholds {
-  repeats: number;
-  repeatWindow: number;
-  sameFailure: number;
-  stallMs: number;
-  burnShare: number;
-  burnTokens: number;
-}
-
-export const DEFAULT_THRESHOLDS: DriftThresholds = {
-  repeats: 3,
-  repeatWindow: 10,
-  sameFailure: 3,
-  stallMs: 5 * 60_000,
-  burnShare: 0.3,
-  burnTokens: 150_000,
-};
-
-/** What The Eye has seen of a task's current attempt. */
-export interface Observed {
-  scope: string[];
-  /** Paths changed in the worktree, relative to it. */
-  changedPaths: string[];
-  /** Commands in order, each with an output fingerprint. */
-  commands: { command: string; outputHash: string }[];
-  /** Verification failure signatures, in order. */
-  verifyFailures: string[];
-  /** The Leg claimed done and verification then failed, or the claimed command never ran. */
-  falseClaim: string | null;
-  lastActivityAt: number;
-  /** Tokens spent since the last verified progress. */
-  tokensSinceProgress: number;
-  taskBudgetTokens: number | null;
-  /** Policy refusals: forbidden commands and gated actions tried without approval. */
-  forbidden: string[];
-  gateBypass: string[];
-  local: boolean;
-}
-
+/** Every drift seen, D1 to D8 in order: the drift, stall and budget monitors together. */
 export function detect(o: Observed, now: number, t: DriftThresholds = DEFAULT_THRESHOLDS): Drift[] {
-  const found: Drift[] = [];
-
-  // Oraknid's own files (its folder, the handoff note it asked for) are never drift (ADR-052).
-  const outside = o.changedPaths.filter((p) => !oraknidOwn(p) && !inScope(p, o.scope));
-  if (outside.length)
-    found.push({
-      code: "D1",
-      evidence: `changed files outside its scope: ${outside.slice(0, 5).join(", ")}`,
-    });
-
-  const recent = o.commands.slice(-t.repeatWindow);
-  const counts = new Map<string, number>();
-  for (const c of recent)
-    counts.set(
-      `${c.command}\u0000${c.outputHash}`,
-      (counts.get(`${c.command}\u0000${c.outputHash}`) ?? 0) + 1,
-    );
-  const loop = [...counts].find(([, n]) => n >= t.repeats);
-  if (loop) {
-    found.push({
-      code: "D2",
-      evidence: `ran \`${loop[0].split("\u0000")[0]}\` ${loop[1]} times with the same result`,
-    });
-  }
-
-  const tail = o.verifyFailures.slice(-t.sameFailure);
-  if (tail.length >= t.sameFailure && tail.every((s) => s === tail[0])) {
-    found.push({
-      code: "D3",
-      evidence: `verification failed the same way ${t.sameFailure} times: ${tail[0]}`,
-    });
-  }
-
-  if (o.falseClaim) found.push({ code: "D4", evidence: o.falseClaim });
-
-  const stall = o.local ? t.stallMs * 2 : t.stallMs;
-  if (now - o.lastActivityAt > stall) {
-    found.push({
-      code: "D5",
-      evidence: `no output, edit or tool call for ${Math.round((now - o.lastActivityAt) / 60_000)} min`,
-    });
-  }
-
-  const limit = o.taskBudgetTokens ? o.taskBudgetTokens * t.burnShare : t.burnTokens;
-  if (o.tokensSinceProgress > limit) {
-    found.push({
-      code: "D6",
-      evidence: `${o.tokensSinceProgress} tokens since the last verified progress`,
-    });
-  }
-
-  for (const f of o.forbidden) found.push({ code: "D7", evidence: f });
-  for (const g of o.gateBypass) found.push({ code: "D8", evidence: g });
-  return found;
+  return [...drift(o, t), ...stall(o, now, t), ...budget(o, t)]
+    .map(driftOf)
+    .filter((d): d is Drift => d !== null)
+    .sort((a, b) => ORDER.indexOf(a.code) - ORDER.indexOf(b.code));
 }
+
+/** The drifts by how much they matter, the worst first: security, scope, a false claim… */
+export const SEVERITY: DriftCode[] = ["D8", "D7", "D1", "D4", "D3", "D2", "D6", "D5"];
+
+/** The worst of some drifts, by SEVERITY; the first seen among equals. */
+export const worstDrift = (drifts: Drift[]): Drift | null =>
+  [...drifts].sort((a, b) => SEVERITY.indexOf(a.code) - SEVERITY.indexOf(b.code))[0] ?? null;
 
 /** A claim of being done, in a Leg's final words. */
 export const claimsDone = (text: string) =>

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import type { Step } from "@oraknid/core";
 import type { LegEvent } from "@oraknid/leg-sdk";
 import { desc, eq } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
@@ -20,14 +22,36 @@ type Writer = ReturnType<AttemptLog["at"]>;
  * result (which the Gate reads: an action that ran ends the stuck row),
  * and its words at each turn's end, not every delta.
  */
-export function recordEvents(log: Writer, ran: (actionId: string, ok: boolean) => void) {
+export function recordEvents(
+  log: Writer,
+  ran: (actionId: string, ok: boolean, out: string) => void,
+) {
   return (e: LegEvent) => {
     if (e.type === "tool.called")
       log.append("ActionRequested", { id: e.id, tool: e.tool, input: inputSummary(e.input) });
-    else if (e.type === "tool.result") ran(e.id, e.ok);
+    else if (e.type === "tool.result")
+      ran(e.id, e.ok, createHash("sha256").update(e.output).digest("hex").slice(0, 12));
     else if (e.type === "turn.ended")
       log.append("AgentText", { text: e.text.slice(-2000), reason: e.reason });
   };
+}
+
+/**
+ * An attempt's steps for the stuck monitor (ADR-056 §5): its actions,
+ * their results and its words after `afterId` (the last nudge or ladder
+ * step), of its last 60 such events.
+ */
+export function stepsOf(log: AttemptLog, attemptId: string, afterId: number): Step[] {
+  return log
+    .attempt(attemptId, { kinds: ["ActionRequested", "ActionResult", "AgentText"], limit: 60 })
+    .filter((e) => e.id > afterId)
+    .map((e): Step => {
+      if (e.kind === "ActionRequested")
+        return { kind: "action", id: e.data.id, action: `${e.data.tool} ${e.data.input}` };
+      if (e.kind === "ActionResult")
+        return { kind: "result", id: e.data.actionId, ok: e.data.ok, out: e.data.out ?? null };
+      return { kind: "text", text: e.data.text };
+    });
 }
 
 const quote = (s: string) => `\`${s.replace(/`/g, "'").slice(0, 160)}\``;

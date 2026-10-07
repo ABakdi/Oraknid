@@ -317,6 +317,99 @@ except where the check paths diverged (below, a commit and a test each).
   (merge, job) have no attempt and aren't logged; the log isn't on the
   live bus yet; uncertain actions are recorded and said, not reconciled.
 
+## As built (stage 4, 2026-10-07)
+The turn's end taken out of `runAttempt`: gathered, decided once, applied.
+Code moved, behaviour kept, except the two changes below (a commit and a
+test each).
+- **Monitors** (`packages/core/src/harness/monitors.ts`), pure, to
+  `Signal{kind: drift|stall|budget|stuck, code, evidence}`: `drift` (D1–D4,
+  D7, D8), `stall` (D5), `budget` (D6, and the attempt's turns at their
+  limit), `stuck` (OpenHands' patterns over the log's actions, results and
+  words: the same action and result 4 times, the same action failing 3
+  times, 3 turns of words with no action, two actions taking turns 3
+  times). `detect` reads drift, stall and budget as before. An action's
+  result keeps a fingerprint of its output (`ActionResult.out`). Each new
+  signal is a `Signal` in the attempt log, once until the ladder acts.
+- **`decideOutcome`** (`packages/core/src/harness/outcome.ts`), pure:
+  `{stop, strayed, unusable, ownerWaiting, guidance, verdict, repair,
+  agentNeeds, signals, rung, history, policy, usage} → Outcome`:
+  `Done | Continue{why, feedback, rotate?, grant?, nudge?} | Verify |
+  RepairChecks | AskOwner{agent-needs | keeps-going-wrong} |
+  Retry{same session | new, by me} | Climb{to, failure} |
+  Escalate{correct|reset|step-up|reassign|kill} | Unavailable{limit|error}
+  | Fail{strayed|error} | OwnerTakes | LeaveOut | CancelJob`. `Verify` and
+  `RepairChecks` ask for more facts: the attempt verifies or repairs and
+  decides again. My answers are outcomes too (`agentNeedsAnswer`,
+  `keepsGoingWrongAnswer`). Its helpers: `unusableOf` (what isn't the
+  task's, from the agent's words), `verdictOf` (the checks' first failure
+  or The Eye's review, the failure on record for D3 and D4),
+  `repairHintOf`.
+- **The precedence**, written once (stage 1's order, with stage 4's fix):
+
+  | # | At a turn's end | Outcome |
+  | :-- | :-- | :-- |
+  | 1 | the job's folder left the project | Fail (counted), put back |
+  | 2 | a usage limit | Unavailable |
+  | 3 | the agent's error, its words saying it isn't the task's (deprecated, quota, provider) | Unavailable; else Fail |
+  | 4 | interrupted | Retry in its session; its turns spent: the ladder (D6) |
+  | 5 | my messages to the work | Continue with them |
+  | 6 | not verified yet | Verify (its checks, once per turn end, or The Eye's review) |
+  | 7 | the first failing check looks broken | RepairChecks |
+  | 8 | what the agent says it needs of me, not asked yet (not at its limit of steps) | AskOwner |
+  | 9 | security and scope: D7, D8, D1 | the drift ladder (whether the checks pass or not) |
+  | 10 | verified | Done |
+  | 11 | a real failure, a higher rung (not at its limit of steps) | Climb |
+  | 12 | D2–D6, and stuck after a nudge (D2) | the drift ladder |
+  | 13 | its turns spent | the ladder (D6) |
+  | 14 | otherwise | Continue: the failure back, a nudge once if stuck, rotated when the context is full |
+
+  With no turn's end: waiting on me is no stall; any drift goes to the
+  ladder. The ladder's last step asks me ("keeps going wrong").
+- **Counting**, written once (`countOf`, `SPENDS_ATTEMPT`, read by `runTask`):
+
+  | End | Recorded | Spends an attempt | Learned of the model |
+  | :-- | :-- | :-- | :-- |
+  | Done | succeeded | no | yes |
+  | Fail, Climb | failed | yes | yes |
+  | Escalate's step-up, reassign, kill | reassigned | yes | yes |
+  | Unavailable, a session that couldn't start | unavailable | no | no |
+  | my "try again" (advice, another Leg) | redirected | no | no |
+  | "I'll do it", "Leave it out", "Stop the job" | abandoned | no | no |
+  | stopped by its Leg / by me or its job | abandoned | no | yes / no |
+- **`EscalationPolicy`** (`packages/core/src/harness/escalation.ts`):
+  `next(rung, ranked, held) → route | "top"` (a task I pinned or gave to
+  a Leg doesn't climb), `step(level, drift)` (the drift ladder), and
+  `stale(attemptNo, task)`: `runTask` drops the result of an attempt
+  that isn't the task's latest or was already applied.
+- **Applied** (`apps/daemon/src/harness/apply.ts`): `applyOutcome` does
+  the side effects — feedback sent, checks repaired, my questions through
+  the Gate's `askOwner`, the climb with its handoff, a ladder step, the
+  commit, the end (`EndAttempt` with its counted ending). The facts
+  (`harness/facts.ts`): `beginTurn`, `factsOf` (the monitors run there).
+  `attempt.ts`'s loop is: the turn's end → `beginTurn` → `decideOutcome(
+  factsOf(…))` → `applyOutcome`, until it waits for the next turn.
+  `runTask` applies an attempt's outcome from a table (`APPLY`).
+- **Ratchets**: `attempt.ts` at most 1,420 lines (2,100 before); it
+  imports `decideOutcome` and `applyOutcome` and none of the decision's
+  parts (detect, the ladder, the agent's words, my answers, the monitors),
+  reads no turn's end reason and counts nothing; `program.ts` has no
+  switch on an outcome and reads its counting from core.
+- **Changed**, each with its test:
+  1. Stage 1's gap: D7 and D8 were looked at only when the checks failed;
+     a forbidden action or a refused gate tried again, then passing
+     checks, was done. Now the ladder first: D7 is corrected in its
+     session, D8 kills and rolls back (`harness/stage4.test.ts`; core
+     `harness/outcome.test.ts`).
+  2. The stuck monitor acts: going round in circles is nudged once, then
+     it is D2 on the ladder (`stage4.test.ts`: an agent that only talks;
+     `outcome.test.ts`).
+- **Limits**: the drift monitor still reads the attempt's observations
+  (commands with their output's fingerprint, the checks' failures) kept
+  beside the log, not the log alone; stuck runs at a turn's end only (a
+  loop inside one long turn is D2's); the repair loop, `tryChecksFirst`
+  and the sessions stay in `attempt.ts` until the controller (stage 5);
+  my answers are read by core but asked in `apply.ts`.
+
 ## Consequences
 - More files, each small, each with its own tests; the bugs of the last
   two days become cases in a table.

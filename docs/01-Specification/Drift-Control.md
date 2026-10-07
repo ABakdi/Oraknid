@@ -13,7 +13,7 @@ and usage samples. Thresholds are defaults, editable in Settings.
 | #   | Drift                           | Detected when                                                                                                         | Default threshold                                 |
 | :-- | :------------------------------ | :-------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------ |
 | D1  | **Out-of-scope edit**           | A changed path is outside the task's scope (its `scope` globs and what its checks name, below).                       | Any file.                                         |
-| D2  | **Loop / oscillation**          | The same file region is edited back and forth, or the same command runs with the same result repeatedly.              | 3 repeats in 10 turns.                            |
+| D2  | **Loop / oscillation**          | The same file region is edited back and forth, or the same command runs with the same result repeatedly; or the stuck monitor sees it going round in circles again after one nudge (below). | 3 repeats in 10 turns.                            |
 | D3  | **Repeated failure**            | Verification fails with the same error signature.                                                                     | 3 times.                                          |
 | D4  | **Fake progress claim**         | The Leg says "done", "tests pass" or similar, but verification fails, or the claimed command never ran in the stream. | 1 time.                                           |
 | D5  | **Stall**                       | No output, no file change and no tool call.                                                                           | 5 min (local: 10 min).                            |
@@ -23,6 +23,18 @@ and usage samples. Thresholds are defaults, editable in Settings.
 
 Cheap Legs can help with classification (e.g. "is this message a done
 claim?"). The thresholds and the final decision stay deterministic.
+
+**The detectors are monitors** ([[ADR-056-The-Harness]] stage 4,
+2026-10-07): pure functions (`packages/core/src/harness/monitors.ts`)
+that return signals — drift (D1–D4, D7, D8), stall (D5), budget (D6 and
+the attempt's turns) and stuck — written to the attempt log; they never
+act. `decideOutcome` alone acts on them. **Stuck** reads the attempt
+log after OpenHands' patterns: the same action with the same result 4
+times in a row, the same action failing 3 times in a row, 3 turns that
+end in words with no action, two actions taking turns 3 times. Seen at
+a turn's end the agent is nudged once (the words go with the failure it
+is told); seen again after the nudge, it is D2 on the ladder. Nudge and
+ladder steps start the patterns afresh.
 
 **A task's scope** (M13.22, 2026-10-04). What D1 measures against, what
 the context pack says the Leg may change, and what a D1 step puts back
@@ -90,7 +102,9 @@ counted against the model. One exception to "the work ladder first"
 (2026-10-07, [[ADR-056-The-Harness]] stage 1): a forbidden action (D7),
 a gate bypass (D8) or edits out of scope (D1) at the same turn's end
 are corrected in the same session before any climb, so out-of-scope
-edits are never carried up a rung. An interrupted turn is told to go on,
+edits are never carried up a rung; and since stage 4, before the task
+is done: checks that pass don't make a forbidden action or a refused
+gate tried again done (D7 is corrected, D8 kills). An interrupted turn is told to go on,
 not checked as finished; one stopped at the agent's limit of steps is
 checked, its words not taken as a claim.
 
