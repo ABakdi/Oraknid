@@ -36,7 +36,14 @@ The work, in this order:
    checks that run there: `ssh <alias> systemctl is-active fail2ban`,
    `ssh <alias> nginx -t`, `ssh <alias> curl -sf http://localhost/health`.
    Oraknid runs them itself over its own connection; a check only
-   reads.
+   reads. A check names the alias alone: never `HOME=…`, `-F`, `-i`,
+   `-o` or the job's own paths (its home, its ssh config), which are
+   not where checks run. A check that guards what must keep running
+   ends with `# guard`, passes before the work too, and says "still
+   running" by name rather than an exact count:
+   `ssh <alias> '[ "$(docker ps -q --filter name=harvest- | wc -l)" -ge 1 ]' # guard`.
+   A check that seems wrong is The Eye's to fix: say why, never make
+   it pass another way (a file of your own that stands in for a tool).
 5. **Say what changed.** The task's last words list what was changed
    on the server, a line each ("installed fail2ban 1.1.0", "enabled
    the sshd jail", "edited /etc/nginx/sites-enabled/x.com"). Oraknid

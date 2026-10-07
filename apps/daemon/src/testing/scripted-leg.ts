@@ -13,7 +13,8 @@ import {
 
 export type Action =
   | { write: string; content: string }
-  | { run: string }
+  /** A command; `instead`, when allowed, does what it would have done (on a stand-in server) and says what it printed. */
+  | { run: string; instead?: () => string }
   | { say: string }
   /** Reasoning streamed before the answer, as a thinking model's (M13.25). */
   | { think: string }
@@ -57,6 +58,8 @@ export function scriptedLeg(
     models?: string[];
     /** Its sessions have native ids and can be resumed, as Claude Code's are (ADR-052 §1). */
     resumable?: boolean;
+    /** In auto mode, commands go through Oraknid's PreToolUse hook first, as Claude Code's do (ADR-053). */
+    autoModeHooks?: boolean;
   } = {},
 ) {
   const log: TurnContext[] = [];
@@ -140,18 +143,30 @@ export function scriptedLeg(
           } else if ("run" in a) {
             const id = `c${Math.random()}`;
             events.push({ type: "tool.called", id, tool: "Bash", input: { command: a.run } });
-            const decision = await s.onPermission({
+            const request = {
               tool: "Bash",
               input: { command: a.run },
               command: a.run,
               path: null,
-            });
+            };
+            // Claude Code in its own auto mode (ADR-053): Oraknid's PreToolUse hook first; its
+            // "ask" goes on to canUseTool (onPermission); no opinion, its classifier allows.
+            const hooked = o.autoModeHooks && s.permissionMode === "auto" && s.onPreToolUse;
+            const pre = hooked ? await s.onPreToolUse?.(request) : undefined;
+            const decision =
+              pre?.decision === "deny"
+                ? { allow: false as const, message: pre.message }
+                : pre?.decision === "allow" || (hooked && pre === null)
+                  ? { allow: true as const }
+                  : await s.onPermission(request);
             if (!decision.allow) {
               events.push({ type: "tool.result", id, ok: false, output: decision.message });
               continue;
             }
             // Asynchronous like a real Leg's tool: other sessions go on meanwhile.
-            const r = await runShell(a.run, s.cwd);
+            const r = a.instead
+              ? { status: 0, stdout: a.instead(), stderr: "" }
+              : await runShell(a.run, s.cwd);
             events.push({
               type: "tool.result",
               id,

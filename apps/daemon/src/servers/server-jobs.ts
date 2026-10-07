@@ -3,9 +3,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { EyeMessage } from "@oraknid/contracts";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
-import { eyeMessages, jobs, projects } from "../db/schema.ts";
+import { eyeMessages, jobs, projects, sideEffects, tasks } from "../db/schema.ts";
 import type { ServerTalk } from "../eye/brain.ts";
 import { carryOver, earlierJob, findingsText, lookUp, recentJobs, routeOf } from "../eye/lookup.ts";
 import {
@@ -19,6 +19,7 @@ import {
   talk,
 } from "../eye/talk.ts";
 import { JobServer, jobServerKey, writeSetting } from "../settings.ts";
+import type { SilkStore } from "../silk/store.ts";
 import { stableId } from "../skills/store.ts";
 import type { Projects } from "../workspace/projects.ts";
 import { insightSummary } from "./insight.ts";
@@ -115,7 +116,7 @@ export function serverDigest(d: { servers: Servers }, serverId: string): string 
   const r = d.servers.row(serverId);
   const alias = aliasOf(r);
   const production = d.servers.isProduction(serverId);
-  return `This job's place is the server **${r.name}** (\`${r.user}@${r.host}\`)${production ? ", which is PRODUCTION: what runs there is live" : ""}, not a repo. The workspace is a scratch folder of Oraknid's, for notes and scripts; the work is done on the server through \`ssh ${alias} <command>\`. A small job is one task. A task that only looks (logs, configuration, why something fails) is "research", changes nothing and writes its findings to findings.md. A task that changes the server has "verify" checks that run on the server, written \`ssh ${alias} <a command that only reads>\` (\`ssh ${alias} systemctl is-active fail2ban\`, \`ssh ${alias} nginx -t\`): Oraknid runs them there itself. Its "scope" is the notes it writes in the workspace (findings.md, notes/**), never the server's paths.
+  return `This job's place is the server **${r.name}** (\`${r.user}@${r.host}\`)${production ? ", which is PRODUCTION: what runs there is live" : ""}, not a repo. The workspace is a scratch folder of Oraknid's, for notes and scripts; the work is done on the server through \`ssh ${alias} <command>\`. A small job is one task. A task that only looks (logs, configuration, why something fails) is "research", changes nothing and writes its findings to findings.md. A task that changes the server has "verify" checks that run on the server, written \`ssh ${alias} <a command that only reads>\` (\`ssh ${alias} systemctl is-active fail2ban\`, \`ssh ${alias} nginx -t\`): Oraknid runs them there itself, over its own connection. The alias alone: never \`HOME=…\`, \`-F\`, \`-i\`, \`-o\` or a path of the job's own (its home, its ssh config), which aren't where checks run. A check that guards what the work must keep true (another service still running) ends with \`# guard\` and passes before the work too; it says "still running" by name rather than an exact count (\`ssh ${alias} '[ "$(docker ps -q --filter name=harvest- | wc -l)" -ge 1 ]' # guard\`). A plan that names what it removes (the paths, the compose project, the volumes) lets the owner approve exactly that. Its "scope" is the notes it writes in the workspace (findings.md, notes/**), never the server's paths.
 
 # The server's state document
 ${d.servers.state(serverId)?.body ?? "(none yet)"}`;
@@ -142,6 +143,42 @@ export function serverPlanApproval(
   } catch {
     return null;
   }
+}
+
+/**
+ * The job's plan (ADR-049): its summary and its tasks in words, and whether
+ * I approved it. What it names, it authorises me to be asked about at once
+ * when Oraknid's rules block it on their own.
+ */
+export function jobPlan(
+  db: Db,
+  silk: SilkStore,
+  jobId: string,
+): { text: string; approved: boolean } {
+  const approved = !!db
+    .select({ id: sideEffects.id })
+    .from(sideEffects)
+    .where(
+      and(
+        eq(sideEffects.jobId, jobId),
+        eq(sideEffects.action, "plan.approve"),
+        inArray(sideEffects.state, ["approved", "performed"]),
+      ),
+    )
+    .get();
+  const summary =
+    silk
+      .current(jobId)
+      .filter(
+        (e) =>
+          e.kind === "decision" && (e.title === "The plan" || e.title.startsWith("Plan, version")),
+      )
+      .at(-1)?.body ?? "";
+  const rows = db.select().from(tasks).where(eq(tasks.jobId, jobId)).all();
+  const text = [summary, ...rows.map((t) => [t.title, t.instructions, ...t.verify].join("\n"))]
+    .filter(Boolean)
+    .join("\n");
+  return { text, approved };
 }
 
 /** Server chat: the deps of talking, and the server's own. */

@@ -66,6 +66,20 @@ when needed.
   repaired, by the strongest allowed model, before any agent is failed
   by it. During the task, an agent that reports a check as broken with
   evidence gets that check reviewed, not another attempt.
+- **Setup is not the work** (2026-10-07): a check that fails before the
+  work because it can't set up (ssh that can't open its config or key,
+  resolve or reach its host; "No such file or directory" on Oraknid's own
+  paths) is a broken check, repaired, never charged to the agent. A
+  check on a server is first put in its plain form, `ssh <alias>` alone
+  (ADR-049 → Note 2026-10-07).
+- **Guard checks pass before the work**: a check of what must keep true
+  (marked `# guard`) that fails before any work is wrong, and is
+  repaired from the state it shows; "still running" by name over an
+  exact count.
+- **What the agent needs of me** (2026-10-07): a turn that ends with a
+  failed check and the agent saying it is blocked by a guard or needs me
+  is asked that, specifically, before the ladder climbs (ADR-053 → Note
+  2026-10-07).
 - Checks are few and meaningful: the build, the tests, the behaviour
   the goal asked for. Not `test -s notes.md`.
 

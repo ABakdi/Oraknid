@@ -78,7 +78,12 @@ is safe to go on, not me; and everything **fast**.
    - what is **never automatic** (Approvals-and-Autonomy): sending mail,
      publishing, deleting a repo, paying;
    - an agent **stuck on blocks** (3 in a row or 20 in a task): The Eye
-     asks me with the blocked actions and their reasons.
+     asks me with the blocked actions and their reasons;
+   - a **change the plan names** that layer 1 blocks on its own (ADR-049,
+     note of 2026-10-07): one specific approval, at once;
+   - an agent that ends saying it **can't finish without me** while a
+     check fails: that, asked specifically (The-Eye → What the agent
+     needs of me).
 
 ### Claude Code in its own auto mode
 Claude Code runs headless with `--permission-mode auto`, inside
@@ -187,5 +192,42 @@ bwrap.
 - **Stuck**: counted per task in memory; a block by Claude Code's own
   classifier is logged but not counted (Oraknid isn't asked then, so it
   can't hold the Leg for my answer).
+
+## Note (2026-10-07): what a block hid, asked of me
+Two server jobs of mine ended in “keeps going wrong” with the real
+reason hidden. In one, the plan I approved said to delete
+`/root/misahaty`; `rm -rf /root/misahaty` over ssh was blocked by layer
+1 through Claude Code's PreToolUse hook (CC Safety Net: rm -rf outside
+the folder), the agent was told not to retry another form, stopped, and
+wrote "Owner action required: rm -rf /root/misahaty". The stuck rule
+never fired: blocks through the hook were counted but nothing asked me,
+since a hook can't wait for my answer. Now:
+- **A plan's own change** (ADR-049): a layer-1 block of its own (not a
+  secret going out, not what is never allowed) of a command on one of the
+  job's servers that only removes what the job's plan names (paths of an
+  `rm`, the project of a `docker compose down`, volumes, containers) is
+  asked at once, one approval: "The agent wants to run `rm -rf
+  /root/misahaty` on spinet-staging (in the plan you approved: “…”). Run
+  it?" **Allow** lets that exact command run once; **Keep it blocked** is
+  told to the agent and not asked again in the attempt. What the plan
+  doesn't name stays blocked. On production it is asked the same way, a
+  change at a time.
+- **Through Claude Code's hook**, a block counts toward the stuck rule as
+  any other; when the rule fires, or for a plan's own change, the hook
+  answers "ask", and the question waits in `canUseTool`, where the Leg
+  can wait. **Let it run this one** works there as for the other Legs.
+  The stuck list shows each command in its plain form (`ssh <alias>
+  '<command>'`), so I see what was blocked rather than the job's ssh
+  config path.
+- **Allowed once**: what I let run is matched in its plain form; the hook
+  answers `allow` for it (`PreToolDecision` gained `{ decision: "allow" }`),
+  so Claude Code's classifier doesn't block it again.
+- **The agent's last words**: a task that ends with a failed check and
+  the agent saying it is blocked by a guard or needs me
+  (`saysOwnerNeeded`) is asked that, specifically: the command it was
+  blocked on (or names), why, and **Allow** (it runs once; the agent is
+  told to go on) · **I'll do it** · **Leave it out** · **Stop the job**,
+  before any ladder or "keeps going wrong". Asked once per command in an
+  attempt.
 - **Not built yet**: the network egress allowlist per job (the
   sandbox-runtime proxy) is left for later.

@@ -147,6 +147,24 @@ const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
 export function brokenCheckHint(exitCode: number | null, output: string): string | null {
   if (exitCode === 0) return null;
   const out = output.replace(ANSI, "");
+  // Setup, not the work (ADR-049): ssh can't read what it was given, or can't reach the server.
+  if (
+    /Can't open user config file|no such identity:|Bad configuration option|Could not resolve hostname/i.test(
+      out,
+    )
+  )
+    return "ssh can't set up its connection from what the check gives it (a config, a key or a host that isn't where checks run): a check reaches a server by its alias alone, `ssh <alias> <command>`";
+  if (
+    /No such file or directory/.test(out) &&
+    /\/legs\/[^/\s]+\/jobs\/|\/\.local\/share\/oraknid\/|\/oraknid-check-/.test(out)
+  )
+    return "it names a path private to the job (its home, its ssh config), which isn't there where checks run";
+  if (
+    /^ssh: connect to host .*(Connection refused|timed out|No route to host)|Permission denied \(publickey/m.test(
+      out,
+    )
+  )
+    return "ssh couldn't connect from where checks run: a check reaches a server by its alias alone, `ssh <alias> <command>`, over Oraknid's own connection";
   const missing = /(?:^|\s)([\w.+-]+): (?:command )?not found/m.exec(out);
   if (exitCode === 127 && missing) return `\`${missing[1]}\` isn't installed where checks run`;
   // A file of the work that isn't there yet (`./hello.sh: not found`) is the work's.
@@ -189,6 +207,23 @@ export function saysCheckBroken(report: string): string | null {
     /\b(?:is|are|looks|seems|appears)\s+(?:broken|wrong|incorrect|buggy|faulty|malformed|invalid)\b|\bbroken\b|\bquoting (?:issue|bug|problem|error)\b|\bsyntax error\b|\bcan(?:not|'t) (?:ever )?pass\b|\bnever pass(?:es)?\b|\bfalse (?:negative|failure)\b|\bbug in (?:the|oraknid's) check\b|\bfails? (?:due to|because of) (?:a |the )?(?:quoting|syntax|typo|bug)\b|\bcheck itself\b/i;
   const hit = sentences.find((s) => check.test(s) && broken.test(s));
   return hit ? hit.slice(0, 400) : null;
+}
+
+/**
+ * The agent's words that it can't finish without me: blocked by a guard
+ * or a rule, or something only I can do or allow ("The check is right and
+ * the fix is blocked by a guardrail that only the owner can lift… Owner
+ * action required: rm -rf /root/misahaty"). The sentences that say so, or null.
+ */
+export function saysOwnerNeeded(report: string): string | null {
+  const sentences = report
+    .replace(/\s+/g, " ")
+    .split(/(?<=[.!?])\s+/)
+    .filter(Boolean);
+  const needs =
+    /\bowner action (?:is )?required\b|\bonly (?:the )?owner\b|\bowner (?:must|needs to|has to|should|will need to)\b|\bneeds? (?:the owner|you) to\b|\brequires? (?:the )?owner\b|\b(?:the )?owner'?s? (?:approval|permission|action)\b|\bguard ?rails?\b|\bblocked by (?:a |the |an |oraknid'?s? )?(?:guard|rule|hook|policy|safety)|\b(?:you|the owner) (?:can|could) (?:run|lift|allow|approve)\b|\bmanual(?:ly)? (?:step|action|run)\b/i;
+  const hits = sentences.filter((s) => needs.test(s));
+  return hits.length ? hits.join(" ").slice(0, 600) : null;
 }
 
 // ── One interview round when the spec is complete (ADR-052 §7) ───────

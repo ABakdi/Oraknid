@@ -8,6 +8,7 @@ import {
   oraknidOwn,
   resetsAtFrom,
   saysCheckBroken,
+  saysOwnerNeeded,
   specComplete,
   usageLimitOf,
 } from "./harness.ts";
@@ -90,6 +91,41 @@ describe("checks told broken from failing on the work (M15.1)", () => {
     expect(saysCheckBroken(report)).toMatch(/check #1 fails due to a quoting issue/);
     expect(saysCheckBroken("DONE. All checks pass.")).toBeNull();
     expect(saysCheckBroken("The tests fail; I couldn't fix the reducer.")).toBeNull();
+  });
+
+  it("knows a check whose ssh can't set up, before any work, as broken (2026-10-07)", () => {
+    // ssh cuts the path at 100 characters in its own message: the path isn't where checks run.
+    const said =
+      "Can't open user config file /home/abakdi/.local/share/oraknid/legs/01K6Z/jobs/01K70ABCDEFG/ho: No such file or directory";
+    expect(brokenCheckHint(255, said)).toMatch(/ssh can't set up/);
+    expect(
+      brokenCheckHint(
+        2,
+        "cat: /home/me/.local/share/oraknid/legs/l1/jobs/j1/home/x: No such file or directory",
+      ),
+    ).toMatch(/private to the job/);
+    expect(
+      brokenCheckHint(
+        255,
+        "ssh: Could not resolve hostname oraknid-spinet-staging: Name or service not known",
+      ),
+    ).toMatch(/ssh can't set up/);
+    expect(
+      brokenCheckHint(255, "ssh: connect to host 10.0.0.9 port 22: Connection refused"),
+    ).toMatch(/couldn't connect/);
+    // A file of the work on the server, not there yet: the work's.
+    expect(
+      brokenCheckHint(1, "ls: cannot access '/srv/app': No such file or directory"),
+    ).toBeNull();
+  });
+
+  it("hears an agent say it can't finish without the owner (2026-10-07)", () => {
+    const report =
+      "Removed the containers and volumes. The check is right and the fix is blocked by a guardrail that only the owner can lift. Owner action required: rm -rf /root/misahaty";
+    expect(saysOwnerNeeded(report)).toMatch(/guardrail that only the owner can lift/);
+    expect(saysOwnerNeeded(report)).toContain("Owner action required: rm -rf /root/misahaty");
+    expect(saysOwnerNeeded("DONE. Removed everything; the checks pass.")).toBeNull();
+    expect(saysOwnerNeeded("The tests fail; I couldn't fix the reducer.")).toBeNull();
   });
 });
 

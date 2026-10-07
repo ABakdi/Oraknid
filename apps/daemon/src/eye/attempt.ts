@@ -31,6 +31,7 @@ import {
   nextEscalation,
   type Observed,
   oraknidOwn,
+  type PolicyContext,
   type PolicyVerdict,
   programsOf,
   providerFailure,
@@ -40,6 +41,7 @@ import {
   route,
   rungOf,
   saysCheckBroken,
+  saysOwnerNeeded,
   skillExcerpt,
   taskScope,
   usageLimitOf,
@@ -69,7 +71,16 @@ import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor, Supervised } from "../legs/supervisor.ts";
 import { legSessionLimit } from "../resources/work.ts";
 import { runServerCheck } from "../servers/checks.ts";
-import { type JobServerRef, serverVerdict } from "../servers/remote.ts";
+import {
+  isGuardCheck,
+  type JobServerRef,
+  namedIn,
+  parseSsh,
+  plainServerCheck,
+  removalTargets,
+  serverVerdict,
+} from "../servers/remote.ts";
+import { jobPlan } from "../servers/server-jobs.ts";
 import type { Servers } from "../servers/service.ts";
 import { CLAUDE_SHARE, readSetting, writeSetting } from "../settings.ts";
 import { handoffFromLog } from "../silk/handoff.ts";
@@ -110,6 +121,12 @@ export const ALL_LIKE_THIS = "Approve all like this for this job";
 /** The answers when an agent is stuck on blocks (ADR-053). */
 export const LET_IT_RUN = "Let it run this one";
 export const KEEP_BLOCKED = "Keep it blocked";
+/** Letting one blocked command run, once: a change the plan names, what the agent needs (ADR-049). */
+export const ALLOW = "Allow";
+/** The other answers when the agent says it can't finish without me. */
+export const ILL_DO_IT = "I'll do it";
+export const LEAVE_IT_OUT = "Leave it out";
+export const STOP_JOB = "Stop the job";
 /** Shell tools, whose command layer 1 reads (ADR-053). */
 const SHELL_TOOLS = new Set(["Bash", "run_command"]);
 /** Tools that only read: their allows aren't each in the audit log. */
@@ -563,6 +580,18 @@ export async function runAttempt(
   let session = null as Supervised | null;
   let sessionLog: string | null = null;
   const deniedGates = new Set<string>();
+  /**
+   * Commands I let run once (ADR-053): a change the plan names, a command
+   * the stuck rule or the agent's own words asked me about. Each is used
+   * by the first run that matches it, in its plain form.
+   */
+  const allowOnce: string[] = [];
+  /** What the PreToolUse hook sent on to canUseTool to be asked of me there, by its plain form. */
+  const hookAsks = new Map<string, () => Promise<PermissionDecision>>();
+  /** What layer 1 blocked in this attempt, oldest first: for the agent's "the owner must…". */
+  const blockedHere: { command: string; reason: string }[] = [];
+  /** Planned changes and commands I kept blocked when asked: not asked again in this attempt. */
+  const keptBlocked = new Set<string>();
   /** Approvals this attempt asked for: withdrawn if it ends before I answer. */
   const asked: string[] = [];
   /** Commands waiting for their result, by tool call id. */
@@ -596,6 +625,8 @@ export async function runAttempt(
         drift: null,
         layer: "leg",
       });
+      // What the agent may say it needs of me (askOwnerNeeded).
+      if (e.request.command) blockedHere.push({ command: e.request.command, reason: e.reason });
     }
     if (e.type === "usage") {
       sessionTokens = e.usage.inputTokens + e.usage.outputTokens;
@@ -681,10 +712,15 @@ export async function runAttempt(
   const judgeRequest = async (
     r: PermissionRequest,
     judged?: McpDeclaration,
-  ): Promise<{ v: Exclude<PolicyVerdict, { verdict: "judge" }>; layer: DecisionLayer }> => {
+  ): Promise<{
+    v: Exclude<PolicyVerdict, { verdict: "judge" }>;
+    layer: DecisionLayer;
+    /** The rules' context, when the rules settled it. */
+    policy?: PolicyContext;
+  }> => {
     const { first, policy } = await rulesVerdict(r, judged);
     if (first.verdict !== "judge")
-      return { v: first, layer: first.verdict === "ask" ? "owner" : "rules" };
+      return { v: first, layer: first.verdict === "ask" ? "owner" : "rules", policy };
     // Careful: a shape I approved for the job passes without the judge.
     const row = d.db
       .select({ allowRules: jobs.allowRules })
@@ -763,6 +799,153 @@ export async function runAttempt(
     };
   };
 
+  /** A command in its plain form (`ssh <alias>` alone, ADR-049): how what I let run is matched. */
+  const plainOf = (command: string) =>
+    servers.length
+      ? plainServerCheck(
+          command.trim(),
+          servers.map((s) => s.alias),
+        )
+      : command.trim();
+
+  /** Whether I let this command run once (ADR-053); used up when it does. */
+  const takeAllowOnce = (command: string): boolean => {
+    if (!allowOnce.length) return false;
+    const plain = plainOf(command);
+    const ssh = servers.length
+      ? parseSsh(
+          plain,
+          servers.map((s) => s.alias),
+        )
+      : null;
+    const i = allowOnce.findIndex(
+      (x) => x === plain || (!!ssh?.whole && x.replace(/^'(.*)'$/, "$1") === ssh.remote.trim()),
+    );
+    if (i < 0) return false;
+    allowOnce.splice(i, 1);
+    return true;
+  };
+
+  /** Ran because I let it, once: in the audit log; the stuck row ends. */
+  const ranOnce = (r: PermissionRequest) => {
+    logDecision(d.bus, job.id, {
+      taskId,
+      tool: r.tool,
+      action: r.command ?? r.tool,
+      verdict: "allow",
+      layer: "owner",
+      reason: "let it run once",
+    });
+    stuck.allowed(stuckKey);
+  };
+
+  /**
+   * A block of layer 1's own: CC Safety Net or our rules, not a secret going
+   * out and not what is never allowed. What a plan names may lift it (ADR-049).
+   */
+  const ownBlock = (v: PolicyVerdict, policy: PolicyContext) =>
+    v.verdict === "deny" &&
+    v.drift === null &&
+    policy.layer1?.verdict === "block" &&
+    !(policy.layer1.rule ?? "").startsWith("secret.");
+
+  /**
+   * A change on one of the job's servers that its plan names (ADR-049): it
+   * removes only paths, a compose project, volumes or containers, each named
+   * in the plan. The server, the plan's words that name it, and whether I
+   * approved the plan; null for anything else.
+   */
+  const plannedChange = (command: string) => {
+    if (!servers.length) return null;
+    const ssh = parseSsh(
+      command,
+      servers.map((s) => s.alias),
+    );
+    if (!ssh?.whole) return null;
+    const targets = removalTargets(ssh.remote);
+    if (!targets) return null;
+    const plan = jobPlan(d.db, d.silk, job.id);
+    const named = targets.map((t) => namedIn(t, plan.text));
+    if (named.some((x) => !x)) return null;
+    return {
+      server: servers.find((s) => s.alias === ssh.alias) as JobServerRef,
+      remote: ssh.remote.trim(),
+      quote: (named[0] as string).replace(/^[-*\s]+/, "").slice(0, 200),
+      approved: plan.approved,
+    };
+  };
+
+  /**
+   * A block of layer 1 on a change the plan names (ADR-049): one specific
+   * approval, at once. Allowed, the exact command runs once; kept blocked,
+   * the agent is told so and it isn't asked again in this attempt.
+   */
+  const askPlanned = async (
+    r: PermissionRequest,
+    p: NonNullable<ReturnType<typeof plannedChange>>,
+    reason: string,
+  ): Promise<PermissionDecision> => {
+    const where = p.approved ? "in the plan you approved" : "in the job's plan";
+    const prompt = `${leg.legName} wants to run \`${p.remote}\` on ${p.server.name} (${where}: “${p.quote}”). Run it?`;
+    const itemId = d.inbox.open({
+      kind: "approval",
+      jobId: job.id,
+      taskId,
+      raisedBy: { legId: leg.legId },
+      title: `${leg.legName} wants to run \`${p.remote.slice(0, 80)}\` on ${p.server.name}, as the plan says`,
+      detail: `${prompt}\n\nOraknid's rules block it on their own (${reason}); the plan names what it removes, so it is yours to allow. Task: ${task.title}.${p.server.production ? ` ${p.server.name} is production.` : ""}\n\n${fence(r.command ?? "")}\n\n**If you keep it blocked:** ${leg.legName} is told so and finds another way, or says the task can't be done without it.`,
+      options: [ALLOW, KEEP_BLOCKED],
+      defaultOption: null,
+      questions: [
+        choiceQuestion(prompt, [
+          { label: ALLOW, detail: "It runs once, exactly as written; the task goes on." },
+          {
+            label: KEEP_BLOCKED,
+            detail: `${leg.legName} goes another way, or says it can't be done without it.`,
+          },
+        ]),
+      ],
+    });
+    asked.push(itemId);
+    event("task.waiting", { itemId, reason: `the plan names it: ${reason}` });
+    waitingOnOwner++;
+    let answer: string;
+    try {
+      answer = await waitForAnswer(d.inbox, d.bus, itemId, signal);
+    } catch {
+      return { allow: false, message: "Oraknid is pausing this session." };
+    } finally {
+      waitingOnOwner--;
+    }
+    observed.lastActivityAt = now();
+    const action = r.command ?? r.tool;
+    if (answer === ALLOW) {
+      logDecision(d.bus, job.id, {
+        taskId,
+        tool: r.tool,
+        action,
+        verdict: "allow",
+        layer: "owner",
+        reason: `allowed once: ${where}`,
+      });
+      stuck.allowed(stuckKey);
+      return { allow: true, why: `owner: allowed once, ${where}` };
+    }
+    keptBlocked.add(plainOf(action));
+    logDecision(d.bus, job.id, {
+      taskId,
+      tool: r.tool,
+      action,
+      verdict: "block",
+      layer: "owner",
+      reason: "kept blocked, though the plan names it",
+    });
+    return {
+      allow: false,
+      message: `${blockedMessage(reason)} The owner was asked and keeps it blocked: find another way, or say the task can't be done without it and why, then stop.`,
+    };
+  };
+
   const onPermission = async (
     r: PermissionRequest,
     /** What Oraknid's own tool made of this very call (ADR-038). */
@@ -770,7 +953,23 @@ export async function runAttempt(
   ): Promise<PermissionDecision> => {
     // The broker judges every call to a job's tool: the Leg's own ask for it passes (ADR-021).
     if (isBrokered(r.tool, brokered)) return { allow: true };
-    const { v, layer } = await judgeRequest(r, judged);
+    if (r.command) {
+      // What I let run once runs (ADR-053); never what is never allowed.
+      if (allowOnce.length) {
+        const { first } = await rulesVerdict(r, judged);
+        if (!(first.verdict === "deny" && first.drift) && takeAllowOnce(r.command)) {
+          ranOnce(r);
+          return { allow: true, why: "owner: let it run once" };
+        }
+      }
+      // What the PreToolUse hook sent here to be asked of me (ADR-053).
+      const fromHook = hookAsks.get(plainOf(r.command));
+      if (fromHook) {
+        hookAsks.delete(plainOf(r.command));
+        return fromHook();
+      }
+    }
+    const { v, layer, policy } = await judgeRequest(r, judged);
     const action = r.command ?? r.path ?? r.tool;
     // Every decision but a plain read is in the audit log, with its layer and reason (ADR-053).
     if (r.command || v.verdict !== "allow" || !READS.has(r.tool))
@@ -800,10 +999,19 @@ export async function runAttempt(
         message: v.message ?? `Not allowed: ${v.reason}.`,
         why: `${layer}: ${v.reason}`,
       };
+      if (v.drift === null && layer !== "owner" && r.command) {
+        blockedHere.push({ command: r.command, reason: v.reason });
+        // A change the plan names is asked of me at once (ADR-049).
+        const planned =
+          policy && ownBlock(v, policy) && !keptBlocked.has(plainOf(r.command))
+            ? plannedChange(r.command)
+            : null;
+        if (planned) return askPlanned(r, planned, v.reason);
+      }
       // Stuck on blocks (3 in a row, 20 in the task): The Eye asks me, with what was blocked and why.
       if (v.drift === null && layer !== "owner") {
         const stuckNow = stuck.blocked(stuckKey, {
-          action: (r.command ?? r.tool).slice(0, 200),
+          action: (r.command ? plainOf(r.command) : r.tool).slice(0, 200),
           reason: v.reason,
           layer: layer === "judge" ? 2 : 1,
         });
@@ -930,7 +1138,13 @@ export async function runAttempt(
    */
   const onPreToolUse = async (r: PermissionRequest): Promise<PreToolDecision> => {
     if (isBrokered(r.tool, brokered)) return null;
-    const { first } = await rulesVerdict(r);
+    const { first, policy } = await rulesVerdict(r);
+    // What I let run once runs, Claude Code's classifier not asked (ADR-053); never what is
+    // never allowed.
+    if (r.command && !(first.verdict === "deny" && first.drift) && takeAllowOnce(r.command)) {
+      ranOnce(r);
+      return { decision: "allow", reason: "The owner let it run once." };
+    }
     if (first.verdict === "deny") {
       if (first.drift)
         observed.forbidden.push(`tried \`${r.command ?? r.tool}\` (${first.reason})`);
@@ -948,13 +1162,37 @@ export async function runAttempt(
         drift: first.drift,
         layer: "rules",
       });
-      if (first.drift === null)
-        stuck.blocked(stuckKey, {
-          action: (r.command ?? r.tool).slice(0, 200),
+      const message = first.message ?? `Not allowed: ${first.reason}.`;
+      if (first.drift === null) {
+        // Asked of me through canUseTool, where the Leg can wait for my answer: the hook can't.
+        const key = r.command ? plainOf(r.command) : null;
+        if (r.command && key) {
+          blockedHere.push({ command: r.command, reason: first.reason });
+          // A change the plan names: one specific approval, at once (ADR-049).
+          const planned =
+            ownBlock(first, policy) && !keptBlocked.has(key) ? plannedChange(r.command) : null;
+          if (planned) {
+            hookAsks.set(key, () => askPlanned(r, planned, first.reason));
+            return { decision: "ask" };
+          }
+        }
+        // Blocks here count toward the stuck rule like any other; stuck, I'm asked (ADR-053).
+        const stuckNow = stuck.blocked(stuckKey, {
+          action: (r.command ? plainOf(r.command) : r.tool).slice(0, 200),
           reason: first.reason,
           layer: 1,
         });
-      return { decision: "deny", message: first.message ?? `Not allowed: ${first.reason}.` };
+        if (stuckNow && key) {
+          const refused: PermissionDecision = {
+            allow: false,
+            message,
+            why: `rules: ${first.reason}`,
+          };
+          hookAsks.set(key, () => askWhenStuck(r, stuckNow, refused));
+          return { decision: "ask" };
+        }
+      }
+      return { decision: "deny", message };
     }
     if (first.verdict === "ask") return { decision: "ask" };
     if (r.command && first.verdict === "allow")
@@ -1250,7 +1488,7 @@ export async function runAttempt(
     // ssh reads its config from the account's home, never $HOME: the alias is named with -F (ADR-049).
     const cfg = join(ssh, "config");
     const own = job.serverJob ? servers.find((x) => x.id === job.serverJob) : undefined;
-    serversText = `# Servers this job may use\n\nReach each with its alias (\`ssh <alias>\`, \`scp\`, \`rsync\`). Read its state document first: it says what runs there and what must not break. Change only what the task needs; anything else on the server is not yours.${named ? " Work meant for a server (a deploy) goes to the one marked as this job's, and to no other." : ""}\n\nThe aliases are in \`${cfg}\`, which ssh reads only when it is named: \`ssh -F <that file> <alias> '<command>'\` (\`scp -F\` and \`rsync -e "ssh -F …"\` the same way). Put the command run there in one pair of quotes with nothing after it on the line, \`sudo -n\` inside them when it needs root. Every command on a server goes through Oraknid's approvals; on a production server every change asks the owner first.${
+    serversText = `# Servers this job may use\n\nReach each with its alias (\`ssh <alias>\`, \`scp\`, \`rsync\`). Read its state document first: it says what runs there and what must not break. Change only what the task needs; anything else on the server is not yours.${named ? " Work meant for a server (a deploy) goes to the one marked as this job's, and to no other." : ""}\n\nThe aliases are in \`${cfg}\`, which ssh reads only when it is named: \`ssh -F <that file> <alias> '<command>'\` (\`scp -F\` and \`rsync -e "ssh -F …"\` the same way). Put the command run there in one pair of quotes with nothing after it on the line, \`sudo -n\` inside them when it needs root. Every command on a server goes through Oraknid's approvals; on a production server every change asks the owner first. A change the approved plan names that Oraknid's rules block on their own is asked of the owner at once: wait for it. For any other block the task can't do without, say in your last message which command and why: the owner is asked. The task's checks are Oraknid's, run over its own connection: never make one pass another way (a file of your own standing in for a program); if one is wrong, say why and finish.${
       own
         ? `\n\n**This job's place is the server ${own.name}** (\`${own.alias}\`), not a repo: the workspace is a scratch folder for notes and scripts, and the work is done on the server. When the task is done, list in your last message what you changed on the server, a line each.`
         : ""
@@ -1452,7 +1690,11 @@ export async function runAttempt(
     for (let repairs = 0; repairs < 2 && d.brain; repairs++) {
       const bad = results.find((r) => !r.ok);
       if (!bad || looked.has(bad.command)) break;
-      const own = looksBroken(bad);
+      // A guard (what the work must keep true) failing before any work is wrong itself (ADR-049).
+      const guard = before && isGuardCheck(bad.command);
+      const own =
+        looksBroken(bad) ??
+        (guard ? "it guards what the work must keep true, yet fails before any work" : null);
       const hint = own ?? (said ? `the agent says the check is broken: “${said}”` : null);
       if (!hint) break;
       looked.add(bad.command);
@@ -1467,6 +1709,10 @@ export async function runAttempt(
           hint,
           report: before ? "(The check was run before any work, to test it.)" : report,
           github: githubForRepair(),
+          ...(servers.length
+            ? { servers: servers.map((s) => ({ alias: s.alias, name: s.name })) }
+            : {}),
+          ...(guard ? { guard: true } : {}),
         });
       } catch (error) {
         // I stopped The Eye's thinking (M13.25): the job pauses here.
@@ -1511,6 +1757,29 @@ export async function runAttempt(
     const key = `eye.checksTried.${taskId}`;
     if (readSetting(d.db, key, z.boolean(), false)) return;
     const tried: { command: string; state: string }[] = [];
+    // A check on a server in its plain form, `ssh <alias>` alone (ADR-049): kept so.
+    await prepareServers();
+    const plain = task.verify.map((v) =>
+      servers.length
+        ? plainServerCheck(
+            v,
+            servers.map((s) => s.alias),
+          )
+        : v,
+    );
+    if (plain.some((v, i) => v !== task.verify[i])) {
+      const was = task.verify.filter((v, i) => v !== plain[i]);
+      task.verify = plain;
+      d.db.update(tasks).set({ verify: task.verify }).where(eq(tasks.id, taskId)).run();
+      d.silk.add({
+        jobId: job.id,
+        taskId,
+        kind: "decision",
+        title: `Check put in its plain form: ${task.title}`,
+        body: `${was.map((v) => `\`${v}\``).join(", ")} named the job's own ssh setup, which isn't where checks run: a check reaches a server by its alias alone, and Oraknid runs it there over its own connection.`,
+        authoredBy: "eye",
+      });
+    }
     for (let i = 0; i < task.verify.length; i++) {
       const command = task.verify[i] as string;
       const first = await runChecks([command], 3 * 60_000);
@@ -1520,7 +1789,8 @@ export async function runAttempt(
         tried.push({ command, state: "passes before the work" });
         continue;
       }
-      if (!looksBroken(r)) {
+      // A guard failing before any work is wrong (ADR-049): repaired like a broken one.
+      if (!looksBroken(r) && !isGuardCheck(command)) {
         tried.push({ command, state: "fails on the work not done yet" });
         continue;
       }
@@ -1536,7 +1806,7 @@ export async function runAttempt(
         state:
           current !== command
             ? `broken, repaired as \`${current}\``
-            : after[0] && looksBroken(after[0])
+            : after[0] && (looksBroken(after[0]) || (!after[0].ok && isGuardCheck(command)))
               ? "looks broken, and The Eye kept it"
               : "fails on the work not done yet",
       });
@@ -1666,6 +1936,151 @@ export async function runAttempt(
       kind: "retry",
       reason: `${infra.scope === "leg" ? leg.legName : what} failed at its provider (${infra.reason}); it rests until ${new Date(until).toISOString()}, and the attempt doesn't count against the task`,
     };
+  };
+
+  /** What the agent said it needs of me, asked once each in this attempt. */
+  const ownerAsked = new Set<string>();
+
+  /**
+   * The agent ended its turn saying it can't finish without me (blocked by a
+   * guard, something only I can do or allow) while a check fails: The Eye
+   * asks that, specifically, not "keeps going wrong" (ADR-053). The command
+   * is the blocked one the agent names, else the last one blocked, else the
+   * one its words give. Allowed, the exact command runs once and the agent
+   * is told to go on (true); my other answers end the attempt. False:
+   * already asked.
+   */
+  const askOwnerNeeded = async (said: string, report: string, failed: VerifyResult) => {
+    const remoteOf = (command: string) =>
+      servers.length
+        ? parseSsh(
+            plainOf(command),
+            servers.map((s) => s.alias),
+          )
+        : null;
+    const names = (b: { command: string }) => {
+      const ssh = remoteOf(b.command);
+      return report.includes(b.command) || (!!ssh?.remote && report.includes(ssh.remote.trim()));
+    };
+    const blocked = [...blockedHere].reverse().find(names) ?? blockedHere.at(-1) ?? null;
+    const worded =
+      /(?:owner action (?:is )?required|the owner (?:must|needs to|has to|should) run|you (?:can|could|need to) run)\s*:?\s*`?([^`\n]+?)`?\s*(?:$|\n)/i.exec(
+        report,
+      )?.[1] ?? null;
+    const command = blocked?.command ?? worded?.trim() ?? null;
+    const key = command ? plainOf(command) : `said:${said}`;
+    if (ownerAsked.has(key)) return false;
+    ownerAsked.add(key);
+    const ssh = command ? remoteOf(command) : null;
+    const server = ssh ? servers.find((s) => s.alias === ssh.alias) : undefined;
+    const shown = ssh && server ? `${ssh.remote.trim()}\` on ${server.name}` : `${command}\``;
+    const dropped = dependentsOf(d.db, job.id, taskId);
+    const prompt = command
+      ? `${leg.legName} says it can't finish “${task.title}” without \`${shown}${
+          blocked ? `, which Oraknid's rules blocked (${blocked.reason})` : ""
+        }. What should I do?`
+      : `${leg.legName} says it can't finish “${task.title}” without you. What should I do?`;
+    const questions = [
+      choiceQuestion(
+        prompt,
+        [
+          ...(command
+            ? [
+                {
+                  label: ALLOW,
+                  detail:
+                    "It runs once, exactly as written; the agent is told to go on and finish.",
+                },
+              ]
+            : []),
+          {
+            label: ILL_DO_IT,
+            detail: `The task is yours: do it yourself; the job waits until you mark the task done or hand it back.`,
+          },
+          {
+            label: LEAVE_IT_OUT,
+            detail: `The task is dropped and the job goes on without it.${
+              dropped.length
+                ? ` The tasks that need it are left out too: ${dropped.map((t) => `“${t.title}”`).join(", ")}.`
+                : ""
+            }`,
+          },
+          { label: STOP_JOB, detail: "The job is cancelled; the work done so far stays." },
+        ],
+        command ? ALLOW : null,
+      ),
+    ];
+    const options = questions[0]?.options.map((o) => o.label) ?? [];
+    const itemId = d.inbox.open({
+      kind: "question",
+      jobId: job.id,
+      taskId,
+      raisedBy: "eye",
+      title: command
+        ? `${leg.legName} needs \`${shown.slice(0, 100)} for “${task.title}”`
+        : `${leg.legName} needs you for “${task.title}”`,
+      detail: `${prompt}\n\nIts words: “${said}”\n\nThe check that fails:\n${fence(failed.command)}\n${fence(failed.output.slice(-1500))}${command ? `\n\nThe command:\n${fence(command)}` : ""}`,
+      options,
+      defaultOption: null,
+      questions,
+    });
+    // Asked in the project's conversation too (ADR-045); answering there answers the item.
+    addMessage(
+      d,
+      job.id,
+      "eye",
+      prompt,
+      {
+        intent: "report",
+        did: [],
+        silkIds: [],
+        taskIds: [taskId],
+        jobId: null,
+        report: { kind: "waiting", taskId, facts: [], todo: [] },
+      },
+      { questions, itemId },
+    );
+    asked.push(itemId);
+    event("task.waiting", { itemId, reason: `the agent needs the owner: ${said.slice(0, 200)}` });
+    waitingOnOwner++;
+    let answer: string;
+    try {
+      answer = await waitForAnswer(d.inbox, d.bus, itemId, signal);
+    } finally {
+      waitingOnOwner--;
+    }
+    observed.lastActivityAt = now();
+    if (answer === ALLOW && command) {
+      allowOnce.push(plainOf(command));
+      logDecision(d.bus, job.id, {
+        taskId,
+        tool: "Bash",
+        action: command,
+        verdict: "allow",
+        layer: "owner",
+        reason: "allowed once: the agent said it can't finish without it",
+      });
+      // What came of this turn isn't held against the agent: it was waiting on me.
+      observed.falseClaim = null;
+      observed.verifyFailures.pop();
+      await session?.session.send(
+        `The owner allows \`${command}\` to run once. Run it now exactly as written, then finish the task and say DONE.`,
+      );
+      return true;
+    }
+    if (answer !== ILL_DO_IT && answer !== LEAVE_IT_OUT && answer !== STOP_JOB) {
+      // My own words: the agent gets them and goes on.
+      observed.falseClaim = null;
+      await session?.session.send(`The owner answers: ${answer}`);
+      return true;
+    }
+    await closeSession();
+    if (answer === ILL_DO_IT) throw new EndAttempt({ kind: "owner-held" });
+    if (answer === LEAVE_IT_OUT) throw new EndAttempt({ kind: "skipped", dependents: true });
+    throw new EndAttempt({
+      kind: "cancel-job",
+      reason: `Stopped by me: "${task.title}" couldn't finish without me.`,
+    });
   };
 
   const ask = async (drift: Drift): Promise<never> => {
@@ -1997,6 +2412,10 @@ export async function runAttempt(
           observed.verifyFailures.push(failed.signature ?? "");
           if (claimsDone(end.text))
             observed.falseClaim = `said it was done, but \`${failed.command}\` failed`;
+          // It says it can't finish without me (a guard blocked it, only I can do or allow it):
+          // that is asked, specifically, before any ladder or "keeps going wrong" (ADR-053).
+          const said = saysOwnerNeeded(end.text);
+          if (said && (await askOwnerNeeded(said, end.text, failed))) continue;
         }
       }
 

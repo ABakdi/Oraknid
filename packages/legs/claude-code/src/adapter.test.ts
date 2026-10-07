@@ -70,6 +70,8 @@ describe("Claude Code adapter", () => {
           asked.push(r.command ?? r.tool);
           if (r.command?.includes("--force"))
             return { decision: "deny", message: "Blocked: it force-pushes. Find another way." };
+          if (r.command === "ssh nest 'rm -rf /root/old'")
+            return { decision: "allow", reason: "the owner let it run once" };
           if (r.command?.startsWith("ssh nest")) return { decision: "ask" };
           return null;
         },
@@ -110,7 +112,20 @@ describe("Claude Code adapter", () => {
     });
     // No opinion: Claude Code's own auto mode decides.
     expect(await call("ls")).toEqual({});
-    expect(asked).toEqual(["git push --force", "ssh nest 'docker compose restart'", "ls"]);
+    // What the owner let run once: allowed, Claude Code's classifier not asked.
+    expect(await call("ssh nest 'rm -rf /root/old'")).toEqual({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "allow",
+        permissionDecisionReason: "the owner let it run once",
+      },
+    });
+    expect(asked).toEqual([
+      "git push --force",
+      "ssh nest 'docker compose restart'",
+      "ls",
+      "ssh nest 'rm -rf /root/old'",
+    ]);
     // What Claude Code's classifier refused comes back as an event.
     await (denied as NonNullable<typeof denied>)(
       {

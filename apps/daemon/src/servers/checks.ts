@@ -1,6 +1,6 @@
 import type { VerifyResult } from "../eye/verify.ts";
 import { signatureOf } from "../eye/verify.ts";
-import { type JobServerRef, parseSsh, readsOnly } from "./remote.ts";
+import { type JobServerRef, readsOnly, serverCheckOf } from "./remote.ts";
 
 // A check on one of a job's servers (ADR-049): `ssh <alias> <command>`,
 // run by Oraknid itself over its own connection, with the host key it
@@ -21,7 +21,8 @@ export async function runServerCheck(
     refuse?: (command: string) => string | null;
   },
 ): Promise<VerifyResult | null> {
-  const ssh = parseSsh(
+  // In its plain form: `ssh <alias>` alone, a check wrapped in local shell run whole there.
+  const ssh = serverCheckOf(
     command,
     o.servers.map((s) => s.alias),
   );
@@ -43,7 +44,7 @@ export async function runServerCheck(
   const refused =
     server.production && !readsOnly(ssh.remote)
       ? `${server.name} is production and a check only reads there`
-      : (o.refuse?.(command) ?? null);
+      : (o.refuse?.(`ssh ${ssh.alias} '${ssh.remote.replace(/'/g, `'\\''`)}'`) ?? null);
   if (refused) return done(false, null, `Oraknid did not run this check: ${refused}.`);
   try {
     const r = await o.run(server.id, ssh.remote);
