@@ -291,6 +291,30 @@ describe("my questions (ADR-056 §3)", () => {
       message: "I already refused that.",
     });
   });
+
+  it("refuses again only the tool call I refused, not every call of that tool (stage 2)", async () => {
+    const s = await setup();
+    const gate = s.gate();
+    const send = (to: string): PermissionRequest => ({
+      tool: "mcp__mail__send_message",
+      input: { to, body: "hello" },
+      command: null,
+      path: null,
+    });
+    const first = gate.decide({ source: "mcp", request: send("a@example.com") });
+    s.inbox.answer((await s.item(/wants to use mcp__mail__send_message/)).id, "Deny");
+    expect(asPermission(await first).allow).toBe(false);
+    // The same call again: refused at once (D8).
+    expect(await gate.decide({ source: "mcp", request: send("a@example.com") })).toMatchObject({
+      verdict: "deny",
+      message: "I already refused that.",
+    });
+    // Another: asked, as any new request is.
+    const other = gate.decide({ source: "mcp", request: send("b@example.com") });
+    const asked = await s.item(/wants to use mcp__mail__send_message/);
+    s.inbox.answer(asked.id, "Approve");
+    expect(asPermission(await other)).toEqual({ allow: true });
+  });
 });
 
 describe("a check's command (ADR-056 §3)", () => {

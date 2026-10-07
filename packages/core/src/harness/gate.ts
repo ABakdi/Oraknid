@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Autonomy } from "@oraknid/contracts";
 import { blockedMessage, type GatedAction, type PolicyVerdict } from "../policy.ts";
 
@@ -281,13 +282,25 @@ function approval(f: GateFacts, reason: string, gated: GatedAction | null): Gate
   return { verdict: "ask", by: "owner", reason, layer: "owner", ask: "approval", gated, log };
 }
 
-/** A refused request's key (D8): its tool and its command or path. */
+/**
+ * A refused request's key (D8): its tool and its command or path; a call
+ * with neither (a job's tool through the broker) by its arguments, so
+ * refusing one email doesn't refuse every later one.
+ */
 export function refusalKey(r: {
   tool: string;
   command: string | null;
   path: string | null;
+  input?: Record<string, unknown>;
 }): string {
-  return `${r.tool}:${r.command ?? r.path}`;
+  const what =
+    r.command ??
+    r.path ??
+    `args:${createHash("sha256")
+      .update(JSON.stringify(r.input ?? {}))
+      .digest("hex")
+      .slice(0, 16)}`;
+  return `${r.tool}:${what}`;
 }
 
 /**

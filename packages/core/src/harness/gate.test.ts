@@ -250,4 +250,11 @@ describe("grants and refusals", () => {
     expect(refusalKey({ tool: "Bash", command: "nmap x", path: null })).toBe("Bash:nmap x");
     expect(refusalKey({ tool: "Write", command: null, path: "/etc/x" })).toBe("Write:/etc/x");
   });
+
+  it("keys a tool call with neither by its arguments: one refused email isn't every email", () => {
+    const send = (to: string) =>
+      refusalKey({ tool: "mcp__mail__send", command: null, path: null, input: { to } });
+    expect(send("a@example.com")).toBe(send("a@example.com"));
+    expect(send("a@example.com")).not.toBe(send("b@example.com"));
+  });
 });
