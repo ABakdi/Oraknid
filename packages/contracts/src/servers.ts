@@ -97,6 +97,11 @@ export const ServerView = z.object({
   hostKeyOffered: z.string().nullable(),
   lastSeenAt: Timestamp.nullable(),
   error: z.string().nullable(),
+  /**
+   * Not reached for a while (ADR-026): its last document and readings
+   * are shown, marked stale since `lastSeenAt`.
+   */
+  stale: z.boolean().default(false),
   /** Working on it now: setting up or discovering. */
   busy: z.string().nullable(),
   stateVersion: z.number().int(),

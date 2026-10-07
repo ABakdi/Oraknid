@@ -64,6 +64,11 @@ export const COMMANDS: CommandSpec[] = [
     help: "Backup plans and their last runs (the server's, when one is chosen)",
     scope: "any",
   },
+  {
+    name: "sites",
+    help: "Your sites across servers: up or down, certificates, DNS",
+    scope: "any",
+  },
   { name: "agents", help: "Your Legs, their accounts, usage and quota", scope: "any" },
   { name: "models", help: "Local models and the models your Legs offer", scope: "any" },
   { name: "usage", help: "Tokens, money and plan windows", scope: "any" },

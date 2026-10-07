@@ -41,6 +41,24 @@ notification when one goes down and when it is back.
   removing and changing a site work away from home (they reach nothing
   of mine).
 
+## As built (2026-10-07)
+- `apps/daemon/src/sites/`: `probes.ts` (DNS through a resolver it is
+  given, the handshake and the GET to an address it is given, so tests
+  use stand-ins on 127.0.0.1), `service.ts` (the schedule: every 30 s it
+  runs the checks due, four at a time, reads DNS and certificates older
+  than 6 hours, drops checks older than 7 days). Checks publish no
+  event (the events table is the audit log); the tab reads again every
+  minute.
+- **Valid** means trusted by this computer's roots, for the domain, and
+  not ended; the error says which failed. A site checked over `http` has
+  no certificate.
+- A site I added by hand and remove is deleted; one a proxy serves is
+  kept hidden, so Find sites doesn't bring it back; adding it by hand
+  does. A domain I added by hand that a proxy also serves stays mine
+  (its URL), its server filled in.
+- `downSince` is the first failed check of the two; `site.up` carries
+  `downForMs` from it.
+
 ## Consequences
 - The checks are from this computer: a site down for the world but
   reachable from here (or the reverse) reads so. Oraknid off, no checks.
