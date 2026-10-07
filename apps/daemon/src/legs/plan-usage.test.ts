@@ -1,6 +1,8 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createCodexAdapter } from "@oraknid/leg-codex";
+import { FAKE_CODEX } from "@oraknid/leg-codex/fake";
 import type { LegAdapter, PlanUsageReport } from "@oraknid/leg-sdk";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
@@ -277,4 +279,37 @@ describe("a Leg's plan usage (ADR-039)", () => {
     expect(modelKey("seven_day_oauth_apps")).toBeNull();
     expect(modelKey("seven_day_opus")).toBe("opus");
   });
+});
+
+describe("a Codex Leg's plan (ADR-057)", () => {
+  it("reads its five hours and its week from Codex's app server, no prompt spent", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "oraknid-plan-codex-"));
+    daemon = await startDaemon({
+      paths: resolvePaths({ ORAKNID_DATA_DIR: dir, ORAKNID_CONFIG_DIR: dir }),
+      port: 0,
+      dbFile: ":memory:",
+      os: fakeOs({ keychain: true }).os,
+      adapters: { codex: createCodexAdapter() },
+      healthIntervalMs: 60_000,
+    });
+    const api = createORPCClient<RouterClient<Router>>(
+      new RPCLink({
+        url: `${daemon.url}/api`,
+        headers: { authorization: `Bearer ${daemon.cliToken}` },
+      }),
+    );
+    const leg = await api.legs.create({
+      kind: "codex",
+      name: "GPT",
+      config: { binary: FAKE_CODEX },
+    });
+    writeFileSync(join((leg.config as { codexHome: string }).codexHome, "auth.json"), "{}");
+    await api.legs.test({ id: leg.id });
+    const mine = (await api.legs.refreshPlanUsage()).find((u) => u.legId === leg.id);
+    expect(mine?.windows.map((w) => [w.name, w.label, w.utilization, w.source])).toEqual([
+      ["five_hour", "5 hours", 0.42, "usage"],
+      ["seven_day", "Week", 0.07, "usage"],
+    ]);
+    expect(daemon.db.select().from(sessions).all()).toEqual([]);
+  }, 30_000);
 });

@@ -7,12 +7,21 @@ A **Leg** is an agent or model Oraknid hands tasks to. You can have as many as y
 | Claude Code | Anthropic's coding agent, through its official binary | Its own sign-in, from the Leg's card |
 | OpenCode | The open coding agent, with any provider it supports | A key, or its free models |
 | Antigravity | Google's agent CLI | Google sign-in, from the Leg's card |
+| Codex | OpenAI's coding agent CLI | ChatGPT sign-in with a code, from the Leg's card; or an OpenAI API key |
 | OpenAI-compatible | Any API that speaks it: Ollama, llama.cpp, a hosted model | An address and, if needed, a key |
 | Oraknid's own agent | Oraknid's tool loop over any model behind an OpenAI-compatible API (OpenRouter, a provider's free endpoint, your local models) | An address and, if needed, a key |
 
 ## Adding Legs
 
 **Legs → Find agents on this computer** lists what is installed and adds it. You can also add one by hand. Each Leg gets a folder of its own: your personal agent settings are never used or changed.
+
+## Codex
+
+**Codex** is OpenAI's coding agent, through its official `codex` program; install it first (it is found by **Find agents on this computer**). Each Codex Leg has a folder of its own: your own `~/.codex`, its login and settings, are never used.
+
+To sign in, press **Log in** on its card: open OpenAI's page, sign in with your ChatGPT account and enter the code Oraknid shows, then press **Done**. Codex's sign-in with a code has to be allowed in your ChatGPT security settings; where it isn't, Oraknid offers Codex's browser sign-in, which only works in a browser on the computer Oraknid runs on. Or add it with an **OpenAI API key** instead (kept in the keychain), billed by the token.
+
+Codex runs in Oraknid's sandbox like every other agent, with its own sandbox off and never asking you directly: every command it runs, every file it changes and every tool it calls goes through your approvals first. Its models, with their reasoning levels, come from Codex itself; on a ChatGPT plan, its five-hour and weekly windows show in **Plan usage**, and when one runs out, its work waits for the time Codex gives or moves to another Leg.
 
 ## Oraknid's own agent
 

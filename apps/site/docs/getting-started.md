@@ -5,7 +5,7 @@ Oraknid runs on your own Linux computer, in the background. You open it in a bro
 ## What you need
 
 - **Linux** (it is developed on Arch; any recent distribution works).
-- At least one agent account or model: Claude Code, OpenCode, Antigravity, or anything that speaks the OpenAI API (Ollama, llama.cpp, a hosted API).
+- At least one agent account or model: Claude Code, Codex, OpenCode, Antigravity, or anything that speaks the OpenAI API (Ollama, llama.cpp, a hosted API).
 
 The install script brings the rest.
 
@@ -114,7 +114,7 @@ oraknid pin reset
 
 ## Add a Leg
 
-A **Leg** is an agent or model Oraknid can hand work to. Go to **Legs** and use **Find agents on this computer**: it lists what it finds (a Claude Code login, OpenCode, Antigravity, a local Ollama) and adds them in one click. Sign in where it asks.
+A **Leg** is an agent or model Oraknid can hand work to. Go to **Legs** and use **Find agents on this computer**: it lists what it finds (a Claude Code login, Codex, OpenCode, Antigravity, a local Ollama) and adds them in one click. Sign in where it asks.
 
 ## Start work
 

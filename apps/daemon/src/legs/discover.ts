@@ -9,7 +9,7 @@ import type { LegRow } from "./registry.ts";
 // installs nothing, and adds nothing until I click.
 
 interface Program {
-  kind: "claude-code" | "opencode" | "antigravity";
+  kind: "claude-code" | "opencode" | "antigravity" | "codex";
   binary: string;
   label: string;
   name: string;
@@ -38,6 +38,14 @@ const PROGRAMS: Program[] = [
     label: "Antigravity",
     name: "Antigravity",
     usual: (h) => [join(h, ".local/bin/agy")],
+  },
+  {
+    kind: "codex",
+    binary: "codex",
+    label: "Codex",
+    name: "Codex",
+    // Its standalone installer's link, and npm's global prefix in my home.
+    usual: (h) => [join(h, ".local/bin/codex"), join(h, ".npm-global/bin/codex")],
   },
 ];
 
@@ -122,12 +130,14 @@ export async function discoverAgents(
           ? "OpenCode's own free models, no account needed."
           : p.kind === "claude-code"
             ? "Your Claude account: log the Leg in from its card."
-            : "Your Google account: log the Leg in from its card.",
+            : p.kind === "codex"
+              ? "Your ChatGPT account (or an OpenAI API key): log the Leg in from its card."
+              : "Your Google account: log the Leg in from its card.",
       suggestedName: name,
       config:
         p.kind === "opencode"
           ? { binary: where, package: "@opencode/ai/providers/openai-compatible", models: [] }
-          : p.kind === "antigravity"
+          : p.kind === "antigravity" || p.kind === "codex"
             ? { binary: where, models: [] }
             : { binary: where },
       usedBy,

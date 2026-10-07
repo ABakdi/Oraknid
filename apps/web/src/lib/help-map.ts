@@ -797,7 +797,7 @@ export const CONTROLS: HelpControl[] = [
     id: "legs.find",
     page: "legs",
     name: "Find agents on this machine",
-    does: "Finds Claude Code, OpenCode, Antigravity, Ollama… and adds them.",
+    does: "Finds Claude Code, OpenCode, Antigravity, Codex, Ollama… and adds them.",
     where: "Legs, top right",
   },
   {

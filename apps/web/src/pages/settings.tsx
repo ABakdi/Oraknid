@@ -665,6 +665,7 @@ const PROVIDERS = [
   },
   { kind: "opencode", name: "OpenCode", terms: null },
   { kind: "antigravity", name: "Antigravity", terms: "https://antigravity.google/terms" },
+  { kind: "codex", name: "Codex", terms: "https://openai.com/policies/terms-of-use/" },
 ];
 
 /** ADR-009: off by default; turning it on is audited. */

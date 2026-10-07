@@ -2,8 +2,9 @@ import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { legEnv } from "@oraknid/leg-antigravity";
+import { resolveBinary, writeBaseConfig } from "@oraknid/leg-codex";
 import type { Sandbox } from "@oraknid/os";
-import { sandboxPlan } from "./plan.ts";
+import { codexHomeOf, sandboxPlan } from "./plan.ts";
 import type { LegRow } from "./registry.ts";
 
 /** The link inside an OSC 8 hyperlink: whole, where the printed text is wrapped. */
@@ -19,7 +20,11 @@ const HYPERLINK = /\x1b\]8;[^;]*;(https:\/\/[^\x07\x1b]+)/;
 // reads a code, so it runs under a pseudo-terminal with the SSH
 // variables set (ADR-020). It runs in the Leg's own sandbox: outside it,
 // `agy` finds my desktop keyring and never signs the Leg in (seen
-// 2026-10-02 with agy 1.2.14).
+// 2026-10-02 with agy 1.2.14). Codex (ADR-057): `codex login
+// --device-auth` for the Leg's own CODEX_HOME shows a link and a one-time
+// code I enter on OpenAI's page; it finishes by itself, nothing to paste.
+// Where device codes are off for the account, its browser sign-in, which
+// returns to localhost:1455 on this computer.
 
 /** OSC 8 hyperlinks and other escape sequences the binary prints around the link. */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: these are the escapes being removed
@@ -34,6 +39,18 @@ interface Pending {
   aside?: { token: string; kept: string };
 }
 
+/** What starting a sign-in gives the UI: the link, and for Codex the code to enter there. */
+export interface LoginStart {
+  url: string;
+  /** The one-time code to enter on the page (Codex's device sign-in). */
+  userCode?: string;
+  /** Anything else to know, in words. */
+  note?: string;
+}
+
+const NO_DEVICE_CODES =
+  "Device codes are off for this ChatGPT account, so this is Codex's browser sign-in: open the link in a browser on this computer (it returns to localhost:1455). Or turn on device code sign-in in ChatGPT's security settings and log in again.";
+
 export class LegLogins {
   readonly #pending = new Map<string, Pending>();
 
@@ -41,6 +58,8 @@ export class LegLogins {
     private readonly legsDir: string,
     /** Antigravity signs in inside the Leg's sandbox; tests may run without one. */
     private readonly sandbox: Sandbox | null = null,
+    /** How long Done waits for Codex to see the sign-in finished. */
+    private readonly codexWaitMs = 30_000,
   ) {}
 
   #agyHome(leg: LegRow) {
@@ -117,9 +136,92 @@ export class LegLogins {
   }
 
   #binary(leg: LegRow) {
-    return String(
-      (leg.config as { binary?: string }).binary ?? (leg.kind === "antigravity" ? "agy" : "claude"),
+    const binary = String(
+      (leg.config as { binary?: string }).binary ??
+        (leg.kind === "antigravity" ? "agy" : leg.kind === "codex" ? "codex" : "claude"),
     );
+    return leg.kind === "codex" ? resolveBinary(binary) : binary;
+  }
+
+  /** Codex for the Leg's own CODEX_HOME, its login kept in a file there (ADR-057). */
+  #codexEnv(leg: LegRow): Record<string, string> {
+    const home = join(this.legsDir, leg.id, "home");
+    mkdirSync(home, { recursive: true, mode: 0o700 });
+    const codexHome = codexHomeOf(leg, this.legsDir);
+    writeBaseConfig(codexHome);
+    return {
+      PATH: process.env.PATH ?? "/usr/bin",
+      LANG: process.env.LANG ?? "C.UTF-8",
+      HOME: home,
+      CODEX_HOME: codexHome,
+      TERM: "dumb",
+      NO_COLOR: "1",
+      // The link is shown in the UI; nothing opens a browser on this machine.
+      BROWSER: "/bin/true",
+    };
+  }
+
+  /**
+   * Codex's sign-in, its link (and with device codes, the code) once shown.
+   * The process keeps waiting for the sign-in to complete on OpenAI's side.
+   */
+  async #startCodex(leg: LegRow, device: boolean): Promise<LoginStart> {
+    const args = [
+      "login",
+      ...(device ? ["--device-auth"] : []),
+      "-c",
+      'cli_auth_credentials_store="file"',
+    ];
+    const child = spawn(this.#binary(leg), args, {
+      env: this.#codexEnv(leg),
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const pending: Pending = {
+      child,
+      output: "",
+      exited: new Promise((resolve) => child.once("close", (code) => resolve(code))),
+      // A device code lasts fifteen minutes.
+      timer: setTimeout(() => this.cancel(leg.id), 16 * 60_000),
+    };
+    pending.timer.unref();
+    child.once("error", (e) => {
+      pending.output += `\n${e.message}`;
+    });
+    const add = (d: Buffer) => {
+      pending.output += d.toString();
+    };
+    child.stdout?.on("data", add);
+    child.stderr?.on("data", add);
+    this.#pending.set(leg.id, pending);
+    return new Promise<LoginStart>((resolve, reject) => {
+      const deadline = setTimeout(() => {
+        clearInterval(poll);
+        this.cancel(leg.id);
+        reject(new Error("Codex did not show a sign-in link within 20 s."));
+      }, 20_000);
+      const poll = setInterval(() => {
+        const plain = pending.output.replace(ESCAPES, " ");
+        const url = /https:\/\/\S+/.exec(plain)?.[0];
+        const userCode = device
+          ? /one-time code[^\n]*\n\s*([A-Z0-9]+(?:-[A-Z0-9]+)+)/i.exec(plain)?.[1]
+          : undefined;
+        if (url && (!device || userCode)) {
+          clearInterval(poll);
+          clearTimeout(deadline);
+          resolve(userCode ? { url, userCode } : { url });
+        } else if (child.exitCode !== null || child.signalCode !== null) {
+          clearInterval(poll);
+          clearTimeout(deadline);
+          this.cancel(leg.id);
+          const said = plain
+            .split("\n")
+            .map((l) => l.trim())
+            .filter(Boolean);
+          const why = said.findLast((l) => /error|not enabled|failed/i.test(l)) ?? said.at(-1);
+          reject(new Error(`Codex stopped before showing a link: ${why ?? "no output"}`));
+        }
+      }, 100);
+    });
   }
 
   #spawn(leg: LegRow) {
@@ -134,9 +236,20 @@ export class LegLogins {
   }
 
   /** Starts the sign-in and returns the link to open. */
-  async start(leg: LegRow): Promise<{ url: string }> {
+  async start(leg: LegRow): Promise<LoginStart> {
+    if (leg.kind === "codex") {
+      if ((leg.config as { auth?: string }).auth === "api-key")
+        throw new Error("This Leg uses an OpenAI API key: there is nothing to log in.");
+      this.cancel(leg.id);
+      try {
+        return await this.#startCodex(leg, true);
+      } catch (error) {
+        if (!/not enabled/i.test((error as Error).message)) throw error;
+        return { ...(await this.#startCodex(leg, false)), note: NO_DEVICE_CODES };
+      }
+    }
     if (leg.kind !== "claude-code" && leg.kind !== "antigravity")
-      throw new Error("Only Claude Code and Antigravity Legs log in this way.");
+      throw new Error("Only Claude Code, Antigravity and Codex Legs log in this way.");
     if (leg.kind === "claude-code" && !(leg.config as { configDir?: string }).configDir)
       throw new Error("This Leg has no config folder of its own yet.");
     this.cancel(leg.id);
@@ -197,6 +310,7 @@ export class LegLogins {
   async finish(leg: LegRow, code: string): Promise<{ ok: boolean; detail: string }> {
     const pending = this.#pending.get(leg.id);
     if (!pending) throw new Error("Start the sign-in first: the link has expired.");
+    if (leg.kind === "codex") return this.#finishCodex(leg, pending);
     const before = pending.output.length;
     // A terminal's Enter for agy, a line for claude.
     pending.child.stdin?.write(`${code.trim()}${leg.kind === "antigravity" ? "\r" : "\n"}`);
@@ -238,6 +352,37 @@ export class LegLogins {
     };
   }
 
+  /**
+   * Codex finishes by itself once I've entered the code on OpenAI's page:
+   * a while to see it exit; still waiting, the sign-in stays open to try again.
+   */
+  async #finishCodex(leg: LegRow, pending: Pending) {
+    const exit = await Promise.race([
+      pending.exited,
+      new Promise<"waiting">((r) => setTimeout(() => r("waiting"), this.codexWaitMs)),
+    ]);
+    if (exit === "waiting")
+      return {
+        ok: false,
+        detail:
+          "Codex is still waiting: enter the code on OpenAI's page and sign in there, then press Done again.",
+      };
+    this.cancel(leg.id);
+    const status = this.status(leg);
+    if (status.loggedIn) return { ok: true, detail: status.detail };
+    const lines = pending.output
+      .replace(ESCAPES, " ")
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    return {
+      ok: false,
+      detail:
+        lines.findLast((l) => /error|expired|timed out|failed|denied/i.test(l)) ??
+        "The sign-in did not succeed.",
+    };
+  }
+
   /** agy stays open after signing in: its own answer to "list models" says when it worked. */
   async #finishAgy(leg: LegRow, pending: Pending, before: number) {
     const deadline = Date.now() + 45_000;
@@ -266,6 +411,21 @@ export class LegLogins {
 
   /** What the official binary says about this Leg's login. */
   status(leg: LegRow): { loggedIn: boolean; detail: string } {
+    if (leg.kind === "codex") {
+      const r = spawnSync(this.#binary(leg), ["login", "status"], {
+        env: this.#codexEnv(leg),
+        encoding: "utf8",
+        timeout: 15_000,
+      });
+      const line =
+        `${r.stdout ?? ""}\n${r.stderr ?? ""}`
+          .split("\n")
+          .map((l) => l.trim())
+          .find((l) => /logged in/i.test(l)) ?? "";
+      return r.status === 0 && line && !/not logged in/i.test(line)
+        ? { loggedIn: true, detail: `${line.replace(/\.$/, "")}.` }
+        : { loggedIn: false, detail: "Not logged in." };
+    }
     if (leg.kind === "antigravity") {
       // Listing its models needs a signed-in account (ADR-020).
       const a = this.#agy(leg, ["models"], false);

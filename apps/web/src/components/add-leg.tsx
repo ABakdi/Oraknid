@@ -1,7 +1,7 @@
 import type { LegView } from "@oraknid/contracts";
 import { useState } from "react";
 import { ErrorNote, StateBadge } from "@/components/common";
-import { LegLogin } from "@/components/leg-login";
+import { canLogIn, LegLogin } from "@/components/leg-login";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -33,8 +33,10 @@ export function AddLeg({
   onOpenChange: (o: boolean) => void;
 }) {
   const [kind, setKind] = useState<
-    "claude-code" | "openai-compatible" | "opencode" | "antigravity" | "oraknid-agent"
+    "claude-code" | "openai-compatible" | "opencode" | "antigravity" | "oraknid-agent" | "codex"
   >("claude-code");
+  const [codexBinary, setCodexBinary] = useState("codex");
+  const [codexKey, setCodexKey] = useState(false);
   const [agentUrl, setAgentUrl] = useState("https://openrouter.ai/api/v1");
   const [agyBinary, setAgyBinary] = useState("agy");
   const [providerID, setProviderID] = useState("openrouter");
@@ -62,48 +64,55 @@ export function AddLeg({
             })
           : kind === "antigravity"
             ? await api.legs.create({ kind, name, config: { binary: agyBinary, models: [] } })
-            : kind === "opencode"
+            : kind === "codex"
               ? await api.legs.create({
                   kind,
                   name,
-                  config: ownProvider
-                    ? {
-                        binary: "opencode",
-                        providerID,
-                        package: "@opencode/ai/providers/openai-compatible",
-                        ...(ocBaseURL ? { baseURL: ocBaseURL } : {}),
+                  config: { binary: codexBinary, models: [] },
+                  ...(codexKey && secret ? { secret } : {}),
+                })
+              : kind === "opencode"
+                ? await api.legs.create({
+                    kind,
+                    name,
+                    config: ownProvider
+                      ? {
+                          binary: "opencode",
+                          providerID,
+                          package: "@opencode/ai/providers/openai-compatible",
+                          ...(ocBaseURL ? { baseURL: ocBaseURL } : {}),
+                          models: models
+                            .split(/[\s,]+/)
+                            .map((m) => m.trim())
+                            .filter(Boolean),
+                        }
+                      : {
+                          binary: "opencode",
+                          package: "@opencode/ai/providers/openai-compatible",
+                          models: [],
+                        },
+                    ...(ownProvider && secret ? { secret } : {}),
+                  })
+                : kind === "oraknid-agent"
+                  ? await api.legs.create({
+                      kind,
+                      name,
+                      config: {
+                        baseUrl: agentUrl,
                         models: models
                           .split(/[\s,]+/)
                           .map((m) => m.trim())
                           .filter(Boolean),
-                      }
-                    : {
-                        binary: "opencode",
-                        package: "@opencode/ai/providers/openai-compatible",
-                        models: [],
+                        endpoints: [],
                       },
-                  ...(ownProvider && secret ? { secret } : {}),
-                })
-              : kind === "oraknid-agent"
-                ? await api.legs.create({
-                    kind,
-                    name,
-                    config: {
-                      baseUrl: agentUrl,
-                      models: models
-                        .split(/[\s,]+/)
-                        .map((m) => m.trim())
-                        .filter(Boolean),
-                      endpoints: [],
-                    },
-                    ...(secret ? { secret } : {}),
-                  })
-                : await api.legs.create({
-                    kind,
-                    name,
-                    config: { baseUrl },
-                    ...(secret ? { secret } : {}),
-                  });
+                      ...(secret ? { secret } : {}),
+                    })
+                  : await api.legs.create({
+                      kind,
+                      name,
+                      config: { baseUrl },
+                      ...(secret ? { secret } : {}),
+                    });
       setResult(leg);
     } catch (e) {
       setError(e);
@@ -132,7 +141,7 @@ export function AddLeg({
               {result.name} <StateBadge state={result.health} />
             </div>
             <div className="text-muted-foreground">{result.healthDetail}</div>
-            {(result.kind === "claude-code" || result.kind === "antigravity") &&
+            {canLogIn(result) &&
             result.health !== "healthy" &&
             !/not installed/.test(result.healthDetail ?? "") ? (
               <div className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
@@ -165,6 +174,9 @@ export function AddLeg({
                     {t("OpenCode, with a provider's API key")}
                   </SelectItem>
                   <SelectItem value="antigravity">{t("Antigravity account (Google)")}</SelectItem>
+                  <SelectItem value="codex">
+                    {t("Codex (OpenAI): ChatGPT account or API key")}
+                  </SelectItem>
                   <SelectItem value="oraknid-agent">
                     {t("Oraknid's own agent, on any OpenAI-compatible model")}
                   </SelectItem>
@@ -182,11 +194,13 @@ export function AddLeg({
                     ? t("Claude — personal")
                     : kind === "antigravity"
                       ? t("Antigravity — personal")
-                      : kind === "opencode"
-                        ? t("OpenCode — free models")
-                        : kind === "oraknid-agent"
-                          ? t("Oraknid agent — OpenRouter")
-                          : t("Ollama on this machine")
+                      : kind === "codex"
+                        ? t("Codex — personal")
+                        : kind === "opencode"
+                          ? t("OpenCode — free models")
+                          : kind === "oraknid-agent"
+                            ? t("Oraknid agent — OpenRouter")
+                            : t("Ollama on this machine")
                 }
               />
             </div>
@@ -230,6 +244,44 @@ export function AddLeg({
                     onChange={(e) => setAgyBinary(e.target.value)}
                   />
                 </div>
+              </>
+            ) : kind === "codex" ? (
+              <>
+                <div className="rounded-md border px-3 py-2 text-xs text-muted-foreground">
+                  {codexKey
+                    ? t(
+                        "OpenAI's Codex CLI with an OpenAI API key, billed by the token. The key goes to the keychain. It must be installed on this machine first.",
+                      )
+                    : t(
+                        "OpenAI's Codex CLI, signed in to your ChatGPT account from this Leg's card, in a folder of its own: your own ~/.codex is never used. It must be installed on this machine first (github.com/openai/codex). Commands, edits and tools it uses still go through your approvals.",
+                      )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="cb">{t("Binary")}</Label>
+                  <Input
+                    id="cb"
+                    className="font-mono"
+                    value={codexBinary}
+                    onChange={(e) => setCodexBinary(e.target.value)}
+                  />
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <Switch id="ckey" checked={codexKey} onCheckedChange={setCodexKey} />
+                  <Label htmlFor="ckey" className="font-normal">
+                    {t("Use an OpenAI API key instead of signing in")}
+                  </Label>
+                </div>
+                {codexKey ? (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="ck">{t("API key")}</Label>
+                    <Input
+                      id="ck"
+                      type="password"
+                      value={secret}
+                      onChange={(e) => setSecret(e.target.value)}
+                    />
+                  </div>
+                ) : null}
               </>
             ) : kind === "oraknid-agent" ? (
               <>

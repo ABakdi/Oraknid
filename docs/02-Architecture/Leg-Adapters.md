@@ -172,4 +172,26 @@ supported; using its OAuth from other tools isn't.
   Oraknid can't identify goes back to the Leg, never to my inbox. A quota
   error's wording is still unseen.
 
+## Codex — 2026-10-07
+
+OpenAI's Codex CLI (codex-cli 0.161.0, help and docs checked
+2026-10-07), headless ([[ADR-057-Codex-Adapter]]). Built and tested
+against a stand-in that follows its `--help`, its `exec --json` event
+types and its hook protocol; **not yet run on a real job**.
+
+| Need | How |
+| :-- | :-- |
+| Start / follow-up | One `codex exec --json … -` run per turn, the message on stdin; a follow-up is `codex exec resume --json … <thread> -`. The context pack leads the thread's first message. |
+| Stream | `thread.started` (the thread id), `item.started`/`item.completed`: `agent_message` → `text.delta` (whole messages: exec doesn't stream them), `reasoning` → `thinking.delta`, `command_execution` → Bash, `file_change` → Edit, `mcp_tool_call` → `mcp__<server>__<tool>`, `web_search` → WebSearch, `collab_tool_call` → Task; `turn.completed` (usage), `turn.failed` / `error`. |
+| Sandbox | Inside Oraknid's bwrap; Codex's own off (`sandbox_mode="danger-full-access"`), its approvals off (`approval_policy="never"`): its sandbox is bubblewrap too, would nest inside ours, and in `workspace-write` keeps the network and the job's home out. The binary runs by its real path; its standalone package folder is bound read-only. |
+| Permissions | Codex's **PreToolUse hook** (`-c hooks.PreToolUse=…`, `--dangerously-bypass-hook-trust` for Oraknid's own hook): a few lines of Node pass each call over a unix socket to the adapter, which asks the policy (`onPermission`; in auto mode `onPreToolUse` first) for each command, each file of a patch, each MCP call, and answers allow or deny with the reason. A denial is reported at once. An inline gate, so `inlineGate` holds. |
+| Checks | Codex's **Stop hook**: `onStop`'s failure blocks the turn's end with the reason, three times at most. |
+| Resume | `codex exec resume <thread>`; threads live in the CODEX_HOME. |
+| Interrupt / kill | SIGINT to its process group (exec ends the turn, no event); SIGKILL. |
+| Usage | `turn.completed.usage` is the thread's running total: the adapter counts what it grew by; OpenAI's input includes its cached part, kept apart as cache reads; reasoning is part of the output. |
+| Quota | A usage-limit error ("You've hit your usage limit. … Try again at 3:45 PM.", a date when not today; "Quota exceeded"; a 429) is a `rate_limit` (`plan`, rejected) with its reset time. The plan's windows from `codex app-server`'s `account/rateLimits/read` (five hours, a week) without a prompt. |
+| Probe | `codex --version`, `codex login status`, `codex debug models` (listed models, their reasoning levels and context windows; with an API key, those the API serves). |
+| Accounts | One CODEX_HOME per Leg (`<legs>/<id>/codex-home`; never `~/.codex`), the login in a file there (`cli_auth_credentials_store="file"`); a job's sessions get their own CODEX_HOME with only `auth.json` linked. Login: `codex login --device-auth` from the Leg's card (a link and a code), the browser sign-in where device codes are off. Or an API key from the keychain as `CODEX_API_KEY`. |
+| MCP | Oraknid's bridges as `-c mcp_servers.<name>={command,args}` on each run; nothing else of mine. |
+
 Related: [[Legs-and-Capability-Profiles]] · [[ADR-011-Claude-Code-Adapter]] · [[ADR-009-Multiple-Accounts-Per-Provider]] · [[Sandboxing]]

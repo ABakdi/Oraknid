@@ -24,6 +24,7 @@
     "@oraknid/guard": "workspace:^",
     "@oraknid/leg-antigravity": "workspace:^",
     "@oraknid/leg-claude-code": "workspace:^",
+    "@oraknid/leg-codex": "workspace:^",
     "@oraknid/leg-openai-compatible": "workspace:^",
     "@oraknid/leg-opencode": "workspace:^",
     "@oraknid/leg-oraknid-agent": "workspace:^",

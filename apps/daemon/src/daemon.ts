@@ -17,6 +17,7 @@ import { type MachineReading, readingOf, scrubSecrets } from "@oraknid/core";
 import { configureSafetyNet, initParser } from "@oraknid/guard";
 import { createAntigravityAdapter } from "@oraknid/leg-antigravity";
 import { createClaudeCodeAdapter } from "@oraknid/leg-claude-code";
+import { createCodexAdapter } from "@oraknid/leg-codex";
 import { createOpenAICompatibleAdapter } from "@oraknid/leg-openai-compatible";
 import { createOpenCodeAdapter } from "@oraknid/leg-opencode";
 import { createOraknidAgentAdapter } from "@oraknid/leg-oraknid-agent";
@@ -59,6 +60,7 @@ import { InboxStore } from "./inbox/store.ts";
 import { startHealthChecks } from "./legs/health.ts";
 import { removeJobHomes } from "./legs/job-home.ts";
 import { LegLogins } from "./legs/login.ts";
+import { codexHomeOf } from "./legs/plan.ts";
 import { PlanUsage } from "./legs/plan-usage.ts";
 import { LegRegistry } from "./legs/registry.ts";
 import { LegSupervisor } from "./legs/supervisor.ts";
@@ -210,6 +212,8 @@ export async function startDaemon(options: DaemonOptions) {
     "openai-compatible": createOpenAICompatibleAdapter(),
     opencode: createOpenCodeAdapter(),
     antigravity: createAntigravityAdapter(),
+    // OpenAI's Codex CLI, headless, its hooks through Oraknid's policy (ADR-057).
+    codex: createCodexAdapter(),
     // Oraknid's own agent (ADR-052 §6): its sessions kept for resume beside the Legs' homes.
     "oraknid-agent": createOraknidAgentAdapter({
       sessionsDir: join(paths.legs, "oraknid-agent-sessions"),
@@ -758,6 +762,11 @@ export async function startDaemon(options: DaemonOptions) {
     const c = registry.get(legId)?.config as { configDir?: unknown } | undefined;
     return typeof c?.configDir === "string" ? c.configDir : null;
   };
+  /** A Codex Leg's CODEX_HOME, where a job's sign-in refresh goes back to (ADR-057). */
+  const legCodexHome = (legId: string) => {
+    const leg = registry.get(legId);
+    return leg?.kind === "codex" ? codexHomeOf(leg, paths.legs) : null;
+  };
   // Any job state change may start or end the need to stay awake.
   bus.subscribe((e) => {
     if (e.type === "job.state")
@@ -769,7 +778,7 @@ export async function startDaemon(options: DaemonOptions) {
       forgetJob(db, e.jobId);
       forgetGuidance(e.jobId);
       // Its homes on the Legs go, keys and files (Audit 2, S2-08).
-      removeJobHomes(paths.legs, e.jobId, legConfigDir);
+      removeJobHomes(paths.legs, e.jobId, legConfigDir, legCodexHome);
     }
   });
 
