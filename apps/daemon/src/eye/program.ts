@@ -339,11 +339,7 @@ export function eyeProgram(d: EyeDeps): JobProgram {
         async (signal) =>
           checks.length
             ? // A check on one of its servers runs there, over Oraknid's own connection (ADR-049).
-              (
-                await verifierFor(d, job, where, signal, { serverRules: false }).run(checks, {
-                  why: "job",
-                })
-              ).results
+              (await verifierFor(d, job, where, signal).run(checks, { why: "job" })).results
             : [],
       );
       const failed = results.find((r) => !r.ok);
@@ -608,23 +604,15 @@ const MAX_MERGE_FAILURES = 3;
  * GitHub, as in the attempt (ADR-049, ADR-038); each command read by the
  * Gate's rules first.
  */
-function verifierFor(
-  d: EyeDeps,
-  job: typeof jobs.$inferSelect,
-  where: Where,
-  signal: AbortSignal,
-  o: { serverRules?: boolean } = {},
-) {
+function verifierFor(d: EyeDeps, job: typeof jobs.$inferSelect, where: Where, signal: AbortSignal) {
   const servers = jobServers(d, job.id);
-  const refuse = checkRefusal(d.db, job.id, where.cwd, servers);
   return createVerifier(d, job, {
     cwd: where.cwd,
     localCommit: (branch, repo) => where.tree.localCommit(branch, repo),
     // Any Leg's toolchain will do: the same sandbox shape as a Leg's.
     plan: () => (job.unsandboxed ? null : sandboxPlan(firstLeg(d), d.sandbox, d.legsDir)),
     servers: () => servers,
-    refuse: (command, at) =>
-      at === "server" && o.serverRules === false ? null : refuse(command, at),
+    refuse: checkRefusal(d.db, job.id, where.cwd, servers),
     linkFor: (repo) => githubLinkOf(d.db, job.id, repo),
     signal,
   });
