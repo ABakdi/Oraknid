@@ -13,9 +13,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api, message } from "@/lib/api";
+import { describe } from "@/lib/events";
 import { t } from "@/lib/i18n";
 import { useLive } from "@/lib/live";
-import { describe } from "@/pages/overview";
 
 /** The audit trail (Security → Audit log) and the daemon's log, in tabs (`/logs/<tab>`). */
 export function LogsPage({ tab }: { tab?: string }) {

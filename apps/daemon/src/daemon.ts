@@ -22,14 +22,15 @@ import { createOpenAICompatibleAdapter } from "@oraknid/leg-openai-compatible";
 import { createOpenCodeAdapter } from "@oraknid/leg-opencode";
 import { createOraknidAgentAdapter } from "@oraknid/leg-oraknid-agent";
 import type { LegAdapter } from "@oraknid/leg-sdk";
+import { call, ORPCError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/node";
 import { eq } from "drizzle-orm";
 import express from "express";
 import { z } from "zod";
-import { router } from "./api/router.ts";
+import { type ApiContext, router } from "./api/router.ts";
 import { startAuditExport } from "./audit/audit.ts";
 import { Devices, tokenOf } from "./auth/devices.ts";
-import { AppLock, LOCK_FREE, remoteAllowed, unlockOf } from "./auth/lock.ts";
+import { AppLock, LOCK_FREE, needsFullRights, remoteAllowed, unlockOf } from "./auth/lock.ts";
 import { Backups } from "./backups/service.ts";
 import { Chats } from "./chats/service.ts";
 import { attachCloudRoutes, Downloads } from "./cloud/routes.ts";
@@ -53,7 +54,7 @@ import { startEyeReports } from "./eye/reports.ts";
 import { forgetGuidance, recordAnswer, resumeConversations } from "./eye/talk.ts";
 import { EyeThinking } from "./eye/thinking.ts";
 import { forgetJob } from "./harness/gate.ts";
-import { Helper } from "./helper/service.ts";
+import { Helper, type HelperWho } from "./helper/service.ts";
 import { isLocalRequest } from "./http/guard.ts";
 import { requestIds, tagConsoleWithRequestIds } from "./http/request-id.ts";
 import { InboxStore } from "./inbox/store.ts";
@@ -546,6 +547,8 @@ export async function startDaemon(options: DaemonOptions) {
     logsDir: paths.logs,
     workDir: join(paths.dataDir, "helper"),
     now,
+    // Its actions that are the UI's procedures, called with my device's rights (ADR-024).
+    api: (path, input, who) => helperApi(path, input, who),
   });
   // Notifications start before recovery, so "Oraknid recovered" and its questions reach me (Audit 1 → D1-03).
   const notifications = new Notifications({
@@ -689,6 +692,15 @@ export async function startDaemon(options: DaemonOptions) {
         );
         return;
       }
+      // A use of full rights away from home is in the audit log (ADR-030).
+      if (remote && needsFullRights(req.path))
+        bus.publish({
+          type: "device.awayUse",
+          topic: "overview",
+          jobId: null,
+          payload: { device: who, path: req.path },
+          actor: "owner",
+        });
       return next();
     }
     res.status(401).json({
@@ -919,62 +931,100 @@ export async function startDaemon(options: DaemonOptions) {
     });
   cloud.onTransfer((t) => live.broadcastTransfer(t));
 
+  /** What every procedure is called with: the device asking, and Oraknid's services. */
+  const apiContext = (
+    device: string | null,
+    remote: boolean,
+    session: string | undefined,
+  ): ApiContext => ({
+    device,
+    remote,
+    session,
+    lock,
+    startedAt,
+    webUi,
+    paths,
+    bus,
+    now,
+    inhibitor: () => os.inhibitor.state(),
+    secrets,
+    sandbox: () => sandboxStatus,
+    service: os.service,
+    notifications,
+    recentMetrics: metricsLoop.recent,
+    work,
+    machineHealth: () => guard.health(),
+    jobs: jobsStore,
+    runner,
+    registry,
+    health,
+    planUsage,
+    logins,
+    nest,
+    silk,
+    inbox,
+    projects: projectsService,
+    skills,
+    tools: toolRegistry,
+    decisions,
+    chats,
+    github,
+    repos,
+    helper,
+    servers: serverService,
+    backups: backupPlans,
+    sites,
+    cloud,
+    downloads,
+    mail,
+    devices,
+    updates,
+    models,
+    projectSecrets,
+    brain,
+    thinking,
+    openPath:
+      options.openPath ??
+      ((path) => spawn("xdg-open", [path], { detached: true, stdio: "ignore" }).unref()),
+    tmpDir: join(paths.dataDir, "tmp"),
+  });
+
+  /** A procedure by its dotted path, for the helper; what the input got wrong said in words. */
+  async function helperApi(path: string, input: unknown, who: HelperWho) {
+    let proc: unknown = router;
+    for (const k of path.split(".")) proc = (proc as Record<string, unknown> | undefined)?.[k];
+    if (!proc) throw new Error(`No procedure ${path}.`);
+    try {
+      return await call(proc as never, input as never, {
+        context: apiContext(who.device, who.remote, undefined),
+      });
+    } catch (error) {
+      if (!(error instanceof ORPCError)) throw error;
+      const issues = (
+        error.data as { issues?: { path?: unknown[]; message: string }[] } | undefined
+      )?.issues;
+      throw new Error(
+        issues?.length
+          ? `Its input was wrong: ${issues
+              .map(
+                (x) =>
+                  `${(x.path ?? []).map((p) => (typeof p === "object" && p ? (p as { key: unknown }).key : p)).join(".")}: ${x.message}`,
+              )
+              .join("; ")}`
+          : error.message,
+      );
+    }
+  }
+
   const rpc = new RPCHandler(router);
   app.use("/api", async (req, res, next) => {
     const { matched } = await rpc.handle(req, res, {
       prefix: "/api",
-      context: {
-        device: (res.locals.device as string | null | undefined) ?? null,
-        remote: res.locals.remote === true,
-        session: res.locals.session as string | undefined,
-        lock,
-        startedAt,
-        webUi,
-        paths,
-        bus,
-        now,
-        inhibitor: () => os.inhibitor.state(),
-        secrets,
-        sandbox: () => sandboxStatus,
-        service: os.service,
-        notifications,
-        recentMetrics: metricsLoop.recent,
-        work,
-        machineHealth: () => guard.health(),
-        jobs: jobsStore,
-        runner,
-        registry,
-        health,
-        planUsage,
-        logins,
-        nest,
-        silk,
-        inbox,
-        projects: projectsService,
-        skills,
-        tools: toolRegistry,
-        decisions,
-        chats,
-        github,
-        repos,
-        helper,
-        servers: serverService,
-        backups: backupPlans,
-        sites,
-        cloud,
-        downloads,
-        mail,
-        devices,
-        updates,
-        models,
-        projectSecrets,
-        brain,
-        thinking,
-        openPath:
-          options.openPath ??
-          ((path) => spawn("xdg-open", [path], { detached: true, stdio: "ignore" }).unref()),
-        tmpDir: join(paths.dataDir, "tmp"),
-      },
+      context: apiContext(
+        (res.locals.device as string | null | undefined) ?? null,
+        res.locals.remote === true,
+        res.locals.session as string | undefined,
+      ),
     });
     if (!matched) next();
   });
@@ -1152,6 +1202,7 @@ export async function startDaemon(options: DaemonOptions) {
     models,
     cliToken: devices.cliToken,
     inbox,
+    helper,
     effects,
     recovery,
     naming,

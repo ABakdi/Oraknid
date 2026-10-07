@@ -56,6 +56,28 @@ panel. I write what I want in my words; the helper:
 Each reply lists what it did, with links. The conversation is kept
 until I clear it.
 
+### What it can do, as built (2026-10-07)
+
+Its actions call the web UI's own procedures by name, with my device's
+rights: the same validation, the same audit and the same home-only rule
+as the screens (`helper/api-actions.ts`).
+
+| Asked in words | Action | Asks first |
+| :-- | :-- | :-- |
+| Find the agents on this computer | `find_agents` (then `add_leg`) | adding a Leg |
+| Change a setting the Settings page changes, by name (jobs and tasks at once, Claude's share, resources, interview rounds, same-provider fallback, the terminal, The Eye's models and Leg, notifications, the approvals policy) | `set_setting` | the approvals policy |
+| Make or change a draft and its options | `create_draft`, `edit_draft` | no |
+| Waive a job's gates | `waive_gate` | yes |
+| Open a chat, continue one, list them | `open_chat`, `continue_chat`, `list_chats` | no |
+| List my GitHub repos | `github_repos` | no |
+| Answer an inbox item | `answer_inbox` | an approval |
+| Delete a job or draft, a chat, a skill, a project; remove a Leg or a server | `delete_job`, `delete_chat`, `delete_skill`, `delete_project`, `remove_leg`, `remove_server` | always |
+
+What a standard device may not do away from home it may not do through
+the helper either: run at once, it fails saying so; proposed, its
+Confirm is refused. With full rights it runs, and is in the audit log as
+used away from home through the helper.
+
 ### It knows Oraknid, and shows me ([[ADR-041-Docs-And-A-Guiding-Helper]], 2026-10-03)
 
 - **The guide**: with each message the web app sends the guide's pages

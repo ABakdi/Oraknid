@@ -796,6 +796,13 @@ const asker = (c: ApiContext): Asker => ({
   full: c.device === null || c.devices.isFull(c.device),
 });
 
+/** Who asks the helper: its actions run with this device's rights (ADR-024, ADR-030). */
+const helperWho = (c: ApiContext) => ({
+  device: c.device,
+  remote: c.remote,
+  full: c.device === null || c.devices.isFull(c.device),
+});
+
 // Procedures follow docs/02-Architecture/API-Contract.md. Later milestones add the rest.
 /** What runs on a server (ADR-043): each part read while its screen asks; restarting asked first. */
 const ServerPart = z.object({ id: z.string(), fresh: z.boolean().optional() });
@@ -1350,7 +1357,7 @@ export const router = {
       // With what the web app knows: where I am, the guide, the screens (ADR-041).
       .input(z.object({ text: z.string().min(1).max(8000), context: HelperContext.optional() }))
       .handler(({ context: c, input }) =>
-        guard(() => c.helper.send(input.text, input.context ?? {})),
+        guard(() => c.helper.send(input.text, input.context ?? {}, helperWho(c))),
       ),
     decide: base
       .input(
@@ -1358,14 +1365,7 @@ export const router = {
       )
       .output(HelperAction)
       .handler(({ context: c, input }) =>
-        guard(() =>
-          c.helper.decide(
-            input.messageId,
-            input.index,
-            input.confirm,
-            c.remote && !c.devices.isFull(c.device),
-          ),
-        ),
+        guard(() => c.helper.decide(input.messageId, input.index, input.confirm, helperWho(c))),
       ),
     /** What became of an action shown in my browser: not shown, and why (ADR-041). */
     shown: base

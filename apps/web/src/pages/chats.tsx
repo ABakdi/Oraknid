@@ -2,7 +2,7 @@ import type { ChatMessage, ChatView, LegView } from "@oraknid/contracts";
 import { MessageSquarePlus, Pencil, Send, Square, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { BackButton, Empty, ErrorNote, Loading, Markdown, PageHeader } from "@/components/common";
 import { useConfirm } from "@/components/confirm";
 import { AddLegButtons } from "@/components/setup";
@@ -42,7 +42,12 @@ export function ChatsPage({ id }: { id?: string }) {
     topics: ["overview"],
     refreshOn: (e) => e.type.startsWith("chat."),
   });
+  // `/chats?new` (the command palette's New chat) opens the new chat dialog.
+  const search = useSearch();
   const [creating, setCreating] = useState(false);
+  useEffect(() => {
+    if (new URLSearchParams(search).has("new")) setCreating(true);
+  }, [search]);
   if (chats.error) return <ErrorNote error={chats.error} />;
   if (chats.loading) return <Loading />;
   const list = chats.data ?? [];

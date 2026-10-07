@@ -163,3 +163,64 @@ export function Sparkline({
     </ChartContainer>
   );
 }
+
+/** One measure over time, full size: a sparkline opened (Overview → Resources). */
+export function MetricChart({
+  points,
+  format,
+  label,
+  color = "var(--chart-1)",
+  height = 260,
+}: {
+  points: { t: number; v: number }[];
+  format: (v: number) => string;
+  label: string;
+  color?: string;
+  height?: number;
+}) {
+  return (
+    <ChartContainer
+      config={{ v: { label, color } }}
+      className="w-full min-w-0"
+      style={{ height, aspectRatio: "auto" }}
+    >
+      <AreaChart data={points} margin={{ left: 0, right: 8, top: 8 }}>
+        <CartesianGrid vertical={false} />
+        <XAxis
+          dataKey="t"
+          type="number"
+          domain={["dataMin", "dataMax"]}
+          tickLine={false}
+          axisLine={false}
+          minTickGap={40}
+          tickFormatter={(v) =>
+            new Date(v).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+          }
+        />
+        <YAxis
+          tickLine={false}
+          axisLine={false}
+          width={64}
+          domain={[0, "auto"]}
+          tickFormatter={(v) => format(v)}
+        />
+        <ChartTooltip
+          content={
+            <ChartTooltipContent
+              labelFormatter={(_, p) => new Date(p?.[0]?.payload?.t).toLocaleTimeString()}
+              formatter={(v) => format(Number(v))}
+            />
+          }
+        />
+        <Area
+          dataKey="v"
+          type="monotone"
+          stroke={color}
+          fill={color}
+          fillOpacity={0.25}
+          isAnimationActive={false}
+        />
+      </AreaChart>
+    </ChartContainer>
+  );
+}

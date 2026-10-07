@@ -98,5 +98,20 @@ describe("the map of the screens (ADR-041)", () => {
     expect(text).toMatch(/- backups\.advanced.*: Advanced/);
     expect(text).toMatch(/- backups\.found \[needs item\]/);
     expect(text.length).toBeLessThan(80_000);
+    expect(text).toContain("Guide: /docs/web-terminal.");
+  });
+
+  it("points each page at a guide page that exists", () => {
+    const order = JSON.parse(
+      readFileSync(join(__dirname, "../../../site/docs/guide.json"), "utf8"),
+    ) as [string, string, string][];
+    const slugs = new Set(order.map(([s]) => s));
+    for (const p of PAGES)
+      if (p.guide) expect(slugs.has(p.guide), `${p.id} → ${p.guide}`).toBe(true);
+    // Every page of the guide is a real file, and the main pages have one.
+    for (const s of slugs)
+      expect(statSync(join(__dirname, `../../../site/docs/${s}.md`)).isFile(), s).toBe(true);
+    for (const id of ["inbox", "chats", "terminal", "repos", "skills", "settings", "docs"])
+      expect(PAGES.find((p) => p.id === id)?.guide, id).toBeTruthy();
   });
 });

@@ -9,7 +9,6 @@ import {
   GitBranch,
   Inbox,
   LayoutDashboard,
-  ListTodo,
   Mail,
   MessagesSquare,
   Moon,
@@ -26,21 +25,14 @@ import {
   Wand2,
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
-import { toast } from "sonner";
 import { Link, useLocation } from "wouter";
+import { CommandPalette } from "@/components/command-palette";
+import { FullRightsBadge } from "@/components/full-rights";
 import { HelpRing } from "@/components/help-ring";
 import { HelperButton } from "@/components/helper";
 import { MachineBanner } from "@/components/machine-health";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  CommandDialog,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
 import {
   Dialog,
   DialogContent,
@@ -50,10 +42,9 @@ import {
 } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SidebarUpdate } from "@/components/updates";
-import { api, message } from "@/lib/api";
+import { api } from "@/lib/api";
 import { goPrefix } from "@/lib/go-prefix";
 import { t } from "@/lib/i18n";
-import { jobHref } from "@/lib/links";
 import { useLive, useLiveStatus } from "@/lib/live";
 import { store } from "@/lib/store";
 import { useTheme } from "@/lib/theme";
@@ -178,6 +169,11 @@ export function Shell({ children }: { children: ReactNode }) {
     refreshOn: (e) => e.type === "system.inhibitor",
   });
   const open = inbox.data?.length ?? 0;
+  // Whether this device has full rights, shown on it (ADR-030).
+  const rights = useLive(() => api.lock.status(), {
+    topics: ["overview"],
+    refreshOn: (e) => e.type === "device.rights",
+  });
 
   // `g` then a key: in the capture phase, so no page's own shortcut sees that key.
   useEffect(() => {
@@ -274,6 +270,7 @@ export function Shell({ children }: { children: ReactNode }) {
             </TooltipContent>
           </Tooltip>
         ) : null}
+        <FullRightsBadge status={rights.data} />
         <div className="flex-1" />
         <Button
           variant="outline"
@@ -464,7 +461,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
       ) : null}
 
-      <Palette open={palette} onOpenChange={setPalette} />
+      <CommandPalette open={palette} onOpenChange={setPalette} pages={NAV} />
       <ShortcutsDialog open={help} onOpenChange={setHelp} />
     </div>
   );
@@ -511,90 +508,5 @@ function ShortcutsDialog({
         </table>
       </DialogContent>
     </Dialog>
-  );
-}
-
-/** ⌘K: jump to anything, run any control (Web-UI → Layout). */
-function Palette({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const [, go] = useLocation();
-  // Loaded when the palette opens, not on every overview event (Audit 1 → Q1-06).
-  const jobs = useLive(() => (open ? api.jobs.list() : Promise.resolve([])), {
-    topics: [],
-    deps: [open],
-  });
-  const run = (fn: () => unknown, done?: string) => {
-    onOpenChange(false);
-    Promise.resolve()
-      .then(fn)
-      .then(() => done && toast.success(done))
-      .catch((e) => toast.error(message(e)));
-  };
-  return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandInput placeholder={t("Jump to a page or a job, or run a control…")} />
-      <CommandList>
-        <CommandEmpty>{t("Nothing matches.")}</CommandEmpty>
-        <CommandGroup heading={t("Go to")}>
-          {NAV.map((n) => (
-            <CommandItem key={n.href} onSelect={() => run(() => go(n.href))}>
-              <n.icon className="size-4" />
-              {t(n.label)}
-            </CommandItem>
-          ))}
-          <CommandItem onSelect={() => run(() => go("/new"))}>
-            <Plus className="size-4" />
-            {t("New work")}
-          </CommandItem>
-        </CommandGroup>
-        <CommandGroup heading={t("Jobs")}>
-          {(jobs.data ?? []).map((j) => (
-            <CommandItem
-              key={j.id}
-              value={`job ${j.title} ${j.description ?? ""} ${j.state}`}
-              onSelect={() => run(() => go(jobHref(j)))}
-            >
-              <ListTodo className="size-4" />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate">{j.title}</span>
-                {j.description ? (
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {j.description}
-                  </span>
-                ) : null}
-              </span>
-              <span className="text-xs text-muted-foreground">{j.state}</span>
-            </CommandItem>
-          ))}
-        </CommandGroup>
-        <CommandGroup heading={t("Controls")}>
-          {(jobs.data ?? [])
-            .filter((j) =>
-              ["running", "planning", "verifying", "interviewing", "waiting"].includes(j.state),
-            )
-            .map((j) => (
-              <CommandItem
-                key={`p${j.id}`}
-                value={`pause ${j.title}`}
-                onSelect={() =>
-                  run(() => api.jobs.pause({ id: j.id }), t("Pausing at the next safe point…"))
-                }
-              >
-                {t("Pause “{title}”", { title: j.title })}
-              </CommandItem>
-            ))}
-          {(jobs.data ?? [])
-            .filter((j) => ["paused", "blocked"].includes(j.state))
-            .map((j) => (
-              <CommandItem
-                key={`r${j.id}`}
-                value={`resume ${j.title}`}
-                onSelect={() => run(() => api.jobs.resume({ id: j.id }), t("Resumed."))}
-              >
-                {t("Resume “{title}”", { title: j.title })}
-              </CommandItem>
-            ))}
-        </CommandGroup>
-      </CommandList>
-    </CommandDialog>
   );
 }
