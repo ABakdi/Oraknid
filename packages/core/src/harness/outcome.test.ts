@@ -102,6 +102,16 @@ const RULES: Rule[] = [
     (o) => o.kind === "AskOwner" && o.question === "agent-needs",
   ],
   [
+    "a refused gate tried again (D8)",
+    (i) => i.signals.push(sig("D8")),
+    (o) => o.kind === "Escalate" && o.drift.code === "D8" && o.step === "kill",
+  ],
+  [
+    "a forbidden action (D7)",
+    (i) => i.signals.push(sig("D7")),
+    (o) => o.kind === "Escalate" && o.drift.code === "D7",
+  ],
+  [
     "scope drift (D1)",
     (i) => i.signals.push(sig("D1")),
     (o) => o.kind === "Escalate" && o.drift.code === "D1",
@@ -266,6 +276,23 @@ describe("decideOutcome: the jobs of 2026-10-06/07", () => {
         "a refused gate tried again (D8): killed at once",
         (i) => i.signals.push(sig("D8", "tried `nmap` again after I refused it")),
         { kind: "Escalate", step: "kill" },
+      ],
+      [
+        // Stage 1's gap: D7 and D8 were looked at only when the checks failed.
+        "D8 after passing checks: killed, not done",
+        (i) => {
+          i.verdict = passing;
+          i.signals.push(sig("D8", "tried `nmap localhost` again after I refused it"));
+        },
+        { kind: "Escalate", step: "kill", drift: { code: "D8" } },
+      ],
+      [
+        "D7 after passing checks: corrected in its session, not done",
+        (i) => {
+          i.verdict = passing;
+          i.signals.push(sig("D7", "tried `sudo ls` (never allowed)"));
+        },
+        { kind: "Escalate", step: "correct", drift: { code: "D7" } },
       ],
     ];
   it.each(rows)("%s", (_, set, expected) => {

@@ -101,8 +101,9 @@ const attemptsOf = (h: Harness, jobId: string) =>
 
 describe("the attempt log (ADR-056 §1)", () => {
   it("records what an attempt did, what the Gate decided, the checks and how it ended", async () => {
-    const leg = scriptedLeg(() => [
-      { run: "sudo ls" },
+    // `sudo ls` once: corrected for it (D7) before it is done (stage 4), it doesn't again.
+    const leg = scriptedLeg((t) => [
+      ...(t.turn === 1 ? [{ run: "sudo ls" }] : []),
       { write: "parser.js", content: "x\n" },
       { say: "DONE" },
     ]);
@@ -141,7 +142,9 @@ describe("the attempt log (ADR-056 §1)", () => {
     expect(log.filter((e) => e.kind === "ChecksRan").map((e) => e.data)).toMatchObject([
       { why: "before", passed: false },
       { why: "turn", passed: true },
+      { why: "turn", passed: true },
     ]);
+    expect(log.find((e) => e.kind === "Signal")?.data).toMatchObject({ kind: "drift", code: "D7" });
     expect(log.find((e) => e.kind === "AgentText")?.data).toMatchObject({ text: "DONE" });
     expect(log.at(-2)?.data).toMatchObject({ kind: "succeeded" });
   }, 60_000);

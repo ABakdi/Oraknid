@@ -450,10 +450,17 @@ describe("what an attempt learned survives a restart (bug 8)", () => {
 
   it("keeps what I refused refused across attempts: not asked again, refused at once (D8)", async () => {
     let hang = true;
+    // After the restart it tries it once more (D8), then, its attempt killed for that (stage 4:
+    // a refused gate tried again is never done), the next model doesn't.
+    let again = 0;
     const leg = scriptedLeg(() =>
       hang
         ? [{ run: "nmap localhost" }, { hang: true }]
-        : [{ run: "nmap localhost" }, { write: "parser.js", content: "x\n" }, { say: "DONE" }],
+        : [
+            ...(again++ === 0 ? [{ run: "nmap localhost" }] : []),
+            { write: "parser.js", content: "x\n" },
+            { say: "DONE" },
+          ],
     );
     rig = await harness({
       legs: [{ kind: "claude-code", name: "Claude A", leg }],

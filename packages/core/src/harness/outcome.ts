@@ -233,13 +233,14 @@ const SECURITY = new Set(["D7", "D8", "D1"]);
  *  4. the work verified (its checks, or The Eye's review);
  *  5. a failing check that looks broken is repaired, not held against anyone;
  *  6. what the agent says it needs of me is asked before any ladder;
- *  7. done, when verified with no security or scope drift;
- *  8. security and scope (D7, D8, D1) go to the drift ladder before any
- *     climb; else a real failure climbs a rung when a higher one exists
- *     (ADR-052 §3; not a turn stopped at its limit of steps);
- *  9. the other drifts (D2–D6) on the rung where it is;
- * 10. the turns spent;
- * 11. at the top: the failure goes back in the session, then the ladder
+ *  7. security and scope (D7, D8, D1) go to the drift ladder, before any
+ *     climb and whether the checks pass or not;
+ *  8. done, when verified;
+ *  9. a real failure climbs a rung when a higher one exists (ADR-052 §3;
+ *     not a turn stopped at its limit of steps);
+ * 10. the other drifts (D2–D6) on the rung where it is;
+ * 11. the turns spent;
+ * 12. at the top: the failure goes back in the session, then the ladder
  *     corrects, resets, steps up, kills and asks me.
  *
  * With no turn's end yet: waiting on me is no stall; any drift goes to
@@ -305,19 +306,22 @@ export function decideOutcome(i: OutcomeInput): Outcome {
   if (i.agentNeeds && !i.agentNeeds.asked && !cutShort)
     return { kind: "AskOwner", question: "agent-needs", said: i.agentNeeds.said };
 
-  // 7. Done.
-  if (i.verdict.verified && !drifts.some((d) => d.code === "D1")) return { kind: "Done" };
+  // 7. Security and scope first, before any climb (bug 13) and when the checks pass too: a
+  // forbidden action or a refused gate tried again is never "done" (the worst drift is theirs).
+  if (drifts.some((d) => SECURITY.has(d.code))) return ladder(drifts, failure) ?? unreachable();
 
-  // 8. Security and scope first (bug 13); else the climb on a real failure.
-  const first = drifts.some((d) => SECURITY.has(d.code));
-  if (!i.verdict.verified && !first && !cutShort && i.rung.higher)
-    return { kind: "Climb", to: i.rung.higher, failure };
+  // 8. Done.
+  if (i.verdict.verified) return { kind: "Done" };
 
-  // 9. The drift ladder where it is.
+  // 9. A real failure climbs a rung while a higher one exists (ADR-052 §3); a turn cut at its
+  // limit of steps isn't its answer: it goes on in its session first.
+  if (!cutShort && i.rung.higher) return { kind: "Climb", to: i.rung.higher, failure };
+
+  // 10. The other drifts (D2–D6), on the rung where it is.
   const step = ladder(drifts, failure);
   if (step) return step;
 
-  // 10. The turns spent.
+  // 11. The turns spent.
   if (i.history.turns >= i.policy.maxTurns)
     return (
       ladder(
@@ -326,7 +330,7 @@ export function decideOutcome(i: OutcomeInput): Outcome {
       ) ?? unreachable()
     );
 
-  // 11. Self-prompting: the exact failure goes back (The-Eye → Self-prompting).
+  // 12. Self-prompting: the exact failure goes back (The-Eye → Self-prompting).
   return {
     kind: "Continue",
     why: "self-prompt",
