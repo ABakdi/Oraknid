@@ -282,5 +282,25 @@ Oraknid changes.
 | `openai-compatible` | MVP | Ollama, LM Studio, llama.cpp, vLLM. Tested on Ollama + NVIDIA. |
 | `opencode` | Phase 2 | |
 | `antigravity` | Phase 5 | Runs unattended; a real job passed on 2026-10-02 ([[Leg-Adapters]]). |
+| `oraknid-agent` | Phase 15 | Oraknid's own tool loop over any OpenAI-compatible model ([[ADR-052-A-Harness-For-Any-Model]] §6); the **Local** Leg of [[ADR-054-Local-Models]] is one, kept by the Models page. Built 2026-10-07 against stand-ins; not yet run on a real model. |
+
+### Oraknid's own agent and the Local Leg (2026-10-07)
+
+An `oraknid-agent` Leg is added by hand (an endpoint such as OpenRouter,
+its models, a key) or made by the Models page as **Local** with the first
+loaded chat model; the Local Leg's models are exactly the loaded ones, and
+it runs one session per loaded model at once. Its probe tests each
+model's **tool calling** with one tiny request (native, through a JSON
+grammar, or none) and keeps the answer on the model's profile (`probed`):
+a model that can't call tools gets strengths only for `summarize` and
+`classify`, no file or shell tools, and the known failure "doesn't call
+tools: text work only". Its default profile follows the model's family
+like OpenCode's: a known middle model starts at 3 (medium), an unknown
+local one at 2, unproven, low difficulty; `costModel` `local`. A Leg
+whose every address is on this computer, or the Local Leg, isn't remote.
+The OpenAI-compatible kind's probe tests tool calling the same way.
+
+A task whose Legs are all local models waits while every GPU is 90% full
+([[ADR-050-Parallel-By-Default]], the check of [[ADR-016-Parallel-Work]]).
 
 Related: [[The-Eye]] · [[Leg-Adapters]] · [[Budgets-and-Quotas]] · [[ADR-009-Multiple-Accounts-Per-Provider]]

@@ -188,6 +188,7 @@ import type { PlanUsage } from "../legs/plan-usage.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import { readSessionLog } from "../legs/session-log.ts";
 import type { MailService } from "../mail/service.ts";
+import type { LocalModels } from "../models/service.ts";
 import type { NestLink } from "../nest/link.ts";
 import type { Notifications } from "../notify/notifications.ts";
 import type { Secrets } from "../os/secrets.ts";
@@ -229,6 +230,7 @@ import { jobResult, mergeJob, taskDiff } from "../workspace/result.ts";
 import { projectFrom } from "../workspace/sources.ts";
 import { backupsRouter } from "./backups.ts";
 import { cloudRouter } from "./cloud.ts";
+import { modelsRouter } from "./models.ts";
 import {
   Activity,
   activity,
@@ -302,6 +304,8 @@ export interface ApiContext {
   devices: Devices;
   /** Oraknid's own updates (ADR-048). */
   updates: Updates;
+  /** Local models (ADR-054). */
+  models: LocalModels;
   brain: EyeBrain;
   /** What The Eye is thinking now, and what it thought (M13.25). */
   thinking?: EyeThinking;
@@ -1233,6 +1237,7 @@ export const router = {
   backups: backupsRouter,
   /** Cloud storage: providers and the pool (ADR-046). */
   cloud: cloudRouter,
+  models: modelsRouter,
   /** A text of mine rephrased by a quick model, for any textarea (Chats-and-Helper → Fix wording). */
   text: {
     polish: base

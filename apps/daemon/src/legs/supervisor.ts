@@ -66,6 +66,8 @@ export interface Supervised {
 interface Live {
   id: string;
   legId: string;
+  /** The model's own name, e.g. a local model's (ADR-054: a model in use isn't idle). */
+  model: string;
   label: string;
   session: LegSession;
   jobId: string | null;
@@ -216,6 +218,7 @@ export class LegSupervisor {
     this.#live.set(id, {
       id,
       legId: leg.id,
+      model: model.model,
       label: `${leg.name} · ${model.displayName}`,
       session: supervised,
       jobId: req.jobId,
@@ -369,6 +372,11 @@ export class LegSupervisor {
 
   live(): string[] {
     return [...this.#live.keys()];
+  }
+
+  /** The models a Leg's live sessions use, by name. */
+  modelsInUse(legId: string): Set<string> {
+    return new Set([...this.#live.values()].filter((l) => l.legId === legId).map((l) => l.model));
   }
 
   /** The sessions running now: whose task each is, and when each last said anything (ADR-050). */

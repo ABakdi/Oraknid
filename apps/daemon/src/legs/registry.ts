@@ -72,7 +72,12 @@ export class LegRegistry {
     if (typeof config.configDir === "string")
       mkdirSync(config.configDir, { recursive: true, mode: 0o700 });
     let secretRef: string | null = null;
-    if ((input.kind === "openai-compatible" || input.kind === "opencode") && input.secret) {
+    if (
+      (input.kind === "openai-compatible" ||
+        input.kind === "opencode" ||
+        input.kind === "oraknid-agent") &&
+      input.secret
+    ) {
       secretRef = secretName(id);
       await this.secrets.set(secretRef, input.secret);
     }
@@ -204,9 +209,18 @@ export class LegRegistry {
       for (const offer of offers) {
         const row = existing.get(offer.model);
         if (row) {
+          const stored = this.storedProfile(row);
+          const probed =
+            offer.toolCalls && stored.probed?.toolCalls !== offer.toolCalls
+              ? { ...stored, probed: { toolCalls: offer.toolCalls } }
+              : null;
           this.db
             .update(legModels)
-            .set({ displayName: offer.displayName, effortLevels: offer.effortLevels })
+            .set({
+              displayName: offer.displayName,
+              effortLevels: offer.effortLevels,
+              ...(probed ? { profile: probed } : {}),
+            })
             .where(eq(legModels.id, row.id))
             .run();
           existing.delete(offer.model);
@@ -214,6 +228,8 @@ export class LegRegistry {
         }
         const stored = emptyStoredProfile();
         if (offer.contextWindow) stored.overrides.contextWindow = offer.contextWindow;
+        // How it calls tools, as the probe found (ADR-052 §6): none keeps it to text work.
+        if (offer.toolCalls) stored.probed = { toolCalls: offer.toolCalls };
         this.db
           .insert(legModels)
           .values({
@@ -550,9 +566,7 @@ export class LegRegistry {
       health: leg.health as LegHealth,
       healthDetail: leg.healthDetail,
       limitedUntil: leg.limitedUntil,
-      remote:
-        (kind !== "openai-compatible" && kind !== "opencode") ||
-        !/\/\/(127\.0\.0\.1|localhost|\[::1\])[:/]/.test(String(config.baseUrl ?? config.baseURL)),
+      remote: isRemote(kind, config),
       quota: leg.quota as QuotaWindow[],
       models: this.models(leg.id).map((m) => ({
         id: m.id,
@@ -580,6 +594,23 @@ export class LegRegistry {
     });
     this.bus.publish({ type, topic: `leg:${legId}`, jobId: null, payload });
   }
+}
+
+const LOCAL_URL = /\/\/(127\.0\.0\.1|localhost|\[::1\])[:/]/;
+
+/** Where a Leg's work is read: on this computer only for a local model server. */
+function isRemote(kind: LegKind, config: Record<string, unknown>): boolean {
+  if (kind === "oraknid-agent") {
+    const urls = [
+      ...(typeof config.baseUrl === "string" ? [config.baseUrl] : []),
+      ...(Array.isArray(config.endpoints)
+        ? config.endpoints.map((e) => String((e as { baseUrl?: unknown }).baseUrl))
+        : []),
+    ];
+    return config.local !== true && (urls.length === 0 || urls.some((u) => !LOCAL_URL.test(u)));
+  }
+  if (kind !== "openai-compatible" && kind !== "opencode") return true;
+  return !LOCAL_URL.test(String(config.baseUrl ?? config.baseURL));
 }
 
 /** Is this folder my own Claude Code's config, or inside or above it? */

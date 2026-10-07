@@ -47,6 +47,39 @@ export const AntigravityLegConfig = z.object({
   models: z.array(z.string().min(1)).default([]),
 });
 
+/** How a model calls tools, as the probe tested it (ADR-052 §6). */
+export const ToolCalling = z.enum(["native", "json", "none"]);
+export type ToolCalling = z.infer<typeof ToolCalling>;
+
+/**
+ * Oraknid's own agent (ADR-052 §6): its tool loop over any model behind an
+ * OpenAI-compatible API, at one address (`baseUrl`) or each model at its
+ * own (`endpoints`, the Local Leg the Models page keeps, ADR-054).
+ */
+export const OraknidAgentLegConfig = z.object({
+  baseUrl: z.url().optional(),
+  /** The models to offer; empty: every model the server lists. */
+  models: z.array(z.string().min(1)).default([]),
+  endpoints: z
+    .array(
+      z.object({
+        model: z.string().min(1),
+        baseUrl: z.url(),
+        displayName: z.string().optional(),
+        contextWindow: z.number().int().positive().optional(),
+        toolCalls: ToolCalling.optional(),
+      }),
+    )
+    .default([]),
+  contextWindow: z.number().int().positive().optional(),
+  /** Model calls in one turn before it stops (max_turns). */
+  maxSteps: z.number().int().positive().optional(),
+  commandTimeoutMs: z.number().int().positive().optional(),
+  /** This computer's own models, kept by the Models page (ADR-054). */
+  local: z.boolean().optional(),
+});
+export type OraknidAgentLegConfig = z.infer<typeof OraknidAgentLegConfig>;
+
 export const NewLeg = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("claude-code"),
@@ -71,6 +104,13 @@ export const NewLeg = z.discriminatedUnion("kind", [
     kind: z.literal("antigravity"),
     name: z.string().min(1),
     config: AntigravityLegConfig,
+  }),
+  z.object({
+    kind: z.literal("oraknid-agent"),
+    name: z.string().min(1),
+    config: OraknidAgentLegConfig,
+    /** The endpoint's API key, if it needs one. Goes to the secret store, never the database. */
+    secret: z.string().min(1).optional(),
   }),
 ]);
 export type NewLeg = z.infer<typeof NewLeg>;

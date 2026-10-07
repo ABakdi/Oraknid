@@ -238,7 +238,13 @@ export type Task = z.infer<typeof Task>;
 
 // ── Legs ────────────────────────────────────────────────────────────
 
-export const LegKind = z.enum(["claude-code", "openai-compatible", "opencode", "antigravity"]);
+export const LegKind = z.enum([
+  "claude-code",
+  "openai-compatible",
+  "opencode",
+  "antigravity",
+  "oraknid-agent",
+]);
 export type LegKind = z.infer<typeof LegKind>;
 
 export const LegHealth = z.enum(["healthy", "degraded", "rate-limited", "unavailable", "disabled"]);

@@ -767,13 +767,18 @@ async function runTask(
     unsandboxed: job.unsandboxed,
     skillBody: d.skills.version(job.skillId, job.skillVersion)?.body ?? "",
     // Every job may do GitHub work through Oraknid's own tool, judged by its project's link (ADR-038).
-    tools:
-      d.tools?.registry.hasBuiltIn("github") &&
+    tools: [
+      ...(d.tools?.registry.hasBuiltIn("github") &&
       !job.tools.includes("github") &&
       // A server job's place is its server, with no repo to put on GitHub (ADR-049).
       !d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.serverId
         ? [...job.tools, "github"]
-        : job.tools,
+        : job.tools),
+      // The local models' roles, for every agent once a model is here (ADR-054).
+      ...(d.tools?.registry.hasBuiltIn("local-models") && !job.tools.includes("local-models")
+        ? ["local-models"]
+        : []),
+    ],
     serverIds:
       d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.serverIds ?? [],
     // Each server's role, production also when I marked the server itself (ADR-049).

@@ -12,6 +12,8 @@
 #   --dir <path>         where the program lives (default: ~/.local/share/oraknid/app)
 #   --from <path|url>    the repository to install from (default: GitHub)
 #   --no-service         build and link, but don't install the background service
+#   --local-models       also get llama.cpp's llama-server for running models on this
+#                        computer (the build for its GPU: CUDA, ROCm, Vulkan or CPU)
 #   --uninstall          remove the service and the `oraknid` command (your data is kept)
 #
 # Run it as yourself: it asks for sudo only to install missing packages
@@ -29,6 +31,8 @@ DIR="${XDG_DATA_HOME:-$HOME/.local/share}/oraknid/app"
 BIN_DIR="$HOME/.local/bin"
 SERVICE=1
 UNINSTALL=0
+LOCAL_MODELS=0
+DATA_DIR="${ORAKNID_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/oraknid}"
 PM=""
 
 say() { printf '%s\n' "$*"; }
@@ -303,6 +307,122 @@ ensure_pnpm() {
 	pnpm_works || die "pnpm does not run through corepack"
 }
 
+# ── local models (ADR-054) ────────────────────────────────────────────
+
+# This computer's GPU, for the right llama.cpp build: cuda, rocm, vulkan or cpu.
+gpu_kind() {
+	if have nvidia-smi && nvidia-smi -L >/dev/null 2>&1; then
+		echo cuda
+	elif [ -e /dev/kfd ]; then
+		echo rocm
+	elif ls /dev/dri/renderD* >/dev/null 2>&1; then
+		echo vulkan
+	else
+		echo cpu
+	fi
+}
+
+# The builds to try for a GPU, best first: the GPU's own, Vulkan, then the CPU.
+builds_for() {
+	case "$1" in
+	cuda) echo "cuda vulkan cpu" ;;
+	rocm) echo "rocm vulkan cpu" ;;
+	vulkan) echo "vulkan cpu" ;;
+	*) echo cpu ;;
+	esac
+}
+
+# Of a release's asset names (one a line, on stdin), the Linux build of one
+# kind (cuda, rocm, vulkan, cpu) for one architecture (x64, arm64).
+pick_llama_asset() {
+	awk -v kind="$1" -v arch="$2" '
+	{
+		s = tolower($0)
+		if (s !~ /bin-(ubuntu|linux)/ || s !~ ("-" arch "[.-]") || s !~ /\.(zip|tar\.gz)$/) next
+		if (kind == "cpu") { if (s ~ /(cuda|rocm|hip|vulkan|sycl|openvino|kompute|opencl)/) next }
+		else if (kind == "rocm") { if (s !~ /(rocm|hip)/) next }
+		else if (s !~ kind) next
+		print; exit
+	}'
+}
+
+# llama.cpp's latest release from GitHub into <data>/bin/llama.cpp, checked
+# against its digest, the build for this computer's GPU (falling back to
+# Vulkan and the CPU when that build doesn't run here).
+install_local_models() {
+	title "Local models: llama.cpp"
+	if have llama-server; then
+		say "llama-server is here already: $(command -v llama-server)"
+	else
+		case "$(uname -m)" in
+		x86_64 | amd64) arch=x64 ;;
+		aarch64 | arm64) arch=arm64 ;;
+		*)
+			warn "llama.cpp publishes no build for $(uname -m): build it (github.com/ggml-org/llama.cpp) and put llama-server on the PATH."
+			return 0
+			;;
+		esac
+		tmp="$(mktemp -d)"
+		if ! fetch "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest" >"$tmp/release.json"; then
+			warn "could not reach GitHub for llama.cpp; run this again with --local-models later."
+			rm -rf "$tmp"
+			return 0
+		fi
+		# name, URL and digest of each asset, one a line, tab-separated.
+		python3 -c 'import json,sys
+r = json.load(open(sys.argv[1]))
+print(r.get("tag_name", "?"))
+for a in r.get("assets", []):
+    print("\t".join([a["name"], a["browser_download_url"], a.get("digest") or ""]))' "$tmp/release.json" >"$tmp/assets" ||
+			{ warn "GitHub's answer about llama.cpp could not be read."; rm -rf "$tmp"; return 0; }
+		tag="$(head -n 1 "$tmp/assets")"
+		gpu="$(gpu_kind)"
+		say "This computer's GPU: $gpu. llama.cpp release $tag."
+		done_ok=0
+		for kind in $(builds_for "$gpu"); do
+			name="$(tail -n +2 "$tmp/assets" | cut -f1 | pick_llama_asset "$kind" "$arch")"
+			[ -n "$name" ] || { say "No $kind build of llama.cpp for $arch."; continue; }
+			url="$(awk -F'\t' -v n="$name" '$1 == n { print $2 }' "$tmp/assets")"
+			digest="$(awk -F'\t' -v n="$name" '$1 == n { print $3 }' "$tmp/assets")"
+			say "+ $url"
+			fetch "$url" >"$tmp/$name" || { warn "could not download $name"; continue; }
+			case "$digest" in
+			sha256:*)
+				[ "$(sha256 "$tmp/$name")" = "${digest#sha256:}" ] || { warn "$name does not match its digest from GitHub"; continue; }
+				say "Checksum matches."
+				;;
+			esac
+			rm -rf "$tmp/x"
+			mkdir -p "$tmp/x"
+			case "$name" in
+			*.zip) python3 -m zipfile -e "$tmp/$name" "$tmp/x" ;;
+			*) tar -xzf "$tmp/$name" -C "$tmp/x" ;;
+			esac
+			server="$(find "$tmp/x" -type f -name llama-server | head -n 1)"
+			[ -n "$server" ] || { warn "$name has no llama-server"; continue; }
+			chmod -R u+rwX,go+rX "$tmp/x"
+			chmod 755 "$server"
+			if ! LD_LIBRARY_PATH="$(dirname "$server")${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "$server" --version >/dev/null 2>&1 </dev/null; then
+				say "The $kind build doesn't run here (a driver or library missing); trying the next."
+				continue
+			fi
+			mkdir -p "$DATA_DIR/bin"
+			rm -rf "$DATA_DIR/bin/llama.cpp"
+			cp -R "$(dirname "$server")" "$DATA_DIR/bin/llama.cpp"
+			say "Installed llama-server ($kind, $tag) in $DATA_DIR/bin/llama.cpp"
+			done_ok=1
+			break
+		done
+		rm -rf "$tmp"
+		[ "$done_ok" = 1 ] || warn "llama.cpp was not installed. Oraknid can still use an Ollama on this computer."
+	fi
+	if have whisper-cli || [ -x "$DATA_DIR/bin/whisper.cpp/whisper-cli" ]; then
+		say "whisper.cpp is here for speech to text."
+	else
+		say "Speech to text needs whisper.cpp, which publishes no Linux build: install it from your distribution or build it (github.com/ggml-org/whisper.cpp), then put whisper-cli on the PATH or in $DATA_DIR/bin/whisper.cpp."
+	fi
+}
+
 # ── the program ───────────────────────────────────────────────────────
 
 fetch_source() {
@@ -410,6 +530,9 @@ finish() {
 		say "Start Oraknid with: oraknid start"
 		say "Then open http://127.0.0.1:7417 and pair this browser with the code from: oraknid pair"
 	fi
+	if [ "$LOCAL_MODELS" = 0 ] && [ "$(gpu_kind)" != cpu ] && ! have llama-server && [ ! -x "$DATA_DIR/bin/llama.cpp/llama-server" ]; then
+		say "This computer has a GPU: run this again with --local-models to run models on it (Models in Oraknid)."
+	fi
 	case ":$PATH:" in
 	*":$BIN_DIR:"*) ;;
 	*) say "
@@ -443,8 +566,9 @@ main() {
 		--from) FROM="${2:?--from needs a path or URL}"; shift 2 ;;
 		--from=*) FROM="${1#*=}"; shift ;;
 		--no-service) SERVICE=0; shift ;;
+		--local-models) LOCAL_MODELS=1; shift ;;
 		--uninstall) UNINSTALL=1; shift ;;
-		-h | --help) sed -n '2,20p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' || true; exit 0 ;;
+		-h | --help) sed -n '2,22p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' || true; exit 0 ;;
 		*) die "unknown option $1 (see --help)" ;;
 		esac
 	done
@@ -471,6 +595,7 @@ main() {
 	build
 	link_command
 	write_record
+	[ "$LOCAL_MODELS" = 0 ] || install_local_models
 
 	title "Checking this computer (oraknid doctor)"
 	"$BIN_DIR/oraknid" doctor </dev/null || true

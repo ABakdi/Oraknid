@@ -23,6 +23,7 @@
     "@oraknid/leg-claude-code": "workspace:^",
     "@oraknid/leg-openai-compatible": "workspace:^",
     "@oraknid/leg-opencode": "workspace:^",
+    "@oraknid/leg-oraknid-agent": "workspace:^",
     "@oraknid/leg-sdk": "workspace:^",
     "@oraknid/os": "workspace:^",
     "@oraknid/tunnel": "workspace:^",

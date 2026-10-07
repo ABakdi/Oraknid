@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@oraknid/contracts": "workspace:^",
+    "@oraknid/leg-oraknid-agent": "workspace:^",
     "@oraknid/leg-sdk": "workspace:^",
     "@oraknid/os": "workspace:^"
   },

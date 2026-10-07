@@ -14,6 +14,7 @@ import {
   index,
   integer,
   primaryKey,
+  real,
   sqliteTable,
   text,
   uniqueIndex,
@@ -836,5 +837,43 @@ export const cloudProviders = sqliteTable("cloud_providers", {
   totalBytes: integer("total_bytes"),
   checkedAt: integer("checked_at"),
   error: text("error"),
+  createdAt: integer("created_at").notNull(),
+});
+
+/**
+ * Local models (ADR-054): downloaded into the data folder (llama.cpp) or
+ * pulled into Ollama, with how each runs and what it was measured at.
+ * Which is loaded is memory only: a restart starts with none, then loads
+ * the ones kept loaded.
+ */
+export const localModels = sqliteTable("local_models", {
+  id: text("id").primaryKey(),
+  source: text("source", { enum: ["huggingface", "ollama"] }).notNull(),
+  repo: text("repo").notNull(),
+  file: text("file").notNull(),
+  name: text("name").notNull().unique(),
+  runner: text("runner", { enum: ["llama.cpp", "ollama"] }).notNull(),
+  /** downloading, paused, ready, failed: loading and loaded are the daemon's own. */
+  state: text("state").notNull(),
+  error: text("error"),
+  /** The folder of its files (llama.cpp); null for a model inside Ollama. */
+  path: text("path"),
+  /** Every part downloaded or to download, with each one's checksum when known. */
+  parts: json<{ name: string; sha256: string | null; sizeBytes: number | null }[]>("parts")
+    .notNull()
+    .default([]),
+  /** A vision model's projector (llama.cpp's --mmproj), downloaded beside it. */
+  projector: text("projector"),
+  sizeBytes: integer("size_bytes").notNull().default(0),
+  doneBytes: integer("done_bytes").notNull().default(0),
+  quant: text("quant"),
+  kinds: json<string[]>("kinds").notNull().default([]),
+  license: text("license"),
+  contextLength: integer("context_length"),
+  layers: integer("layers"),
+  settings: json<Record<string, unknown>>("settings").notNull().default({}),
+  tokensPerSec: real("tokens_per_sec"),
+  toolCalls: text("tool_calls"),
+  lastUsedAt: integer("last_used_at"),
   createdAt: integer("created_at").notNull(),
 });

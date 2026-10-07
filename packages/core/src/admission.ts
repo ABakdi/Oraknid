@@ -37,6 +37,8 @@ export interface MachineReading {
   ownRss: number;
   /** Share of all cores they use, 0–1. */
   ownCpu: number;
+  /** The GPUs, when the machine says (nvidia-smi); absent or empty without. */
+  gpus?: { name: string; usedBytes: number; totalBytes: number }[];
 }
 
 /**
@@ -69,6 +71,11 @@ export function readingOf(
     thermalThrottles: s.thermalThrottles ?? null,
     ownRss: last.processes.reduce((n, p) => n + p.rssBytes, 0),
     ownCpu: Math.min(1, ownCpu),
+    gpus: last.gpus.map((g) => ({
+      name: g.name,
+      usedBytes: g.memoryUsedBytes,
+      totalBytes: g.memoryTotalBytes,
+    })),
   };
 }
 
@@ -160,6 +167,8 @@ export interface LegRoom {
   name: string;
   running: number;
   limit: number;
+  /** A model on this computer: it needs the GPU (ADR-016, ADR-054). */
+  local?: boolean;
 }
 
 export interface AdmissionInput {
@@ -182,7 +191,7 @@ export interface AdmissionInput {
 }
 
 /** Why a ready task waits: what the UI groups it by. */
-export type WaitWhy = "danger" | "cap" | "legs" | "disk" | "heavy" | "memory" | "cpu";
+export type WaitWhy = "danger" | "cap" | "legs" | "disk" | "heavy" | "memory" | "cpu" | "gpu";
 
 export type Verdict = { ok: true } | { ok: false; why: WaitWhy; reason: string };
 
@@ -223,6 +232,13 @@ export function admit(a: AdmissionInput): Verdict {
       "heavy",
       `heavy, like “${heavyNow[0]?.title}”: ${th.heavyAtOnce === 1 ? "heavy tasks run one at a time" : `at most ${th.heavyAtOnce} heavy tasks at once`}`,
     );
+  // A task only this computer's models may do needs one GPU under 90% (ADR-016, kept by ADR-054).
+  const gpus = (r?.gpus ?? []).filter((g) => g.totalBytes > 0);
+  if (a.legs.length && a.legs.every((l) => l.local) && gpus.length) {
+    const freest = Math.min(...gpus.map((g) => g.usedBytes / g.totalBytes));
+    if (freest >= GPU_CEILING)
+      return no("gpu", `waiting for the GPU: its memory is ${pct(freest)} used`);
+  }
   if (!r?.memoryTotal) return { ok: true };
   const first = a.running.length === 0 && !a.pauseForMyWork;
   const left = r.memoryAvailable - a.cost.memoryBytes;
@@ -240,6 +256,53 @@ export function admit(a: AdmissionInput): Verdict {
   if (!first && r.cpu > th.maxCpu) return no("cpu", `waiting for CPU: ${pct(r.cpu)} busy`);
   if (!first && r.load1 !== null && r.load1 > r.cores * 2)
     return no("cpu", `waiting for CPU: load ${r.load1.toFixed(1)} on ${r.cores} cores`);
+  return { ok: true };
+}
+
+/** A GPU's memory kept under this share (ADR-016, ADR-054). */
+export const GPU_CEILING = 0.9;
+
+/** What loading a local model will take, and where (ADR-054). */
+export interface ModelLoad {
+  name: string;
+  /** On the GPU, of the GPU at `gpuIndex`. */
+  vramBytes: number;
+  gpuIndex: number | null;
+  /** In memory (weights left on the CPU, and the server). */
+  ramBytes: number;
+}
+
+/**
+ * May this model load now (ADR-054, admitted like any work)? Not while the
+ * machine is in danger; its GPU must stay under 90% after it, and memory
+ * keep its floor.
+ */
+export function admitModel(
+  m: ModelLoad,
+  reading: MachineReading | null,
+  thresholds: ResourceThresholds,
+  danger: string | null,
+): Verdict {
+  const no = (why: WaitWhy, reason: string): Verdict => ({ ok: false, why, reason });
+  if (danger) return no("danger", `the computer is in danger: ${lower(danger)}`);
+  if (!reading) return { ok: true };
+  const gpu = m.gpuIndex !== null ? reading.gpus?.[m.gpuIndex] : undefined;
+  if (gpu && m.vramBytes > 0) {
+    const after = (gpu.usedBytes + m.vramBytes) / gpu.totalBytes;
+    if (after >= GPU_CEILING)
+      return no(
+        "gpu",
+        `not enough GPU memory for ${m.name}: it needs ${gb(m.vramBytes)}, ${gb(Math.max(0, gpu.totalBytes * GPU_CEILING - gpu.usedBytes))} free below 90% of ${gpu.name}`,
+      );
+  }
+  if (reading.memoryTotal) {
+    const left = reading.memoryAvailable - m.ramBytes;
+    if (left < thresholds.minFreeMemory * reading.memoryTotal)
+      return no(
+        "memory",
+        `not enough memory for ${m.name}: it needs ${gb(m.ramBytes)}, ${gb(reading.memoryAvailable)} free`,
+      );
+  }
   return { ok: true };
 }
 

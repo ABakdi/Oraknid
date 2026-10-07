@@ -12,6 +12,7 @@ export * from "./legs.ts";
 export * from "./live.ts";
 export * from "./mail.ts";
 export * from "./metrics.ts";
+export * from "./models.ts";
 export * from "./notifications.ts";
 export * from "./plan.ts";
 export * from "./profiles.ts";

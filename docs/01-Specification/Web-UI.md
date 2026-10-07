@@ -697,7 +697,34 @@ how old it is and where it was read, the models' share of Oraknid's
 tokens in it, and the last eight days as a line with when it filled and
 reset; another kind says what it has instead. **Add Leg** with a live test, and **Find agents on this
 machine**. The capability profile editor shows learned
-values next to my overrides.
+values next to my overrides. Add Leg offers **Oraknid's own agent**: an
+endpoint, its models (empty: all it lists) and a key
+([[ADR-052-A-Harness-For-Any-Model]] §6).
+
+### Models (2026-10-07, [[ADR-054-Local-Models]])
+
+`/models` in the sidebar after Legs (More on a phone), `g e`. Two
+columns, one on a phone:
+- **On this computer**: each model with its kinds, runner, quantisation,
+  size, state and roles; a download's progress bar with Pause or Resume
+  download; a loaded model's measured speed, VRAM, memory, context and
+  GPU layers; Load, Unload, Settings (keep loaded, idle minutes, context
+  and GPU layers, automatic when empty) and Remove (asked first; a model
+  in Ollama stays in Ollama).
+- **Find a model**: a search, where (everywhere, Hugging Face, Ollama's
+  library), the kind, and **Fits this computer** (on by default). Each
+  result shows its kinds, licence and downloads, and each file its
+  quantisation, size and fit (fits the GPU, GPU and memory, CPU slow, too
+  big, with the reason as a tooltip); **Download** shows the licence,
+  size and fit before it starts, and is off for one that doesn't fit.
+- **This computer**: each GPU's memory, free memory, what the models
+  take, free disk (red under the floor), and whether llama-server, Ollama
+  and whisper.cpp are found, with `install.sh --local-models` when
+  llama-server isn't.
+- **Roles**: one choice per role among the models of its kind,
+  *Suggested* by default, and what each role is for.
+
+The page follows `model.*` events (progress, state, roles).
 
 ### Skills
 
