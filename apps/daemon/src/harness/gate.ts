@@ -752,6 +752,8 @@ export function createGate(c: GateContext) {
           deferred.set(plain(r.command), () => askStuck(r, s, asDecision));
           return ASK;
         }
+        // Not a command the prompt can be asked for (a file tool): asked at the next action.
+        pending = { ...s, by: step.counts as Blocked["layer"] };
       }
     }
     return refused;

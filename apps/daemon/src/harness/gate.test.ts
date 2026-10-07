@@ -161,6 +161,20 @@ describe("one stuck row for every kind of block (ADR-056 §3)", () => {
     expect(s.inbox.list({ jobId: s.jobId }).filter((x) => /stuck/.test(x.title))).toHaveLength(1);
   });
 
+  it("asks at the next action when the hook's third block is a file tool's, not a command (stage 2: it was lost)", async () => {
+    const s = await setup();
+    const gate = s.gate();
+    for (const p of ["/etc/a", "/etc/b", "/etc/c"])
+      expect(asPreTool(await gate.decide({ source: "hook", request: write(p) }))).toMatchObject({
+        decision: "deny",
+      });
+    const next = gate.decide({ source: "prompt", request: write(join(s.cwd, "parser.js")) });
+    const stuck = await s.item(/is stuck on blocked actions/);
+    expect(stuck.detail).toContain("3 actions in a row were blocked");
+    s.inbox.answer(stuck.id, LET_IT_RUN);
+    expect(asPermission(await next)).toEqual({ allow: true });
+  });
+
   it("keeps the count across a restart: a new Gate on the same task goes on from it", async () => {
     const file = join(mkdtempSync(join(tmpdir(), "oraknid-gate-db-")), "o.db");
     const cwd = repo();
