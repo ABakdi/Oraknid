@@ -593,3 +593,36 @@ describe("my answers to “keeps going wrong” (bugs 10, 11)", () => {
     expect(learned()).toBe(before);
   }, 60_000);
 });
+
+describe("my own words to what the agent needs (bug 12)", () => {
+  it("don't hold the check that failed while it waited on me against it, as Allow doesn't", async () => {
+    const leg = scriptedLeg(
+      (t) =>
+        t.turn === 1
+          ? [{ say: "I can't go on: owner action required: touch parser.js" }]
+          : t.turn === 2
+            ? [{ say: "Still stuck: owner action required: chmod 644 parser.js" }]
+            : t.turn === 3
+              ? [{ say: "Still working on it." }]
+              : [{ write: "parser.js", content: "x\n" }, { say: "DONE" }],
+      { models: ["opus"] },
+    );
+    rig = await harness({
+      legs: [{ kind: "claude-code", name: "Claude A", leg }],
+      plan: {
+        summary: "A parser.",
+        tasks: [task("a", "Build the parser", ["test -f parser.js"], ["parser.js"])],
+        jobVerify: [],
+      },
+    });
+    const { id } = await rig.repoJob("A parser");
+    const first = await rig.openItem(/needs `touch parser\.js/);
+    await rig.api.inbox.answer({ id: first.id, answer: "Write it yourself, it's in your scope." });
+    const second = await rig.openItem(/needs `chmod 644 parser\.js/);
+    await rig.api.inbox.answer({ id: second.id, answer: "No need: just write the file." });
+    const done = await rig.ended(id);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+    // Its one failure of its own is one: no "failed the same way 3 times" (D3).
+    expect(rig.events(id, "task.drift").map((p) => p.code)).toEqual([]);
+  }, 60_000);
+});

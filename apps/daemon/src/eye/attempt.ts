@@ -2147,8 +2147,10 @@ export async function runAttempt(
       return true;
     }
     if (answer !== ILL_DO_IT && answer !== LEAVE_IT_OUT && answer !== STOP_JOB) {
-      // My own words: the agent gets them and goes on.
+      // My own words: the agent gets them and goes on. What came of this turn isn't held
+      // against it, as with Allow: it was waiting on me (bug 12).
       observed.falseClaim = null;
+      observed.verifyFailures.pop();
       await session?.session.send(`The owner answers: ${answer}`);
       return true;
     }
