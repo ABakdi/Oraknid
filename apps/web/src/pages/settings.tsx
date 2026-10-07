@@ -399,6 +399,7 @@ const EVENTS: [NotifyEvent, string][] = [
   ["backup.failed", "A backup failed"],
   ["update.available", "A new version of Oraknid"],
   ["machine.danger", "The computer in danger"],
+  ["ci.failed", "CI failed on a release or work branch"],
 ];
 const DEFAULTS: Record<NotifyEvent, Route> = {
   approval: { desktop: true, push: true, email: "after-15-min" },
@@ -414,6 +415,7 @@ const DEFAULTS: Record<NotifyEvent, Route> = {
   "backup.failed": { desktop: true, push: true, email: "now" },
   "update.available": { desktop: true, push: true, email: "never" },
   "machine.danger": { desktop: true, push: true, email: "never" },
+  "ci.failed": { desktop: true, push: true, email: "never" },
 };
 
 function NotificationsCard() {

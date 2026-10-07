@@ -31,6 +31,8 @@ export const NotifyEvent = z.enum([
   "update.available",
   /** The machine in danger: memory, swap, disk, a runaway session (ADR-050), once per incident. */
   "machine.danger",
+  /** A run on a linked repo's release or work branch failed (ADR-058). */
+  "ci.failed",
 ]);
 export type NotifyEvent = z.infer<typeof NotifyEvent>;
 
