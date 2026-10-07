@@ -155,7 +155,24 @@ the site built, apps/web untouched); the daemon's build puts Ink in its
 own chunk.
 
 ### M15.8 — The harness taken apart ([[ADR-056-The-Harness]])
-- [ ] Today's behaviour pinned by scenario tests from my real jobs; the bugs the code map found fixed, one commit each (stop the job stops the job; merge re-checks with their runners; checks reach every agent; resume by the agent's capability; untrusted mark, allow-once, refused actions and stuck counts survive a restart; per-task caches cleared; questions The Eye raised withdrawn after a restart; checks run once per turn end)
+- [x] Today's behaviour pinned by scenario tests from my real jobs; the bugs the code map found fixed, one commit each (stop the job stops the job; merge re-checks with their runners; checks reach every agent; resume by the agent's capability; untrusted mark, allow-once, refused actions and stuck counts survive a restart; per-task caches cleared; questions The Eye raised withdrawn after a restart; checks run once per turn end)
+  Tested: daemon `harness/scenarios.test.ts`, end to end with stand-in agents (`testing/harness-rig.ts`: a whole daemon, scripted Legs of any kind, Claude Code's PreToolUse hook and Stop hook, a scripted Eye, the stand-in SSH server), each asserting the outcome and what I was asked, how many times and in which words: the misahaty removal (one plan approval, the removal its plan names blocked by layer 1 through the hook, asked specifically, allowed, done in one attempt); a check written with the job's private `-F`/`HOME=` ssh setup run in its plain form on the server; a plan of five crumbs made one task, one approval, one session; an agent out of quota ("Resets in 51h49m11s") kept out, never routed to again, not counted; a deprecated model hidden and replaced; a broken check repaired before any agent, nobody charged; a piano-like web app of four independent parts side by side, all merged, nothing asked.
+  Fixed (each with its test in `harness/stage1.test.ts`, which failed before):
+  1. "Stop the job" from one task returned a value nobody read: the job's other tasks ran on and new ones started. Now they are stopped and none starts.
+  2. A parallel task's re-check at its merge ran without the server and GitHub runners or the job's stop: an `ssh <alias>` check ran locally, failed, and the task was redone for ever. Now the task's own runners; a task that passes alone and never merges stops the job after three tries, saying why.
+  3. The supervisor dropped a task's checks (`checks` wasn't in `StartRequest`): Oraknid's own agent never saw them. Passed on, typed.
+  4. Resume came from a list of Leg kinds in The Eye that left out Oraknid's own agent. Now the Leg's probe (`features.resume`), kept with the Leg; never probed, a fresh session with the handoff.
+  5. On Claude Code the checks ran twice per turn end (Stop hook, then after the turn). What the Stop hook ran as it let the turn end stands when the work is the same.
+  6. The judge's verdict cache and the stuck counts were never cleared. Gone when the task settles, every task's when its job ends.
+  7. Claude Code's own classifier's refusals didn't count toward the stuck rule. They do: asked at the agent's next action, or as what it needs at the turn's end when a check fails.
+  8. The untrusted mark (security: a resumed session was trusted again), "allow once", refused actions (D8) and stuck counts were lost on a restart. Kept per task (`eye/task-memory.ts`) until it settles.
+  9. Questions The Eye raised for an attempt cut short by a crash stayed in my inbox. Withdrawn when the job starts again, as a Leg's requests are.
+  10. "Try again with my advice" or "another Leg" spent the task's attempt limit. The attempt ends `redirected`, not counted.
+  11. My choices (leave it out, I'll do it, stop the job) recorded a failure of the model. Not learned from.
+  12. My own words to what the agent needs left that turn's failed check counted toward D3 (Allow didn't). Both the same now.
+  13. A failed check climbed the ladder before a scope or security drift was looked at, carrying out-of-scope edits up a rung. D7, D8 and D1 go first (precedence written in the code and ADR-056, As built).
+  14. An interrupted turn was verified as finished; one stopped at the agent's limit of steps was judged as a claim. Interrupted: told to go on; at the limit: checked, its words not a claim, no climb, it goes on in its session.
+  15. Two lists of credential files (the rules', the policy's) and two of lockfiles. One each, in contracts (`sensitive.ts`); the job's own ssh config and pinned host keys readable, its keys not.
 - [ ] The Gate: one path for every action (permission prompt, pre-tool hook, MCP broker, ssh, checks), grants with a scope, every block counted
 - [ ] The Verifier: one runner, a report that tells broken from failing; the attempt log
 - [ ] Monitors and `decideOutcome`, pure and table-tested; the escalation policy
