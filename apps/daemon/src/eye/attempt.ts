@@ -52,6 +52,7 @@ import { attempts, jobs, sessions, tasks } from "../db/schema.ts";
 import { SideEffects } from "../engine/effects.ts";
 import type { EventBus } from "../events/bus.ts";
 import { ALLOW, asPermission, asPreTool, createGate } from "../harness/gate.ts";
+import { type CheckReport, createVerifier, type RunOptions } from "../harness/verifier.ts";
 import { newId } from "../ids.ts";
 import type { InboxStore } from "../inbox/store.ts";
 import { jobHomeDir } from "../legs/job-home.ts";
@@ -59,8 +60,7 @@ import { sandboxPlan } from "../legs/plan.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor, Supervised } from "../legs/supervisor.ts";
 import { legSessionLimit } from "../resources/work.ts";
-import { runServerCheck } from "../servers/checks.ts";
-import { isGuardCheck, type JobServerRef, parseSsh, plainServerCheck } from "../servers/remote.ts";
+import { type JobServerRef, parseSsh, plainServerCheck } from "../servers/remote.ts";
 import type { Servers } from "../servers/service.ts";
 import { CLAUDE_SHARE, readSetting, writeSetting } from "../settings.ts";
 import { handoffFromLog } from "../silk/handoff.ts";
@@ -72,11 +72,10 @@ import type { GitHub } from "../workspace/github.ts";
 import { githubLinkOf, githubLinksOf } from "../workspace/github-tool.ts";
 import type { WorkTree } from "../workspace/tree.ts";
 import { BrainStopped, type CheckRepair, type EyeBrain, type GitHubForRepair } from "./brain.ts";
-import { runBuiltinCheck } from "./builtin-checks.ts";
 import { giveToLeg, LegStop, legLimits, stopWaiting, trackAttempt } from "./leg-work.ts";
 import { dependentsOf, keepsGoingWrong, readKeepsGoingWrong } from "./questions.ts";
 import { addMessage, guidanceMark, takeGuidance } from "./talk.ts";
-import { looksBroken, runVerify, type VerifyResult } from "./verify.ts";
+import type { VerifyResult } from "./verify.ts";
 
 /** The providers (Leg kinds) for which I allowed same-provider fallback (ADR-009). */
 export const SAME_PROVIDER_FALLBACK = "fallback.sameProvider";
@@ -769,53 +768,30 @@ export async function runAttempt(
     }\n\n${docs.join("\n\n")}`;
   };
 
-  /** The task's checks, run by Oraknid itself (BR-1): in the sandbox, on its servers, or its own. */
-  const runChecks = async (commands: string[] = task.verify, timeoutMs?: number) => {
-    const plan = job.unsandboxed
-      ? null
-      : sandboxPlan(
-          d.registry.require(leg.legId),
-          d.sandbox,
-          d.legsDir,
-          job.localPorts ?? [],
-          job.id,
-        );
-    await prepareServers();
-    return runVerify(commands, ws.cwd, plan, {
-      signal,
-      ...(timeoutMs ? { timeoutMs } : {}),
-      // A check's command goes through the Gate too, as Oraknid's own (ADR-056 §3).
-      refuse: (command) => gate.check(command, "local"),
-      builtin: async (command) =>
-        // A check on one of the job's servers runs there, over Oraknid's connection (ADR-049).
-        (servers.length && d.servers
-          ? await runServerCheck(command, {
-              servers,
-              run: (id, remote) => (d.servers as Servers).run(id, remote),
-              refuse: (c) => gate.check(c, "server"),
-            })
-          : null) ??
-        runBuiltinCheck(command, {
-          ...(d.github ? { github: d.github } : {}),
-          link: githubLinkOf(d.db, job.id),
-          // In a project of several repos, `--repo <name>` says which (ADR-042).
-          linkFor: (repo) => {
-            const repos = githubLinksOf(d.db, job.id);
-            if (repo) {
-              const r = repos.find((x) => x.name.toLowerCase() === repo.toLowerCase());
-              if (!r)
-                return `This project has no repo named ${repo}: its repos are ${repos.map((x) => x.name).join(", ")}.`;
-              return r.github;
-            }
-            const linked = repos.filter((x) => x.github);
-            if (repos.length > 1 && linked.length > 1)
-              return `This project has several repos: name one with --repo (${linked.map((x) => x.name).join(", ")}).`;
-            return (repos.length === 1 ? repos[0]?.github : linked[0]?.github) ?? null;
-          },
-          localCommit: (branch, repo) => ws.tree.localCommit(branch, repo),
-        }),
-    });
-  };
+  /**
+   * The task's checks, run by Oraknid itself (BR-1) through the one Verifier
+   * (ADR-056 §4): in the sandbox, on its servers, or its own; each command
+   * read by the Gate first (§3).
+   */
+  const verifier = createVerifier(d, job, {
+    cwd: ws.cwd,
+    localCommit: (branch, repo) => ws.tree.localCommit(branch, repo),
+    plan: () =>
+      job.unsandboxed
+        ? null
+        : sandboxPlan(
+            d.registry.require(leg.legId),
+            d.sandbox,
+            d.legsDir,
+            job.localPorts ?? [],
+            job.id,
+          ),
+    servers: () => servers,
+    prepare: prepareServers,
+    refuse: (command, where) => gate.check(command, where),
+    signal,
+  });
+  const runChecks = (commands: string[], o: RunOptions = {}) => verifier.run(commands, o);
 
   /**
    * The checks in the loop (ADR-052 §2): before the agent may end its turn,
@@ -825,11 +801,11 @@ export async function runAttempt(
    */
   const onStop = async (): Promise<string | null> => {
     if (!task.verify.length) return null;
-    const results = await runChecks();
-    const bad = results.find((r) => !r.ok);
-    if (!bad || looksBroken(bad)) {
+    const report = await runChecks(task.verify, { why: "stop" });
+    const bad = report.failures[0];
+    if (!bad || report.broken.length) {
       // It lets the turn end now, nothing done after: the turn's end uses this run (bug 5).
-      stopRun = { verify: [...task.verify], tree: await treeState(), results };
+      stopRun = { verify: [...task.verify], tree: await treeState(), report };
       return null;
     }
     event("task.checks-held", { command: bad.command, exitCode: bad.exitCode });
@@ -840,7 +816,7 @@ export async function runAttempt(
    * The checks the Stop hook ran when it let the turn end (ADR-052 §2): the
    * same checks on the same work aren't run again at the turn's end (bug 5).
    */
-  let stopRun = null as { verify: string[]; tree: string; results: VerifyResult[] } | null;
+  let stopRun = null as { verify: string[]; tree: string; report: CheckReport } | null;
   /** The work as it stands, to tell whether it changed since the checks ran. */
   const treeState = async () => {
     try {
@@ -967,21 +943,20 @@ export async function runAttempt(
    * run again; at most twice.
    */
   const repairBroken = async (
-    results: VerifyResult[],
+    checked: CheckReport,
     report: string,
-    rerun: () => Promise<VerifyResult[]>,
+    rerun: () => Promise<CheckReport>,
     before = false,
-  ): Promise<VerifyResult[]> => {
+  ): Promise<CheckReport> => {
     const said = before ? null : saysCheckBroken(report);
     const looked = new Set<string>();
     for (let repairs = 0; repairs < 2 && d.brain; repairs++) {
-      const bad = results.find((r) => !r.ok);
+      const bad = checked.failures[0];
       if (!bad || looked.has(bad.command)) break;
-      // A guard (what the work must keep true) failing before any work is wrong itself (ADR-049).
-      const guard = before && isGuardCheck(bad.command);
-      const own =
-        looksBroken(bad) ??
-        (guard ? "it guards what the work must keep true, yet fails before any work" : null);
+      // A guard (what the work must keep true) failing before any work is wrong itself (ADR-049):
+      // the Verifier's report says so.
+      const guard = before && checked.guards.some((g) => g.command === bad.command);
+      const own = checked.broken.find((b) => b.command === bad.command)?.hint ?? null;
       const hint = own ?? (said ? `the agent says the check is broken: “${said}”` : null);
       if (!hint) break;
       looked.add(bad.command);
@@ -1027,9 +1002,9 @@ export async function runAttempt(
         body: `\`${bad.command}\` was wrong (${repair.reason}). It is now \`${repair.command}\`.`,
         authoredBy: "eye",
       });
-      results = await rerun();
+      checked = await rerun();
     }
-    return results;
+    return checked;
   };
 
   /**
@@ -1069,22 +1044,23 @@ export async function runAttempt(
     }
     for (let i = 0; i < task.verify.length; i++) {
       const command = task.verify[i] as string;
-      const first = await runChecks([command], 3 * 60_000);
-      const r = first[0];
+      const before = { timeoutMs: 3 * 60_000, before: true, why: "before" };
+      const first = await runChecks([command], before);
+      const r = first.results[0];
       if (!r) continue;
       if (r.ok) {
         tried.push({ command, state: "passes before the work" });
         continue;
       }
       // A guard failing before any work is wrong (ADR-049): repaired like a broken one.
-      if (!looksBroken(r) && !isGuardCheck(command)) {
+      if (!first.broken.length) {
         tried.push({ command, state: "fails on the work not done yet" });
         continue;
       }
       const after = await repairBroken(
         first,
         "",
-        () => runChecks([task.verify[i] as string], 3 * 60_000),
+        () => runChecks([task.verify[i] as string], before),
         true,
       );
       const current = task.verify[i] as string;
@@ -1093,7 +1069,7 @@ export async function runAttempt(
         state:
           current !== command
             ? `broken, repaired as \`${current}\``
-            : after[0] && (looksBroken(after[0]) || (!after[0].ok && isGuardCheck(command)))
+            : after.results[0] && after.broken.length
               ? "looks broken, and The Eye kept it"
               : "fails on the work not done yet",
       });
@@ -1730,16 +1706,20 @@ export async function runAttempt(
           ranAtStop &&
           ranAtStop.verify.join("\n") === task.verify.join("\n") &&
           ranAtStop.tree === (await treeState());
-        const results = await repairBroken(
-          same ? ranAtStop.results : await runChecks(),
+        const report = await repairBroken(
+          same ? ranAtStop.report : await runChecks(task.verify, { why: "turn" }),
           end.text,
-          () => runChecks(),
+          () => runChecks(task.verify, { why: "repair" }),
         );
-        const failed = results.find((r) => !r.ok);
+        const failed = report.failures[0];
         verified = !failed;
         event("task.verified", {
           ok: verified,
-          results: results.map((r) => ({ command: r.command, ok: r.ok, exitCode: r.exitCode })),
+          results: report.results.map((r) => ({
+            command: r.command,
+            ok: r.ok,
+            exitCode: r.exitCode,
+          })),
         });
         if (failed) {
           failure = `${fence(failed.command)}\nfailed (exit ${failed.exitCode}):\n${fence(failed.output.slice(-3000))}`;

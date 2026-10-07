@@ -805,21 +805,7 @@ export function createGate(c: GateContext) {
      * action refused. The refusal, or null.
      */
     check(command: string, where: "local" | "server"): string | null {
-      const policy = policyFor(db, job.id, c.cwd);
-      const rules =
-        where === "server"
-          ? serverVerdict(command, servers, policy)
-          : decide({ tool: "Bash", command, path: null }, policy);
-      if (!rules) return null;
-      const step = gateStep({
-        source: "check",
-        rules,
-        command: true,
-        ownBlock: false,
-        grants: {},
-        autonomy: policy.autonomy,
-      });
-      return step.verdict === "deny" ? step.reason : null;
+      return checkRefusal(db, job.id, c.cwd, servers)(command, where);
     },
 
     /**
@@ -889,6 +875,31 @@ export function createGate(c: GateContext) {
       for (const id of asked) c.inbox.withdraw(id);
       if (asked.length) rememberForTask(db, task.id, { asked: [] });
     },
+  };
+}
+
+/**
+ * A check's command as the Gate reads it (ADR-056 §3), with or without an
+ * attempt: the job's rules (no layer 1, which reads an agent's commands), a
+ * gated action refused; never asked, never counted. The refusal, or null.
+ */
+export function checkRefusal(db: Db, jobId: string, cwd: string, servers: JobServerRef[]) {
+  return (command: string, where: "local" | "server"): string | null => {
+    const policy = policyFor(db, jobId, cwd);
+    const rules =
+      where === "server"
+        ? serverVerdict(command, servers, policy)
+        : decide({ tool: "Bash", command, path: null }, policy);
+    if (!rules) return null;
+    const step = gateStep({
+      source: "check",
+      rules,
+      command: true,
+      ownBlock: false,
+      grants: {},
+      autonomy: policy.autonomy,
+    });
+    return step.verdict === "deny" ? step.reason : null;
   };
 }
 
