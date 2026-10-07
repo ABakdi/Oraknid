@@ -17,7 +17,9 @@ import { fakeOs } from "./fake-os.ts";
 
 export type Api = RouterClient<Router>;
 
+// Not on CI runners (ORAKNID_CI): their Docker would pull and run databases for minutes (ADR-058).
 export const hasDocker =
+  !process.env.ORAKNID_CI &&
   spawnSync("docker", ["info", "--format", "{{.ServerVersion}}"], { encoding: "utf8" }).status ===
   0;
 

@@ -12,7 +12,7 @@
     "test": {
       "dependsOn": ["^typecheck"],
       "outputs": [],
-      "passThroughEnv": ["TMPDIR", "ORAKNID_TEST_RCLONE", "ORAKNID_TEST_MINIO_IMAGE"]
+      "passThroughEnv": ["TMPDIR", "ORAKNID_CI", "ORAKNID_TEST_RCLONE", "ORAKNID_TEST_MINIO_IMAGE"]
     }
   }
 }
