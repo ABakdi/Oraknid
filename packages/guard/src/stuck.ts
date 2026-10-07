@@ -64,4 +64,9 @@ export class StuckWatch {
   forget(task: string) {
     this.#tasks.delete(task);
   }
+
+  /** Every task whose key starts so (a job's, `<job>:`) is forgotten. */
+  forgetStarting(prefix: string) {
+    for (const k of this.#tasks.keys()) if (k.startsWith(prefix)) this.#tasks.delete(k);
+  }
 }

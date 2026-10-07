@@ -72,6 +72,7 @@ import { type Projects, viewOf } from "../workspace/projects.ts";
 import { isSeveral } from "../workspace/repos.ts";
 import { MultiTree, multiTreeOf, singleTree, type WorkTree } from "../workspace/tree.ts";
 import { type AttemptJob, runAttempt } from "./attempt.ts";
+import { forgetTaskVerdicts } from "./auto-mode.ts";
 import { BrainStopped, type EyeBrain } from "./brain.ts";
 import { parseBuiltinCheck, runBuiltinCheck } from "./builtin-checks.ts";
 import { endingKey, JobEndingState, readEnding, runEnding } from "./ending.ts";
@@ -975,6 +976,8 @@ async function runTask(
   // Applied first, then marked settled: a crash in between applies it again, which changes nothing.
   const settle = () =>
     d.db.update(tasks).set({ settledAttempt: attemptNo }).where(eq(tasks.id, task.id)).run();
+  // A task settled keeps nothing in memory: the judge's verdicts on it, its blocks (bug 6).
+  const forget = (taskId: string) => forgetTaskVerdicts(job.id, taskId);
   switch (outcome.kind) {
     case "done":
       if (outcome.commit)
@@ -984,6 +987,7 @@ async function runTask(
           .where(eq(tasks.id, task.id))
           .run();
       setTask(d, job.id, task.id, "done");
+      forget(task.id);
       break;
     case "retry":
       setTask(d, job.id, task.id, "ready", outcome.reason);
@@ -998,6 +1002,7 @@ async function runTask(
         setTask(d, job.id, t.id, "skipped", `Left out with “${task.title}”, which it needs.`, {
           with: task.id,
         });
+      for (const t of [task, ...dropped]) forget(t.id);
       break;
     }
     case "owner-held":

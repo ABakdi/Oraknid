@@ -98,6 +98,7 @@ import type { WorkTree } from "../workspace/tree.ts";
 import { waitForAnswer } from "./approvals.ts";
 import {
   type DecisionLayer,
+  forgetJobVerdicts,
   guardContext,
   judgeAction,
   layer1,
@@ -2683,8 +2684,10 @@ async function safeDiffStat(ws: { tree: WorkTree }, since: string): Promise<stri
   }
 }
 
-/** A job that ended keeps nothing in memory here (Audit 1 → Q1-19): the judge's cache is per task. */
-export function forgetJob(_jobId: string) {}
+/** A job that ended keeps nothing in memory here (Audit 1 → Q1-19; bug 6): its tasks' verdicts and counts go. */
+export function forgetJob(jobId: string) {
+  forgetJobVerdicts(jobId);
+}
 
 function shouldRotate(u: UsageSnapshot | null, at: number): boolean {
   return !!u?.contextTokens && !!u.contextWindow && u.contextTokens > u.contextWindow * at;

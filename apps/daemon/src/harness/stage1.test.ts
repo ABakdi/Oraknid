@@ -5,6 +5,7 @@ import type { WebPlan } from "@oraknid/contracts";
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import { sessions } from "../db/schema.ts";
+import { heldFor } from "../eye/auto-mode.ts";
 import { type Harness, harness, waitFor } from "../testing/harness-rig.ts";
 import { scriptedLeg, type TurnContext } from "../testing/scripted-leg.ts";
 
@@ -267,5 +268,47 @@ describe("checks run once per turn end (bug 5)", () => {
     // Before the work, held once, passed once: the turn's end reuses the last.
     expect(readFileSync(counter, "utf8").split("\n").filter(Boolean)).toHaveLength(3);
     expect(rig.events(id, "task.checks-held")).toHaveLength(1);
+  }, 60_000);
+});
+
+describe("a task's verdicts and blocks are its own, and go when it settles (bug 6)", () => {
+  it("clears the judge's cached verdicts and the stuck count of a task once it is done", async () => {
+    const leg = scriptedLeg((t) =>
+      t.turn === 1
+        ? [
+            { run: "curl --version >/dev/null; true" },
+            { run: "scp --help >/dev/null 2>&1; true" },
+            { run: "sleep 2" },
+            { write: "parser.js", content: "x\n" },
+            { say: "DONE" },
+          ]
+        : [{ say: "DONE" }],
+    );
+    rig = await harness({
+      legs: [{ kind: "claude-code", name: "Claude A", leg }],
+      judge: (command) =>
+        command.startsWith("scp")
+          ? { decision: "block", reason: "copying files out" }
+          : { decision: "allow", reason: "harmless" },
+      plan: {
+        summary: "A parser.",
+        tasks: [task("a", "Build the parser", ["test -f parser.js"], ["parser.js"])],
+        jobVerify: [],
+      },
+    });
+    const { id } = await rig.repoJob("A parser");
+    const seen: { verdicts: number; blocks: number }[] = [];
+    let taskId = "";
+    await waitFor("the judge's verdicts held for the task", async () => {
+      taskId = (await rig?.api.jobs.get({ id }))?.tasks[0]?.id ?? "";
+      const held = heldFor(id, taskId);
+      if (held.verdicts && held.blocks) seen.push(held);
+      return seen.length > 0;
+    });
+    const done = await rig.ended(id);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+    expect(seen[0]).toEqual({ verdicts: 2, blocks: 1 });
+    await waitFor("the task's verdicts gone", () => heldFor(id, taskId).verdicts === 0, 3000);
+    expect(heldFor(id, taskId)).toEqual({ verdicts: 0, blocks: 0 });
   }, 60_000);
 });
