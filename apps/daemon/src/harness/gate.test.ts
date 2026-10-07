@@ -207,6 +207,37 @@ describe("one stuck row for every kind of block (ADR-056 §3)", () => {
   });
 });
 
+describe("an action that ran ends the stuck row, whoever let it run (stage 3)", () => {
+  it("ends the row when Claude Code's classifier let the hook's action run: its result says it ran", async () => {
+    const s = await setup();
+    const gate = s.gate();
+    for (const p of ["/etc/a", "/etc/b"]) await gate.decide({ source: "hook", request: write(p) });
+    // The hook has no opinion; Claude Code's own classifier lets it run and its result comes back.
+    expect(
+      asPreTool(await gate.decide({ source: "hook", request: bash("npm install left-pad") })),
+    ).toBeNull();
+    gate.ran("toolu_1", true);
+    expect(
+      asPreTool(await gate.decide({ source: "hook", request: write("/etc/c") })),
+    ).toMatchObject({ decision: "deny" });
+    // One block in the row, not three: nothing to ask.
+    expect(gate.takeStuck()).toBeNull();
+  });
+
+  it("reads the row from the log after a restart: what ran ended it", async () => {
+    const s = await setup();
+    const gate = s.gate();
+    await gate.decide({ source: "hook", request: write("/etc/a") });
+    await gate.decide({ source: "hook", request: bash("npm install left-pad") });
+    gate.ran("toolu_1", true);
+    // A result that failed (a refusal, a command that failed) says nothing of the row.
+    gate.ran("toolu_2", false);
+    await gate.decide({ source: "hook", request: write("/etc/b") });
+    expect(readTaskMemory(s.db, "task-1").stuck?.row.map((b) => b.action)).toEqual(["Write"]);
+    expect(readTaskMemory(s.db, "task-1").stuck?.total).toHaveLength(2);
+  });
+});
+
 describe("grants (ADR-056 §3)", () => {
   it("lets a command I allowed once run once, after a restart too, then never again", async () => {
     const file = join(mkdtempSync(join(tmpdir(), "oraknid-gate-db-")), "o.db");

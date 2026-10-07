@@ -10,7 +10,6 @@ import {
 } from "@oraknid/contracts";
 import {
   canRunSideBySide,
-  decide,
   freshQuestions,
   type GatedAction,
   readingOf,
@@ -30,13 +29,13 @@ import type { SideEffects } from "../engine/effects.ts";
 import { AwaitingOwner } from "../engine/effects.ts";
 import type { JobContext, JobProgram } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
+import { checkRefusal } from "../harness/gate.ts";
+import { createVerifier } from "../harness/verifier.ts";
 import type { InboxStore } from "../inbox/store.ts";
 import { sandboxPlan } from "../legs/plan.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor } from "../legs/supervisor.ts";
 import { Work } from "../resources/work.ts";
-import { runServerCheck } from "../servers/checks.ts";
-import { serverVerdict } from "../servers/remote.ts";
 import { jobServers, serverDigest, serverPlanApproval } from "../servers/server-jobs.ts";
 import type { Servers } from "../servers/service.ts";
 import {
@@ -67,14 +66,13 @@ import {
   worktreeGit,
 } from "../workspace/git.ts";
 import type { GitHub } from "../workspace/github.ts";
-import { githubLinkOf } from "../workspace/github-tool.ts";
 import { type Projects, viewOf } from "../workspace/projects.ts";
 import { isSeveral } from "../workspace/repos.ts";
 import { MultiTree, multiTreeOf, singleTree, type WorkTree } from "../workspace/tree.ts";
 import { type AttemptJob, runAttempt } from "./attempt.ts";
 import { forgetTaskVerdicts } from "./auto-mode.ts";
 import { BrainStopped, type EyeBrain } from "./brain.ts";
-import { parseBuiltinCheck, runBuiltinCheck } from "./builtin-checks.ts";
+import { parseBuiltinCheck } from "./builtin-checks.ts";
 import { endingKey, JobEndingState, readEnding, runEnding } from "./ending.ts";
 import { readInside, renderInputs } from "./inputs.ts";
 import {
@@ -88,10 +86,8 @@ import {
   interviewSoFar,
 } from "./interview.ts";
 import { ensureLinks } from "./links.ts";
-import { policyFor } from "./policy.ts";
 import { dependentsOf } from "./questions.ts";
-import { forgetTaskMemory, readTaskMemory, rememberForTask } from "./task-memory.ts";
-import { runVerify, verifyRefusal } from "./verify.ts";
+import { forgetTaskMemory, withdrawTaskQuestions } from "./task-memory.ts";
 import { storeWeb, taskRows } from "./web-store.ts";
 
 export interface EyeDeps {
@@ -242,12 +238,10 @@ export function eyeProgram(d: EyeDeps): JobProgram {
     }
     // So does what The Eye asked for an attempt cut short by a crash: its next attempt asks
     // again if it must (bug 9).
-    for (const t of taskRows(d.db, ctx.jobId)) {
-      const { asked } = readTaskMemory(d.db, t.id);
-      if (!asked.length) continue;
-      for (const id of asked) if (d.inbox.get(id)?.state === "open") d.inbox.withdraw(id);
-      rememberForTask(d.db, t.id, { asked: [] });
-    }
+    for (const t of taskRows(d.db, ctx.jobId))
+      withdrawTaskQuestions(d.db, ctx.jobId, t.id, (id) => {
+        if (d.inbox.get(id)?.state === "open") d.inbox.withdraw(id);
+      });
 
     // Only one program runs a job: a task still marked running was cut short (pause, crash, stop).
     d.bus.atomically(() => {
@@ -339,26 +333,11 @@ export function eyeProgram(d: EyeDeps): JobProgram {
       const results = await ctx.step(
         `job-verify:${round}`,
         { round, verify: job.verify },
-        (signal) =>
+        async (signal) =>
           checks.length
-            ? runVerify(
-                checks,
-                ws.cwd,
-                job.unsandboxed ? null : sandboxPlan(firstLeg(d), d.sandbox, d.legsDir),
-                {
-                  signal,
-                  refuse: (command) =>
-                    verifyRefusal(
-                      decide(
-                        { tool: "Bash", command, path: null },
-                        policyFor(d.db, job.id, ws.cwd),
-                      ),
-                    ),
-                  // A check on one of its servers runs there, over Oraknid's own connection (ADR-049).
-                  builtin: (command) => serverCheck(d, job.id, command),
-                },
-              )
-            : Promise.resolve([]),
+            ? // A check on one of its servers runs there, over Oraknid's own connection (ADR-049).
+              (await verifierFor(d, job, where, signal).run(checks, { why: "job" })).results
+            : [],
       );
       const failed = results.find((r) => !r.ok);
       if (!failed) {
@@ -376,16 +355,12 @@ export function eyeProgram(d: EyeDeps): JobProgram {
           job,
         );
         if (own.length)
-          await ctx.step(`job-verify-github:${round}`, { round, own }, async () => {
+          await ctx.step(`job-verify-github:${round}`, { round, own }, async (signal) => {
             const out: string[] = [];
+            // The project's own branch, never one a Leg made in the job's folder; each one run.
+            const verifier = verifierFor(d, job, where, signal);
             for (const command of own) {
-              const r = await runBuiltinCheck(command, {
-                ...(d.github ? { github: d.github } : {}),
-                link: githubLinkOf(d.db, job.id),
-                linkFor: (repo) => githubLinkOf(d.db, job.id, repo),
-                // The project's own branch, never one a Leg made in the job's folder.
-                localCommit: (branch, repo) => where.tree.localCommit(branch, repo),
-              });
+              const r = (await verifier.run([command], { why: "job-github" })).results[0];
               if (r && !r.ok) out.push(`\`${command}\`: ${r.output}`);
             }
             if (out.length) {
@@ -620,45 +595,23 @@ function workOf(d: EyeDeps): Work {
 const MAX_MERGE_FAILURES = 3;
 
 /**
- * A task's checks run again outside its attempt (the merge, ADR-016): in
- * the sandbox, on the job's servers over Oraknid's connection, or answered
- * by Oraknid itself about GitHub, as in the attempt (ADR-049, ADR-038).
+ * The Verifier for checks outside an attempt (ADR-056 §4): a task's again
+ * at its merge (ADR-016), the job's own. In the sandbox, on the job's
+ * servers over Oraknid's connection, or answered by Oraknid itself about
+ * GitHub, as in the attempt (ADR-049, ADR-038); each command read by the
+ * Gate's rules first.
  */
-function taskChecks(
-  d: EyeDeps,
-  job: typeof jobs.$inferSelect,
-  where: Where,
-  commands: string[],
-  signal: AbortSignal,
-) {
+function verifierFor(d: EyeDeps, job: typeof jobs.$inferSelect, where: Where, signal: AbortSignal) {
   const servers = jobServers(d, job.id);
-  const policy = () => policyFor(d.db, job.id, where.cwd);
-  return runVerify(
-    commands,
-    where.cwd,
-    job.unsandboxed ? null : sandboxPlan(firstLeg(d), d.sandbox, d.legsDir),
-    {
-      signal,
-      refuse: (command) => verifyRefusal(decide({ tool: "Bash", command, path: null }, policy())),
-      builtin: async (command) =>
-        (servers.length && d.servers
-          ? await runServerCheck(command, {
-              servers,
-              run: (id, remote) => (d.servers as Servers).run(id, remote),
-              refuse: (c) => {
-                const v = serverVerdict(c, servers, policy());
-                return v ? verifyRefusal(v) : null;
-              },
-            })
-          : null) ??
-        runBuiltinCheck(command, {
-          ...(d.github ? { github: d.github } : {}),
-          link: githubLinkOf(d.db, job.id),
-          linkFor: (repo) => githubLinkOf(d.db, job.id, repo),
-          localCommit: (branch, repo) => where.tree.localCommit(branch, repo),
-        }),
-    },
-  );
+  return createVerifier(d, job, {
+    cwd: where.cwd,
+    localCommit: (branch, repo) => where.tree.localCommit(branch, repo),
+    // Any Leg's toolchain will do: the same sandbox shape as a Leg's.
+    plan: () => (job.unsandboxed ? null : sandboxPlan(firstLeg(d), d.sandbox, d.legsDir)),
+    servers: () => servers,
+    refuse: checkRefusal(d.db, job.id, where.cwd, servers),
+    signal,
+  });
 }
 
 /** Merges of one job happen one at a time. */
@@ -947,8 +900,10 @@ async function runTask(
           };
         // With the runners the task's own checks had: on the job's servers, Oraknid's own
         // GitHub checks, the policy; stopped with the job (bug 2).
-        const results = await taskChecks(d, job, where, task.verify, signal);
-        const failed = results.find((r) => !r.ok);
+        const report = await verifierFor(d, job, where, signal).run(task.verify, {
+          why: "merge",
+        });
+        const failed = report.failures[0];
         if (failed) {
           m.undo();
           return { ok: false, why: `\`${failed.command}\` failed once merged with the other work` };
@@ -989,7 +944,7 @@ async function runTask(
   // what its attempts remembered across restarts (bug 8).
   const forget = (taskId: string) => {
     forgetTaskVerdicts(job.id, taskId);
-    forgetTaskMemory(d.db, taskId);
+    forgetTaskMemory(d.db, job.id, taskId, "the task settled");
   };
   switch (outcome.kind) {
     case "done":
@@ -1297,14 +1252,4 @@ function firstLeg(d: EyeDeps) {
   const leg = d.registry.all()[0];
   if (!leg) throw new Error("There are no Legs.");
   return leg;
-}
-
-/** A job-level check on one of the job's servers (ADR-049): run there, or null for any other check. */
-function serverCheck(d: EyeDeps, jobId: string, command: string) {
-  const servers = d.servers;
-  if (!servers) return Promise.resolve(null);
-  return runServerCheck(command, {
-    servers: jobServers(d, jobId),
-    run: (id, remote) => servers.run(id, remote),
-  });
 }

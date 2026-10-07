@@ -242,6 +242,81 @@ diverged from the others (below, a commit and a test each).
   the judge's verdict cache and the stuck counts in memory are still
   module-level (keyed per task, cleared with it).
 
+## As built (stage 3, 2026-10-07)
+The Verifier and the attempt log extracted; code moved, behaviour kept,
+except where the check paths diverged (below, a commit and a test each).
+- **`createVerifier(deps, job, where)`** (`apps/daemon/src/harness/verifier.ts`),
+  built once per job and tree: its sandbox plan, its servers (a check
+  `ssh <alias> …` runs on the server over Oraknid's connection, in its
+  plain form), Oraknid's own checks (`oraknid github-…`, the repo named
+  with `--repo` the same way everywhere), the Gate's refusal of a check's
+  command (`checkRefusal`, the Gate's own `check()` outside an attempt),
+  the stop signal, the attempt log. `run(checks, {before, why}) →
+  CheckReport {passed, results, failures, broken[{command, hint}],
+  guards}`: broken is what can't run (syntax, a missing program, ssh
+  setup) or a guard failing before the work; a refused check is a
+  failure, never broken. Every run is a `ChecksRan` in the log. The five
+  call sites use it: the task's turn end, Claude Code's Stop hook, the
+  checks tried before the work, the merge's re-check and the job's own
+  (its GitHub checks after the ending, each run on its own as before).
+  Repairing a broken check stays the attempt's outcome: `repairBroken`
+  reads the report's `broken`.
+- **The attempt log** (`harness/log.ts`, table `attempt_events`, migration
+  0040): `AttemptLog.append(place, kind, data)`, typed per kind;
+  `attempt(id, {kinds, limit})` (the last N, in order), `task(id, {kinds,
+  afterId, limit})`, `lastOf`, `unmatched`. Kinds: `SessionOpened`,
+  `AgentText` (once per turn, not every delta), `ActionRequested`,
+  `GateDecision{actionId, source, tool, action, by, verdict, reason,
+  scope, counts, endsRow, grant, spent, refusal}`, `ActionResult`,
+  `ActionUncertain`, `QuestionAsked`, `QuestionAnswered`,
+  `StopRequested`, `ChecksRan`, `Signal{stuck|drift|untrusted}`,
+  `Outcome`, `HandoffWritten`, `AttemptEnded`, and `Forgotten` (the task
+  settled or its job ended). Deleted with the job. Not fed to the live
+  bus (the job's events already carry what the UI shows).
+- **Who writes**: the Gate every decision, question, answer, grant,
+  refusal and untrusted mark; the attempt (`harness/record.ts`) the
+  agent's tool calls, their results and its words at each turn's end,
+  the sessions it opens, the Stop hook's requests, drift, the outcome and
+  the end; the Verifier each report; the handoff its `HandoffWritten`.
+- **The log is the source of truth for what a task remembers**:
+  `eye/task-memory.ts` is a view that folds the task's Gate decisions,
+  results, signals and questions since its last `Forgotten` (the grants
+  given and used, what I refused, the stuck count replayed as it was
+  counted, the untrusted mark, the questions open). Read when a Gate
+  starts and when the job starts again, never per action; an older
+  Oraknid's setting is read first, as where the log goes on from.
+- **Handoffs from the log**: every handoff adds what the attempt tried
+  (its last actions), what the Gate refused, the last check report and
+  what is uncertain, before why it was handed over.
+- **Uncertain actions**: a task's next attempt marks each action the one
+  before asked for and never saw the result of `ActionUncertain`, says it
+  in the job's events (`task.actions-uncertain`) and to the next model
+  (the crash's handoff, or a Silk issue); nothing re-runs it. The
+  controller reconciles them in stage 5.
+- **Moved out of `attempt.ts`**: the checks' runners (the Verifier), the
+  servers' setup for a Leg (`servers/for-leg.ts`), the crash's takeover
+  (`harness/record.ts`): 2,165 → 2,100 lines with the log wired in, the
+  new ceiling. A ratchet: only the Verifier imports a check's runner, and
+  `program.ts` runs no check nor reads the policy itself.
+- **Changed where paths diverged**, each with its test:
+  1. The job's own checks on a server weren't read by the rules (a task's
+     were): `ssh <alias> 'npm publish'` ran there. Refused now, as a
+     task's is (`harness/stage3.test.ts`).
+  2. The merge's and the job's GitHub checks read `--repo <name>`
+     another way than the task's: a name the project doesn't have said
+     "has no GitHub repo linked". Now the same words everywhere
+     (`stage3.test.ts`).
+  3. Stage 2's limit: when Claude Code's hook left an action to its own
+     classifier and it ran, the stuck row went on, three blocks around it
+     asked me. An action's result that says it ran ends the row
+     (`harness/gate.test.ts`, live and read back from the log).
+- **Limits**: a `GateDecision`'s `actionId` is the Gate's own, not the
+  Leg's tool call id (a permission request carries none), so decisions
+  and results are paired by order, not by id; the memory's fold reads a
+  task's last 5,000 such events; the job's checks outside an attempt
+  (merge, job) have no attempt and aren't logged; the log isn't on the
+  live bus yet; uncertain actions are recorded and said, not reconciled.
+
 ## Consequences
 - More files, each small, each with its own tests; the bugs of the last
   two days become cases in a table.

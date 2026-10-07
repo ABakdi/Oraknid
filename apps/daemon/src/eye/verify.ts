@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { brokenCheckHint, type PolicyVerdict } from "@oraknid/core";
+import { brokenCheckHint } from "@oraknid/core";
 import type { SandboxPlan } from "@oraknid/leg-sdk";
 
 export interface VerifyResult {
@@ -149,11 +149,4 @@ export function looksBroken(r: VerifyResult): string | null {
   // A check Oraknid refused to run is the policy's, not a broken one.
   if (r.exitCode === null && r.output.startsWith("Oraknid did not run this check")) return null;
   return brokenCheckHint(r.exitCode, r.output);
-}
-
-/** What the policy says about a check: refused when never allowed, or gated (it would need me). */
-export function verifyRefusal(v: PolicyVerdict): string | null {
-  if (v.verdict === "deny") return v.reason;
-  if (v.verdict === "ask" && v.gated) return `${v.reason}; a check never does that`;
-  return null;
 }

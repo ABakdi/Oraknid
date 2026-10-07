@@ -10,6 +10,7 @@ durable step engine runs on the same database ([[ADR-003-Job-Execution-Engine]])
 | `projects` | Workspaces, with their skills and servers (`skill_ids`, `server_ids`); a server's own project names it (`server_id`, migration 0037, [[ADR-049-Server-Chat-And-Server-Jobs]]). |
 | `jobs`, `tasks`, `task_edges` | The work. The Web's version is a number on the job (`web_version`), raised at every plan change. |
 | `attempts`, `sessions` | Who tried what, native session IDs, end reasons, usage totals. |
+| `attempt_events` | The attempt log ([[ADR-056-The-Harness]] §1, migration 0040): append-only, typed events per attempt (`kind`, JSON `data`), `seq` in order within the attempt, `id` across all: sessions opened, the agent's actions and their results, every Gate decision (by whom, the grant's scope, counted toward the stuck rule, a grant given or used, a refusal), my questions and answers, the Stop hook's requests, each check report, signals (stuck, drift, untrusted), the outcome, handoffs, the end; actions a crash left without a result marked uncertain. A task's grants, refusals, stuck count, untrusted mark and open questions are read from it (`eye/task-memory.ts`), from its last `Forgotten` mark on. Kept with its job, deleted with it. |
 | `legs`, `leg_models` | The pool. Capability profiles and quota windows are JSON on `leg_models` (per model) and `legs` (account-wide), with `limited_until` on the Leg. |
 | `silk_entries` | Silk. |
 | `silk_mirror` | What Oraknid last wrote to each mirror file (hash), and the open import question. |
@@ -55,6 +56,13 @@ The order is set out in [[Durability]]. Implementation notes:
   to avoid killing a reused PID.
 - Steps in `running` with an expired lease are replayed. A step is
   idempotent by construction, or guarded by `side_effects`.
+- A task's next attempt reads the one before in the attempt log: an
+  action asked for with no result is marked `ActionUncertain`, said in the
+  job's events (`task.actions-uncertain`) and to the next model (in the
+  handoff built for a crashed attempt, or a Silk issue), never re-run by
+  Oraknid ([[ADR-056-The-Harness]] §1; reconciled by the task controller
+  in stage 5). What the Gate remembered of the task survives because it
+  is read back from the log.
 - Recovery is tested by fault injection: a test harness kills the daemon
   (`SIGKILL`) at every step boundary in a scripted job, restarts it, and
   asserts that no step completed twice and that every side effect is at

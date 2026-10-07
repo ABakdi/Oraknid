@@ -1,16 +1,23 @@
 import type { Grant } from "@oraknid/core";
+import { StuckWatch } from "@oraknid/guard";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "../db/open.ts";
 import { settings } from "../db/schema.ts";
-import { readSetting, writeSetting } from "../settings.ts";
+import { type AttemptEventKind, AttemptLog } from "../harness/log.ts";
+import { readSetting } from "../settings.ts";
 
 // What a task's attempts learned that must outlive one of them and a restart
 // of Oraknid (ADR-056 stage 1, bug 8): that it read untrusted content (a
 // resumed session is not trusted again), the grants I gave (what I let run
 // once, ADR-056 §3) and what I refused (D8), the blocks the stuck rule
 // counts, and what the attempt asked me. Kept per task until it settles.
-// ADR-056's attempt log takes this over in a later stage.
+//
+// A view over the attempt log (ADR-056 §1, stage 3): the log is the source
+// of truth; this folds the task's Gate decisions, signals and questions
+// since it was last forgotten. Read when an attempt's Gate starts and when
+// its job starts again, never per action. What an older Oraknid kept as a
+// setting is read first, as where the log goes on from.
 
 const Blocked = z.object({
   action: z.string(),
@@ -32,6 +39,7 @@ const GrantRow: z.ZodType<Grant> = z.object({
   at: z.number(),
 });
 
+/** What an older Oraknid kept per task as a setting (stage 1, 2); read as the log's start. */
 export const TaskMemory = z.object({
   /** Why the task is untrusted (it read the web, a tool's outside content), or null. */
   untrusted: z.string().nullable().default(null),
@@ -58,28 +66,114 @@ const EMPTY: TaskMemory = {
   asked: [],
 };
 
+/** The kinds the memory is folded from. */
+const KINDS: AttemptEventKind[] = [
+  "GateDecision",
+  "ActionResult",
+  "Signal",
+  "QuestionAsked",
+  "QuestionAnswered",
+];
+/** A bound on the fold: a task's last this many of those events. */
+const FOLD_LIMIT = 5000;
+
 export function readTaskMemory(db: Db, taskId: string): TaskMemory {
-  const m = readSetting(db, keyOf(taskId), TaskMemory, EMPTY);
-  if (!m.allowOnce.length) return m;
-  // Kept before grants were: each a grant to run once.
-  const kept: Grant[] = m.allowOnce.map((match) => ({
-    kind: "allow-once",
-    scope: "once",
-    match,
-    reason: "let it run once",
-    at: 0,
-  }));
-  return { ...m, grants: [...m.grants, ...kept], allowOnce: [] };
+  const kept = readSetting(db, keyOf(taskId), TaskMemory, EMPTY);
+  const m: TaskMemory = {
+    ...kept,
+    // Kept before grants were: each a grant to run once.
+    grants: [
+      ...kept.grants,
+      ...kept.allowOnce.map(
+        (match): Grant => ({
+          kind: "allow-once",
+          scope: "once",
+          match,
+          reason: "let it run once",
+          at: 0,
+        }),
+      ),
+    ],
+    allowOnce: [],
+    denied: [...kept.denied],
+    asked: [...kept.asked],
+  };
+  const log = new AttemptLog(db);
+  const since = log.lastOf(taskId, "Forgotten")?.id;
+  const events = log.task(taskId, {
+    kinds: KINDS,
+    ...(since ? { afterId: since } : {}),
+    limit: FOLD_LIMIT,
+  });
+  // The stuck count replayed as it was counted: blocks, and the actions that ended a row.
+  const watch = new StuckWatch();
+  watch.restore("t", m.stuck);
+  let counted = m.stuck !== null;
+  for (const e of events) {
+    switch (e.kind) {
+      case "GateDecision": {
+        const g = e.data;
+        if (g.grant) m.grants.push(g.grant);
+        if (g.spent !== undefined) {
+          const i = m.grants.findIndex((x) => x.scope === "once" && x.match === g.spent);
+          if (i >= 0) m.grants.splice(i, 1);
+        }
+        if (g.refusal && !m.denied.includes(g.refusal)) m.denied.push(g.refusal);
+        if (g.counts !== undefined) {
+          watch.blocked("t", { action: g.action, reason: g.reason, layer: g.counts });
+          counted = true;
+        }
+        if (g.endsRow) watch.allowed("t");
+        break;
+      }
+      // An action that ran ends the row, whoever let it run (the Leg's own classifier too).
+      case "ActionResult":
+        if (e.data.ok) watch.allowed("t");
+        break;
+      case "Signal":
+        if (e.data.kind === "untrusted" && m.untrusted === null) m.untrusted = e.data.evidence;
+        break;
+      case "QuestionAsked":
+        if (!m.asked.includes(e.data.itemId)) m.asked.push(e.data.itemId);
+        break;
+      case "QuestionAnswered":
+        if (e.data.withdrawn) m.asked = m.asked.filter((x) => x !== e.data.itemId);
+        break;
+    }
+  }
+  m.stuck = counted ? watch.snapshot("t") : null;
+  return m;
 }
 
-/** Changes one part of what the task remembers. */
-export function rememberForTask(db: Db, taskId: string, change: Partial<TaskMemory>) {
-  writeSetting(db, keyOf(taskId), TaskMemory, { ...readTaskMemory(db, taskId), ...change });
-}
-
-/** The task settled: nothing of it is kept. */
-export function forgetTaskMemory(db: Db, taskId: string) {
+/**
+ * The task settled, or its job ended: nothing of it is kept. The log keeps
+ * what happened; the memory starts again after this mark.
+ */
+export function forgetTaskMemory(db: Db, jobId: string, taskId: string, reason: string) {
   db.delete(settings)
     .where(eq(settings.key, keyOf(taskId)))
     .run();
+  new AttemptLog(db).append({ jobId, taskId, attemptId: null }, "Forgotten", { reason });
+}
+
+/**
+ * What the task's attempts asked me, withdrawn (bug 9): an attempt cut short
+ * by a crash leaves no question behind; its next one asks again if it must.
+ */
+export function withdrawTaskQuestions(
+  db: Db,
+  jobId: string,
+  taskId: string,
+  withdraw: (itemId: string) => void,
+) {
+  const { asked } = readTaskMemory(db, taskId);
+  const log = new AttemptLog(db);
+  for (const itemId of asked) {
+    withdraw(itemId);
+    log.append({ jobId, taskId, attemptId: null }, "QuestionAnswered", {
+      itemId,
+      answer: null,
+      withdrawn: true,
+    });
+  }
 }

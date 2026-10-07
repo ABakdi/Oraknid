@@ -8,6 +8,7 @@ Where each piece of data lives, and who can read it.
 | Silk | SQLite + `.oraknid/silk/` mirror | Daemon, Legs of that job, me | Only as part of prompts sent to remote Legs. |
 | Context packs / prompts | Built in memory, logged condensed | Daemon, the receiving Leg | **Yes, to the Leg's provider** (e.g. Anthropic) for remote Legs. Local Legs: no. |
 | Leg raw output | `logs/jobs/<job>/<session>.ndjson` | Daemon, me | No. |
+| The attempt log (2026-10-07, [[ADR-056-The-Harness]] §1) | SQLite: `attempt_events` (migration 0040), per attempt: the agent's tool calls (a command, a path or the first 300 characters of the input), their results (ok or not, no output), each Gate decision with its reason, my questions and answers (the first 500 characters), the end of each failed check's output (1,500 characters), what the agent said at each turn's end (2,000 characters), signals, the outcome. Deleted with its job | Daemon; the handoff built from it is Silk | What goes into a handoff goes to the next Leg's provider, as Silk does. |
 | Workspace code | The project folder / worktree | Legs of that job (sandboxed) | Yes, to remote Legs' providers, as they read files. |
 | Secrets | OS keychain, under this data folder's own service `oraknid:<id>` (the id in `keychain-id`, 0600; [[Audit-2]] S2-23), or `secrets.json` (encrypted, 0600) when there's none | Daemon, at process start only | Only to the service they are for. |
 | Resource metrics | Memory only (last hour) | Daemon, paired devices | No. |
