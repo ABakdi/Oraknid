@@ -2477,6 +2477,24 @@ export async function runAttempt(
         return { kind: "retry", reason: `${leg.legName} failed: ${end.error ?? "unknown error"}` };
       }
 
+      // Cut short before it finished (bug 14): not a turn to judge. Stopped by me or its job,
+      // the stop goes on; otherwise it is told to go on where it was.
+      if (end.reason === "interrupted") {
+        if (signal.aborted) throw signal.reason;
+        event("task.turn-interrupted", {});
+        if (turns >= (d.maxTurns ?? 25)) {
+          await escalate([{ code: "D6", evidence: `took ${turns} turns without finishing one` }]);
+          continue;
+        }
+        await session?.session.send(
+          "Your last turn was interrupted before it finished. Go on with the task where you were; say DONE when it is finished.",
+        );
+        continue;
+      }
+      /** Stopped at its own limit of steps in a turn (bug 14): checked, its words not a claim. */
+      const cutShort = end.reason === "max_turns";
+      if (cutShort) event("task.turn-limit", {});
+
       // A turn went through: its provider works (M13.22).
       d.registry.providerWorked(leg.legId, leg.legModelId);
 
@@ -2491,8 +2509,11 @@ export async function runAttempt(
 
       observed.changedPaths = await ws.tree.changedSince(scopeBase);
       observed.scope = scopeOf(task);
-      let verified = task.verify.length === 0;
-      let failure = "";
+      let verified = task.verify.length === 0 && !cutShort;
+      let failure =
+        cutShort && !task.verify.length
+          ? "Its turn reached its limit of steps before it finished."
+          : "";
       if (task.verify.length) {
         event("task.verifying", {});
         // A check that is wrong is The Eye's to fix, not the Leg's (The-Eye → A check that is
@@ -2516,21 +2537,22 @@ export async function runAttempt(
         if (failed) {
           failure = `${fence(failed.command)}\nfailed (exit ${failed.exitCode}):\n${fence(failed.output.slice(-3000))}`;
           observed.verifyFailures.push(failed.signature ?? "");
-          if (claimsDone(end.text))
+          if (claimsDone(end.text) && !cutShort)
             observed.falseClaim = `said it was done, but \`${failed.command}\` failed`;
           // It says it can't finish without me (a guard blocked it, only I can do or allow it):
           // that is asked, specifically, before any ladder or "keeps going wrong" (ADR-053). So is
           // being stuck on its own auto mode's refusals with nothing after them (bug 7).
           const byLeg = takeStuckByLeg();
-          const said =
-            saysOwnerNeeded(end.text) ??
-            (byLeg ? `${byLeg.why} by its own auto mode: “${end.text.slice(0, 300)}”` : null);
+          const said = cutShort
+            ? null
+            : (saysOwnerNeeded(end.text) ??
+              (byLeg ? `${byLeg.why} by its own auto mode: “${end.text.slice(0, 300)}”` : null));
           if (said && (await askOwnerNeeded(said, end.text, failed))) continue;
         }
       }
 
       // No verify command (research, plan): a second reasoning look decides (The-Eye → Planning).
-      if (!task.verify.length && d.brain) {
+      if (!task.verify.length && d.brain && !cutShort) {
         event("task.evaluating", {});
         try {
           const review = await d.brain.evaluate({
@@ -2602,7 +2624,8 @@ export async function runAttempt(
       // before anyone works on; then the climb on a failed check; then the other drifts
       // (D2–D6), whose ladder runs where there is no rung left to climb.
       const first = drifts.some((x) => x.code === "D7" || x.code === "D8" || x.code === "D1");
-      if (!verified && !first) {
+      // A turn cut at its limit of steps isn't its answer: it goes on in its session first.
+      if (!verified && !first && !cutShort) {
         const up = higherRung();
         if (up) {
           event("task.climbing", {
@@ -2633,7 +2656,9 @@ export async function runAttempt(
       }
       // Self-prompting (The-Eye → Self-prompting): the exact failure goes back.
       await session?.session.send(
-        `Oraknid ran the checks and the task is not done yet.\n${failure}\nFix it, then say DONE.`,
+        cutShort
+          ? `Your turn reached its limit of steps before you finished.${task.verify.length ? ` Oraknid ran the checks and the task is not done yet:\n${failure}\n` : " "}Go on with the task, then say DONE.`
+          : `Oraknid ran the checks and the task is not done yet.\n${failure}\nFix it, then say DONE.`,
       );
       if (shouldRotate(usage, d.rotateAt ?? 0.6)) {
         event("task.rotating", {

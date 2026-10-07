@@ -655,3 +655,45 @@ describe("scope and security come before the climb (bug 13)", () => {
     expect(leg.log[1]?.message).toMatch(/changed files outside its scope: package.json/);
   }, 60_000);
 });
+
+describe("a turn that didn't finish isn't judged as one that did (bug 14)", () => {
+  const plan: WebPlan = {
+    summary: "A parser.",
+    tasks: [task("a", "Build the parser", ["test -f parser.js"], ["parser.js"])],
+    jobVerify: [],
+  };
+
+  it("an interrupted turn is told to go on, not verified as finished", async () => {
+    const leg = scriptedLeg((t) =>
+      t.turn === 1
+        ? [{ write: "parser.js", content: "x\n" }, { endTurn: "interrupted" }]
+        : [{ say: "DONE" }],
+    );
+    rig = await harness({ legs: [{ kind: "claude-code", name: "Claude A", leg }], plan });
+    const { id } = await rig.repoJob("A parser");
+    const done = await rig.ended(id);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+    expect(leg.log).toHaveLength(2);
+    expect(leg.log[1]?.message).toMatch(/interrupted before it finished/);
+    expect(rig.events(id, "task.verifying")).toHaveLength(1);
+  }, 60_000);
+
+  it("a turn stopped at the agent's limit of steps is checked, its words not taken as a claim, and it goes on in its session", async () => {
+    const leg = scriptedLeg((t) =>
+      t.turn === 1
+        ? [{ say: "DONE, all of it." }, { endTurn: "max_turns" }]
+        : [{ write: "parser.js", content: "x\n" }, { say: "DONE" }],
+    );
+    rig = await harness({ legs: [{ kind: "claude-code", name: "Claude A", leg }], plan });
+    const { id } = await rig.repoJob("A parser");
+    const done = await rig.ended(id);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+    expect(rig.events(id, "task.climbing")).toEqual([]);
+    expect(rig.events(id, "task.drift")).toEqual([]);
+    expect(leg.log.map((t) => [t.model, t.session])).toEqual([
+      ["haiku", 1],
+      ["haiku", 1],
+    ]);
+    expect(leg.log[1]?.message).toMatch(/reached its limit of steps[\s\S]*test -f parser\.js/);
+  }, 60_000);
+});

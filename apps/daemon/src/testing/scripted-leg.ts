@@ -28,7 +28,9 @@ export type Action =
   /** The turn ends on an error, as a provider's 500 ends it. */
   | { fail: string }
   /** A command Claude Code's own auto mode refused before it ran, Oraknid never asked (ADR-053). */
-  | { legDenies: { command: string; reason: string } };
+  | { legDenies: { command: string; reason: string } }
+  /** The turn ends unfinished: cut short, or at the Leg's own limit of steps in a turn. */
+  | { endTurn: "interrupted" | "max_turns" };
 
 export interface TurnContext {
   leg: string;
@@ -215,6 +217,9 @@ export function scriptedLeg(
               path: a.ask.path ?? null,
             });
             asks.push({ tool: a.ask.tool, path: a.ask.path ?? null, allow: d.allow });
+          } else if ("endTurn" in a) {
+            events.push({ type: "turn.ended", reason: a.endTurn, text, error: null });
+            return;
           } else if ("legDenies" in a) {
             events.push({
               type: "permission.denied",
