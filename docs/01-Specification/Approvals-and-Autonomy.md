@@ -30,7 +30,7 @@ recorded in the audit log.
 | `send` | Email, messages, comments on an issue. |
 | `push` | `git push` to any remote; the github tool's push anywhere but the project's linked repo, or a force-push. |
 | `merge` | Merging the work branch into the release branch. |
-| `deploy` | Any deploy script or command declared as deploy. |
+| `deploy` | Any deploy script or command declared as deploy; the `env` tool writing production secrets on a server ([[ADR-059-Project-Secrets]]; other environments' are an `external-write`). |
 | `delete` | Deleting a branch (`git branch -D`, `git push --delete`). A Leg's write or delete outside its folder is refused, not asked (2026-10-04, → Writing outside its folder). |
 | `spend` | Any action projected to exceed the money threshold. |
 | `external-write` | Any MCP or API call not declared as a read ([[ADR-021-Tools-Broker]]). |

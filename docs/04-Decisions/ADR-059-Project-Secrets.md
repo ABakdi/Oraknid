@@ -77,4 +77,33 @@ be committed by mistake.
 One place for every secret (BR-13), the encrypted file when there is no
 keychain, and a move to another machine carries them ([[ADR-061-Moving-Oraknid]]).
 
+## As built (2026-10-07)
+- The API is `projectSecrets.*` (`list`, `set`, `importDotEnv`,
+  `remove`, `setDefaultEnvironment`), not `secrets.*`: `/secrets/` is the
+  encrypted store's passphrase, home only for every device. Writes are in
+  `HOME_ONLY`; listing works away from home.
+- The service is `apps/daemon/src/secrets/` (`service.ts`, `dotenv.ts`,
+  `tool.ts`). A session's variables are set by the Leg supervisor
+  (`withEnv`), which wraps the job's sandbox so every adapter's
+  `sandbox.wrap` gets them under its own variables; nothing in The Eye's
+  attempt changed. They reach `bwrap` as `--setenv`, as a Leg's own keys
+  already do: visible on this computer's process list while the session
+  runs. Unsandboxed jobs get none.
+- The `env` tool is offered to every job whose project has a server (or
+  is a server's own), added to the job's tools beside `github` in the
+  program, like `local-models`. `write_env_file` is judged a `deploy`
+  for production values and an `external-write` otherwise, through the
+  Gate as any tool call: it asks unless that action is waived for the
+  job. A server reached by its name, its SSH alias or its id; the path
+  full or under the login's home, never with `..`.
+- `jobs.create` takes `environment`; the New work page has no selector
+  for it yet (a job runs in its project's default, set in the Secrets
+  tab).
+- Tests: `secrets/secrets.test.ts` (keychain only, masked, names in the
+  audit, `.env` parsing, only the job's project and environment, the
+  sandbox's environment, a 0600 file on the stand-in SSH server with no
+  value on any command line or event, production rules) and
+  `secrets/api.test.ts` (the API end to end, away-from-home rules);
+  `apps/web/src/components/project-secrets.test.tsx`.
+
 Related: [[Security]] · [[Servers]] · [[Jobs-and-Projects]] · [[Data-Map]]

@@ -242,6 +242,24 @@ When a task needs a server and the project has none, The Eye gives it
 my only one, or asks which, once ([[ADR-038-Project-Accounts]],
 [[The-Eye]] → A project's GitHub repo and servers).
 
+## Secrets and environments (2026-10-07, [[ADR-059-Project-Secrets]])
+
+A project keeps its API keys and `.env` values in its **Secrets** tab,
+per environment: `dev`, `testing` and `production`. Each job runs in one
+environment: the project's default (`dev` unless I change it), or the
+one I give it when I create it (`environment` of `jobs.create`); a
+server job's follows its server (production when the server is,
+testing otherwise). Its sessions get that environment's secrets as
+environment variables inside the sandbox, and nothing of another
+project's; the job's events name them (`project.secrets.used`), never a
+value. A deploy writes them on one of the job's servers through
+Oraknid's `env` tool (`write_env_file`): a file only the server's login
+can read (0600), written by Oraknid over its own connection, the values
+never typed by the agent; production values go only to a production
+server, and a production server gets only those. Values are never shown
+after I save them, and they are scrubbed from everything Oraknid stores
+and shows.
+
 ## This computer's services
 
 A job's sandbox reaches the internet, but none of the services running
