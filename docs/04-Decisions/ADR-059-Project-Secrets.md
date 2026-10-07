@@ -86,9 +86,11 @@ keychain, and a move to another machine carries them ([[ADR-061-Moving-Oraknid]]
   `tool.ts`). A session's variables are set by the Leg supervisor
   (`withEnv`), which wraps the job's sandbox so every adapter's
   `sandbox.wrap` gets them under its own variables; nothing in The Eye's
-  attempt changed. They reach `bwrap` as `--setenv`, as a Leg's own keys
-  already do: visible on this computer's process list while the session
-  runs. Unsandboxed jobs get none.
+  attempt changed. They never go on a command line (2026-10-08): every
+  sandbox's variables, a Leg's own keys too, are written to a private
+  0600 file that a clean shell (`env -i … sh`) reads, deletes, and
+  starts the sandbox from, so `bwrap` inherits exactly them and no other
+  user's process list shows them (packages/os `bwrap.ts`, `envFile`). Unsandboxed jobs get none.
 - The `env` tool is offered to every job whose project has a server (or
   is a server's own), added to the job's tools beside `github` in the
   program, like `local-models`. `write_env_file` is judged a `deploy`
