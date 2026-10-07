@@ -175,6 +175,21 @@ describe("one stuck row for every kind of block (ADR-056 §3)", () => {
     expect(asPermission(await next)).toEqual({ allow: true });
   });
 
+  it("counts my denials too: three in a row and I'm asked at the agent's next action (stage 2)", async () => {
+    const s = await setup({ autonomy: "careful" });
+    const gate = s.gate();
+    for (const branch of ["a", "b", "c"]) {
+      const asking = gate.decide({ source: "prompt", request: bash(`git push origin ${branch}`) });
+      s.inbox.answer((await s.item(/wants to run `git push/)).id, "Deny");
+      expect(asPermission(await asking).allow).toBe(false);
+    }
+    const next = gate.decide({ source: "prompt", request: write(join(s.cwd, "parser.js")) });
+    const stuck = await s.item(/is stuck on blocked actions/);
+    expect(stuck.detail).toContain("- `git push origin c` — denied (you)");
+    s.inbox.answer(stuck.id, KEEP_BLOCKED);
+    expect(asPermission(await next).allow).toBe(false);
+  });
+
   it("keeps the count across a restart: a new Gate on the same task goes on from it", async () => {
     const file = join(mkdtempSync(join(tmpdir(), "oraknid-gate-db-")), "o.db");
     const cwd = repo();

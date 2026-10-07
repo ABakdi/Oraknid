@@ -188,6 +188,19 @@ export function createGate(c: GateContext) {
     keepStuck();
     return s;
   };
+  /**
+   * I refused an action (Deny, kept blocked, refused again at once): a block
+   * like any other. Stuck by it, I'm asked at the agent's next action, not
+   * on top of the answer I just gave.
+   */
+  const ownerBlocked = (r: PermissionRequest, reason: string) => {
+    const s = count({
+      action: (r.command ? plain(r.command) : r.tool).slice(0, 200),
+      reason,
+      layer: "owner",
+    });
+    if (s) pending = { ...s, by: "owner" };
+  };
   /** An action ran: the row ends (written only when there was one). */
   const endRow = () => {
     if (!stuck.snapshot(stuckKey)?.row.length) return;
@@ -433,6 +446,7 @@ export function createGate(c: GateContext) {
       return { allow: true, why: `owner: allowed once, ${where}` };
     }
     keptBlocked.add(plain(action));
+    ownerBlocked(r, "kept blocked, though the plan names it");
     audit(
       r,
       { verdict: "block", layer: "owner", reason: "kept blocked, though the plan names it" },
@@ -455,7 +469,13 @@ export function createGate(c: GateContext) {
     refused: PermissionDecision,
   ): Promise<PermissionDecision> => {
     const by = (l: Blocked["layer"]) =>
-      l === 1 ? "rules" : l === 2 ? "judge" : `${leg.legName}'s own auto mode`;
+      l === 1
+        ? "rules"
+        : l === 2
+          ? "judge"
+          : l === "owner"
+            ? "you"
+            : `${leg.legName}'s own auto mode`;
     const list = s.blocks
       .slice(-10)
       .map(
@@ -564,6 +584,7 @@ export function createGate(c: GateContext) {
     }
     audit(r, { verdict: "block", layer: "owner", reason: "denied" }, action);
     denied.add(refusalKey(r));
+    ownerBlocked(r, "denied");
     rememberForTask(db, task.id, { denied: [...denied] });
     // The consequence, said in the project's conversation (ADR-045).
     addMessage(
@@ -701,6 +722,7 @@ export function createGate(c: GateContext) {
 
     if (step.verdict === "deny" && step.drift === "D8") {
       c.on.gateBypass(`tried \`${r.command ?? r.tool}\` again after I refused it`);
+      ownerBlocked(r, "denied before");
       return {
         verdict: "deny",
         by: "owner",

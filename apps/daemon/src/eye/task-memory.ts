@@ -15,7 +15,7 @@ import { readSetting, writeSetting } from "../settings.ts";
 const Blocked = z.object({
   action: z.string(),
   reason: z.string(),
-  layer: z.union([z.literal(1), z.literal(2), z.literal("leg")]),
+  layer: z.union([z.literal(1), z.literal(2), z.literal("leg"), z.literal("owner")]),
 });
 
 export const StuckState = z.object({

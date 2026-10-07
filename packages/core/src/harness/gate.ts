@@ -276,7 +276,7 @@ function approval(f: GateFacts, reason: string, gated: GatedAction | null): Gate
       layer: "owner",
       drift: "D8",
       message: "I already refused that.",
-      counts: null,
+      counts: "owner",
       log,
     };
   return { verdict: "ask", by: "owner", reason, layer: "owner", ask: "approval", gated, log };

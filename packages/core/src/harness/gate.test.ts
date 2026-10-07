@@ -118,7 +118,7 @@ const ROWS: Row[] = [
     "prompt",
     gated,
     { grants: { refused: true } },
-    { verdict: "deny", by: "owner", drift: "D8" },
+    { verdict: "deny", by: "owner", drift: "D8", counts: "owner" },
   ],
   [
     "a push I refused, hook: decided at the prompt",
