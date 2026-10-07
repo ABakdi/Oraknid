@@ -196,6 +196,7 @@ import type { Paths } from "../paths.ts";
 import { readResources, type Work, writeResources } from "../resources/work.ts";
 import {
   ensureServerProject,
+  handOver,
   serverConversation,
   serverJobsDir,
   serverOf,
@@ -478,6 +479,17 @@ const talkDeps = (c: ApiContext) => ({
   endNow: (id: string) =>
     endSteps({ db: c.jobs.db, bus: c.bus, github: c.github, projects: c.projects }, id),
   ...(c.thinking ? { thinking: c.thinking } : {}),
+  // A request that belongs to a server or another project, taken there (The-Eye → Resolving
+  // what it doesn't know). Read there as any message, never sent on again.
+  elsewhere: {
+    toServer: (serverId: string, text: string, from: string, messageId?: string) =>
+      handOver(serverTalkDeps(c), serverId, text, from, messageId),
+    toProject: async (projectId: string, text: string) => {
+      const { elsewhere: _, ...there } = talkDeps(c);
+      const r = await talkInProject(there, projectId, text);
+      return { projectId, jobId: r.jobId };
+    },
+  },
 });
 
 /** Talking to a server's Eye (ADR-049): talking's deps, and the server's own. */

@@ -29,7 +29,11 @@ export const COMMANDS: CommandSpec[] = [
   },
   { name: "pause", help: "Pause the current job", scope: "job" },
   { name: "resume", help: "Resume the current job", scope: "job" },
-  { name: "cancel", help: "Cancel the current job", scope: "job" },
+  {
+    name: "cancel",
+    help: "Cancel the current job, or the one this conversation is about (y/N)",
+    scope: "job",
+  },
   {
     name: "redirect",
     args: "<instruction>",

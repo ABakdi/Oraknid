@@ -7,11 +7,15 @@ import { desc, eq } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
 import { eyeMessages, jobs, projects } from "../db/schema.ts";
 import type { ServerTalk } from "../eye/brain.ts";
+import { carryOver, earlierJob, findingsText, lookUp, recentJobs, routeOf } from "../eye/lookup.ts";
 import {
   addMessage,
   addProjectMessage,
+  asksBack,
+  askWhere,
   projectConversation,
   type TalkDeps,
+  takeThere,
   talk,
 } from "../eye/talk.ts";
 import { JobServer, jobServerKey, writeSetting } from "../settings.ts";
@@ -187,6 +191,43 @@ export function talkToServer(
 }
 
 /**
+ * My request brought to a server's chat from elsewhere (The-Eye → Resolving
+ * what it doesn't know): to the job going on it, else read here as any
+ * message, nothing looked up again; answers once The Eye has, with the job
+ * it started, if any.
+ */
+export async function handOver(
+  d: ServerTalkDeps,
+  serverId: string,
+  text: string,
+  from: string,
+  /** My message already in this chat that carries it (my answer to "which one?"). */
+  messageId?: string,
+): Promise<{ projectId: string; jobId: string | null }> {
+  const pid = ensureServerProject(d, serverId);
+  const going = goingJob(d.db, pid);
+  if (going) {
+    talk(d, going.id, text);
+    return { projectId: pid, jobId: going.id };
+  }
+  const id = messageId ?? addProjectMessage(d, pid, "owner", text, null);
+  try {
+    const jobId = await handle(d, serverId, pid, text, id, { from, settled: true });
+    return { projectId: pid, jobId };
+  } catch (error) {
+    // Said here too, where my request now is.
+    addProjectMessage(
+      d,
+      pid,
+      "eye",
+      `I couldn't think about it just now (${error instanceof Error ? error.message : String(error)}). Ask me again in a moment.`,
+      { intent: "question", did: [], silkIds: [], taskIds: [], jobId: null },
+    );
+    throw error;
+  }
+}
+
+/**
  * On start: a message of mine in a server's conversation that no job took
  * and The Eye hadn't answered is handled now (as in a project's).
  */
@@ -214,10 +255,20 @@ function respond(d: ServerTalkDeps, serverId: string, pid: string, text: string,
   });
 }
 
-async function handle(d: ServerTalkDeps, serverId: string, pid: string, text: string, id: string) {
+async function handle(
+  d: ServerTalkDeps,
+  serverId: string,
+  pid: string,
+  text: string,
+  id: string,
+  o: { from?: string; settled?: boolean } = {},
+): Promise<string | null> {
   const r = d.servers.row(serverId);
   const project = d.db.select().from(projects).where(eq(projects.id, pid)).get();
   const production = d.servers.isProduction(serverId);
+  // Names this server doesn't know, looked up across Oraknid (no model).
+  const found = o.settled ? null : lookUp(d.db, text, { projectId: pid });
+  const recent = recentJobs(d.db, pid);
   let verdict: ServerTalk = { intent: "work", reply: "", goal: text };
   if (d.brain.serverTalk) {
     verdict = await d.brain.serverTalk({
@@ -235,17 +286,35 @@ async function handle(d: ServerTalkDeps, serverId: string, pid: string, text: st
         .map((m) => `${m.author === "owner" ? "Owner" : "You"}: ${m.text}`)
         .join("\n"),
       message: text,
+      ...(recent ? { recent } : {}),
+      ...(found?.findings.length ? { elsewhere: findingsText(found) } : {}),
     });
   }
+  const route = found
+    ? routeOf(found, {
+        place: verdict.place ?? null,
+        asks: asksBack(verdict.intent, verdict.reply, 0),
+      })
+    : null;
+  if (route && "to" in route) {
+    await takeThere(d, null, text, route.to, r.name, pid);
+    return null;
+  }
+  if (route && "ask" in route) {
+    askWhere(d, null, route.ask, r.name, pid);
+    return null;
+  }
+  // Brought here from another chat: said once, in The Eye's reply.
+  const brought = o.from ? ` (You asked in ${o.from}'s chat; I brought it here.)` : "";
   if (verdict.intent === "question") {
-    addProjectMessage(d, pid, "eye", verdict.reply, {
+    addProjectMessage(d, pid, "eye", `${verdict.reply}${brought}`, {
       intent: "question",
       did: ["Answered from the state document"],
       silkIds: [],
       taskIds: [],
       jobId: null,
     });
-    return;
+    return null;
   }
   if (r.setup !== "ready") {
     addProjectMessage(
@@ -255,10 +324,12 @@ async function handle(d: ServerTalkDeps, serverId: string, pid: string, text: st
       `${r.name} isn't set up yet, so no job can work on it: press Set up on its page first, then ask me again.`,
       { intent: "task", did: ["Not started"], silkIds: [], taskIds: [], jobId: null },
     );
-    return;
+    return null;
   }
   if (!d.newJob || !d.startJob) throw new Error("New work can't start from here.");
-  const goal = verdict.goal?.trim() || text;
+  // "Again", "start another job": the earlier job's goal and what it learned come along.
+  const earlier = earlierJob(d.db, pid, text);
+  const goal = `${verdict.goal?.trim() || text}${earlier ? `\n\n${carryOver(d.db, earlier)}` : ""}`;
   const jobId = d.newJob(pid, goal);
   // My message belongs to the job it started; the server is its server, asked of no one.
   d.db.update(eyeMessages).set({ jobId }).where(eq(eyeMessages.id, id)).run();
@@ -270,9 +341,20 @@ async function handle(d: ServerTalkDeps, serverId: string, pid: string, text: st
       d,
       jobId,
       "eye",
-      `${verdict.reply ? `${verdict.reply} ` : ""}I started a job on ${r.name} for it, “${title}”: I plan it, then tell you what it will change on the server before anything does${production ? ` (${r.name} is production: every change asks you first)` : ""}.`,
-      { intent: "task", did: ["Started a job on the server"], silkIds: [], taskIds: [], jobId },
+      `${verdict.reply ? `${verdict.reply} ` : ""}I started a job on ${r.name} for it, “${title}”: I plan it, then tell you what it will change on the server before anything does${production ? ` (${r.name} is production: every change asks you first)` : ""}.${
+        earlier ? ` It starts from what “${earlier.title}” was asked and learned.` : ""
+      }${brought}`,
+      {
+        intent: "task",
+        did: earlier
+          ? ["Started a job on the server", `Carried over “${earlier.title}”`]
+          : ["Started a job on the server"],
+        silkIds: [],
+        taskIds: [],
+        jobId,
+      },
     );
+    return jobId;
   } catch (e) {
     // A draft isn't in the conversation: my message and the reason stay in it without the job.
     d.db.update(eyeMessages).set({ jobId: null }).where(eq(eyeMessages.id, id)).run();
@@ -283,6 +365,7 @@ async function handle(d: ServerTalkDeps, serverId: string, pid: string, text: st
       `I made a job for this, “${title}”, but couldn't start it: ${e instanceof Error ? e.message : String(e)} It waits as a draft in New work.`,
       { intent: "task", did: ["Kept as a draft"], silkIds: [], taskIds: [], jobId },
     );
+    return null;
   }
 }
 

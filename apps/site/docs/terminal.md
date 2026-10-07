@@ -34,7 +34,7 @@ Type `/` and the commands are listed; keep typing to narrow them, **↑↓** to 
 | `/projects`, `/project <n>` | Your projects; picking one makes the prompt talk to its Eye |
 | `/jobs`, `/job <n>` | The project's jobs (`/jobs all`: every project's); a job's plan as a tree, a number opens a task |
 | `/logs` | The job's sessions and their logs; on a server, its logs, followed live; else Oraknid's own |
-| `/pause`, `/resume`, `/cancel`, `/redirect <instruction>` | The current job |
+| `/pause`, `/resume`, `/cancel`, `/redirect <instruction>` | The current job; `/cancel` with none chosen cancels the job this conversation is about, after y/N |
 | `/inbox` | Questions and approvals waiting for you, answered by number or in your words |
 | `/servers`, `/server <n>` | Your servers; picking one shows its overview |
 | `/chat` | The server's Eye: ask about it, or for work on it (again: back to the project's) |

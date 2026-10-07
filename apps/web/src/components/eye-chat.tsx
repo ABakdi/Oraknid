@@ -1,10 +1,11 @@
 import type { EyeMessage, EyeThought, JobView, QuestionAnswer } from "@oraknid/contracts";
 import { correctsThinking } from "@oraknid/core";
-import { Eye, SendHorizontal, Square } from "lucide-react";
+import { ChevronDown, CircleX, Eye, SendHorizontal, Square } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import { Markdown } from "@/components/common";
+import { useConfirm } from "@/components/confirm";
 import { EyeReportView, reportOf } from "@/components/eye-report";
 import { ThoughtBlock, ThoughtGroup, WorkingNow } from "@/components/eye-thought";
 import { QuestionsForm } from "@/components/questions";
@@ -23,9 +24,87 @@ import { Textarea } from "@/components/ui/textarea";
 import { api, message } from "@/lib/api";
 import { ago } from "@/lib/format";
 import { t } from "@/lib/i18n";
-import { jobHref } from "@/lib/links";
+import { jobHref, jobIdHref, projectHref } from "@/lib/links";
 import { useLive } from "@/lib/live";
 import { cn } from "@/lib/utils";
+
+/** A job that hasn't ended: running, waiting on me, blocked or paused (anything but a draft or an end). */
+const ENDED = new Set(["draft", "completed", "cancelled", "failed"]);
+
+/**
+ * Cancel from the conversation (The-Eye → Cancelling from the chat): the
+ * job it is about, whatever it is doing, after a short confirm; with
+ * several going, a small menu picks which first.
+ */
+function CancelJob({ going, disabled }: { going: JobView[]; disabled?: boolean }) {
+  const { confirm, dialog } = useConfirm();
+  const [menu, setMenu] = useState(false);
+  const [busy, setBusy] = useState(false);
+  if (!going.length) return null;
+  const cancel = async (j: JobView) => {
+    setMenu(false);
+    if (
+      !(await confirm(
+        t("Cancel “{title}”?", { title: j.title }),
+        t(
+          "The work so far stays in its folder. It stops at a safe point; what it asked you is withdrawn.",
+        ),
+        t("Cancel the job"),
+        { keep: t("Keep it") },
+      ))
+    )
+      return;
+    setBusy(true);
+    try {
+      await api.jobs.cancel({ id: j.id, reason: "Cancelled from the chat." });
+      toast.success(t("Cancelling “{title}”.", { title: j.title }));
+    } catch (e) {
+      toast.error(message(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const one = going.length === 1 ? going[0] : undefined;
+  return (
+    <div className="relative shrink-0">
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 gap-1 px-2 text-xs"
+        disabled={disabled || busy}
+        aria-haspopup={one ? undefined : "menu"}
+        aria-expanded={one ? undefined : menu}
+        title={one ? t("Cancel “{title}”", { title: one.title }) : t("Cancel a job")}
+        onClick={() => (one ? void cancel(one) : setMenu((m) => !m))}
+      >
+        <CircleX className="size-3.5" />
+        {t("Cancel")}
+        {one ? null : <ChevronDown className="size-3" />}
+      </Button>
+      {menu && !one ? (
+        <div
+          role="menu"
+          aria-label={t("Which job to cancel")}
+          className="absolute right-0 z-20 mt-1 w-72 max-w-[80vw] rounded-md border bg-popover p-1 text-sm shadow-lg"
+        >
+          {going.map((j) => (
+            <button
+              key={j.id}
+              type="button"
+              role="menuitem"
+              className="flex w-full min-w-0 items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+              onClick={() => void cancel(j)}
+            >
+              <span className="min-w-0 flex-1 truncate">{j.title}</span>
+              <span className="shrink-0 text-[11px] text-muted-foreground">{t(j.state)}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {dialog}
+    </div>
+  );
+}
 
 const INTENT: Record<NonNullable<EyeMessage["action"]>["intent"], string> = {
   instruction: "Instruction",
@@ -155,7 +234,7 @@ export function EyeChat({
   const reading =
     list.at(-1)?.author === "owner" && !thoughts.some((th) => th.outcome === "thinking");
   const byId = new Map(jobs.map((j) => [j.id, j]));
-  const going = jobs.filter((j) => !["draft", "completed", "cancelled"].includes(j.state));
+  const going = jobs.filter((j) => !ENDED.has(j.state));
   const current = going.at(-1);
   const prompts = list
     .filter((m) => m.author === "owner")
@@ -223,16 +302,21 @@ export function EyeChat({
     }
   };
 
+  // A question a job asked through the inbox goes with it when it ends (withdrawn).
+  const withdrawn = (m: EyeMessage) =>
+    !!m.itemId &&
+    !!m.jobId &&
+    ["completed", "cancelled", "failed"].includes(byId.get(m.jobId)?.state ?? "");
+
   const jobLink = (jobId: string | null, label: string) => {
     if (!jobId) return null;
     const j = byId.get(jobId);
     return (
       <Link
-        href={jobHref({
-          id: jobId,
-          projectId: j?.projectId ?? projectId ?? "",
-          ...(j ? { state: j.state } : {}),
-        })}
+        href={
+          // A job of another place (a server's chat it was taken to) opens through its id.
+          j ? jobHref({ id: jobId, projectId: j.projectId, state: j.state }) : jobIdHref(jobId)
+        }
         className="min-w-0 truncate font-medium text-primary underline-offset-2 hover:underline"
         title={j?.title}
       >
@@ -294,6 +378,21 @@ export function EyeChat({
                 t("Open “{title}”", { title: byId.get(touched)?.title ?? t("the new job") }),
               )
             : null}
+          {m.action?.place ? (
+            // Where it took my request (The-Eye → Resolving what it doesn't know).
+            <Link
+              href={
+                m.action.place.kind === "server"
+                  ? `/servers/${m.action.place.id}/chat`
+                  : projectHref(m.action.place.id, "eye")
+              }
+              className="min-w-0 truncate font-medium text-primary underline-offset-2 hover:underline"
+            >
+              {m.action.place.kind === "server"
+                ? t("{name}'s chat", { name: m.action.place.name })
+                : t("{name}'s conversation", { name: m.action.place.name })}
+            </Link>
+          ) : null}
           <span className="text-[10px]">{ago(m.createdAt)}</span>
         </div>
       </div>
@@ -318,6 +417,7 @@ export function EyeChat({
                   : t("— ask for work: The Eye starts a job here from your message.")}
           </span>
           <span className="flex-1 sm:hidden" />
+          <CancelJob going={going} disabled={archived} />
           <PromptJump prompts={prompts} active={active} onJump={jump} />
         </div>
         {!messages.data ? (
@@ -374,7 +474,13 @@ export function EyeChat({
                     ) : (
                       <div>
                         {row(item.message)}
-                        {item.message.questions?.length && !replied.has(item.message.id) ? (
+                        {item.message.questions?.length &&
+                        !replied.has(item.message.id) &&
+                        withdrawn(item.message) ? (
+                          <div className="mt-1 pl-4 text-xs text-muted-foreground">
+                            {t("No longer asked: the job has ended.")}
+                          </div>
+                        ) : item.message.questions?.length && !replied.has(item.message.id) ? (
                           <div className="mt-1.5 max-w-full pl-4 md:max-w-[85%]">
                             <QuestionsForm
                               questions={item.message.questions}

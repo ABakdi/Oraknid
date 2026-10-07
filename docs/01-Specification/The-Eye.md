@@ -303,6 +303,101 @@ can think (none healthy, or the call fails), my message is kept as my
 decision and passed on anyway: my words are never lost. The
 conversation is kept with the job and shown on its page.
 
+What the triage is given, besides the job: the **recent jobs of this
+conversation** (its project's, newest first, five), each with its title,
+how it stands or ended and why ("cancelled: Cancelled from the chat",
+"blocked: …") and its description; in a server's chat, the server's
+**state document** too (its first 6000 characters).
+
+### Resolving what it doesn't know (2026-10-07)
+
+After the piano chat of 2026-10-07: I wrote "start another job to stop
+and remove misahaty related container and data" in the piano project,
+and The Eye asked what misahaty was, though misahaty is a compose
+project in the state document of the server spinet-staging, and a job
+"Back up and remove misahaty compose project" had been cancelled in that
+server's chat the same day.
+
+Before the triage, the **names** of my message (words that name
+something: not everyday English or the everyday words of software work —
+"container", "data", "remove", "job" are none) are looked up across
+Oraknid, locally, with no model:
+
+| Where | Counts |
+| :-- | :-- |
+| A server's or project's name | most |
+| A server's state document (its newest version) or my description of it | much |
+| A job's title or goal (in another project, or in a server's chat) | some |
+| What a project's jobs learned (Silk) | a little |
+| What was said in another conversation | least, and never enough alone |
+
+A name the project knows itself (its name, its jobs' titles and goals,
+its Silk, the servers it uses and their state documents) is no
+question; what was only said in its conversation doesn't count as
+known. A name found in more than three places names nothing in
+particular and is left out. A server's own project counts as the
+server.
+
+The places found are given to the triage with their keys
+(`server:<id>`, `project:<id>`) and what was found in each; the triage
+says in `place` where the work belongs, `here` or one of those. Then:
+
+- **The triage names a place**: my request is taken there.
+- **It would ask me what something is** (it asks questions, or it
+  answers that it doesn't know or needs clarification) and one place
+  clearly leads (at least twice the next one's weight): taken there,
+  without asking.
+- **Several places are as likely** (within half of the first): The Eye
+  asks **"Which one is this about?"** with those places as options and
+  **Here, in <project>** last ([[ADR-037-Questions-With-Options]]). My
+  answer takes my request there, no model asked again; "here" has The
+  Eye read it here, nothing looked up again.
+- **Nothing found**: the triage's reply as it is; asking stays the
+  right thing.
+
+When the triage acts on my message here (an instruction, new work it
+understood), nothing is taken anywhere, so a name a project has only in
+common with another place never moves work out of it.
+
+**Taken where?** To a server: my request goes into the **server's chat**
+(through the server, as if I had written it there): to the job going on
+it, else read by the server's Eye (`serverTalk`), which starts a server
+job with its plan approval as usual; its reply says "You asked in
+piano's chat; I brought it here." To another project: into its
+conversation, read there as any message. Where I wrote it, The Eye says
+in a line where it found the name and that it took it there, with links
+to that chat and the job it started: "**misahaty** runs on
+spinet-staging (its state document; the job “Back up and remove
+misahaty compose project” was cancelled there). I've taken this to
+spinet-staging's chat, where it is the job “…”: it tells you what it
+will change on spinet-staging before anything does." A request is taken
+once: where it lands, nothing is looked up again.
+
+**"Another job", "again", "retry".** My message refers back to an
+earlier job of the conversation (it ended, failed, is blocked or paused)
+when it says "another job", "another try", "again", "retry", "redo",
+"once more": the earlier job is the newest of them that shares a name
+with my message, or, for "again"/"retry" alone, the newest. The new job
+(a follow-up in a project, a server job in a server's chat) gets in its
+goal "This is another try at an earlier job, “…” (cancelled: …)", that
+job's goal, what it learned (its Silk: facts, issues, decisions,
+progress) and The Eye's last report of it. "Start another job to add
+dark mode", sharing no name with an earlier job, is new work.
+
+### Cancelling from the chat (2026-10-07)
+
+The conversation has a **Cancel** control in its header, there whenever
+a job of the conversation hasn't ended (running, planning, waiting for a
+question or an approval, blocked, paused): "Cancel “<title>”? The work
+so far stays in its folder." With several going, a small menu picks
+which first. It is `jobs.cancel` (reason "Cancelled from the chat."):
+the job stops at a safe point; every question and approval it had open
+is withdrawn (Audit 1 → Q1-12), so the inbox holds none of them and the
+conversation shows them as no longer asked; The Eye's line in the
+conversation says it ("The job is stopped: Cancelled from the chat. The
+work so far stays in its folder."). The same in a server's chat, and in
+the terminal app's `/cancel` ([[Terminal-App]]).
+
 ### Thinking out loud (2026-10-04, M13.25)
 
 The conversation never sits silent while The Eye thinks or the agents
@@ -445,6 +540,12 @@ oraknid-monitor's last reading and what runs there:
   precise, the server already its server (nothing asked), the
   **server-work** method, no interview. The Eye says so in one line, and
   that it will say what changes before anything does.
+
+`serverTalk` is also given the server's recent jobs (how each ended and
+why) and what the names of my message match elsewhere in Oraknid
+(Resolving what it doesn't know, above); "again" or "start another job"
+after a job that was cancelled there carries that job's goal and what it
+learned into the new one.
 
 A server job is planned like any job, told that its place is the server
 (`ssh <alias> …`), with the state document; a small job is one task, a

@@ -97,7 +97,11 @@ Each with its one line of help (`/help`):
   stopped on Esc); on the current job, its sessions, a number showing
   that session's log, read again as it grows; else Oraknid's own log.
 - `/pause`, `/resume`, `/cancel`, `/redirect <instruction>`: the current
-  job.
+  job. `/cancel` with no job chosen (2026-10-07) cancels the job this
+  conversation is about (the project's, or the server's after `/chat`):
+  "Cancel “…”? The work so far stays in its folder", `y` cancels it,
+  anything else keeps it going; with several going, a list picks which
+  first. It asks y/N for a chosen job too.
 - `/inbox`: open items, approvals and questions; a number opens one, then
   a number picks its option or my words answer it; items asked with
   questions go through them one at a time.
