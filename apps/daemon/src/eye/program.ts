@@ -471,6 +471,12 @@ async function runTasks(d: EyeDeps, ctx: JobContext, where: Where, parallel = fa
     failure: null,
     cancelled: false,
   };
+  // "Stop the job" from one task stops the others where they are (ADR-056 stage 1, bug 1).
+  const stopAll = new AbortController();
+  const cancelled = async () => {
+    stopAll.abort(new Error("The job was stopped."));
+    await Promise.allSettled(running.values());
+  };
   try {
     for (;;) {
       if (ctx.signal.aborted && running.size === 0)
@@ -488,10 +494,7 @@ async function runTasks(d: EyeDeps, ctx: JobContext, where: Where, parallel = fa
       for (const t of all) if (!readyIds.has(t.id)) work.clear(job.id, t.id);
       if (ready.length === 0 && running.size > 0) {
         await Promise.race(running.values());
-        if (run.cancelled) {
-          await Promise.allSettled(running.values());
-          return;
-        }
+        if (run.cancelled) return await cancelled();
         continue;
       }
       if (ready.length === 0) {
@@ -509,7 +512,7 @@ async function runTasks(d: EyeDeps, ctx: JobContext, where: Where, parallel = fa
       const own = parallel && canRunSideBySide(all);
       let waiting = 0;
       for (const t of ready) {
-        if (run.failure || ctx.signal.aborted) break;
+        if (run.failure || run.cancelled || ctx.signal.aborted) break;
         const req = {
           jobId: job.id,
           jobTitle: job.title,
@@ -555,7 +558,7 @@ async function runTasks(d: EyeDeps, ctx: JobContext, where: Where, parallel = fa
           continue;
         }
         if (!own) inPlace = t.id;
-        const p = runTask(d, ctx, job, t, where, own)
+        const p = runTask(d, ctx, job, t, where, own, stopAll.signal)
           .then((r) => {
             if (r === "cancelled") run.cancelled = true;
           })
@@ -576,10 +579,7 @@ async function runTasks(d: EyeDeps, ctx: JobContext, where: Where, parallel = fa
       }
       // A task ending, room coming back, or a setting changing: look again.
       await Promise.race([...running.values(), ...(waiting ? [work.changed(2000)] : [])]);
-      if (run.cancelled) {
-        await Promise.allSettled(running.values());
-        return;
-      }
+      if (run.cancelled) return await cancelled();
     }
   } finally {
     work.forgetJob(ctx.jobId);
@@ -708,6 +708,8 @@ async function runTask(
   task: ReturnType<typeof taskRows>[number],
   where: Where,
   parallel: boolean,
+  /** Aborted when another task of the job stopped the job (bug 1). */
+  stopped: AbortSignal = new AbortController().signal,
 ): Promise<"cancelled" | undefined> {
   // The GitHub repo or the server the task needs, asked once and saved to the project (ADR-038).
   await ensureLinks(
@@ -864,7 +866,7 @@ async function runTask(
         task.id,
         taskWhere,
         attemptNo,
-        signal,
+        AbortSignal.any([signal, stopped]),
       );
       // Being blocked is not an attempt: fail the step so a resume tries again rather than replaying it.
       if (result.kind === "blocked") {
@@ -968,7 +970,8 @@ async function runTask(
     case "cancel-job":
       ctx.setState("cancelled", outcome.reason);
       settle();
-      return;
+      // Read by runTasks: the job's other tasks stop, and none starts (bug 1).
+      return "cancelled";
     case "leg-stopped":
       // Paused: it waits for its Leg; cancelled: it goes on without it (Jobs-and-Projects → Controls).
       setTask(d, job.id, task.id, "ready", outcome.reason);
