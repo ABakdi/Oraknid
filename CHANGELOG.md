@@ -3,6 +3,17 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.2.3 — 2026-10-07 (pre-release)
+
+Server jobs that did the work but ended asking "keeps going wrong… what should I do?".
+
+- **An approved plan covers its own removals.** When the safety rules block a removal your approved server plan names (a folder, a compose project, its volumes or containers), you get one specific question, e.g. "run `rm -rf /root/misahaty` on spinet-staging (in the plan you approved)?", and Allow runs it once. Anything the plan doesn't name stays blocked.
+- **Claude Code's blocks count:** they now reach the stuck rule, so "Let it run this one" works for Claude Code too.
+- **What the agent needs, asked as itself:** when an agent says it's blocked or needs you, The Eye asks you that specific thing (the command, why: Allow / I'll do it / Leave it out / Stop), not "keeps going wrong".
+- **Server checks in plain form:** `ssh <server> …` only; one written with Oraknid's private paths is put in plain form and runs on the server. A check that can't run (ssh can't read its config, host unreachable, key refused) is a broken check, repaired, never charged to the agent.
+- **Guard checks** ("Harvest still runs") must pass before the work; one that doesn't is rewritten from what the server shows.
+- **Agents may no longer make a check pass another way** (e.g. planting a file).
+
 ## 0.2.2 — 2026-10-07 (pre-release)
 
 - **Cancel from the chat:** a Cancel button in every Eye chat (projects and servers) for a job that hasn't ended, whether running, waiting on you, blocked or paused. One confirm, and its open questions close; with several jobs going, a menu picks which. `/cancel` in the terminal app does the same, with a y/N.

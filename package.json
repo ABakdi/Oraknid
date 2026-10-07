@@ -1,6 +1,6 @@
 {
   "name": "oraknid",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "description": "A local background orchestrator that runs coding agents and local models from goal to verified completion.",
   "license": "UNLICENSED",

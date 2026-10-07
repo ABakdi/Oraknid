@@ -1,6 +1,6 @@
 {
   "name": "@oraknid/site",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "type": "module",
   "description": "The product site served at the root of a Nest: what Oraknid is, how to install it, its guide.",
