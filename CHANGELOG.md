@@ -3,6 +3,15 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.2.2 — 2026-10-07 (pre-release)
+
+- **Cancel from the chat:** a Cancel button in every Eye chat (projects and servers) for a job that hasn't ended, whether running, waiting on you, blocked or paused. One confirm, and its open questions close; with several jobs going, a menu picks which. `/cancel` in the terminal app does the same, with a y/N.
+- **The Eye looks things up before asking:**
+  - **Names it doesn't know** (a compose project, a site, a service) are searched in server state documents, other chats, past jobs and Silk. Work that belongs to a server is taken to that server's chat, as a server job awaiting your approval of its plan, with a link; work for another project goes to that project.
+  - **It only asks when nothing matches;** when several places match, it offers them as choices.
+- **"Start another job" / "again"** carries the earlier job's goal, how it ended and what it learned.
+- **Each chat's recent jobs**, and on a server its state document, are part of what The Eye reads before it answers.
+
 ## 0.2.1 — 2026-10-07 (pre-release)
 
 Fixes. If your Oraknid stopped answering after updating to a dev build
