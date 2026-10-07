@@ -2596,8 +2596,13 @@ export async function runAttempt(
       }
       // The ladder (ADR-052 §3): the work isn't done after the agent ended its turn (its checks
       // fail, the review says it's wrong): one failure moves it up a rung at once, with a
-      // handoff, while a stronger model is allowed. A forbidden action is the drift ladder's.
-      if (!verified && !drifts.some((x) => x.code === "D7" || x.code === "D8")) {
+      // handoff, while a stronger model is allowed. Precedence (ADR-056 stage 1, bug 13):
+      // security and scope first — a forbidden action (D7), a refused gate tried again (D8),
+      // edits outside the task's scope (D1) are the drift ladder's, which puts the scope back
+      // before anyone works on; then the climb on a failed check; then the other drifts
+      // (D2–D6), whose ladder runs where there is no rung left to climb.
+      const first = drifts.some((x) => x.code === "D7" || x.code === "D8" || x.code === "D1");
+      if (!verified && !first) {
         const up = higherRung();
         if (up) {
           event("task.climbing", {

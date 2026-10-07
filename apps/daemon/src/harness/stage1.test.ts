@@ -626,3 +626,32 @@ describe("my own words to what the agent needs (bug 12)", () => {
     expect(rig.events(id, "task.drift").map((p) => p.code)).toEqual([]);
   }, 60_000);
 });
+
+describe("scope and security come before the climb (bug 13)", () => {
+  it("a failed check with edits outside the scope is corrected for the scope first, not climbed with them", async () => {
+    const leg = scriptedLeg((t) =>
+      t.session === 1 && t.turn === 1
+        ? [{ write: "package.json", content: '{"scripts":{}}\n' }, { say: "Working on it." }]
+        : [{ write: "parser.js", content: "x\n" }, { say: "DONE" }],
+    );
+    rig = await harness({
+      legs: [{ kind: "claude-code", name: "Claude A", leg }],
+      plan: {
+        summary: "A parser.",
+        tasks: [task("a", "Build the parser", ["test -f parser.js"], ["parser.js"])],
+        jobVerify: [],
+      },
+    });
+    const { id } = await rig.repoJob("A parser");
+    const done = await rig.ended(id);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+    expect(rig.events(id, "task.drift").map((p) => p.code)).toEqual(["D1"]);
+    expect(rig.events(id, "task.climbing")).toEqual([]);
+    // Put back in place, in the same session: what is outside its scope never reached a commit.
+    expect(leg.log.map((t) => [t.model, t.session, t.turn])).toEqual([
+      ["haiku", 1, 1],
+      ["haiku", 1, 2],
+    ]);
+    expect(leg.log[1]?.message).toMatch(/changed files outside its scope: package.json/);
+  }, 60_000);
+});
