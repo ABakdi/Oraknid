@@ -42,6 +42,38 @@ const outcomes = (h: Harness, jobId: string) =>
     .sort((a, b) => a.startedAt - b.startedAt)
     .map((a) => a.outcome);
 
+describe("going round in circles: nudged once, then the ladder (the stuck monitor)", () => {
+  it("an agent that only talks is nudged at its third turn, and corrected (D2) after three more", async () => {
+    // A check whose failure reads differently each time: the same failure (D3) never shows.
+    const check =
+      'test -f parser.js || { echo "error: $(tr -dc a-z </dev/urandom | head -c 8)"; exit 1; }';
+    const leg = scriptedLeg(
+      (t) =>
+        t.turn < 7
+          ? [{ say: "Working on it." }]
+          : [{ write: "parser.js", content: "x\n" }, { say: "DONE" }],
+      { models: ["opus"] },
+    );
+    rig = await harness({
+      legs: [{ kind: "claude-code", name: "Claude A", leg }],
+      plan: {
+        ...PLAN,
+        tasks: [{ ...(PLAN.tasks[0] as WebPlan["tasks"][number]), verify: [check] }],
+      },
+    });
+    const { id } = await rig.repoJob("A parser");
+    const done = await rig.ended(id);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+    expect(rig.events(id, "task.nudged")).toMatchObject([{ pattern: "talk" }]);
+    expect(leg.log[3]?.message).toMatch(
+      /3 turns in a row with words and no action[\s\S]*round in circles/,
+    );
+    expect(rig.events(id, "task.drift")).toMatchObject([{ code: "D2", step: "correct" }]);
+    expect(leg.log[6]?.message).toMatch(/You are repeating yourself/);
+    expect(leg.log).toHaveLength(7);
+  }, 60_000);
+});
+
 describe("security and scope aren't done when the checks pass (stage 1's gap)", () => {
   it("a forbidden command with passing checks is corrected in its session, then done (D7)", async () => {
     const leg = scriptedLeg((t) =>

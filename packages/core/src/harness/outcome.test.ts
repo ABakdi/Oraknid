@@ -284,7 +284,7 @@ describe("decideOutcome: the jobs of 2026-10-06/07", () => {
           i.verdict = passing;
           i.signals.push(sig("D8", "tried `nmap localhost` again after I refused it"));
         },
-        { kind: "Escalate", step: "kill", drift: { code: "D8" } },
+        { kind: "Escalate", step: "kill", drift: { code: "D8", evidence: expect.any(String) } },
       ],
       [
         "D7 after passing checks: corrected in its session, not done",
@@ -292,7 +292,7 @@ describe("decideOutcome: the jobs of 2026-10-06/07", () => {
           i.verdict = passing;
           i.signals.push(sig("D7", "tried `sudo ls` (never allowed)"));
         },
-        { kind: "Escalate", step: "correct", drift: { code: "D7" } },
+        { kind: "Escalate", step: "correct", drift: { code: "D7", evidence: expect.any(String) } },
       ],
     ];
   it.each(rows)("%s", (_, set, expected) => {
@@ -301,13 +301,42 @@ describe("decideOutcome: the jobs of 2026-10-06/07", () => {
     expect(decideOutcome(i)).toMatchObject(expected);
   });
 
-  it("the stuck monitor's and the turn budget's signals aren't drifts of the ladder", () => {
+  const talk: Signal = {
+    kind: "stuck",
+    code: "talk",
+    evidence: "ended 3 turns in a row with words",
+  };
+
+  it("going round in circles is nudged once, with the failure; the turn budget's signal is no drift", () => {
     const i = base();
-    i.signals.push(
-      { kind: "stuck", code: "talk", evidence: "ended 3 turns in a row with words" },
-      { kind: "budget", code: "turns", evidence: "took 3 turns" },
+    i.signals.push(talk, { kind: "budget", code: "turns", evidence: "took 3 turns" });
+    const o = decideOutcome(i);
+    expect(o).toMatchObject({ kind: "Continue", why: "self-prompt", nudge: talk });
+    expect(o.kind === "Continue" && o.feedback).toMatch(
+      /Fix it, then say DONE\.\n\nOraknid noticed: you ended 3 turns/,
     );
-    expect(decideOutcome(i)).toMatchObject({ kind: "Continue", why: "self-prompt" });
+  });
+
+  it("seen again after the nudge, it is a repetition on the ladder (D2), after any worse drift", () => {
+    const i = base();
+    i.history.nudged = true;
+    i.signals.push(talk);
+    expect(decideOutcome(i)).toMatchObject({
+      kind: "Escalate",
+      step: "correct",
+      drift: { code: "D2", evidence: talk.evidence },
+    });
+    i.signals.push(sig("D3"));
+    expect(decideOutcome(i)).toMatchObject({ kind: "Escalate", drift: { code: "D3" } });
+  });
+
+  it("a nudge never comes before the climb, nor before done", () => {
+    const i = base();
+    i.signals.push(talk);
+    i.rung.higher = higher;
+    expect(decideOutcome(i).kind).toBe("Climb");
+    i.verdict = passing;
+    expect(decideOutcome(i).kind).toBe("Done");
   });
 
   it("self-prompting rotates the session when its context is past its share", () => {

@@ -236,6 +236,12 @@ async function carryOn(
       if (o.feedback) await send(o.feedback);
       return "turn";
     case "self-prompt": {
+      // Going round in circles: nudged once; seen again after this, the ladder acts (D2).
+      if (o.nudge) {
+        x.st.nudged = true;
+        x.st.stuckFrom = lastLogged(x);
+        x.event("task.nudged", { pattern: o.nudge.code, evidence: o.nudge.evidence });
+      }
       if (o.feedback) await send(o.feedback);
       if (!o.rotate) return "turn";
       const u = x.st.usage;
@@ -276,6 +282,8 @@ async function ladderStep(x: AttemptCtx, drift: Drift, step: LadderStep | "ask",
   o.tokensSinceProgress = 0;
   o.lastActivityAt = d.now();
   st.signalled.clear();
+  st.nudged = false;
+  st.stuckFrom = lastLogged(x);
   // Edits outside the task's scope are put back whatever the step: left
   // there, the next attempt starts out of scope and trips D1 again.
   if (drift.code === "D1") {
@@ -328,6 +336,9 @@ async function escalate(x: AttemptCtx, o: Extract<Outcome, { kind: "Escalate" }>
       throw new EndAttempt({ kind: "retry", reason: `killed after ${drift.code}` }, o);
   }
 }
+
+/** The attempt log's last event: stuck patterns are read after it. */
+const lastLogged = (x: AttemptCtx) => x.log.attempt(x.attemptId, { limit: 1 })[0]?.id ?? 0;
 
 /** The model that didn't get it done isn't routed to for this task again (ADR-052 §3). */
 function avoidThisModel(x: AttemptCtx) {

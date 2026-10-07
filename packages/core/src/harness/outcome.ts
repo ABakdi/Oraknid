@@ -317,8 +317,12 @@ export function decideOutcome(i: OutcomeInput): Outcome {
   // limit of steps isn't its answer: it goes on in its session first.
   if (!cutShort && i.rung.higher) return { kind: "Climb", to: i.rung.higher, failure };
 
-  // 10. The other drifts (D2–D6), on the rung where it is.
-  const step = ladder(drifts, failure);
+  // 10. The other drifts (D2–D6), on the rung where it is; going round in circles after a
+  // nudge is a repetition (D2).
+  const stuck = i.signals.find((s) => s.kind === "stuck");
+  const circling =
+    stuck && i.history.nudged ? [{ code: "D2" as const, evidence: stuck.evidence }] : [];
+  const step = ladder([...drifts, ...circling], failure);
   if (step) return step;
 
   // 11. The turns spent.
@@ -330,16 +334,23 @@ export function decideOutcome(i: OutcomeInput): Outcome {
       ) ?? unreachable()
     );
 
-  // 12. Self-prompting: the exact failure goes back (The-Eye → Self-prompting).
+  // 12. Self-prompting: the exact failure goes back (The-Eye → Self-prompting); going round in
+  // circles, it is nudged once.
+  const feedback = cutShort
+    ? `Your turn reached its limit of steps before you finished.${i.verdict.failed ? ` Oraknid ran the checks and the task is not done yet:\n${failure}\n` : " "}Go on with the task, then say DONE.`
+    : `Oraknid ran the checks and the task is not done yet.\n${failure}\nFix it, then say DONE.`;
   return {
     kind: "Continue",
     why: "self-prompt",
-    feedback: cutShort
-      ? `Your turn reached its limit of steps before you finished.${i.verdict.failed ? ` Oraknid ran the checks and the task is not done yet:\n${failure}\n` : " "}Go on with the task, then say DONE.`
-      : `Oraknid ran the checks and the task is not done yet.\n${failure}\nFix it, then say DONE.`,
+    feedback: stuck ? `${feedback}\n\n${nudgeText(stuck)}` : feedback,
     rotate: shouldRotate(i.usage, i.policy.rotateAt),
+    ...(stuck ? { nudge: stuck } : {}),
   };
 }
+
+/** The nudge for a stuck pattern, said once before the ladder acts on it. */
+export const nudgeText = (s: Signal) =>
+  `Oraknid noticed: you ${s.evidence}. You seem to be going round in circles: stop, read the last result carefully, and try a different approach.`;
 
 function unreachable(): never {
   throw new Error("the ladder has a step for every drift");
