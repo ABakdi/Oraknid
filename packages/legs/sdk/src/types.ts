@@ -112,7 +112,10 @@ export interface SandboxPlan {
    * home on that Leg, where the Leg's login is linked (Audit 2, S2-08).
    */
   home: string;
-  /** A Claude config folder of the job's own, in place of the Leg's (S2-08). */
+  /**
+   * The agent's config folder of the job's own, in place of the Leg's (S2-08):
+   * Claude Code's CLAUDE_CONFIG_DIR, Codex's CODEX_HOME (ADR-057).
+   */
   configDir?: string;
   writable: string[];
   readonly: string[];

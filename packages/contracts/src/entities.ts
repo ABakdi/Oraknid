@@ -255,6 +255,7 @@ export const LegKind = z.enum([
   "opencode",
   "antigravity",
   "oraknid-agent",
+  "codex",
 ]);
 export type LegKind = z.infer<typeof LegKind>;
 

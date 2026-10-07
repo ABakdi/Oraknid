@@ -99,11 +99,23 @@ export class LegRegistry {
       );
     if (typeof config.configDir === "string")
       mkdirSync(config.configDir, { recursive: true, mode: 0o700 });
+    if (input.kind === "codex") {
+      // A CODEX_HOME of its own (ADR-057): its login, sessions and settings, never mine.
+      if (!config.codexHome) config.codexHome = join(this.legsDir, id, "codex-home");
+      if (sharesMyCodex(String(config.codexHome)))
+        throw new Error(
+          "A Leg can't use your own ~/.codex: its jobs would run with your settings and could change them. Leave the folder empty and log the Leg in from its card.",
+        );
+      mkdirSync(String(config.codexHome), { recursive: true, mode: 0o700 });
+      // An API key instead of a ChatGPT sign-in: the key in the keychain, the Leg told so.
+      if (input.secret) config.auth = "api-key";
+    }
     let secretRef: string | null = null;
     if (
       (input.kind === "openai-compatible" ||
         input.kind === "opencode" ||
-        input.kind === "oraknid-agent") &&
+        input.kind === "oraknid-agent" ||
+        input.kind === "codex") &&
       input.secret
     ) {
       secretRef = secretName(id);
@@ -609,7 +621,9 @@ export class LegRegistry {
       setupHint:
         kind === "claude-code" && leg.health === "unavailable"
           ? "Log this account in: press Log in on its card and sign in on Claude's own page. Oraknid never sees the password."
-          : null,
+          : kind === "codex" && leg.health === "unavailable" && config.auth !== "api-key"
+            ? "Log this account in: press Log in on its card, open OpenAI's page and enter the code it shows. Oraknid never sees the password."
+            : null,
     };
   }
 
@@ -639,6 +653,15 @@ function isRemote(kind: LegKind, config: Record<string, unknown>): boolean {
   }
   if (kind !== "openai-compatible" && kind !== "opencode") return true;
   return !LOCAL_URL.test(String(config.baseUrl ?? config.baseURL));
+}
+
+/** Is this folder my own Codex's (~/.codex, or $CODEX_HOME), or inside or above it? */
+export function sharesMyCodex(dir: string, home = homedir()): boolean {
+  const d = resolve(dir.replace(/^~(?=$|\/)/, home));
+  return [
+    resolve(home, ".codex"),
+    ...(process.env.CODEX_HOME ? [resolve(process.env.CODEX_HOME)] : []),
+  ].some((mine) => d === mine || d.startsWith(`${mine}/`) || mine.startsWith(`${d}/`));
 }
 
 /** Is this folder my own Claude Code's config, or inside or above it? */

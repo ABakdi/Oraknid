@@ -2399,10 +2399,15 @@ export const router = {
     discover: base
       .output(z.array(FoundAgent))
       .handler(({ context: c }) => guard(() => discoverAgents(c.registry.all()))),
-    /** Starts the official sign-in for a Claude Code Leg; the UI shows the link. */
+    /**
+     * Starts the official sign-in for a Claude Code, Antigravity or Codex Leg;
+     * the UI shows the link, and for Codex the one-time code to enter there.
+     */
     loginStart: base
       .input(z.object({ id: z.string() }))
-      .output(z.object({ url: z.string() }))
+      .output(
+        z.object({ url: z.string(), userCode: z.string().optional(), note: z.string().optional() }),
+      )
       .handler(({ context: c, input }) =>
         guard(() => c.logins.start(c.registry.require(input.id))),
       ),

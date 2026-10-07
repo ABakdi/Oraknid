@@ -53,6 +53,9 @@ importers:
       '@oraknid/leg-claude-code':
         specifier: workspace:^
         version: link:../../packages/legs/claude-code
+      '@oraknid/leg-codex':
+        specifier: workspace:^
+        version: link:../../packages/legs/codex
       '@oraknid/leg-openai-compatible':
         specifier: workspace:^
         version: link:../../packages/legs/openai-compatible
@@ -432,6 +435,22 @@ importers:
       '@anthropic-ai/claude-agent-sdk':
         specifier: 0.3.286
         version: 0.3.286(@anthropic-ai/sdk@0.131.0(zod@4.6.5))(@modelcontextprotocol/sdk@1.31.0(zod@4.6.5))(zod@4.6.5)
+      '@oraknid/contracts':
+        specifier: workspace:^
+        version: link:../../contracts
+      '@oraknid/leg-sdk':
+        specifier: workspace:^
+        version: link:../sdk
+      '@oraknid/os':
+        specifier: workspace:^
+        version: link:../../os
+    devDependencies:
+      vitest:
+        specifier: 5.0.3
+        version: 5.0.3(@types/node@22.20.4)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))
+
+  packages/legs/codex:
+    dependencies:
       '@oraknid/contracts':
         specifier: workspace:^
         version: link:../../contracts

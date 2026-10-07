@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { FAKE_CODEX } from "@oraknid/leg-codex/fake";
 import { afterEach, describe, expect, it } from "vitest";
 import { LegLogins } from "./login.ts";
 import type { LegRow } from "./registry.ts";
@@ -77,5 +78,58 @@ describe("signing Antigravity in again", { timeout: 60_000 }, () => {
     l.cancel(leg.id);
     expect(readFileSync(token, "utf8")).toBe("old");
     expect(existsSync(`${token}.before-sign-in`)).toBe(false);
+  });
+});
+
+// Signing a Codex Leg in (ADR-057), against the stand-in codex: a link and a
+// one-time code, finished on OpenAI's side, the login in the Leg's own CODEX_HOME.
+describe("signing Codex in", { timeout: 60_000 }, () => {
+  const codexSetup = (mode: string) => {
+    const dir = mkdtempSync(join(tmpdir(), "oraknid-login-codex-"));
+    const legs = join(dir, "legs");
+    const codexHome = join(legs, "C1", "codex-home");
+    mkdirSync(codexHome, { recursive: true });
+    writeFileSync(join(codexHome, ".fake-codex-mode"), mode);
+    const leg = { id: "C1", kind: "codex", config: { binary: FAKE_CODEX } } as unknown as LegRow;
+    const l = new LegLogins(legs, null, 2_000);
+    logins.push(l);
+    return { l, leg, codexHome };
+  };
+
+  it("shows the link and the code, and is signed in once the code was entered there", async () => {
+    const { l, leg, codexHome } = codexSetup("reply");
+    expect(l.status(leg)).toEqual({ loggedIn: false, detail: "Not logged in." });
+    const started = await l.start(leg);
+    expect(started).toEqual({
+      url: "https://auth.openai.com/codex/device",
+      userCode: "ABCD-12345",
+    });
+    // Not entered yet: it keeps waiting, and says so.
+    const early = await l.finish(leg, "done");
+    expect(early.ok).toBe(false);
+    expect(early.detail).toContain("still waiting");
+    writeFileSync(join(codexHome, ".fake-approved"), "");
+    const r = await l.finish(leg, "done");
+    expect(r).toEqual({ ok: true, detail: "Logged in using ChatGPT." });
+    // The login is the Leg's, in a file, never my ~/.codex.
+    expect(existsSync(join(codexHome, "auth.json"))).toBe(true);
+    expect(readFileSync(join(codexHome, "config.toml"), "utf8")).toContain(
+      'cli_auth_credentials_store = "file"',
+    );
+  });
+
+  it("falls back to the browser sign-in where device codes are off", async () => {
+    const { l, leg } = codexSetup("no-device");
+    const started = await l.start(leg);
+    expect(started.url).toContain("https://auth.openai.com/oauth/authorize");
+    expect(started.userCode).toBeUndefined();
+    expect(started.note).toContain("localhost:1455");
+  });
+
+  it("has nothing to log in with an API key", async () => {
+    const { l, leg } = codexSetup("reply");
+    await expect(
+      l.start({ ...leg, config: { ...leg.config, auth: "api-key" } } as LegRow),
+    ).rejects.toThrow(/API key/);
   });
 });
