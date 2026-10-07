@@ -54,6 +54,8 @@ export interface StartRequest {
   onPreToolUse?: (request: PermissionRequest) => Promise<PreToolDecision>;
   /** The task's checks before the agent may end its turn (ADR-052 §2): a reason keeps it working. */
   onStop?: (lastMessage: string) => Promise<string | null>;
+  /** The task's check commands, for adapters that name them or run them themselves (ADR-052 §2). */
+  checks?: string[];
   /** The job's tools through the broker (ADR-021): servers, and what the sandbox must reach. */
   tools?: { servers: Record<string, McpServer>; writable: string[]; readonly: string[] };
   /** Folders it may read and never write (ADR-025: a chat's projects). */
@@ -191,6 +193,7 @@ export class LegSupervisor {
         ...(req.permissionMode ? { permissionMode: req.permissionMode } : {}),
         ...(req.onPreToolUse ? { onPreToolUse: req.onPreToolUse } : {}),
         ...(req.onStop ? { onStop: req.onStop } : {}),
+        ...(req.checks?.length ? { checks: req.checks } : {}),
         ...(req.tools ? { mcpServers: req.tools.servers } : {}),
       });
     } catch (error) {

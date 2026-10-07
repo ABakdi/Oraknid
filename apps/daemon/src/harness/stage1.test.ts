@@ -154,3 +154,21 @@ describe("a task merged beside others is checked again with its own runners (bug
     );
   }, 60_000);
 });
+
+describe("the task's checks reach the session (bug 3)", () => {
+  it("gives the agent's session its task's checks, for an agent that runs them itself", async () => {
+    const leg = scriptedLeg(() => [{ write: "parser.js", content: "x\n" }, { say: "DONE" }]);
+    rig = await harness({
+      legs: [{ kind: "claude-code", name: "Claude A", leg }],
+      plan: {
+        summary: "A parser.",
+        tasks: [task("a", "Build the parser", ["test -f parser.js"], ["parser.js"])],
+        jobVerify: [],
+      },
+    });
+    const { id } = await rig.repoJob("A parser");
+    const done = await rig.ended(id);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+    expect(leg.log[0]?.checks).toEqual(["test -f parser.js"]);
+  }, 60_000);
+});

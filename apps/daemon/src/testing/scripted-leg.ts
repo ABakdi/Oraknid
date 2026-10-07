@@ -43,6 +43,8 @@ export interface TurnContext {
   home: string | null;
   /** The native session this one continues, when Oraknid resumed one (ADR-052 §1). */
   resumeFrom: string | null;
+  /** The task's checks the session was given to run itself (ADR-052 §2), if any. */
+  checks: string[] | null;
 }
 
 /**
@@ -123,6 +125,7 @@ export function scriptedLeg(
           session,
           home: s.sandbox?.home ?? null,
           resumeFrom: s.resumeFrom,
+          checks: s.checks ?? null,
         };
         log.push(ctx);
         let text = "";

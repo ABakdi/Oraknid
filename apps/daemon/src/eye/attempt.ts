@@ -1587,7 +1587,7 @@ export async function runAttempt(
         onPermission,
         onStop,
         // Named in the session's prompt by adapters that list them; Oraknid runs them (onStop).
-        ...(task.verify.length ? { checks: task.verify } : {}),
+        checks: task.verify,
         // Careful keeps every prompt Oraknid's; auto and full let Claude Code's own auto mode
         // judge, with Oraknid's rules before every tool (ADR-053). Other Legs ignore it.
         permissionMode: job.autonomy === "careful" ? "ask" : "auto",
