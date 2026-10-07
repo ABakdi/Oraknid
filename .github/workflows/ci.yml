@@ -1,0 +1,53 @@
+# Oraknid's own CI (ADR-001, ADR-058): every push and pull request to dev
+# and main installs from the lockfile, then lints, typechecks and tests.
+# ORAKNID_CI=1 skips the tests that need what a runner hasn't: Docker's
+# databases and MinIO, a logind that grants inhibitor locks, a user's
+# systemd. Sandbox (bubblewrap), keychain, rclone and live-model tests
+# already skip themselves when their probe finds nothing.
+
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ORAKNID_CI: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm 9, the version package.json's packageManager names.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Biome
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Tests
+        run: pnpm test
+
+      - name: The OpenAPI document is the router's
+        run: pnpm --filter @oraknid/daemon openapi --check

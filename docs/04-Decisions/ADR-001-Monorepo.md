@@ -47,7 +47,15 @@ upstream code and are left out of linting.
 - Contracts and rules are imported, never copied, so programs can't disagree.
 - Adding a Leg kind means adding a `packages/legs/<kind>` package.
 - A single version number in the root, read by every program.
-- One CI pipeline.
+- One CI pipeline. *Built 2026-10-07* ([[ADR-058-CI-In-Oraknid]]):
+  `.github/workflows/ci.yml` on every push and pull request to `dev`
+  and `main` (Node 22, pnpm 9 with its store cached): `pnpm install
+  --frozen-lockfile`, Biome, typecheck, tests with `ORAKNID_CI=1` (Docker's
+  databases and MinIO, a logind inhibitor lock and a user's systemd
+  skipped; sandbox, keychain, rclone and live-model tests skip on their
+  own probe), and the OpenAPI document checked against the router. The
+  startup perf test stays in `pnpm check` on this machine, not on a shared
+  runner whose speed varies.
 
 ## Why not a canon repo with separate code repos
 Nothing needs separate deploys or owners. Separate repos would bring

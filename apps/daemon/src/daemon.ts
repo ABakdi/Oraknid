@@ -99,8 +99,10 @@ import { ToolRegistry } from "./tools/registry.ts";
 import { findAppDir, readInstall } from "./updates/install.ts";
 import { Updates, type UpdatesOptions } from "./updates/service.ts";
 import { VERSION } from "./version.ts";
+import { startCiWatch } from "./workspace/ci-watch.ts";
 import { setShadowRoot } from "./workspace/git.ts";
 import { GitHub } from "./workspace/github.ts";
+import { ciOf } from "./workspace/github-ci.ts";
 import { Repos } from "./workspace/github-repos.ts";
 import { githubServer, githubTool } from "./workspace/github-tool.ts";
 import { Projects } from "./workspace/projects.ts";
@@ -136,6 +138,8 @@ export interface DaemonOptions {
   rclone?: () => string | null;
   /** GitHub's addresses, for tests against a stand-in. */
   github?: { api?: string; web?: string };
+  /** The CI watcher's timings (ADR-058; tests), or false: none. */
+  ciWatch?: { intervalMs?: number; firstMs?: number; now?: () => number } | false;
   /** What runs a job: The Eye, unless a test replaces it. */
   program?: JobProgram;
   /** The Eye's reasoning (tests replace it). */
@@ -285,6 +289,12 @@ export async function startDaemon(options: DaemonOptions) {
   const github = new GitHub(secrets, db, options.github ?? {});
   // My repositories, read through its API (ADR-040).
   const repos = new Repos(github, projectsService);
+  // Their GitHub Actions (ADR-058); a failing run on a release or work branch is told.
+  const ci = ciOf(github);
+  const ciWatch =
+    options.ciWatch === false
+      ? null
+      : startCiWatch({ db, bus, ci, projects: projectsService, ...options.ciWatch });
   // Oraknid's own github tool: a project's GitHub work with its linked account (ADR-038).
   const githubToolDecl = githubTool(db);
   try {
@@ -919,6 +929,21 @@ export async function startDaemon(options: DaemonOptions) {
 
   // Files in and out of the pool, and one-time downloads (ADR-046): before the procedures.
   attachCloudRoutes(app, cloud, downloads);
+  // The API described (ADR-010, ADR-058): paired devices only, like every /api call.
+  app.get("/api/openapi.json", (_req, res) => {
+    // Loaded when first asked for: the generator costs nothing at start.
+    import("./api/openapi.ts")
+      .then((m) => m.openApiDocument())
+      .then(
+        (doc) => res.json(doc),
+        (error) => {
+          console.error("openapi document failed", error);
+          res
+            .status(500)
+            .json({ message: "The API's description couldn't be made: see oraknid logs." });
+        },
+      );
+  });
   // A zip of jobs or a project, and a whole Oraknid's archive, imported (ADR-061).
   attachMovingRoutes(app, { db, bus, paths, secrets, known: () => secrets.known() });
   if (imported)
@@ -970,6 +995,7 @@ export async function startDaemon(options: DaemonOptions) {
     chats,
     github,
     repos,
+    ci,
     helper,
     servers: serverService,
     backups: backupPlans,
@@ -1136,6 +1162,7 @@ export async function startDaemon(options: DaemonOptions) {
       updates.stop();
       budgets.stop();
       naming.stop();
+      ciWatch?.stop();
       // Jobs reach a safe point and keep their state for the next start, within systemd's stop timeout.
       await Promise.race([
         runner.shutdown(),
@@ -1207,6 +1234,7 @@ export async function startDaemon(options: DaemonOptions) {
     recovery,
     naming,
     thinking,
+    ciWatch,
     close,
   };
 }

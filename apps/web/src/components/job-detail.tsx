@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Link } from "wouter";
 import { ActivityFeed } from "@/components/activity-feed";
 import { Agents } from "@/components/agents";
+import { JobCiBadge } from "@/components/ci-badge";
 import { Empty, ErrorNote, Loading, StateBadge } from "@/components/common";
 import { useConfirm } from "@/components/confirm";
 import { JobBudget, JobStats } from "@/components/job-budget";
@@ -123,6 +124,8 @@ export function JobDetail({ id, sub }: { id: string; sub?: string }) {
                   {j.branch}
                 </code>
               ) : null}
+              {/* Its pull request's CI, or its pushed branch's (ADR-058). */}
+              <JobCiBadge jobId={j.id} projectId={j.projectId} />
               <TasksAtOnce tasks={j.tasks} />
               <span>{tokens(j.tokens)} tokens</span>
               {j.startedAt ? <span>{t("started {when}", { when: ago(j.startedAt) })}</span> : null}

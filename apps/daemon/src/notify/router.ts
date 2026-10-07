@@ -248,6 +248,32 @@ export function startNotificationRouter(o: {
           itemId: null,
         };
       }
+      case "ci.failed": {
+        // A run on a linked repo's release or work branch failed (ADR-058), told once.
+        const c = payload as {
+          projectId?: string;
+          projectName?: string;
+          fullName?: string;
+          branch?: string;
+          name?: string;
+          failing?: string | null;
+          runId?: number;
+        };
+        return {
+          p: {
+            event: "ci.failed",
+            jobId: null,
+            n: {
+              title: `CI failed: ${c.projectName ?? c.fullName ?? "a project"} · ${c.branch ?? ""}`,
+              body: `${c.name ?? "A workflow"} failed on ${c.fullName ?? "the repo"}${c.failing ? `: ${c.failing}` : ""}.`,
+              url: url(c.projectId ? `/projects/${c.projectId}/ci` : "/repos"),
+              urgency: "normal",
+              tag: `ci-${c.fullName ?? ""}-${c.branch ?? ""}`,
+            },
+          },
+          itemId: null,
+        };
+      }
       case "job.auto-resumed": {
         // Paused for quota, resumed by itself at the reset (Budgets-and-Quotas → When everything runs out).
         const job = e.jobId

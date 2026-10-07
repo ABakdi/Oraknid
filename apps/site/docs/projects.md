@@ -35,6 +35,8 @@ In a project of several repos, each repo has its own link, set on its section of
 
 **Repos** (`g r`) shows your repositories from every account: browse their code at any branch, read the commit history with each change, branches and pull requests, and link one to a project or start new work on it.
 
+A project's **CI** tab shows its linked repos' GitHub Actions: see [CI](repos.html#ci-github-actions).
+
 ## Network
 
 Agents reach the internet, but none of the services running on your computer. If a project needs one (a local Postgres on 5432, say), list its port in the project's **Network** tab. A Leg that uses a local model can always reach that model.

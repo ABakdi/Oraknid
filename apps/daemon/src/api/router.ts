@@ -231,6 +231,7 @@ import type { Asker, Updates } from "../updates/service.ts";
 import { VERSION } from "../version.ts";
 import { listFolders, makeFolder } from "../workspace/folders.ts";
 import { type GitHub, GitHubError } from "../workspace/github.ts";
+import type { Ci } from "../workspace/github-ci.ts";
 import type { Repos } from "../workspace/github-repos.ts";
 import { NotAGitRepo, type Projects } from "../workspace/projects.ts";
 import { ProjectRemoval } from "../workspace/removal.ts";
@@ -238,6 +239,7 @@ import { jobResult, mergeJob, taskDiff } from "../workspace/result.ts";
 import { projectFrom } from "../workspace/sources.ts";
 import { cleanFinishedWorktrees, jobWorktrees, removeJobWorktree } from "../workspace/worktrees.ts";
 import { backupsRouter } from "./backups.ts";
+import { ciRouter } from "./ci.ts";
 import { cloudRouter, notAway } from "./cloud.ts";
 import { modelsRouter } from "./models.ts";
 import { projectSecretsRouter } from "./secrets.ts";
@@ -307,6 +309,8 @@ export interface ApiContext {
   github: GitHub;
   /** My repositories, read through GitHub's API (ADR-040). */
   repos: Repos;
+  /** Their GitHub Actions (ADR-058). */
+  ci: Ci;
   /** The Oraknid helper (ADR-024). */
   helper: Helper;
   /** My servers (ADR-026). */
@@ -1336,6 +1340,8 @@ export const router = {
   /** Cloud storage: providers and the pool (ADR-046). */
   cloud: cloudRouter,
   models: modelsRouter,
+  /** GitHub Actions: runs, jobs, logs, artifacts, re-runs, workflows by hand (ADR-058). */
+  ci: ciRouter,
   /** A project's secrets per environment (ADR-059). */
   projectSecrets: projectSecretsRouter,
   /** A text of mine rephrased by a quick model, for any textarea (Chats-and-Helper → Fix wording). */

@@ -45,4 +45,32 @@ what is in it, and a command that installs exactly that.
 - v0.3.0 (2026-10-08): Codex as a Leg, the harness's Gate (ADR-056 stage 2), the canon brought up to date.
 - v0.3.1 (2026-10-08): the harness's Verifier and attempt log (ADR-056 stage 3), and the first published release of 0.3.0's work (v0.3.0's install check failed on the build machine's full disk, so it was tagged, not published).
 
-Related: [[ADR-036-One-Script-Install]] · [[ADR-048-Updates]]
+## Changed (2026-10-07): a release by script ([[ADR-058-CI-In-Oraknid]])
+The steps above were typed by hand; they are a script now.
+- `node scripts/release.mjs X.Y.Z [--title "<words>"] [--dry-run]`, on a
+  clean `dev`, after a full `pnpm check`: refuses without `## X.Y.Z` in
+  `CHANGELOG.md`, with changes in the tree, off `dev`, or with the tag
+  there already; sets every `package.json`'s version (a dependency's is
+  left alone), regenerates the OpenAPI document (its version), commits
+  `release: vX.Y.Z[, <title>]`, tags `vX.Y.Z` (annotated, the section as
+  its message) and writes `dist/release/vX.Y.Z/`: `install.sh` with
+  `REF="vX.Y.Z"`, `SHA256SUMS`, `notes.md`. `--dry-run` says each step
+  and changes nothing.
+- `--publish` then pushes `dev` and the tag, creates the GitHub release
+  (a pre-release before 1.0) with the CHANGELOG section as its notes,
+  uploads `install.sh` and `SHA256SUMS`, and fast-forwards `main` to the
+  tag (refused, never forced, when `main` isn't behind it). The token is
+  git's own (`git credential fill` for github.com): sent to GitHub's API
+  in a header, never printed, never an argument.
+- `.github/workflows/release.yml`, on a pushed `v*` tag, builds the same
+  assets (`--assets-only`) and attaches them to the tag's release,
+  creating it from the CHANGELOG section when there is none, so a tag
+  pushed by hand gets them too.
+- Still by hand: the install check of the pinned script in a plain
+  container before publishing.
+- Tested in a repository of its own (`apps/daemon/src/release-script.test.ts`):
+  a dry run, the refusals, the bump, commit, tag and assets, and a
+  publish against a stand-in GitHub and a local bare origin, the token
+  never in the output.
+
+Related: [[ADR-036-One-Script-Install]] · [[ADR-048-Updates]] · [[ADR-058-CI-In-Oraknid]]

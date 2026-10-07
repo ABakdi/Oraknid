@@ -53,12 +53,12 @@ describe("slash commands", () => {
       completions("/c", { job: false, server: true })
         .slice(0, 3)
         .map((c) => c.name),
-    ).toEqual(["chat", "chats", "cancel"]);
+    ).toEqual(["chat", "ci", "chats"]);
     expect(
       completions("/c", { job: true, server: false })
         .slice(0, 3)
         .map((c) => c.name),
-    ).toEqual(["cancel", "chats", "chat"]);
+    ).toEqual(["cancel", "ci", "chats"]);
     expect(completions("/logs", ctx).map((c) => c.name)).toEqual(["logs"]);
     expect(completions("/oc", ctx).map((c) => c.name)).toEqual(["doctor", "docker"]);
     expect(completions("/job 1", ctx)).toEqual([]);

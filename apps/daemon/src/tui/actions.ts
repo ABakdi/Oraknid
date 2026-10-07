@@ -9,6 +9,7 @@ import type {
 } from "@oraknid/contracts";
 import type { RouterClient } from "@orpc/server";
 import type { Router } from "../api/router.ts";
+import { ciCommand } from "./ci.ts";
 import { COMMANDS, findCommand, helpLines } from "./commands.ts";
 import type { LiveFeed } from "./live.ts";
 import { ansi, renderMarkdown } from "./markdown.ts";
@@ -1269,6 +1270,7 @@ export function makeActions(c: Ctx) {
     health,
     mail,
     repos,
+    ci: ciCommand(c, needProject),
     storage,
     chats,
     skills,

@@ -12,6 +12,7 @@
       "!**/node_modules",
       "!**/drizzle/meta",
       "!docs/.obsidian",
+      "!docs/02-Architecture/openapi.json",
       "!.claude"
     ]
   },

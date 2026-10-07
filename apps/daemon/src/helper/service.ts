@@ -44,6 +44,7 @@ import type { Projects } from "../workspace/projects.ts";
 import { projectFrom } from "../workspace/sources.ts";
 import { API_ACTIONS, SETTINGS } from "./api-actions.ts";
 import { BACKUP_ACTIONS } from "./backups-actions.ts";
+import { CI_ACTIONS } from "./ci-actions.ts";
 import { CLOUD_ACTIONS } from "./cloud-actions.ts";
 import { SITE_ACTIONS } from "./sites-actions.ts";
 
@@ -660,6 +661,7 @@ const ACTIONS: Record<string, ActionDef> = {
   ...API_ACTIONS,
   ...BACKUP_ACTIONS,
   ...CLOUD_ACTIONS,
+  ...CI_ACTIONS,
   ...SITE_ACTIONS,
 };
 
