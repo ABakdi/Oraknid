@@ -41,6 +41,7 @@ import type { GitHub } from "../workspace/github.ts";
 import type { Projects } from "../workspace/projects.ts";
 import { projectFrom } from "../workspace/sources.ts";
 import { BACKUP_ACTIONS } from "./backups-actions.ts";
+import { CI_ACTIONS } from "./ci-actions.ts";
 import { CLOUD_ACTIONS } from "./cloud-actions.ts";
 
 // The Oraknid helper (ADR-024): I say what I want in words; one reasoning
@@ -630,6 +631,7 @@ const ACTIONS: Record<string, ActionDef> = {
   },
   ...BACKUP_ACTIONS,
   ...CLOUD_ACTIONS,
+  ...CI_ACTIONS,
 };
 
 for (const name of HELPER_CLIENT_ACTIONS)

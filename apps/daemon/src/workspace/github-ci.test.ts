@@ -10,10 +10,16 @@ import type { Router } from "../api/router.ts";
 import { type Daemon, startDaemon } from "../daemon.ts";
 import { jobs } from "../db/schema.ts";
 import { runBuiltinCheck } from "../eye/builtin-checks.ts";
+import { CI_ACTIONS } from "../helper/ci-actions.ts";
+import type { HelperDeps } from "../helper/service.ts";
 import { resolvePaths } from "../paths.ts";
 import { type FakeGitHub, startFakeGitHub } from "../testing/fake-github.ts";
 import { fakeOs } from "../testing/fake-os.ts";
 import { seedJob } from "../testing/fixtures.ts";
+import type { Ctx } from "../tui/actions.ts";
+import { ciCommand } from "../tui/ci.ts";
+import { plain } from "../tui/markdown.ts";
+import type { Panel } from "../tui/panels.ts";
 import { startCiWatch } from "./ci-watch.ts";
 import { GitHub } from "./github.ts";
 import { Ci, cutLog, dispatchInputs } from "./github-ci.ts";
@@ -371,6 +377,51 @@ describe("the github tool's CI (ADR-058)", () => {
       "Run 102 on me/piano runs again (its failed jobs).",
     );
     expect(gh.ci.changes).toEqual(["rerun-failed-jobs 102"]);
+  });
+});
+
+describe("the helper's CI actions (ADR-058)", () => {
+  it("lists runs and reads a failing log freely, and asks before a re-run", async () => {
+    const { d, gh } = await harness();
+    const github = new GitHub(d.secrets, d.db, { api: gh.api });
+    const deps = { github, projects: d.projects, bus: d.bus } as unknown as HelperDeps;
+    const list = await CI_ACTIONS.list_ci_runs?.run(deps, { project: "piano" } as never);
+    expect(list?.result).toBe("2 runs of me/piano.");
+    expect(list?.data).toMatch(/run 102: CI "A change on dev" on dev at [0-9a-f]{7} \(push\)/);
+    const log = await CI_ACTIONS.ci_failing_log?.run(deps, { repo: "me/piano" } as never);
+    expect(log?.result).toBe("CI run 102: test failed at Run tests.");
+    expect(log?.data).toContain("AssertionError: expected 100 to be 120");
+    const rerun = CI_ACTIONS.rerun_ci;
+    expect(rerun?.kind).toBeUndefined();
+    expect(rerun?.confirm(rerun.input.parse({ project: "piano", runId: 102 }) as never)).toBe(true);
+    expect(CI_ACTIONS.list_ci_runs?.confirm({} as never)).toBe(false);
+    await rerun?.run(deps, rerun.input.parse({ project: "piano", runId: 102 }) as never);
+    expect(gh.ci.changes).toEqual(["rerun-failed-jobs 102"]);
+  });
+});
+
+describe("/ci in the terminal app (ADR-058)", () => {
+  it("lists the project's runs, and a run's jobs with the failing step's last lines", async () => {
+    const { api, projectId } = await harness();
+    const project = await api.projects.get({ id: projectId });
+    const panels: Panel[] = [];
+    const ctx = {
+      api,
+      push: (p: Panel) => panels.push(p),
+      flash: (t: string) => panels.push({ key: "flash", title: t }),
+      now: () => Date.UTC(2026, 9, 2, 13),
+    } as unknown as Ctx;
+    await ciCommand(ctx, () => project)();
+    const list = panels[0];
+    expect(list?.items?.map((i) => plain(i.label))).toEqual([
+      expect.stringMatching(/^✗ failed {2}CI dev [0-9a-f]{7}$/),
+      expect.stringMatching(/^✓ passed {2}CI main [0-9a-f]{7}$/),
+    ]);
+    await list?.onPick?.(0);
+    const run = (panels[1]?.lines ?? []).map(plain);
+    expect(run).toContain("    ✗ failed  Run tests");
+    expect(run).toContain("The last lines of test → Run tests:");
+    expect(run.at(-1)).toBe("##[error]Process completed with exit code 1.");
   });
 });
 
