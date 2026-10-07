@@ -11,6 +11,7 @@ import { readSetting, writeSetting } from "../settings.ts";
 import { isMerged } from "../workspace/git.ts";
 import type { GitHub } from "../workspace/github.ts";
 import { githubCall } from "../workspace/github-tool.ts";
+import { hostFor } from "../workspace/hosts/registry.ts";
 import { type Projects, viewOf } from "../workspace/projects.ts";
 import { isSeveral } from "../workspace/repos.ts";
 import { mergeJob } from "../workspace/result.ts";
@@ -158,7 +159,9 @@ export async function endSteps(
           done.pushed.push({
             repo: `${link.owner}/${link.name}`,
             branch,
-            url: `https://github.com/${link.owner}/${link.name}/tree/${branch}`,
+            url:
+              hostFor(github, link)?.branchUrl(`${link.owner}/${link.name}`, branch) ??
+              `https://github.com/${link.owner}/${link.name}/tree/${branch}`,
           });
         } catch (error) {
           done.problems.push(

@@ -44,6 +44,8 @@ export const ProjectSource = z.discriminatedUnion("kind", [
   /** A new repo on my GitHub account, then cloned. */
   z.object({
     kind: z.literal("github-new"),
+    /** Another git host than GitHub (ADR-062), by its id. */
+    host: z.string().optional(),
     /** Which of my GitHub accounts (the first when left out). */
     account: z.string().optional(),
     parent: z.string().min(1),
@@ -54,10 +56,13 @@ export const ProjectSource = z.discriminatedUnion("kind", [
   /** One of my GitHub repos, cloned. */
   z.object({
     kind: z.literal("github-clone"),
+    /** Another git host than GitHub (ADR-062), by its id. */
+    host: z.string().optional(),
     /** Which of my GitHub accounts (the first when left out). */
     account: z.string().optional(),
     parent: z.string().min(1),
-    fullName: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
+    /** owner/name; on GitLab the owner may be a group with subgroups. */
+    fullName: z.string().regex(/^[\w.-]+(\/[\w.-]+)+$/),
   }),
   /** Any git URL (a public one, for now), cloned. */
   z.object({ kind: z.literal("git-url"), parent: z.string().min(1), url: z.string().min(1) }),
@@ -91,8 +96,9 @@ export const NewProjectRepo = z.object({
     z.object({
       kind: z.literal("github-clone"),
       folder: RepoFolder,
-      fullName: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
+      fullName: z.string().regex(/^[\w.-]+(\/[\w.-]+)+$/),
       account: z.string().optional(),
+      host: z.string().optional(),
     }),
     z.object({ kind: z.literal("git-url"), folder: RepoFolder, url: z.string().min(1) }),
   ]),

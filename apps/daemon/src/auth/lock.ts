@@ -345,6 +345,10 @@ export const HOME_ONLY = [
   "/github/removeAccount",
   "/github/createRepo",
   "/projects/setGitHub",
+  // Accounts on GitLab, Gitea and Forgejo, and a new repository there (ADR-062).
+  "/hosts/addAccount",
+  "/hosts/removeAccount",
+  "/hosts/createRepo",
   "/mail/addAccount",
   "/mail/testAccount",
   "/mail/updateAccount",

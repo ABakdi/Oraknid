@@ -1,12 +1,14 @@
 import type { GitHubLink } from "@oraknid/contracts";
 import type { GitHub } from "../workspace/github.ts";
+import { hostFor } from "../workspace/hosts/registry.ts";
 import type { VerifyResult } from "./verify.ts";
 
 /**
  * Checks Oraknid runs itself, not in the sandbox (ADR-038): what is on the
  * project's linked GitHub repo, read with the account's token, which no
  * check in the sandbox has (and `gh` isn't there). In a project of several
- * repos (ADR-042), `--repo <name>` says which.
+ * repos (ADR-042), `--repo <name>` says which. A link on GitLab, Gitea or
+ * Forgejo (ADR-062) is read the same way, through its host.
  *
  *   oraknid github-repo [--repo <name>]              the linked repo exists, with the visibility chosen
  *   oraknid github-branch <branch> [--repo <name>]   the branch is on it, at the same commit as here
@@ -68,8 +70,10 @@ export async function runBuiltinCheck(
   if (!github) return done(false, "GitHub isn't set up in Oraknid.");
   const full = `${link.owner}/${link.name}`;
   try {
+    const host = hostFor(github, link);
+    if (!host) return done(false, "GitHub isn't set up in Oraknid.");
     if (parsed.kind === "repo") {
-      const r = await github.repo(full, link.account);
+      const r = await host.repo(full, link.account);
       const want = link.visibility === "private";
       if (r.private !== want)
         return done(
@@ -80,11 +84,7 @@ export async function runBuiltinCheck(
     }
     const branch = parsed.branch;
     if (!branch) return done(false, "Name the branch: oraknid github-branch <branch>.");
-    const { data } = await github.read<{ commit?: { sha?: string } }>(
-      `/repos/${full}/branches/${encodeURIComponent(branch)}`,
-      link.account,
-    );
-    const remote = data.commit?.sha ?? null;
+    const remote = await host.branchHead(full, branch, link.account);
     if (!remote) return done(false, `${full} has no branch ${branch}.`);
     const here = o.localCommit(branch, parsed.repo);
     if (here && here !== remote)

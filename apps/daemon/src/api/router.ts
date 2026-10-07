@@ -225,12 +225,15 @@ import { VERSION } from "../version.ts";
 import { listFolders, makeFolder } from "../workspace/folders.ts";
 import { type GitHub, GitHubError } from "../workspace/github.ts";
 import type { Repos } from "../workspace/github-repos.ts";
+import type { GitHosts } from "../workspace/hosts/registry.ts";
+import { hostFor } from "../workspace/hosts/registry.ts";
 import { NotAGitRepo, type Projects } from "../workspace/projects.ts";
 import { ProjectRemoval } from "../workspace/removal.ts";
 import { jobResult, mergeJob, taskDiff } from "../workspace/result.ts";
 import { projectFrom } from "../workspace/sources.ts";
 import { backupsRouter } from "./backups.ts";
 import { cloudRouter } from "./cloud.ts";
+import { hostsRouter } from "./hosts.ts";
 import { modelsRouter } from "./models.ts";
 import {
   Activity,
@@ -293,6 +296,8 @@ export interface ApiContext {
   github: GitHub;
   /** My repositories, read through GitHub's API (ADR-040). */
   repos: Repos;
+  /** GitHub and the other git hosts I added an account on (ADR-062). */
+  hosts: GitHosts;
   /** The Oraknid helper (ADR-024). */
   helper: Helper;
   /** My servers (ADR-026). */
@@ -1021,9 +1026,14 @@ export const router = {
       .handler(({ context: c, input }) =>
         guard(async () => {
           if (input.link) {
-            const logins = (await c.github.accounts()).map((a) => a.login);
+            const h = c.hosts.forLink(input.link);
+            const logins = (await h.accounts()).map((a) => a.login);
             if (!logins.includes(input.link.account))
-              throw new Error(`No GitHub account ${input.link.account} in Oraknid.`);
+              throw new Error(
+                input.link.host
+                  ? `No account ${input.link.account} on ${input.link.host} in Oraknid.`
+                  : `No GitHub account ${input.link.account} in Oraknid.`,
+              );
           }
           c.projects.setGitHub(input.id, input.link, "owner", input.repo ?? null);
         }),
@@ -1045,10 +1055,16 @@ export const router = {
       .output(ProjectView)
       .handler(({ context: c, input }) =>
         guard(async () => {
+          // A clone from GitLab, Gitea or Forgejo through its account (ADR-062).
+          const s = input.source;
+          const h =
+            s.kind === "github-clone"
+              ? (hostFor(c.github, s.host ? { host: s.host } : null) ?? c.github)
+              : c.github;
           const p = await c.projects.addRepo(
             input,
-            (url, dest, login) => c.github.clone(url, dest, login),
-            (fullName) => c.github.cloneUrl(fullName),
+            (url, dest, login) => h.clone(url, dest, login),
+            (fullName) => h.cloneUrl(fullName),
           );
           return { ...p, jobCount: c.projects.list().find((x) => x.id === p.id)?.jobCount ?? 0 };
         }),
@@ -1252,6 +1268,8 @@ export const router = {
   backups: backupsRouter,
   /** Cloud storage: providers and the pool (ADR-046). */
   cloud: cloudRouter,
+  /** GitLab, Gitea and Forgejo accounts, and reading any host's repositories (ADR-062). */
+  hosts: hostsRouter,
   models: modelsRouter,
   /** A text of mine rephrased by a quick model, for any textarea (Chats-and-Helper → Fix wording). */
   text: {

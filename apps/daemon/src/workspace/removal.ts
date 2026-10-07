@@ -23,6 +23,8 @@ import type {
 import type { EventBus } from "../events/bus.ts";
 import { git, isGitRepo, worktreeGit } from "./git.ts";
 import type { GitHub } from "./github.ts";
+import { hostFor, hostsOf } from "./hosts/registry.ts";
+import { TokenHost } from "./hosts/rest.ts";
 import type { Projects } from "./projects.ts";
 
 // Archiving and deleting a project with my choices (Jobs-and-Projects →
@@ -285,7 +287,36 @@ export class ProjectRemoval {
       let github: RemovalRepo["github"] = null;
       let heads: string[] | null = null;
       let headsError: string | null = null;
-      if (link) {
+      // A repo on GitLab, Gitea or Forgejo (ADR-062): compared and cloned back, never archived nor deleted here.
+      let other: unknown = null;
+      try {
+        other = link?.host ? hostsOf(this.d.github)?.get(link.host) : null;
+      } catch {
+        other = null;
+      }
+      if (link && other instanceof TokenHost) {
+        const fullName = `${link.owner}/${link.name}`;
+        github = {
+          fullName,
+          account: link.account,
+          url: `${other.url}/${fullName}`,
+          ready: link.ready,
+          owned: false,
+          archived: null,
+          scopes: null,
+          canDelete: false,
+          error: null,
+        };
+        if (link.ready && existsSync(rpath))
+          try {
+            heads = await other.remoteHeads(fullName, link.account);
+          } catch (e) {
+            headsError = `${link.host} couldn't be reached to compare ${r.name} with ${fullName}: ${(e as Error).message}`;
+          }
+      } else if (link?.host) {
+        github = null;
+        headsError = `${r.name} is linked to ${link.host}, which has no account in Oraknid any more.`;
+      } else if (link) {
         const fullName = `${link.owner}/${link.name}`;
         github = {
           fullName,
@@ -409,8 +440,10 @@ export class ProjectRemoval {
   #linked(id: string, names: string[]) {
     const repos = this.d.projects.require(id).repos;
     return [...new Set(names.map((n) => n.toLowerCase()))].map((n) => {
+      // Only GitHub's are archived or deleted from here (ADR-062).
       const repo = repos.find(
-        (r) => r.github && `${r.github.owner}/${r.github.name}`.toLowerCase() === n,
+        (r) =>
+          r.github && !r.github.host && `${r.github.owner}/${r.github.name}`.toLowerCase() === n,
       );
       if (!repo?.github)
         throw new Error(`${n} isn't a GitHub repo linked to this project. Nothing was done.`);
@@ -667,7 +700,8 @@ export class ProjectRemoval {
       try {
         // The folder of a project of one repo: an empty one left there is cloned into.
         if (existsSync(dest) && !readdirSync(dest).length) rmdirSync(dest);
-        await this.d.github.clone(this.d.github.cloneUrl(target), dest, r.github.account);
+        const host = hostFor(this.d.github, r.github) ?? this.d.github;
+        await host.clone(host.cloneUrl(target), dest, r.github.account);
         const g = { cwd: dest, base: [] };
         for (const b of [r.releaseBranch, r.workBranch]) {
           try {

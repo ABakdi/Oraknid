@@ -19,15 +19,31 @@ export const GitHubName = z
   .regex(/^[A-Za-z0-9._-]{1,100}$/, "letters, digits, dots, dashes and underscores")
   .refine((n) => n !== "." && n !== "..", "a name");
 
+/** An owner: a user, an organisation, or (GitLab, ADR-062) a group with its subgroups. */
+export const RepoOwner = z
+  .string()
+  .min(1)
+  .max(255)
+  .refine(
+    (o) => o.split("/").every((p) => GitHubName.safeParse(p).success),
+    "letters, digits, dots, dashes and underscores, groups parted by /",
+  );
+
 /**
  * A project's GitHub link (ADR-038): the account Oraknid uses for it and
  * its repository. Pushing a branch there, creating it when it is new, and
  * opening a pull request there run without asking: the link is my approval.
  */
 export const GitHubLink = z.object({
+  /**
+   * The git host (ADR-062): absent for GitHub, else another host's id
+   * (`gitlab.com`, `git.example.org`). The same link, tool and gates.
+   */
+  host: z.string().min(1).max(200).optional(),
   /** The account's login: which of my tokens is used. */
   account: z.string().min(1),
-  owner: GitHubName,
+  /** A user or organisation; on GitLab a group may have subgroups (`group/sub`). */
+  owner: RepoOwner,
   name: GitHubName,
   visibility: GitHubVisibility,
   /** "new": Oraknid creates it (the github tool's create_repo); "existing": it is there. */
@@ -40,6 +56,7 @@ export type GitHubLink = z.infer<typeof GitHubLink>;
 
 /** What I set in a project's Settings, or answered The Eye. */
 export const GitHubLinkInput = GitHubLink.pick({
+  host: true,
   account: true,
   owner: true,
   name: true,
@@ -57,6 +74,8 @@ export type GitHubLinkedProject = z.infer<typeof GitHubLinkedProject>;
 
 /** One of my repositories, as the list shows it. */
 export const GitHubRepoSummary = z.object({
+  /** Its git host (ADR-062): absent for GitHub. */
+  host: z.string().optional(),
   /** The account whose token reads it. */
   account: z.string(),
   owner: z.string(),

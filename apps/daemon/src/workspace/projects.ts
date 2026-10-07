@@ -486,10 +486,14 @@ export class Projects {
     const p = this.require(id);
     const repo = pickRepo(p.repos, repoName);
     const before = repo.github;
+    // GitHub's owners are one name; a GitLab group may have subgroups (ADR-062).
+    if (input && !input.host && input.owner.includes("/"))
+      throw new Error("A GitHub repository's owner is one name, without a slash.");
     // The same repo again keeps what is known of it: a new repo already created stays created.
     const same =
       !!input &&
       !!before?.ready &&
+      (before.host ?? null) === (input.host ?? null) &&
       before.owner.toLowerCase() === input.owner.toLowerCase() &&
       before.name.toLowerCase() === input.name.toLowerCase();
     const link: GitHubLink | null = input

@@ -96,6 +96,7 @@ import { setShadowRoot } from "./workspace/git.ts";
 import { GitHub } from "./workspace/github.ts";
 import { Repos } from "./workspace/github-repos.ts";
 import { githubServer, githubTool } from "./workspace/github-tool.ts";
+import { GitHosts } from "./workspace/hosts/registry.ts";
 import { Projects } from "./workspace/projects.ts";
 
 export interface DaemonOptions {
@@ -127,6 +128,8 @@ export interface DaemonOptions {
   rclone?: () => string | null;
   /** GitHub's addresses, for tests against a stand-in. */
   github?: { api?: string; web?: string };
+  /** The other git hosts' requests, for tests (ADR-062). */
+  hosts?: { fetch?: typeof fetch };
   /** What runs a job: The Eye, unless a test replaces it. */
   program?: JobProgram;
   /** The Eye's reasoning (tests replace it). */
@@ -274,6 +277,8 @@ export async function startDaemon(options: DaemonOptions) {
   const github = new GitHub(secrets, db, options.github ?? {});
   // My repositories, read through its API (ADR-040).
   const repos = new Repos(github, projectsService);
+  // GitLab, Gitea and Forgejo beside GitHub (ADR-062): a project's link names its host.
+  const hosts = new GitHosts({ db, secrets, github, repos, ...(options.hosts ?? {}) });
   // Oraknid's own github tool: a project's GitHub work with its linked account (ADR-038).
   const githubToolDecl = githubTool(db);
   try {
@@ -899,6 +904,7 @@ export async function startDaemon(options: DaemonOptions) {
         chats,
         github,
         repos,
+        hosts,
         helper,
         servers: serverService,
         backups: backupPlans,
@@ -1084,6 +1090,8 @@ export async function startDaemon(options: DaemonOptions) {
     backups: backupPlans,
     cloud,
     mail,
+    github,
+    hosts,
     devices,
     updates,
     models,
