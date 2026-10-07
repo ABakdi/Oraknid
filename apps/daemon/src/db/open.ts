@@ -56,6 +56,33 @@ export function closeDatabase(db: Db): void {
   client.close();
 }
 
+/**
+ * The WAL folded back into the database when Oraknid is idle (ADR-002):
+ * every `everyMs`, while `idle()` says no job is active, a
+ * `wal_checkpoint(TRUNCATE)`, so the -wal file doesn't keep growing on a
+ * daemon that runs for weeks. A checkpoint a reader blocks is tried again
+ * at the next tick.
+ */
+export function startIdleCheckpoint(
+  db: Db,
+  o: { idle: () => boolean; everyMs?: number; log?: (message: string) => void },
+): { stop(): void; tick(): boolean } {
+  const tick = (): boolean => {
+    const client = db.$client;
+    if (!client.open || client.memory || !o.idle()) return false;
+    try {
+      const [row] = client.pragma("wal_checkpoint(TRUNCATE)") as { busy: number }[];
+      return row?.busy === 0;
+    } catch (error) {
+      o.log?.(`WAL checkpoint failed: ${(error as Error).message}`);
+      return false;
+    }
+  };
+  const timer = setInterval(tick, o.everyMs ?? 5 * 60_000);
+  timer.unref();
+  return { stop: () => clearInterval(timer), tick };
+}
+
 /** Walks up from this module to the package's drizzle/ folder (works from src/ and dist/). */
 function findMigrationsFolder(): string {
   let dir = dirname(fileURLToPath(import.meta.url));

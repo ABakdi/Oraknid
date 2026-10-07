@@ -284,7 +284,10 @@ only repo, or its only linked one.
   exact count.
 
 BR-1 holds: a task is still done only when Oraknid's own run of its
-checks passes; the change of a check is visible, never silent.
+checks passes; the change of a check is visible, never silent. A check
+that passes only thanks to files the agent made outside its task after
+the check failed, files the check names, fails (ADR-052 §2 → Not
+another way; the Verifier's rule, wired with the harness's stage 4).
 
 ## What the agent needs of me (2026-10-07)
 

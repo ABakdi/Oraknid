@@ -36,6 +36,7 @@ const SERVER: ServerView = {
   hostKeyOffered: null,
   lastSeenAt: now,
   error: null,
+  stale: false,
   busy: null,
   stateVersion: 2,
   latest: null,

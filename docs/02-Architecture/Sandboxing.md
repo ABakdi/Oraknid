@@ -12,7 +12,16 @@
 - Checkpoints: commits on `refs/oraknid/<job>/<task>/<attempt>`, made by
   The Eye (never by a Leg) through a temporary index, and never pushed.
 - Job end: the branch stays for review. Merging into the work branch is
-  the gated `merge` action. Removing the worktree happens on my request.
+  the gated `merge` action. Removing the worktree happens on my request
+  (2026-10-07, `workspace/worktrees.ts`): **Remove worktree** on a
+  finished job's result, or Settings → Storage → Finished jobs'
+  worktrees, each with its size, and **Clean up finished jobs'
+  worktrees**. Only a completed or cancelled job's; its own folder
+  (`.oraknid/worktrees/<job>`, each repo's worktree in it) and its tasks'
+  (`<job>-t-<n>`) go through `git worktree remove`, then `prune`; the
+  branch stays. One with commits not merged into the work branch, or
+  files not committed, is refused in words until I confirm; the clean-up
+  leaves those and names them. Audited (`job.worktree-removed`).
 - Non-git projects: a shadow repo in Oraknid's data folder
   (`shadow/<hash of the path>.git`, out of every Leg's reach) with
   `--work-tree` set to the project. The job works in place.

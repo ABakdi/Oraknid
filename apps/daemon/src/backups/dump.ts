@@ -357,6 +357,39 @@ export function testCommand(t: BackupTarget, o: { uri?: boolean } = {}): string 
   return wrap(t, testScript(t, o));
 }
 
+/**
+ * Each database's size with the plan's login (ADR-043, server insight): a
+ * line `name<TAB>bytes` each. PostgreSQL and MySQL/MariaDB only; null for
+ * the others. Read only; the password goes on stdin as for a dump.
+ */
+export function sizeCommand(t: BackupTarget): string | null {
+  const c = args(connArgs(t));
+  if (t.kind === "postgres") {
+    const db = q(t.database ?? "postgres");
+    return wrap(
+      t,
+      `${pgEnv(t)}command -v psql >/dev/null || { echo "psql: command not found" >&2; exit 127; }; exec psql -X -q -A -t -F '\t' -v ON_ERROR_STOP=1 ${c} -d ${db} -c 'select datname, pg_database_size(datname) from pg_database where not datistemplate order by 1'`,
+    );
+  }
+  if (t.kind === "mysql")
+    return wrap(
+      t,
+      `B=$(command -v mariadb || command -v mysql) || { echo "mysql: command not found" >&2; exit 127; }; ${mysqlTls(t)}; exec "$B" $TLS ${c} -N -B -e 'select table_schema, coalesce(sum(data_length + index_length), 0) from information_schema.tables group by table_schema order by 1'`,
+    );
+  return null;
+}
+
+/** `sizeCommand`'s answer, read. */
+export function readSizes(stdout: string): { name: string; bytes: number }[] {
+  const out: { name: string; bytes: number }[] = [];
+  for (const line of stdout.split("\n")) {
+    const [name, bytes] = line.trim().split("\t");
+    const n = Number(bytes);
+    if (name && bytes !== undefined && Number.isFinite(n)) out.push({ name, bytes: n });
+  }
+  return out;
+}
+
 /** Test connection's answer: the version on the first line, the databases on the others. */
 export function readTest(
   kind: DbKind,

@@ -36,6 +36,7 @@ import { sandboxPlan } from "../legs/plan.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor } from "../legs/supervisor.ts";
 import { Work } from "../resources/work.ts";
+import { jobHasServers } from "../secrets/tool.ts";
 import { jobServers, serverDigest, serverPlanApproval } from "../servers/server-jobs.ts";
 import type { Servers } from "../servers/service.ts";
 import {
@@ -788,6 +789,12 @@ async function runTask(
       // The local models' roles, for every agent once a model is here (ADR-054).
       ...(d.tools?.registry.hasBuiltIn("local-models") && !job.tools.includes("local-models")
         ? ["local-models"]
+        : []),
+      // The project's secrets written on its servers by Oraknid, for a deploy (ADR-059).
+      ...(d.tools?.registry.hasBuiltIn("env") &&
+      !job.tools.includes("env") &&
+      jobHasServers(d.db, job.id)
+        ? ["env"]
         : []),
     ],
     serverIds:

@@ -87,6 +87,27 @@ export class LegRegistry {
     return readSetting(this.db, featuresKey(legId), LegFeatures.nullable(), null);
   }
 
+  /**
+   * The Leg `input` would be, not saved: for its test before saving (Legs
+   * spec → Adding a Leg). Its id is a trial's, its home removed after.
+   */
+  trialRow(input: NewLeg): LegRow {
+    return {
+      id: `trial-${newId(this.now())}`,
+      name: input.name,
+      kind: input.kind,
+      config: { ...input.config },
+      secretRef: null,
+      enabled: true,
+      paused: false,
+      health: "unavailable",
+      healthDetail: "Not checked yet.",
+      quota: [],
+      limitedUntil: null,
+      createdAt: this.now(),
+    };
+  }
+
   async create(input: NewLeg): Promise<LegRow> {
     const id = newId(this.now());
     const config: Record<string, unknown> = { ...input.config };

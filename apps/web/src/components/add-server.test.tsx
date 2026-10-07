@@ -52,6 +52,7 @@ const SERVER = {
   hostKeyOffered: null,
   lastSeenAt: null,
   error: "vps refused the SSH login of root: check the server's key or password.",
+  stale: false,
   busy: null,
   stateVersion: 1,
   latest: null,

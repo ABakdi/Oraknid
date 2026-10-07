@@ -33,6 +33,22 @@ function withTools(
   };
 }
 
+/**
+ * A job's project's secrets set in its sandbox's clean environment
+ * (ADR-059), under every variable the adapter sets itself.
+ */
+export function withEnv(plan: SandboxPlan, extra: Record<string, string>): SandboxPlan {
+  if (!Object.keys(extra).length) return plan;
+  const inner = plan.sandbox;
+  return {
+    ...plan,
+    sandbox: {
+      status: () => inner.status(),
+      wrap: (spec) => inner.wrap({ ...spec, env: { ...extra, ...spec.env } }),
+    },
+  };
+}
+
 export interface StartRequest {
   legId: string;
   legModelId: string;
@@ -103,8 +119,15 @@ export class LegSupervisor {
       now?: () => number;
       /** Secrets out of logs (BR-13). */
       scrub?: (text: string) => string;
+      /** A job's project's secrets of its environment, as its sessions' variables (ADR-059). */
+      jobEnv?: (jobId: string) => Promise<Record<string, string>>;
     },
   ) {}
+
+  /** Where a job's sessions get their project's secrets from (ADR-059), once that service is up. */
+  attachJobEnv(fn: (jobId: string) => Promise<Record<string, string>>) {
+    this.o.jobEnv = fn;
+  }
 
   #now() {
     return (this.o.now ?? Date.now)();
@@ -183,10 +206,13 @@ export class LegSupervisor {
         resumeFrom: req.resumeFrom ?? null,
         sandbox: req.unsandboxed
           ? null
-          : withTools(
-              sandboxPlan(leg, this.o.sandbox, this.o.legsDir, req.localPorts ?? [], req.jobId),
-              req.tools,
-              req.readonly,
+          : withEnv(
+              withTools(
+                sandboxPlan(leg, this.o.sandbox, this.o.legsDir, req.localPorts ?? [], req.jobId),
+                req.tools,
+                req.readonly,
+              ),
+              req.jobId && this.o.jobEnv ? await this.o.jobEnv(req.jobId) : {},
             ),
         credential: await registry.credential(leg),
         onPermission: req.onPermission,

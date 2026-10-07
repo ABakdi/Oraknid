@@ -90,6 +90,16 @@ helper.
   `login: {user, database, passwordSet}` to each container, from its
   environment, filtered on the server so a password's value never
   leaves it; the monitor script itself is unchanged.
+- **SQLite files and sizes with a plan's login** (2026-10-07): the
+  Databases part adds the SQLite files the state document names
+  (absolute paths ending `.db`, `.sqlite`, `.sqlite3`) and those of
+  SQLite backup plans, on the host, sized with `wc -c` when the user can
+  read them; and for each PostgreSQL or MySQL/MariaDB backup plan of the
+  server, each database's size (`pg_database_size`, the sum of
+  `information_schema.tables`), read with the plan's login as a dump is
+  (the password on stdin, `docker exec -e`), put on the database it
+  reaches (its container, or the host's on its port). MongoDB and Redis
+  sizes, and SQLite files inside containers, are not read yet.
 
 ## Consequences
 - The state document (ADR-026) is fed by what this finds.

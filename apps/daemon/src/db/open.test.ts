@@ -1,11 +1,44 @@
-import { mkdtempSync, readdirSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { closeDatabase, openDatabase } from "./open.ts";
+import { closeDatabase, openDatabase, startIdleCheckpoint } from "./open.ts";
 import { projects } from "./schema.ts";
 
 describe("openDatabase", () => {
+  it("folds the WAL back when idle, and not while a job is active (ADR-002)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "oraknid-db-"));
+    try {
+      const file = join(dir, "o.db");
+      const db = await openDatabase({ file, backupsDir: join(dir, "backups") });
+      db.$client.pragma("wal_autocheckpoint = 0");
+      for (let i = 0; i < 50; i++)
+        db.insert(projects)
+          .values({
+            id: `p${i}`,
+            name: `p${i}`,
+            workspacePath: `/tmp/p${i}`,
+            isGitRepo: true,
+            releaseBranch: "main",
+            workBranch: "dev",
+            createdAt: i,
+          })
+          .run();
+      expect(statSync(`${file}-wal`).size).toBeGreaterThan(0);
+      let busy = true;
+      const cp = startIdleCheckpoint(db, { idle: () => !busy, everyMs: 60_000 });
+      expect(cp.tick()).toBe(false);
+      expect(statSync(`${file}-wal`).size).toBeGreaterThan(0);
+      busy = false;
+      expect(cp.tick()).toBe(true);
+      expect(statSync(`${file}-wal`).size).toBe(0);
+      cp.stop();
+      closeDatabase(db);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("applies the migrations and uses WAL with synchronous=FULL", async () => {
     const dir = mkdtempSync(join(tmpdir(), "oraknid-db-"));
     const db = await openDatabase({ file: join(dir, "o.db"), backupsDir: join(dir, "backups") });

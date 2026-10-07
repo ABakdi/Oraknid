@@ -67,6 +67,20 @@ export interface RunnerOptions {
   safePointTimeoutMs?: number;
   /** How many job programs may run at once (ADR-016); past it, jobs queue. Unlimited by default. */
   maxRunning?: () => number;
+  /**
+   * Why a job may not start for the first time, or null: no sandbox here
+   * and the job isn't one I chose to run without it (ADR-006).
+   */
+  refuseStart?: (job: { id: string; unsandboxed: boolean }) => string | null;
+}
+
+/** No sandbox and a job I didn't choose to run without it: refused, in words (ADR-006). */
+export function noSandboxRefusal(
+  job: { unsandboxed: boolean },
+  sandbox: { available: boolean; detail: string },
+): string | null {
+  if (job.unsandboxed || sandbox.available) return null;
+  return `The sandbox doesn't work on this computer (${sandbox.detail.replace(/\.$/, "")}), so the job can't start. Fix it (oraknid doctor says how), or start this job without the sandbox: it then runs with your own rights.`;
 }
 
 /**
@@ -93,6 +107,10 @@ export class JobRunner {
     if (isTerminalJob(job.state as JobState)) throw new Error("That job has already ended.");
     if (job.state === "paused" || job.state === "waiting") {
       throw new Error("That job is parked; resume it instead.");
+    }
+    if (job.state === "draft") {
+      const refused = this.o.refuseStart?.(job);
+      if (refused) throw new Error(refused);
     }
     if (this.#full()) {
       this.o.jobs.queue(jobId);

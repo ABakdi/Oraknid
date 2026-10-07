@@ -1,14 +1,33 @@
 [
   ["getting-started", "Getting started", "Install it, open it, set your PIN, add a Leg."],
+  [
+    "finding-your-way",
+    "Finding your way",
+    "The command palette, the keyboard, this guide inside Oraknid."
+  ],
   ["jobs", "Jobs and The Eye", "Starting work, following it, talking to The Eye."],
-  ["terminal", "Oraknid in a terminal", "The conversation and every command, without a browser."],
+  ["inbox", "The inbox", "Approvals and questions from every job, answered in place."],
+  [
+    "chats",
+    "Chats and the helper",
+    "Talk with your models, and ask the helper to do things for you."
+  ],
   ["legs", "Legs", "The agents and models Oraknid hands work to."],
   ["models", "Local models", "Models on your own computer: find, download, run, give roles."],
-  ["projects", "Projects, repos and servers", "Where work happens, its CI, and what it may reach."],
+  ["skills", "Skills", "The methods jobs follow: built-in, or your own in Markdown."],
+  ["projects", "Projects, repos and servers", "Where work happens, and what it may reach."],
+  ["repos", "Repos", "Your GitHub repositories: code, commits, branches, pull requests."],
+  [
+    "web-terminal",
+    "The terminal in your browser",
+    "Shells on this computer, a project or a server, in tabs."
+  ],
   ["backups", "Backups", "Your servers' databases, on a schedule, encrypted, checked."],
   ["storage", "Cloud storage", "Your storage accounts as one pool, through rclone."],
-  ["phone", "Your phone, from anywhere", "Pairing, the PIN, and The Nest."],
   ["mail", "Mail", "Your accounts, and agents that draft for you."],
+  ["settings", "Settings and updates", "Every setting by tab, and updating Oraknid."],
+  ["phone", "Your phone, from anywhere", "Pairing, the PIN, and The Nest."],
+  ["terminal", "Oraknid in a terminal", "The conversation and every command, without a browser."],
   ["security", "Security", "What keeps your computer yours."],
   ["nest", "Hosting a Nest", "Your own relay, private or public, in one script."]
 ]
