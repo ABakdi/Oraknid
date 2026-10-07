@@ -234,6 +234,55 @@ export class LegRegistry {
     });
   }
 
+  /**
+   * A model its provider deprecated (ADR-052 §4): hidden, never routed to
+   * again, and the one the provider named in its place offered instead (a
+   * new row the next probe fills in, or the row it has, shown again).
+   * Returns the replacement's row id, or null when none was named.
+   */
+  deprecateModel(legModelId: string, replacement: string | null): string | null {
+    const row = this.model(legModelId);
+    if (!row) return null;
+    let replacementId: string | null = null;
+    this.bus.atomically(() => {
+      this.db.update(legModels).set({ hidden: true }).where(eq(legModels.id, row.id)).run();
+      if (replacement && replacement !== row.model) {
+        const there = this.models(row.legId).find((m) => m.model === replacement);
+        if (there) {
+          replacementId = there.id;
+          if (there.hidden)
+            this.db
+              .update(legModels)
+              .set({ hidden: false })
+              .where(eq(legModels.id, there.id))
+              .run();
+        } else {
+          replacementId = newId(this.now());
+          this.db
+            .insert(legModels)
+            .values({
+              id: replacementId,
+              legId: row.legId,
+              model: replacement,
+              displayName: replacement,
+              hidden: false,
+              effortLevels: row.effortLevels,
+              quota: [],
+              profile: emptyStoredProfile(),
+            })
+            .run();
+        }
+      }
+      this.#event(row.legId, "leg.model-deprecated", {
+        legModelId: row.id,
+        model: row.model,
+        replacement,
+        replacementId,
+      });
+    });
+    return replacementId;
+  }
+
   setModelHidden(modelId: string, hidden: boolean) {
     this.db.update(legModels).set({ hidden }).where(eq(legModels.id, modelId)).run();
   }

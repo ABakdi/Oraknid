@@ -20,6 +20,7 @@ import {
   type Drift,
   type DriftCode,
   decide,
+  deprecationOf,
   detect,
   fence,
   type GatedAction,
@@ -28,14 +29,22 @@ import {
   inScope,
   nextEscalation,
   type Observed,
+  oraknidOwn,
   type PolicyVerdict,
   programsOf,
   providerFailure,
+  type Route,
   type RouteCandidate,
   record,
   route,
+  rungOf,
+  saysCheckBroken,
   skillExcerpt,
   taskScope,
+  usageLimitOf,
+  type WorkKind,
+  whenSaid,
+  workKindOf,
 } from "@oraknid/core";
 import type {
   LegEvent,
@@ -60,7 +69,7 @@ import { legSessionLimit } from "../resources/work.ts";
 import { runServerCheck } from "../servers/checks.ts";
 import { type JobServerRef, serverVerdict } from "../servers/remote.ts";
 import type { Servers } from "../servers/service.ts";
-import { readSetting } from "../settings.ts";
+import { CLAUDE_SHARE, readSetting, writeSetting } from "../settings.ts";
 import { handoffFromLog } from "../silk/handoff.ts";
 import type { SilkStore } from "../silk/store.ts";
 import type { BrokerSession, McpBroker } from "../tools/broker.ts";
@@ -74,7 +83,7 @@ import type { GitHub } from "../workspace/github.ts";
 import { githubLinkOf, githubLinksOf } from "../workspace/github-tool.ts";
 import type { WorkTree } from "../workspace/tree.ts";
 import { waitForAnswer } from "./approvals.ts";
-import { BrainStopped, type CheckRepair, type EyeBrain } from "./brain.ts";
+import { BrainStopped, type CheckRepair, type EyeBrain, type GitHubForRepair } from "./brain.ts";
 import { runBuiltinCheck } from "./builtin-checks.ts";
 import { giveToLeg, LegStop, legLimits, stopWaiting, trackAttempt } from "./leg-work.ts";
 
@@ -89,7 +98,7 @@ export const ALL_LIKE_THIS = "Approve all like this for this job";
 import { summarizeShortened } from "../silk/summarize.ts";
 import { dependentsOf, keepsGoingWrong, readKeepsGoingWrong } from "./questions.ts";
 import { addMessage, guidanceMark, takeGuidance } from "./talk.ts";
-import { looksBroken, runVerify, verifyRefusal } from "./verify.ts";
+import { looksBroken, runVerify, type VerifyResult, verifyRefusal } from "./verify.ts";
 
 export type TaskRow = typeof tasks.$inferSelect;
 
@@ -167,10 +176,17 @@ export type AttemptOutcome =
 
 /** Ladder steps that end the attempt, and why. */
 class EndAttempt extends Error {
-  constructor(readonly outcome: AttemptOutcome) {
+  constructor(
+    readonly outcome: AttemptOutcome,
+    /** The Leg or its model couldn't be used, not the task failing: not counted (ADR-052 §4). */
+    readonly unavailable = false,
+  ) {
     super(outcome.kind);
   }
 }
+
+/** Kinds of Leg that can continue a session of theirs (ADR-052 §1: a retry resumes it). */
+const RESUMES = new Set(["claude-code", "opencode", "antigravity"]);
 
 const SEVERITY: DriftCode[] = ["D8", "D7", "D1", "D4", "D3", "D2", "D6", "D5"];
 const PREFIX: Record<TaskKind, string> = {
@@ -290,13 +306,12 @@ export async function runAttempt(
   );
   const heldBack = all.length - candidates.length;
   // Read now, so a budget I changed while the job runs applies to the next task.
-  const quotaShare =
-    (
-      d.db.select({ budget: jobs.budget }).from(jobs).where(eq(jobs.id, job.id)).get()?.budget as
-        | Budget
-        | undefined
-    )?.quotaShare ?? null;
+  const budget = d.db.select({ budget: jobs.budget }).from(jobs).where(eq(jobs.id, job.id)).get()
+    ?.budget as Budget | undefined;
+  const quotaShare = budget?.quotaShare ?? null;
   const estimatedTokens = 20_000 + Math.ceil(task.instructions.length / 4);
+  // The kind of work, for the ladder's rungs (ADR-052 §3).
+  const work: WorkKind = job.serverJob ? "server" : workKindOf(task);
   const routeTask = {
     kind: task.kind as TaskKind,
     difficulty: task.difficulty as Difficulty,
@@ -305,8 +320,13 @@ export async function runAttempt(
     stepUp: task.stepUp,
     pinnedModelId: task.pinnedModelId,
     avoid: task.avoid,
+    work,
   };
-  const routeOptions = { moneyAllowed: job.moneyAllowed, quotaShare };
+  const routeOptions = {
+    moneyAllowed: job.moneyAllowed,
+    quotaShare,
+    claudeShare: claudeShareOf(d, job.id, budget),
+  };
   // A Leg runs at most its limit of task sessions at once (ADR-016). When only busy Legs could
   // take the task, it waits for one, without blocking its job.
   // And a new session waits for room on the machine: a local model needs headroom (ADR-016).
@@ -357,14 +377,12 @@ export async function runAttempt(
     ]
       .filter((t): t is number => !!t && t > now())
       .sort((a, b) => a - b)[0];
-    const resets = until ? ` until ${new Date(until).toISOString()}` : "";
+    const resets = until ? ` until ${whenSaid(until, now())}` : "";
     return {
       kind: "blocked",
       reason: heldBack
         ? `"${task.title}" hit a usage limit on ${[...blockedKinds].join(", ")}; other accounts of the same provider are not used as fallback (ADR-009). It waits${resets}, for another provider, or for my setting.`
-        : until
-          ? `All allowed Legs are ${candidates.some((c) => c.cooldown) ? "resting after provider failures or " : ""}out of quota${resets}${routed.excluded.length ? `: ${routed.excluded.map((e) => e.why).join(" ")}` : "."}`
-          : `No Leg can take "${task.title}": ${routed.excluded.map((e) => e.why).join(" ") || "there are no Legs."}`,
+        : whyNoLeg(d, job, task.title, routed.excluded, until ?? null),
       until: until ?? null,
     };
   }
@@ -483,6 +501,24 @@ export async function runAttempt(
         authoredBy: "eye",
       });
   }
+
+  // The same model again (the top of the ladder, a stop, a step up in effort): its own session
+  // is resumed with what happened, not a fresh one that finds everything again (ADR-052 §1).
+  // Never after its work was rolled back (a kill), and only where the Leg can resume.
+  const resumeFrom =
+    before &&
+    before.legModelId === leg.legModelId &&
+    before.outcome !== "succeeded" &&
+    !(before.escalations as string[]).some((e) => e.endsWith(":kill")) &&
+    RESUMES.has(d.registry.require(leg.legId).kind)
+      ? (d.db
+          .select({ native: sessions.nativeSessionId })
+          .from(sessions)
+          .where(eq(sessions.attemptId, before.id))
+          .orderBy(desc(sessions.startedAt))
+          .all()
+          .find((s) => s.native)?.native ?? null)
+      : null;
 
   const escalations: string[] = [];
   const started = now();
@@ -878,28 +914,112 @@ export async function runAttempt(
     }\n\n${docs.join("\n\n")}`;
   };
 
-  const openSession = async (prompt: string) => {
+  /** The task's checks, run by Oraknid itself (BR-1): in the sandbox, on its servers, or its own. */
+  const runChecks = async (commands: string[] = task.verify, timeoutMs?: number) => {
+    const plan = job.unsandboxed
+      ? null
+      : sandboxPlan(
+          d.registry.require(leg.legId),
+          d.sandbox,
+          d.legsDir,
+          job.localPorts ?? [],
+          job.id,
+        );
+    await prepareServers();
+    return runVerify(commands, ws.cwd, plan, {
+      signal,
+      ...(timeoutMs ? { timeoutMs } : {}),
+      refuse: (command) =>
+        verifyRefusal(
+          decide({ tool: "Bash", command, path: null }, policyFor(d.db, job.id, ws.cwd)),
+        ),
+      builtin: async (command) =>
+        // A check on one of the job's servers runs there, over Oraknid's connection (ADR-049).
+        (servers.length && d.servers
+          ? await runServerCheck(command, {
+              servers,
+              run: (id, remote) => (d.servers as Servers).run(id, remote),
+              refuse: (c) => {
+                const v = serverVerdict(c, servers, policyFor(d.db, job.id, ws.cwd));
+                return v ? verifyRefusal(v) : null;
+              },
+            })
+          : null) ??
+        runBuiltinCheck(command, {
+          ...(d.github ? { github: d.github } : {}),
+          link: githubLinkOf(d.db, job.id),
+          // In a project of several repos, `--repo <name>` says which (ADR-042).
+          linkFor: (repo) => {
+            const repos = githubLinksOf(d.db, job.id);
+            if (repo) {
+              const r = repos.find((x) => x.name.toLowerCase() === repo.toLowerCase());
+              if (!r)
+                return `This project has no repo named ${repo}: its repos are ${repos.map((x) => x.name).join(", ")}.`;
+              return r.github;
+            }
+            const linked = repos.filter((x) => x.github);
+            if (repos.length > 1 && linked.length > 1)
+              return `This project has several repos: name one with --repo (${linked.map((x) => x.name).join(", ")}).`;
+            return (repos.length === 1 ? repos[0]?.github : linked[0]?.github) ?? null;
+          },
+          localCommit: (branch, repo) => ws.tree.localCommit(branch, repo),
+        }),
+    });
+  };
+
+  /**
+   * The checks in the loop (ADR-052 §2): before the agent may end its turn,
+   * Oraknid runs them; a failure keeps it working (Claude Code's Stop hook,
+   * three times at most). A check that looks broken lets it stop: The Eye
+   * looks at the check, not the agent.
+   */
+  const onStop = async (): Promise<string | null> => {
+    if (!task.verify.length) return null;
+    const results = await runChecks();
+    const bad = results.find((r) => !r.ok);
+    if (!bad || looksBroken(bad)) return null;
+    event("task.checks-held", { command: bad.command, exitCode: bad.exitCode });
+    return `Oraknid ran the task's checks and this one fails, so the task isn't done yet:\n${fence(bad.command)}\nfailed (exit ${bad.exitCode}):\n${fence(bad.output.slice(-2000))}\nFix the work, not the check, then finish. If the check itself is wrong, say why and finish.`;
+  };
+
+  const openSession = async (prompt: string, resume: string | null = null) => {
     await prepareServers();
     observed.lastActivityAt = now();
     const tools = await openTools();
     // A new session counts its tokens from zero.
     sessionTokens = 0;
     tokensBaseline = 0;
-    session = await d.supervisor.start({
-      legId: leg.legId,
-      legModelId: leg.legModelId,
-      effort: pick.effort,
-      jobId: job.id,
-      taskId,
-      attemptId,
-      cwd: ws.cwd,
-      systemPrompt: pack(),
-      prompt,
-      unsandboxed: job.unsandboxed,
-      localPorts: job.localPorts ?? [],
-      onPermission,
-      ...(tools ? { tools } : {}),
-    });
+    try {
+      session = await d.supervisor.start({
+        legId: leg.legId,
+        legModelId: leg.legModelId,
+        effort: pick.effort,
+        jobId: job.id,
+        taskId,
+        attemptId,
+        cwd: ws.cwd,
+        systemPrompt: pack(),
+        prompt,
+        ...(resume ? { resumeFrom: resume } : {}),
+        unsandboxed: job.unsandboxed,
+        localPorts: job.localPorts ?? [],
+        onPermission,
+        onStop,
+        ...(tools ? { tools } : {}),
+      });
+    } catch (error) {
+      if (signal.aborted) throw error;
+      // A Leg that fails to start is unusable for now, never the task failing (ADR-052 §4).
+      const why = error instanceof Error ? error.message : String(error);
+      const outcome = notTheTask(why, true);
+      throw new EndAttempt(
+        outcome ?? {
+          kind: "retry",
+          reason: `${leg.legName} could not start a session (${why}); the attempt doesn't count against the task`,
+        },
+        true,
+      );
+    }
     const row = d.db
       .select({ logFile: sessions.logFile })
       .from(sessions)
@@ -910,7 +1030,7 @@ export async function runAttempt(
   };
 
   /** Writes a handoff to Silk: asked of the Leg when it can still answer, rebuilt from its log otherwise. */
-  const handOff = async (askLeg: boolean) => {
+  const handOff = async (askLeg: boolean, failed = "") => {
     let body = "";
     if (askLeg && session) {
       try {
@@ -932,7 +1052,10 @@ export async function runAttempt(
       taskId,
       kind: "handoff",
       title: `Handoff: ${task.title}`,
-      body,
+      // What failed, for the model that takes it next (ADR-052 §3).
+      body: failed
+        ? `${body}\n\n## Why it was handed over\n${leg.legName} · ${leg.model} didn't get it done:\n${failed}`
+        : body,
       authoredBy: session ? { legId: leg.legId } : "eye",
     });
   };
@@ -943,6 +1066,257 @@ export async function runAttempt(
         ? session.session.kill()
         : d.supervisor.close(session, how === "stop" ? "stopped" : "closed"));
     session = null;
+  };
+
+  /** The project's GitHub repos a check may be about, for The Eye's look at it (ADR-038, ADR-042). */
+  const githubForRepair = (): GitHubForRepair => {
+    if (!ws.tree.several) {
+      const l = githubLinkOf(d.db, job.id);
+      return l ? { repo: `${l.owner}/${l.name}`, visibility: l.visibility } : null;
+    }
+    const repos = githubLinksOf(d.db, job.id).filter((x) => x.github);
+    return repos.length
+      ? repos.map((x) => ({
+          repo: `${x.github?.owner}/${x.github?.name}`,
+          visibility: x.github?.visibility ?? "private",
+          name: x.name,
+        }))
+      : null;
+  };
+
+  /**
+   * Broken checks repaired, never counted against an agent (The-Eye → A check
+   * that is wrong; ADR-052 §2): a failure that looks like the check's own
+   * (syntax, quoting, a missing tool), or one the agent shows with evidence
+   * to be the check's, is looked at by The Eye on its strongest model. A
+   * broken check is replaced by one that tests the same thing, and the checks
+   * run again; at most twice.
+   */
+  const repairBroken = async (
+    results: VerifyResult[],
+    report: string,
+    rerun: () => Promise<VerifyResult[]>,
+    before = false,
+  ): Promise<VerifyResult[]> => {
+    const said = before ? null : saysCheckBroken(report);
+    const looked = new Set<string>();
+    for (let repairs = 0; repairs < 2 && d.brain; repairs++) {
+      const bad = results.find((r) => !r.ok);
+      if (!bad || looked.has(bad.command)) break;
+      const own = looksBroken(bad);
+      const hint = own ?? (said ? `the agent says the check is broken: “${said}”` : null);
+      if (!hint) break;
+      looked.add(bad.command);
+      let repair: CheckRepair;
+      try {
+        repair = await d.brain.repairCheck({
+          jobId: job.id,
+          cwd: ws.cwd,
+          task: { title: task.title, instructions: task.instructions },
+          command: bad.command,
+          output: bad.output,
+          hint,
+          report: before ? "(The check was run before any work, to test it.)" : report,
+          github: githubForRepair(),
+        });
+      } catch (error) {
+        // I stopped The Eye's thinking (M13.25): the job pauses here.
+        if (error instanceof BrainStopped) throw error;
+        break;
+      }
+      event("task.check-reviewed", {
+        command: bad.command,
+        broken: repair.broken,
+        replacement: repair.broken ? repair.command : null,
+        reason: repair.reason,
+        ...(before ? { before: true } : {}),
+        ...(!own && said ? { agentSaid: said } : {}),
+      });
+      if (!repair.broken) break;
+      task.verify = task.verify.map((v) => (v === bad.command ? repair.command : v));
+      // The file a corrected check names is the task's to write (M13.22).
+      observed.scope = scopeOf(task);
+      d.db.update(tasks).set({ verify: task.verify }).where(eq(tasks.id, taskId)).run();
+      d.silk.add({
+        jobId: job.id,
+        taskId,
+        kind: "decision",
+        title: `Check corrected: ${task.title}`,
+        body: `\`${bad.command}\` was wrong (${repair.reason}). It is now \`${repair.command}\`.`,
+        authoredBy: "eye",
+      });
+      results = await rerun();
+    }
+    return results;
+  };
+
+  /**
+   * Checks tested before they judge (ADR-052 §2): each of the task's checks
+   * run once before its first attempt. Failing on work not done yet is what
+   * a check should do; a broken one (syntax, quoting, a missing tool) is
+   * repaired now, before any agent can be failed by it. What the run left in
+   * the folder is put back. Said in the job's events.
+   */
+  const tryChecksFirst = async () => {
+    if (!task.verify.length || !d.brain) return;
+    const key = `eye.checksTried.${taskId}`;
+    if (readSetting(d.db, key, z.boolean(), false)) return;
+    const tried: { command: string; state: string }[] = [];
+    for (let i = 0; i < task.verify.length; i++) {
+      const command = task.verify[i] as string;
+      const first = await runChecks([command], 3 * 60_000);
+      const r = first[0];
+      if (!r) continue;
+      if (r.ok) {
+        tried.push({ command, state: "passes before the work" });
+        continue;
+      }
+      if (!looksBroken(r)) {
+        tried.push({ command, state: "fails on the work not done yet" });
+        continue;
+      }
+      const after = await repairBroken(
+        first,
+        "",
+        () => runChecks([task.verify[i] as string], 3 * 60_000),
+        true,
+      );
+      const current = task.verify[i] as string;
+      tried.push({
+        command,
+        state:
+          current !== command
+            ? `broken, repaired as \`${current}\``
+            : after[0] && looksBroken(after[0])
+              ? "looks broken, and The Eye kept it"
+              : "fails on the work not done yet",
+      });
+    }
+    try {
+      if ((await ws.tree.changedSince(ckpt)).length) await ws.tree.rollback(ckpt, ws.trash);
+    } catch {}
+    writeSetting(d.db, key, z.boolean(), true);
+    event("task.checks-tried", { checks: tried });
+  };
+
+  /** Why the last attempt on this task stopped, for a session resumed (ADR-052 §1). */
+  const lastStop = (): string => {
+    if (!before) return "";
+    const said = d.silk
+      .all(job.id)
+      .filter(
+        (e) =>
+          e.taskId === taskId &&
+          e.createdAt >= before.startedAt &&
+          (e.kind === "handoff" || e.kind === "issue"),
+      )
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .at(-1);
+    const why = said?.body.split("## Why it was handed over")[1]?.trim();
+    return (
+      why ??
+      (before.outcome === "abandoned"
+        ? "it was stopped at a safe point"
+        : "its last turn didn't finish the task")
+    ).slice(0, 1500);
+  };
+
+  /**
+   * A model on a higher rung of the ladder for this kind of work that may
+   * take the task now (ADR-052 §3); null at the top, for a task I pinned or
+   * gave to a Leg, or with nothing stronger allowed.
+   */
+  const higherRung = (): Route | null => {
+    if (task.pinnedModelId || back.length) return null;
+    const mine = rungOf(leg.profile, work, task.kind as TaskKind);
+    const now = candidatesFor(d.registry, job.allowedLegIds).filter(
+      (c) =>
+        !avoidLegs.has(c.legId) &&
+        (!blockedKinds.has(d.registry.require(c.legId).kind) || limitedLegs.has(c.legId)),
+    );
+    const r = route({ ...routeTask, avoid: [...new Set([...task.avoid, leg.legModelId])] }, now, {
+      ...routeOptions,
+      claudeShare: claudeShareOf(d, job.id, budget),
+    });
+    return r.ranked.find((x) => (x.rung ?? 0) > mine) ?? null;
+  };
+
+  /** A usage limit on this Leg: another account of its provider isn't a fallback unless I allowed it (ADR-009). */
+  const markLimited = () => {
+    task.limitedKinds = [
+      ...new Set([...task.limitedKinds, `${d.registry.require(leg.legId).kind}:${leg.legId}`]),
+    ];
+    // Not "avoid": a quota is no failure, and the ladder climbs only on failures (ADR-052 §3).
+    d.db.update(tasks).set({ limitedKinds: task.limitedKinds }).where(eq(tasks.id, taskId)).run();
+  };
+
+  /**
+   * An end that isn't the task's, read from the Leg's own words (ADR-052
+   * §4, M13.22): a model its provider deprecated (hidden, the one it names
+   * offered instead), a usage limit (the Leg out of quota until the reset it
+   * says, kept until then), its provider or its program failing (a rest).
+   * Each makes the Leg or model unusable until it clears; the attempt
+   * doesn't count against the task. Null: the task's own failure.
+   */
+  const notTheTask = (error: string | null, atStart = false): AttemptOutcome | null => {
+    if (!error) return null;
+    const what = `${leg.legName} · ${leg.model}`;
+    const old = deprecationOf(error);
+    if (old && (!old.model || leg.model === old.model || leg.model.endsWith(`/${old.model}`))) {
+      const replacementId = d.registry.deprecateModel(leg.legModelId, old.replacement);
+      event("task.model-deprecated", {
+        legId: leg.legId,
+        legModelId: leg.legModelId,
+        model: leg.model,
+        replacement: old.replacement,
+        replacementId,
+      });
+      return {
+        kind: "retry",
+        reason: `${what} was deprecated by its provider${old.replacement ? `; ${old.replacement} takes its place` : "; it is hidden"}, and the attempt doesn't count against the task`,
+      };
+    }
+    const limit = usageLimitOf(error, now());
+    if (limit) {
+      const until = limit.until ?? now() + 15 * 60_000;
+      const l = d.registry.require(leg.legId);
+      if (!l.limitedUntil || l.limitedUntil < until)
+        d.registry.setHealth(
+          leg.legId,
+          "rate-limited",
+          `Out of quota until ${new Date(until).toISOString()}: ${limit.reason}`,
+          until,
+        );
+      markLimited();
+      event("task.leg-limited", { legId: leg.legId, until, reason: limit.reason });
+      return {
+        kind: "retry",
+        reason: `${leg.legName} is out of quota until ${whenSaid(until, now())} (${limit.reason})`,
+      };
+    }
+    const infra =
+      providerFailure(error) ??
+      (atStart
+        ? {
+            scope: "leg" as const,
+            restMs: 2 * 60_000,
+            reason: `could not start: ${error}`.slice(0, 160),
+          }
+        : null);
+    if (!infra) return null;
+    const { until, inARow } = d.registry.providerFailed(leg.legId, leg.legModelId, infra);
+    event("task.provider-failed", {
+      legId: leg.legId,
+      legModelId: leg.legModelId,
+      scope: infra.scope,
+      reason: infra.reason,
+      until,
+      inARow,
+    });
+    return {
+      kind: "retry",
+      reason: `${infra.scope === "leg" ? leg.legName : what} failed at its provider (${infra.reason}); it rests until ${new Date(until).toISOString()}, and the attempt doesn't count against the task`,
+    };
   };
 
   const ask = async (drift: Drift): Promise<never> => {
@@ -1115,6 +1489,8 @@ export async function runAttempt(
   const finish = (
     outcome: "succeeded" | "failed" | "reassigned" | "abandoned" | "unavailable",
     success: boolean,
+    /** What came of it says something of the model: learned from (the ladder's trust). */
+    learn = true,
   ) => {
     release();
     for (const id of asked) d.inbox.withdraw(id);
@@ -1125,7 +1501,7 @@ export async function runAttempt(
       .run();
     const m = d.registry.model(leg.legModelId);
     // Its provider failing says nothing of what the model can do (M13.22).
-    if (m && outcome !== "unavailable") {
+    if (m && outcome !== "unavailable" && learn) {
       const stored = record(d.registry.storedProfile(m), task.kind as TaskKind, {
         success,
         tokens: observed.tokensSinceProgress,
@@ -1137,11 +1513,24 @@ export async function runAttempt(
   };
 
   try {
+    // Checks tested before they judge (ADR-052 §2): run once before the work, a broken one is
+    // repaired before any agent can be failed by it.
+    await tryChecksFirst();
     const handoff = d.silk.current(job.id).some((e) => e.kind === "handoff" && e.taskId === taskId);
+    // The agent runs the checks itself, in the loop (ADR-052 §2).
+    const checksLine = task.verify.length
+      ? "Run its checks yourself and keep working until they pass, then say DONE"
+      : "Say DONE when it is finished";
+    // What the model before didn't get done goes with the task up the ladder (ADR-052 §3).
+    const stopped = before && before.outcome !== "succeeded" ? lastStop() : "";
+    if (resumeFrom) event("task.resumed", { nativeSessionId: resumeFrom });
     await openSession(
-      handoff
-        ? "Continue the task. The handoff above says where the last session stopped. Say DONE when it is finished."
-        : "Do the task described above. When it is finished, say DONE and summarise what you changed.",
+      resumeFrom
+        ? `Oraknid continues this session after it stopped: ${stopped || "it was stopped"}\n\nPick up where you left off. ${checksLine}.`
+        : handoff
+          ? `Continue the task. The handoff above says where the last session stopped${before?.outcome === "failed" && stopped ? `, and what it didn't get done:\n${stopped}\n\n` : ". "}${checksLine}.`
+          : `Do the task described above: plan it your own way, in this session. ${checksLine} and summarise what you changed.`,
+      resumeFrom,
     );
     let turns = 0;
     for (;;) {
@@ -1199,19 +1588,10 @@ export async function runAttempt(
       if (end.reason === "rate-limited") {
         await handOff(false);
         await closeSession();
-        d.db
-          .update(tasks)
-          .set({
-            avoid: [...new Set([...task.avoid, leg.legModelId])],
-            limitedKinds: [
-              ...new Set([
-                ...task.limitedKinds,
-                `${d.registry.require(leg.legId).kind}:${leg.legId}`,
-              ]),
-            ],
-          })
-          .where(eq(tasks.id, taskId))
-          .run();
+        // Its own words say until when: kept until then, never routed to before (ADR-052 §4).
+        const limit = usageLimitOf(end.error, now());
+        if (limit?.until) notTheTask(end.error);
+        else markLimited();
         // A usage limit is the account's, not the task failing: not counted against it (M13.22).
         finish("unavailable", false);
         return { kind: "retry", reason: `${leg.legName} hit a usage limit` };
@@ -1219,25 +1599,13 @@ export async function runAttempt(
       if (end.reason === "error") {
         await handOff(false);
         await closeSession();
-        // Its provider failed, not the task (M13.22): the model (or the Leg) rests, the
-        // attempt isn't counted against the task, and routing tries elsewhere next.
-        const infra = providerFailure(end.error);
-        if (infra) {
-          const { until, inARow } = d.registry.providerFailed(leg.legId, leg.legModelId, infra);
-          const what = infra.scope === "leg" ? leg.legName : `${leg.legName} · ${leg.model}`;
-          event("task.provider-failed", {
-            legId: leg.legId,
-            legModelId: leg.legModelId,
-            scope: infra.scope,
-            reason: infra.reason,
-            until,
-            inARow,
-          });
+        // Its provider failed, not the task (M13.22): the model (or the Leg) rests, a deprecated
+        // model is replaced, a quota is kept until its reset (ADR-052 §4); the attempt isn't
+        // counted against the task, and routing tries elsewhere next.
+        const unusable = notTheTask(end.error);
+        if (unusable) {
           finish("unavailable", false);
-          return {
-            kind: "retry",
-            reason: `${what} failed at its provider (${infra.reason}); it rests until ${new Date(until).toISOString()}, and the attempt doesn't count against the task`,
-          };
+          return unusable;
         }
         d.db
           .update(tasks)
@@ -1266,112 +1634,9 @@ export async function runAttempt(
       let failure = "";
       if (task.verify.length) {
         event("task.verifying", {});
-        const plan = job.unsandboxed
-          ? null
-          : sandboxPlan(
-              d.registry.require(leg.legId),
-              d.sandbox,
-              d.legsDir,
-              job.localPorts ?? [],
-              job.id,
-            );
-        await prepareServers();
-        const check = () =>
-          runVerify(task.verify, ws.cwd, plan, {
-            signal,
-            refuse: (command) =>
-              verifyRefusal(
-                decide({ tool: "Bash", command, path: null }, policyFor(d.db, job.id, ws.cwd)),
-              ),
-            builtin: async (command) =>
-              // A check on one of the job's servers runs there, over Oraknid's connection (ADR-049).
-              (servers.length && d.servers
-                ? await runServerCheck(command, {
-                    servers,
-                    run: (id, remote) => (d.servers as Servers).run(id, remote),
-                    refuse: (c) => {
-                      const v = serverVerdict(c, servers, policyFor(d.db, job.id, ws.cwd));
-                      return v ? verifyRefusal(v) : null;
-                    },
-                  })
-                : null) ??
-              runBuiltinCheck(command, {
-                ...(d.github ? { github: d.github } : {}),
-                link: githubLinkOf(d.db, job.id),
-                // In a project of several repos, `--repo <name>` says which (ADR-042).
-                linkFor: (repo) => {
-                  const repos = githubLinksOf(d.db, job.id);
-                  if (repo) {
-                    const r = repos.find((x) => x.name.toLowerCase() === repo.toLowerCase());
-                    if (!r)
-                      return `This project has no repo named ${repo}: its repos are ${repos.map((x) => x.name).join(", ")}.`;
-                    return r.github;
-                  }
-                  const linked = repos.filter((x) => x.github);
-                  if (repos.length > 1 && linked.length > 1)
-                    return `This project has several repos: name one with --repo (${linked.map((x) => x.name).join(", ")}).`;
-                  return (repos.length === 1 ? repos[0]?.github : linked[0]?.github) ?? null;
-                },
-                localCommit: (branch, repo) => ws.tree.localCommit(branch, repo),
-              }),
-          });
-        let results = await check();
-        // A check that is wrong is The Eye's to fix, not the Leg's (The-Eye → A check that is wrong).
-        for (let repairs = 0; repairs < 2 && d.brain; repairs++) {
-          const bad = results.find((r) => !r.ok);
-          const hint = bad ? looksBroken(bad) : null;
-          if (!bad || !hint) break;
-          let repair: CheckRepair;
-          try {
-            repair = await d.brain.repairCheck({
-              jobId: job.id,
-              cwd: ws.cwd,
-              task: { title: task.title, instructions: task.instructions },
-              command: bad.command,
-              output: bad.output,
-              hint,
-              report: end.text,
-              github: (() => {
-                if (!ws.tree.several) {
-                  const l = githubLinkOf(d.db, job.id);
-                  return l ? { repo: `${l.owner}/${l.name}`, visibility: l.visibility } : null;
-                }
-                const repos = githubLinksOf(d.db, job.id).filter((x) => x.github);
-                return repos.length
-                  ? repos.map((x) => ({
-                      repo: `${x.github?.owner}/${x.github?.name}`,
-                      visibility: x.github?.visibility ?? "private",
-                      name: x.name,
-                    }))
-                  : null;
-              })(),
-            });
-          } catch (error) {
-            // I stopped The Eye's thinking (M13.25): the job pauses here.
-            if (error instanceof BrainStopped) throw error;
-            break;
-          }
-          event("task.check-reviewed", {
-            command: bad.command,
-            broken: repair.broken,
-            replacement: repair.broken ? repair.command : null,
-            reason: repair.reason,
-          });
-          if (!repair.broken) break;
-          task.verify = task.verify.map((v) => (v === bad.command ? repair.command : v));
-          // The file a corrected check names is the task's to write (M13.22).
-          observed.scope = scopeOf(task);
-          d.db.update(tasks).set({ verify: task.verify }).where(eq(tasks.id, taskId)).run();
-          d.silk.add({
-            jobId: job.id,
-            taskId,
-            kind: "decision",
-            title: `Check corrected: ${task.title}`,
-            body: `\`${bad.command}\` was wrong (${repair.reason}). It is now \`${repair.command}\`.`,
-            authoredBy: "eye",
-          });
-          results = await check();
-        }
+        // A check that is wrong is The Eye's to fix, not the Leg's (The-Eye → A check that is
+        // wrong); so is one the agent shows is broken (ADR-052 §2).
+        const results = await repairBroken(await runChecks(), end.text, () => runChecks());
         const failed = results.find((r) => !r.ok);
         verified = !failed;
         event("task.verified", {
@@ -1451,6 +1716,28 @@ export async function runAttempt(
           commits: ws.tree.several ? made.map((c) => ({ repo: c.repo as string, sha: c.sha })) : [],
         };
       }
+      // The ladder (ADR-052 §3): the work isn't done after the agent ended its turn (its checks
+      // fail, the review says it's wrong): one failure moves it up a rung at once, with a
+      // handoff, while a stronger model is allowed. A forbidden action is the drift ladder's.
+      if (!verified && !drifts.some((x) => x.code === "D7" || x.code === "D8")) {
+        const up = higherRung();
+        if (up) {
+          event("task.climbing", {
+            from: `${leg.legName} · ${leg.model}`,
+            to: `${up.candidate.legName} · ${up.candidate.model}`,
+            work,
+          });
+          await handOff(false, failure);
+          await closeSession();
+          task.avoid = [...new Set([...task.avoid, leg.legModelId])];
+          d.db.update(tasks).set({ avoid: task.avoid }).where(eq(tasks.id, taskId)).run();
+          finish("failed", false);
+          return {
+            kind: "retry",
+            reason: `${leg.legName} · ${leg.model} didn't get it done; it climbs to ${up.candidate.legName} · ${up.candidate.model}`,
+          };
+        }
+      }
       if (drifts.length) {
         await escalate(drifts, failure);
         continue;
@@ -1481,7 +1768,14 @@ export async function runAttempt(
     }
   } catch (error) {
     if (error instanceof EndAttempt) {
-      finish(error.outcome.kind === "retry" ? "reassigned" : "abandoned", false);
+      finish(
+        error.unavailable
+          ? "unavailable"
+          : error.outcome.kind === "retry"
+            ? "reassigned"
+            : "abandoned",
+        false,
+      );
       return error.outcome;
     }
     // Stopped (pause, cancel, shutdown) or failed: leave a handoff behind, then let the engine decide.
@@ -1509,7 +1803,8 @@ export async function runAttempt(
         );
       } catch {}
     }
-    finish("abandoned", false);
+    // Stopped by me or its job (a pause, a restart) says nothing of the model (ADR-052 §3).
+    finish("abandoned", false, !signal.aborted);
     if (byLeg) {
       setReady(byLeg.message);
       return { kind: "leg-stopped", how: byLeg.how, reason: byLeg.message };
@@ -1721,8 +2016,7 @@ const scopeOf = (task: TaskRow) =>
     instructions: task.instructions,
   });
 
-const inTaskScope = (path: string, scope: string[]) =>
-  path.startsWith(".oraknid/") || inScope(path, scope);
+const inTaskScope = (path: string, scope: string[]) => oraknidOwn(path) || inScope(path, scope);
 
 /** Every visible Leg model the job may use, as routing candidates. */
 export function candidatesFor(registry: LegRegistry, allowed: string[]): RouteCandidate[] {
@@ -1743,8 +2037,84 @@ export function candidatesFor(registry: LegRegistry, allowed: string[]): RouteCa
         windows: [...view.quota, ...m.quota],
         cooldown: registry.cooldownOf(leg.id, m.id),
         legProviderFailures: registry.providerStreak(leg.id),
+        legKind: leg.kind,
       });
     }
   }
   return out;
+}
+
+/**
+ * The job's Claude share (ADR-052 §3): its budget's, else my setting for
+ * every job; with how much of its attempts so far ran on Claude. Null: as
+ * needed.
+ */
+function claudeShareOf(
+  d: AttemptDeps,
+  jobId: string,
+  budget: Budget | undefined,
+): { limit: number; used: number } | null {
+  const limit =
+    budget?.claudeShare ??
+    readSetting(d.db, CLAUDE_SHARE, z.number().min(0).max(1).nullable(), null);
+  if (limit === null || limit === undefined) return null;
+  const rows = d.db
+    .select({ legId: attempts.legId, outcome: attempts.outcome })
+    .from(attempts)
+    .where(eq(attempts.jobId, jobId))
+    .all()
+    .filter((a) => a.outcome !== "unavailable");
+  const claude = new Set(
+    d.registry
+      .all()
+      .filter((l) => l.kind === "claude-code")
+      .map((l) => l.id),
+  );
+  const used = rows.length ? rows.filter((r) => claude.has(r.legId)).length / rows.length : 0;
+  return { limit, used };
+}
+
+/**
+ * Why no Leg can take a task, in words that say what to do (ADR-052 §4):
+ * a paused Leg is paused, not out of quota; a quota says until when; a Leg
+ * that can't start says why. Never "out of quota" for a Leg that isn't.
+ */
+function whyNoLeg(
+  d: AttemptDeps,
+  job: AttemptJob,
+  title: string,
+  excluded: { legModelId: string; why: string }[],
+  until: number | null,
+): string {
+  const at = d.now();
+  const legsAllowed = d.registry
+    .all()
+    .filter((l) => !job.allowedLegIds.length || job.allowedLegIds.includes(l.id));
+  if (!legsAllowed.length) return `No Leg can take "${title}": there are no Legs.`;
+  const parts: string[] = [];
+  let paused = 0;
+  for (const l of legsAllowed) {
+    if (l.paused) {
+      paused++;
+      parts.push(`${l.name} is paused in Oraknid: unpause it on its card (Legs) to go on`);
+    } else if (!l.enabled) parts.push(`${l.name} is turned off: turn it on in Legs`);
+    else if (l.health === "rate-limited" && l.limitedUntil && l.limitedUntil > at)
+      parts.push(`${l.name} is out of quota until ${whenSaid(l.limitedUntil, at)}`);
+    else if (l.health === "rate-limited") parts.push(`${l.name} is out of quota`);
+    else if (l.health === "unavailable" || l.health === "disabled")
+      parts.push(`${l.name} can't be used: ${l.healthDetail ?? l.health}`);
+    else {
+      const ids = new Set(d.registry.models(l.id).map((m) => m.id));
+      const whys = excluded.filter((e) => ids.has(e.legModelId)).map((e) => e.why);
+      if (whys.length) parts.push(whys.join(" ").replace(/\.$/, ""));
+    }
+  }
+  const when = until ? ` It goes on by itself at ${whenSaid(until, at)}.` : "";
+  const act =
+    paused && paused === legsAllowed.length
+      ? " Unpause one to go on."
+      : !until && paused
+        ? " Unpause a Leg, or add one that can do it."
+        : "";
+  return `No Leg can take "${title}": ${parts.join("; ") || "none of them fits it"}.${when}${act}`;
 }

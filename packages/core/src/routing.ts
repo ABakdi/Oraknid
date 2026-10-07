@@ -27,6 +27,8 @@ export interface RouteCandidate {
   legProviderFailures?: number;
   /** Its Leg's task sessions running now and its limit: work spreads across Legs (ADR-050). */
   sessions?: { running: number; limit: number };
+  /** Its Leg's kind ("claude-code"…), for a job's Claude share (ADR-052 §3). */
+  legKind?: string;
 }
 
 export interface RouteTask {
@@ -41,6 +43,8 @@ export interface RouteTask {
   pinnedModelId?: string | null;
   /** Leg models that already failed this task, avoided unless nothing else is left. */
   avoid?: string[];
+  /** The kind of work, for the ladder's rungs (ADR-052 §3); from `kind` when unset. */
+  work?: WorkKind;
 }
 
 export interface RouteOptions {
@@ -53,12 +57,20 @@ export interface RouteOptions {
   now?: number;
   /** Internal: nothing was strong enough, so the strongest available may take it. */
   stretch?: boolean;
+  /**
+   * The job's Claude share (ADR-052 §3): the share of its attempts that may
+   * run on Claude, and the share used so far. Past it, Claude takes a task
+   * only when nothing else can.
+   */
+  claudeShare?: { limit: number; used: number } | null;
 }
 
 export interface Route {
   candidate: RouteCandidate;
   effort: string | null;
   score: number;
+  /** Its rung on the ladder for this kind of work (ADR-052 §3). */
+  rung?: number;
   /** Why it scored that way, for the task's routing record. */
   reasons: string[];
 }
@@ -275,6 +287,45 @@ export function route(task: RouteTask, candidates: RouteCandidate[], o: RouteOpt
     routes.push({ candidate: c, effort, score, reasons });
   }
 
+  // The ladder (ADR-052 §3): a task a model failed goes up, never sideways or down. Only
+  // candidates on a higher rung than the strongest that failed it are left; with none, the
+  // top of the ladder (the strongest allowed) takes it again.
+  const work = task.work ?? workKindOf({ kind: task.kind });
+  for (const r of routes) r.rung = rungOf(r.candidate.profile, work, task.kind);
+  const failed = candidates.filter((c) => task.avoid?.includes(c.legModelId));
+  if (failed.length && routes.length && !task.pinnedModelId) {
+    const floor = Math.max(...failed.map((c) => rungOf(c.profile, work, task.kind)));
+    const above = routes.filter((r) => (r.rung ?? 0) > floor);
+    if (above.length) {
+      for (const r of routes.filter((x) => (x.rung ?? 0) <= floor))
+        excluded.push({
+          legModelId: r.candidate.legModelId,
+          why: `${r.candidate.legName} · ${r.candidate.model}: not above the model that failed this task (the ladder goes up).`,
+        });
+      routes.splice(0, routes.length, ...above);
+      for (const r of routes) r.reasons.unshift("a rung up after a failure");
+    } else {
+      const top = Math.max(...routes.map((r) => r.rung ?? 0));
+      for (const r of routes)
+        if ((r.rung ?? 0) === top) {
+          r.score += 10;
+          r.reasons.unshift("the top of the ladder: the strongest allowed takes it again");
+        }
+    }
+  }
+  // Past the job's Claude share, Claude takes a task only when nothing else can (ADR-052 §3).
+  const share = o.claudeShare;
+  if (share && share.used >= share.limit) {
+    const others = routes.filter((r) => r.candidate.legKind !== "claude-code");
+    if (others.length && others.length < routes.length) {
+      for (const r of routes.filter((x) => x.candidate.legKind === "claude-code"))
+        excluded.push({
+          legModelId: r.candidate.legModelId,
+          why: `${r.candidate.legName} · ${r.candidate.model}: this job used its Claude share (${Math.round(share.limit * 100)}%).`,
+        });
+      routes.splice(0, routes.length, ...others);
+    }
+  }
   const ranked = routes.sort((a, b) => b.score - a.score);
   // When every Leg that could take it is rated for easier work, the strongest of them tries it
   // rather than the job blocking (seen live: free models only, and a plan to make).
@@ -288,3 +339,45 @@ export function route(task: RouteTask, candidates: RouteCandidate[], o: RouteOpt
   }
   return { ranked, excluded };
 }
+
+// ── The ladder (ADR-052 §3) ──────────────────────────────────────────
+
+/** The kinds of work a model has a rung for. */
+export type WorkKind = "code" | "server" | "research" | "docs" | "review" | "planning";
+
+/** What each kind of work needs most. */
+const NEEDS: Record<WorkKind, Capability[]> = {
+  code: ["implementation", "debugging", "tests"],
+  server: ["implementation", "debugging"],
+  research: ["summarize", "docs", "review"],
+  docs: ["docs"],
+  review: ["review"],
+  planning: ["planning", "architecture"],
+};
+
+const DOCS = /(?:^|\/)(?:docs?|notes)\/|\.(?:md|mdx|markdown|txt|rst|adoc)$/i;
+
+/** The kind of work a task is, for its rung. */
+export function workKindOf(t: { kind: string; scope?: string[] }, serverJob = false): WorkKind {
+  if (serverJob) return "server";
+  if (t.kind === "research") return "research";
+  if (t.kind === "plan") return "planning";
+  if (t.kind === "review") return "review";
+  if (t.scope?.length && t.scope.every((g) => DOCS.test(g))) return "docs";
+  return "code";
+}
+
+/**
+ * A model's rung for a kind of work: first the hardest work it is made for,
+ * then its strength at what the work needs, moved by what it got done
+ * (routing's trust). Higher is stronger. Until it has outcomes, its
+ * profile's order ("estimated").
+ */
+export function rungOf(profile: EffectiveProfile, work: WorkKind, kind: TaskKind): number {
+  const needs = NEEDS[work];
+  const strength = needs.reduce((n, c) => n + (profile.strengths[c] ?? 0), 0) / needs.length;
+  return RANK[profile.maxDifficulty] * 10 + strength * 1.5 + trust(profile, kind).score;
+}
+
+/** The capabilities a kind of work needs, for The Eye's own choice. */
+export const workNeeds = (work: WorkKind): Capability[] => [...NEEDS[work]];

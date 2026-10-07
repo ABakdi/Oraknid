@@ -200,8 +200,19 @@ export function refusals(
 /** A quota error in a failed result (ADR-020): when it says so, and when it resets. */
 export function quotaError(error: string): { resetsAt: number | null } | null {
   if (!/quota|rate.?limit|resource.?exhausted|\b429\b/i.test(error)) return null;
-  const secs = /reset\w*\s+in\s+(\d+)\s*s/i.exec(error)?.[1];
-  return { resetsAt: secs ? Date.now() + Number(secs) * 1000 : null };
+  // "Resets in 51h49m11s", "resets in 30s", "resets in 2 hours" (ADR-052 §4: kept until it clears).
+  const when =
+    /reset\w*\s+in\s+((?:\d+\s*(?:d|h|m|s|days?|hours?|minutes?|mins?|seconds?|secs?)(?![a-z])\s*)+)/i.exec(
+      error,
+    )?.[1];
+  let ms = 0;
+  for (const m of (when ?? "").matchAll(/(\d+)\s*([a-z]+)/gi)) {
+    const unit = (m[2] as string).toLowerCase()[0];
+    ms +=
+      Number(m[1]) *
+      (unit === "d" ? 86_400_000 : unit === "h" ? 3_600_000 : unit === "m" ? 60_000 : 1000);
+  }
+  return { resetsAt: ms ? Date.now() + ms : null };
 }
 
 interface AgyEvent {

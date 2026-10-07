@@ -48,6 +48,8 @@ export interface StartRequest {
   /** Ports on this computer the session may reach: its project's (Sandboxing → network). */
   localPorts?: number[];
   onPermission: (request: PermissionRequest) => Promise<PermissionDecision>;
+  /** The task's checks before the agent may end its turn (ADR-052 §2): a reason keeps it working. */
+  onStop?: (lastMessage: string) => Promise<string | null>;
   /** The job's tools through the broker (ADR-021): servers, and what the sandbox must reach. */
   tools?: { servers: Record<string, McpServer>; writable: string[]; readonly: string[] };
   /** Folders it may read and never write (ADR-025: a chat's projects). */
@@ -180,6 +182,7 @@ export class LegSupervisor {
             ),
         credential: await registry.credential(leg),
         onPermission: req.onPermission,
+        ...(req.onStop ? { onStop: req.onStop } : {}),
         ...(req.tools ? { mcpServers: req.tools.servers } : {}),
       });
     } catch (error) {
@@ -196,6 +199,14 @@ export class LegSupervisor {
       ...session,
       kill: async () => {
         await session.kill();
+        // Its native id, for a retry that resumes it (ADR-052 §1).
+        const native = session.nativeSessionId();
+        if (native)
+          this.o.db
+            .update(sessions)
+            .set({ nativeSessionId: native })
+            .where(eq(sessions.id, id))
+            .run();
         const reason = this.#closing.get(id) ?? "killed";
         this.#closing.delete(id);
         this.#end(id, reason, null);
@@ -298,6 +309,14 @@ export class LegSupervisor {
     } finally {
       flushText();
       this.#live.delete(id);
+      // Its native id, kept even when no turn reported usage: a retry resumes it (ADR-052 §1).
+      const native = session.nativeSessionId();
+      if (native)
+        this.o.db
+          .update(sessions)
+          .set({ nativeSessionId: native })
+          .where(eq(sessions.id, id))
+          .run();
     }
   }
 

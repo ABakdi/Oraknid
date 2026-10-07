@@ -38,6 +38,12 @@ are the task's scope taken whole (`taskScope`):
 - `docs/**` for a `research` or `plan` task, whose deliverable is a
   document.
 
+**Oraknid's own files are never out of scope** (M15.1, 2026-10-07,
+`oraknidOwn`): its `.oraknid/` folder and the handoff note an agent
+leaves when it hands over (`notes/handoff.md`, `handoff.md`,
+`handoffs/…`). Seen 2026-10-06: the misahaty job's handoff note was
+flagged as an edit outside the scope.
+
 What a check reads is what the task must leave behind. Seen 2026-10-04:
 a research task whose plan gave it the scope `["research",
 "documentation"]` wrote `docs/audio-libraries-recommendation.md`, the
@@ -72,6 +78,15 @@ branch so the files' content shows as changes, and the attempt fails
 with the reason, kept in Silk as an issue and said in the conversation;
 the next attempt starts from the files as they were. If it can't be put
 back, the job blocks.
+
+**The work ladder comes first** (M15.3, [[ADR-052-A-Harness-For-Any-Model]] §3).
+Before this drift ladder, a turn that ends without the work done (its
+checks fail, the review says it's wrong) moves the task up a rung of the
+model ladder at once, with a handoff, while a stronger model is allowed
+(The-Eye → The ladder). The drift ladder above runs on the top rung, and
+for drift that isn't a failed result (a loop, a stall, a forbidden
+action). A pause, a restart, a quota or a provider's failure is never
+counted against the model.
 
 Steps can be skipped when the evidence calls for it (D8 goes straight
 to step 4). Every step is an event in the activity stream and the audit

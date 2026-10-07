@@ -18,6 +18,7 @@ import {
   scopeConflict,
   skillChecks,
   skillExcerpt,
+  specComplete,
   suspicious,
 } from "@oraknid/core";
 import type { Sandbox } from "@oraknid/os";
@@ -1026,7 +1027,8 @@ async function interview(
   if (d.silk.current(job.id).some((e) => e.kind === "decision" && e.title === INTERVIEW_DONE))
     return;
   if (ctx.state() === "draft") ctx.setState("interviewing");
-  const max = interviewRounds(d.db);
+  // A goal that is a complete spec gets one round, never a dozen (ADR-052 §7).
+  const max = specComplete(job.goal) ? 1 : interviewRounds(d.db);
   for (let n = 1; ; n++) {
     // I said to end it in the conversation while no round was open: planning starts with what's known.
     if (interviewEnded(d.silk, job.id)) {
