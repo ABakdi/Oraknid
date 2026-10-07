@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -366,7 +366,10 @@ describe("oraknid-monitor's parts (ADR-043)", () => {
       /not there|not readable/,
     );
     // Only logs that are there (the configured ones are absolute paths on the real server).
-    expect(nginx.accessLogs).toEqual([`${root}/var/log/nginx/access.log`]);
+    // A machine with nginx of its own (a CI runner) has the configured path too: it is there.
+    expect(nginx.accessLogs).toContain(`${root}/var/log/nginx/access.log`);
+    for (const f of nginx.accessLogs as string[])
+      expect(f.startsWith(root) || existsSync(f), f).toBe(true);
     const traefik = p.proxies.find((x: { kind: string }) => x.kind === "traefik");
     expect(traefik).toMatchObject({ source: "container", name: "proxy", state: "running" });
     expect(traefik.sites).toEqual([

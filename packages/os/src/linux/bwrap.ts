@@ -110,11 +110,17 @@ export function createBwrapSandbox(options: BwrapOptions = {}): Sandbox {
       // pasta first: the sandbox gets a network namespace of its own, with the
       // internet through pasta and only the chosen ports of this computer (Audit 2 → S2-21).
       // Landlock comes inside pasta: applied before it, pasta's user namespace can't map ids.
+      // By their full paths: once the launch has read the sandbox's variables, PATH is the
+      // sandbox's own, which needn't hold them.
       const confined = scoped()
-        ? ["python3", "-c", LANDLOCK_SCRIPT, bwrap, ...args]
-        : [bwrap, ...args];
+        ? [onPath("python3"), "-c", LANDLOCK_SCRIPT, onPath(bwrap), ...args]
+        : [onPath(bwrap), ...args];
       const line = isolated
-        ? ["pasta", ...pastaArgs(spec.localPorts ?? [], spec.inboundPorts ?? []), ...confined]
+        ? [
+            onPath("pasta"),
+            ...pastaArgs(spec.localPorts ?? [], spec.inboundPorts ?? []),
+            ...confined,
+          ]
         : confined;
       // The sandbox's variables (a Leg's key, a project's secrets, ADR-059) never go on a
       // command line, which every user of the computer can read: a 0600 file a clean shell
@@ -136,8 +142,18 @@ export function createBwrapSandbox(options: BwrapOptions = {}): Sandbox {
   };
 }
 
+/** A program's full path on the daemon's PATH (as given when not found, or already a path). */
+function onPath(name: string): string {
+  if (name.includes("/")) return name;
+  for (const dir of (process.env.PATH ?? "/usr/bin:/bin").split(":")) {
+    if (dir && existsSync(join(dir, name))) return join(dir, name);
+  }
+  return name;
+}
+
 /** Reads the variables' file, deletes it, and runs the rest with exactly them (and PATH for the launch). */
-const ENV_LAUNCH = 'f="$0"; . "$f"; rm -f "$f"; unset f; exec "$@"';
+// The file is opened and deleted while PATH is still the daemon's, then read from its descriptor.
+const ENV_LAUNCH = 'exec 3<"$0" && rm -f "$0" && . /dev/fd/3; exec 3<&-; exec "$@"';
 
 /** A shell-quoted `export` per variable, in a private 0600 file; removed by the launch, or after a minute. */
 function envFile(env: Record<string, string>): string {

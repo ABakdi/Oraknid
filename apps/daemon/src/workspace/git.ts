@@ -197,16 +197,19 @@ export function shadowRepo(path: string): Git {
     git(
       g,
       ["commit", "-q", "--allow-empty", "-m", "chore: start the checkpoint history"],
-      authorEnv(),
+      authorEnv(g),
     );
   }
   return g;
 }
 
-/** Commits as me when git knows me, as Oraknid otherwise. */
-function authorEnv(): Record<string, string> {
-  const name = spawnSync("git", ["config", "user.name"], { encoding: "utf8" }).stdout.trim();
-  const email = spawnSync("git", ["config", "user.email"], { encoding: "utf8" }).stdout.trim();
+/** Commits as me when git knows me (the repository's settings, then mine), as Oraknid otherwise. */
+function authorEnv(g: Git): Record<string, string> {
+  const read = (key: string) =>
+    spawnSync("git", [...g.base, "config", key], { cwd: g.cwd, encoding: "utf8" }).stdout?.trim() ??
+    "";
+  const name = read("user.name");
+  const email = read("user.email");
   return name && email
     ? {}
     : {
@@ -234,7 +237,7 @@ export function createWorktree(
 ) {
   const g = { cwd: repoPath, base: [] };
   if (!ok(g, ["rev-parse", "--verify", "HEAD"])) {
-    git(g, ["commit", "-q", "--allow-empty", "-m", "chore: start the repository"], authorEnv());
+    git(g, ["commit", "-q", "--allow-empty", "-m", "chore: start the repository"], authorEnv(g));
   }
   excludeOraknid(g, gitDirOf(g));
   if (!ok(g, ["rev-parse", "--verify", `refs/heads/${branches.work}`])) {
@@ -329,7 +332,7 @@ export async function checkpoint(
   const parent = ok(g, ["rev-parse", "--verify", "HEAD"])
     ? ["-p", git(g, ["rev-parse", "HEAD"]).trim()]
     : [];
-  const commit = git(g, ["commit-tree", tree, ...parent, "-m", message], authorEnv()).trim();
+  const commit = git(g, ["commit-tree", tree, ...parent, "-m", message], authorEnv(g)).trim();
   git(g, ["update-ref", ref, commit]);
   return commit;
 }
@@ -433,7 +436,7 @@ export async function stageAll(g: Git): Promise<boolean> {
 
 /** Commits what is staged. */
 export async function commitStaged(g: Git, message: string): Promise<string> {
-  await gitAsync(g, ["commit", "-q", "--no-verify", "-m", message], authorEnv());
+  await gitAsync(g, ["commit", "-q", "--no-verify", "-m", message], authorEnv(g));
   return git(g, ["rev-parse", "HEAD"]).trim();
 }
 
@@ -564,7 +567,7 @@ export function mergeBranch(
   const commit = git(
     g,
     ["commit-tree", tree, "-p", before, "-p", `refs/heads/${branch}`, "-m", message],
-    authorEnv(),
+    authorEnv(g),
   ).trim();
   const at = checkedOutAt(repo, into);
   if (at) {
@@ -657,7 +660,7 @@ export async function mergeTaskBranch(
   message: string,
 ): Promise<{ ok: true; commit: string } | { ok: false; conflicts: string[] }> {
   try {
-    await gitAsync(jobG, ["merge", "--no-ff", "--no-edit", "-m", message, branch], authorEnv());
+    await gitAsync(jobG, ["merge", "--no-ff", "--no-edit", "-m", message, branch], authorEnv(jobG));
     return { ok: true, commit: git(jobG, ["rev-parse", "HEAD"]).trim() };
   } catch {
     const conflicts = git(jobG, ["diff", "--name-only", "--diff-filter=U"])
