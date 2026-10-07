@@ -43,7 +43,7 @@ Full data model: [[Core-Entities]].
 | Module | What it does | Spec | Phase |
 | :-- | :-- | :-- | :-- |
 | The Eye | Plan, route, monitor, verify, self-prompt. | [[The-Eye]] | 1 |
-| Legs | Adapters, pool, health, profiles. | [[Legs-and-Capability-Profiles]] | 1 (Claude Code, OpenAI-compatible); 2, 5; 15 (Oraknid's own agent; Codex planned) |
+| Legs | Adapters, pool, health, profiles. | [[Legs-and-Capability-Profiles]] | 1 (Claude Code, OpenAI-compatible); 2, 5; 15 (Oraknid's own agent, Codex) |
 | Silk | Job memory, handoffs, context packs. | [[Silk]] | 1 |
 | Drift control | Detectors, escalation ladder, checkpoints. | [[Drift-Control]] | 1 |
 | Budgets | Tokens, quota windows, context, time, money. | [[Budgets-and-Quotas]] | 1 |

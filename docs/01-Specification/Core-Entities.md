@@ -160,7 +160,7 @@ why it ended (`completed`, `rotated`, `interrupted`, `killed`, `crashed`,
 
 | Leg field | Meaning |
 | :-- | :-- |
-| `id`, `name`, `kind` | e.g. "Claude — personal", `claude-code`. Kinds: `claude-code`, `openai-compatible`, `opencode`, `antigravity`, `oraknid-agent` (2026-10-07). |
+| `id`, `name`, `kind` | e.g. "Claude — personal", `claude-code`. Kinds: `claude-code`, `openai-compatible`, `opencode`, `antigravity`, `oraknid-agent`, `codex` (2026-10-07). |
 | `config` | Kind-specific: binary path, config directory, endpoint URL, model name. No secrets. Those are referenced in the keychain. |
 | `secretRef` | Keychain entry, if any. |
 | `enabled`, `health` | `healthy` · `degraded` · `rate-limited` · `unavailable` · `disabled`. |

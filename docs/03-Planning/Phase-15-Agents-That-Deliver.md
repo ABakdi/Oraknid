@@ -194,9 +194,9 @@ Stage 3 is in progress on its own branch (2026-10-07), not on `dev` yet:
 - [ ] Monitors and `decideOutcome`, pure and table-tested; the escalation policy
 - [ ] Agent sessions by capability; the task controller; `runAttempt` gone; ratchet tests
 
-### M15.9 — A Codex Leg (planned)
-In progress by another builder (2026-10-07); its ADR comes with it.
-- [ ] Codex as a Leg kind behind the Leg adapter contract; what it covers is written in its ADR when it lands
+### M15.9 — A Codex Leg ([[ADR-057-Codex-Adapter]])
+- [x] Codex as a Leg kind (`packages/legs/codex`): `codex exec --json` per turn inside Oraknid's sandbox with Codex's own sandbox off, a CODEX_HOME per Leg (a job's own with only the login linked), every command, file of a patch and MCP call through Oraknid's policy by its PreToolUse hook, the checks by its Stop hook; sign-in from the card with a device code or an OpenAI API key; models and reasoning levels from its catalog; plan windows from its app server; usage limits with their reset time; discovery, a default profile, Add a Leg (2026-10-07)
+  Tested: `packages/legs/codex` `adapter.test.ts` against a stand-in `codex` (`fake-codex.mjs`): usage limits and their reset read from Codex's wording; the policy asked about commands, each file of a patch and MCP calls, not Codex's bookkeeping; tool items' results; the catalog's models with their levels and context; the plan's windows; `exec resume` given only flags it takes; the probe (version, login, catalog); running totals counted once; an API key only through its environment; auto mode's layer 1 refusing first; the Stop hook holding a turn while checks fail, three times at most; a thread to resume that is gone; the sandbox with its CODEX_HOME and the hook reaching Oraknid from there. Not run on a real job: the hook's being called in `exec` must be checked on the first one (ADR-057 → Consequences).
 
 ### M15.7 — The proof
 - [ ] My piano project (React, every feature of its spec) built in under 30 minutes from the spec, verified by its checks, with free models doing the simple parts and climbing when they fail

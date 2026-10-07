@@ -11,7 +11,7 @@ the canon. Code identifiers are shown in `code`.
 | **Leg** | `leg` | One configured agent account or local model server plugged into Oraknid, e.g. "Claude Code, account work@" or "Ollama on localhost". It offers one or more Leg models. |
 | **Leg model** | `legModel` | One model a Leg offers (e.g. Opus on a Claude Code account), with its own capability profile and quota windows. The Eye routes tasks to a Leg model and an effort level. |
 | **Effort** | `effort` | The effort or thinking level a model runs at, where the agent supports it. Higher effort costs more tokens. |
-| **Leg kind** | `legKind` | The type of backend a Leg uses: `claude-code`, `openai-compatible`, `opencode`, `antigravity`, `oraknid-agent` (2026-10-07). Each kind has one adapter. A Codex Leg is planned (Phase 15). |
+| **Leg kind** | `legKind` | The type of backend a Leg uses: `claude-code`, `openai-compatible`, `opencode`, `antigravity`, `oraknid-agent` and `codex` (2026-10-07, [[ADR-057-Codex-Adapter]]). Each kind has one adapter. |
 | **Leg adapter** | `LegAdapter` | The code that drives one Leg kind behind the uniform interface: start, send, stream, interrupt, resume, kill, usage, permissions. |
 | **Oraknid's own agent** | `oraknid-agent` | The Leg kind that is Oraknid's own tool loop over any model behind an OpenAI-compatible API, with Claude-Code-like tools in the sandbox, compaction and checks on "done" ([[ADR-052-A-Harness-For-Any-Model]] §6). |
 | **Local Leg** | — | The Oraknid's-own-agent Leg whose models are the chat models loaded on this computer; made by Oraknid when the first one loads ([[ADR-054-Local-Models]]). |

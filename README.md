@@ -17,7 +17,7 @@ servers, backups, storage, mail and monitoring around it, on your own machine.</
 
 Oraknid runs in the background on your Linux machine. You tell it what you
 want; **The Eye** plans the work into whole tasks with checks, hands each to
-the agent that fits it best (Claude Code, OpenCode, Antigravity, or Oraknid's
+the agent that fits it best (Claude Code, Codex, OpenCode, Antigravity, or Oraknid's
 own agent on any model, local or remote), watches them, climbs to a stronger
 model when one fails, and only calls a task done when its checks pass. Around
 that sits everything a project needs: its GitHub repos, the servers it deploys
@@ -32,7 +32,7 @@ terminal.
 ## What it does
 
 **Agents and The Eye**
-- Runs **Claude Code, OpenCode, Antigravity** and any **OpenAI-compatible** model (Ollama, LM Studio, llama.cpp, vLLM, OpenRouter) as *Legs*, several accounts each, found on your machine in one click. **Oraknid's own agent** gives any model Claude-Code-like tools in the sandbox.
+- Runs **Claude Code, Codex, OpenCode, Antigravity** and any **OpenAI-compatible** model (Ollama, LM Studio, llama.cpp, vLLM, OpenRouter) as *Legs*, several accounts each, found on your machine in one click. **Oraknid's own agent** gives any model Claude-Code-like tools in the sandbox.
 - **Plans** a goal into whole tasks with checks (split only where the pieces are independent), **routes** each to the cheapest model likely to do it, **climbs the ladder** to a stronger one when it fails (with a Claude share you set), and never picks an agent that is out of quota, paused or deprecated.
 - **Verifies** by running the checks itself; the agent runs them too before it ends. A check that is broken itself is repaired, never held against the agent.
 - **Watches** every session: drift, loops, edits out of scope, tokens burned without progress; corrects, hands over, or asks you.
@@ -144,7 +144,7 @@ packages/core/        pure rules: life cycles, routing and the ladder, the comma
 packages/guard/       auto mode's rules: commands parsed, dangerous ones blocked, secrets caught; the judge's shape
 packages/os/          Linux: sandbox, sleep lock, secrets, metrics, notifications, services
 packages/tunnel/      the end-to-end encrypted tunnel between a device and the daemon
-packages/legs/        the Leg SDK and adapters: claude-code, opencode, antigravity, openai-compatible, oraknid-agent
+packages/legs/        the Leg SDK and adapters: claude-code, codex, opencode, antigravity, openai-compatible, oraknid-agent
 docs/                 the canon
 ```
 

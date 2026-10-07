@@ -12,8 +12,9 @@ Phase 15, agents that deliver, is in progress before Phase 14: M15.1 to
 M15.6 built (the harness's first fixes, auto mode, whole goals and the
 ladder, Oraknid's own agent, local models, the terminal app), M15.8's
 stages 1 and 2 done (scenarios and fifteen fixes; the Gate), its stage
-3 (the Verifier and the attempt log) under way, a Codex Leg planned,
-and M15.7's proof not run yet. Released: v0.1.0 to v0.2.4
+3 (the Verifier and the attempt log) under way, a Codex Leg built
+([[ADR-057-Codex-Adapter]], not yet run on a real job), and M15.7's
+proof not run yet. Released: v0.1.0 to v0.2.4
 ([[ADR-047-Releases]]).
 
 ## 00 — Overview
@@ -43,7 +44,7 @@ and M15.7's proof not run yet. Released: v0.1.0 to v0.2.4
 
 ## 02 — Architecture
 - [[Architecture-Overview]] — packages (the guard, the harness, the terminal app, local models), layers, data flow, paths
-- [[Leg-Adapters]] — the adapter interface; Claude Code, OpenAI-compatible, OpenCode, Antigravity, Oraknid's own agent
+- [[Leg-Adapters]] — the adapter interface; Claude Code, OpenAI-compatible, OpenCode, Antigravity, Oraknid's own agent, Codex
 - [[Persistence-and-Recovery]] — tables, write discipline, recovery, backups
 - [[Realtime-Transport]] — topics, frames, reconnect
 - [[Nest-Protocol]] — the end-to-end tunnel through The Nest, registering on a public Nest, the loader
@@ -67,7 +68,7 @@ and M15.7's proof not run yet. Released: v0.1.0 to v0.2.4
 - [[Phase-11-Workspace]] — built: pages in tabs, terminal workspace, device rights, a public Nest, the app's own look and the product site; both Nests deployed; the mark kept, its pupil made vertical and gently wavy (2026-10-03)
 - [[Phase-12-Email]] — built: the Mail page, IMAP and POP3, agents' drafts; my Gmail syncs; an approved agent draft and an IMAP account to try
 - [[Phase-13-Projects-First]] — built on `dev` through M13.26: projects first, Nest pages by mode, the one-script install, questions with options, Workflow, GitHub per project, Repos, Docs and the helper, several repos and servers, server insight, backups, The Eye speaks up, cloud storage, job names; setup fixes, updates, the planner and agents fixed, archive and delete, a chat and jobs on each server, The Eye thinking out loud, parallel by default
-- [[Phase-15-Agents-That-Deliver]] — in progress, before Phase 14: M15.1–M15.6 built (a harness for any model, auto mode, Oraknid's own agent, local models, the terminal app), M15.8 stages 1–2 done (the Gate), the Verifier and attempt log and a Codex Leg to come, the proof (M15.7) not run
+- [[Phase-15-Agents-That-Deliver]] — in progress, before Phase 14: M15.1–M15.6 built (a harness for any model, auto mode, Oraknid's own agent, local models, the terminal app), M15.8 stages 1–2 done (the Gate), a Codex Leg (M15.9), the Verifier and attempt log to come, the proof (M15.7) not run
 - [[Phase-14-Oraknid-Over-MCP]] — planned: Oraknid as an MCP server, a command center for any agent
 - Later: containers per job, teams
 

@@ -32,6 +32,7 @@ flowchart TB
         OP[OpenCode<br/>private server per session]
         AG[Antigravity<br/>headless CLI]
         OA[Oraknid's own agent<br/>tool loop over any OpenAI-compatible model]
+        CX[Codex<br/>codex exec --json]
     end
     UI <--> API
     CLI <--> API
@@ -44,7 +45,9 @@ flowchart TB
     SUP --> OP
     SUP --> AG
     SUP --> OA
+    SUP --> CX
     CC -. PreToolUse hook · permission prompt .-> GATE
+    CX -. PreToolUse hook .-> GATE
     OP -. permission ask .-> GATE
     OA -. tool call .-> GATE
     EYE --> GATE
@@ -71,7 +74,7 @@ flowchart TB
 | Core rules | `packages/core` | Pure functions: job and task life cycles (M1.3); routing (the ladder's rungs, the Claude share), budget math, drift detectors, a task's scope, context-pack assembly, the command policy, the Gate's decision (`harness/gate.ts`, a table of source × rules × grants × judge × autonomy), the harness's readings of an agent's words (quota, deprecation, a broken check, "the owner must"), admission (`admission.ts`, [[ADR-050-Parallel-By-Default]]), backups, cloud and rclone helpers. Fully unit-tested, no I/O. |
 | Guard | `packages/guard` | Auto mode's layer 1 and the judge's shape ([[ADR-053-Auto-Mode]]): tree-sitter-bash parsing (`sh -c`, the far side of `ssh`), CC Safety Net and Oraknid's rules, the read-only list, secretlint for credentials going out, the judge's reasoning-blind prompt and cache, the stuck rule. |
 | Leg SDK | `packages/legs/sdk` | `LegAdapter` interface, the contract test kit. |
-| Adapters | `packages/legs/<kind>` | One per Leg kind: `claude-code`, `openai-compatible`, `opencode`, `antigravity`, `oraknid-agent` (Oraknid's own tool loop on the AI SDK, [[ADR-052-A-Harness-For-Any-Model]] §6). A Codex adapter is planned (Phase 15). |
+| Adapters | `packages/legs/<kind>` | One per Leg kind: `claude-code`, `openai-compatible`, `opencode`, `antigravity`, `oraknid-agent` (Oraknid's own tool loop on the AI SDK, [[ADR-052-A-Harness-For-Any-Model]] §6), `codex` (OpenAI's Codex CLI headless, [[ADR-057-Codex-Adapter]]). |
 | OS | `packages/os` | `Inhibitor`, `SecretStore`, `Metrics`, `Notifier`, `Sandbox`, `ServiceManager`; `linux/` now, `windows/` later. |
 | Daemon | `apps/daemon` | Wiring: the step engine (`engine`), The Eye (`eye`: the program, attempts, talk and lookup, thinking, task memory, auto mode's daemon side), the Gate (`harness`, [[ADR-056-The-Harness]]), the supervisor and Leg registry (`legs`), the API (`api`), the event bus, recovery, the CLI and the terminal app (`cli.ts`, `tui`, Ink); and its services: the lock and devices (`auth`), the tools broker (`tools`), mail (`mail`), servers, oraknid-monitor and server jobs (`servers`), backups, cloud storage (`cloud`), local models (`models`), admission and the machine guard (`resources`), updates (`updates`), the terminal (`term`), chats, the helper, The Nest link (`nest`). |
 | Web | `apps/web` | The UI. |
@@ -111,7 +114,8 @@ log and the checks behind one Verifier.
 - The daemon is a single Node process. CPU-heavy work (ELK layout is in
   the browser; diffing and metrics parsing in the daemon) stays small.
   A worker thread is used if profiling shows a need.
-- Each Leg session is a child process group (Claude Code, Antigravity),
+- Each Leg session is a child process group (Claude Code, Antigravity;
+  Codex, one `codex exec` per turn),
   a private server process spoken to over HTTP (OpenCode), or an HTTP
   stream (OpenAI-compatible and Oraknid's own agent, with tools executed
   by the daemon inside the sandbox; see [[Leg-Adapters]]).
