@@ -62,6 +62,8 @@ export function scriptedLeg(
     resumable?: boolean;
     /** In auto mode, commands go through Oraknid's PreToolUse hook first, as Claude Code's do (ADR-053). */
     autoModeHooks?: boolean;
+    /** Before a turn ends, Oraknid's Stop hook runs the checks, as Claude Code's does (ADR-052 §2). */
+    stopHook?: boolean;
   } = {},
 ) {
   const log: TurnContext[] = [];
@@ -111,10 +113,11 @@ export function scriptedLeg(
       let interrupted = false;
       let tokens = 0;
 
-      async function runTurn(message: string) {
+      /** `held`: how many times Oraknid's Stop hook kept this turn going (Claude Code's, ADR-052 §2). */
+      async function runTurn(message: string, held = 0) {
         turn++;
         interrupted = false;
-        events.push({ type: "turn.started" });
+        if (!held) events.push({ type: "turn.started" });
         const ctx: TurnContext = {
           leg: s.leg.name,
           model: s.model,
@@ -225,6 +228,11 @@ export function scriptedLeg(
               return;
             }
           }
+        }
+        // Its Stop hook: the task's checks before it may end the turn, three holds at most.
+        if (o.stopHook && s.onStop && held < 3) {
+          const reason = await s.onStop(text);
+          if (reason) return runTurn(reason, held + 1);
         }
         tokens += 1000;
         events.push({

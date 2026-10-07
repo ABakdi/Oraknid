@@ -1,3 +1,6 @@
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { WebPlan } from "@oraknid/contracts";
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
@@ -178,7 +181,7 @@ describe("a session resumed by what its agent can do (bug 4)", () => {
   async function pausedOnce(kind: "oraknid-agent" | "claude-code", resumable: boolean) {
     let hang = true;
     const leg = scriptedLeg(
-      (t) => (hang ? [{ hang: true }] : [{ write: "parser.js", content: "x\n" }, { say: "DONE" }]),
+      () => (hang ? [{ hang: true }] : [{ write: "parser.js", content: "x\n" }, { say: "DONE" }]),
       { kind, models: ["m1"], resumable },
     );
     rig = await harness({
@@ -212,5 +215,57 @@ describe("a session resumed by what its agent can do (bug 4)", () => {
       [1, null],
       [2, null],
     ]);
+  }, 60_000);
+});
+
+describe("checks run once per turn end (bug 5)", () => {
+  it("doesn't run the checks again after the turn when Claude Code's Stop hook just ran them on the same work", async () => {
+    const counter = join(mkdtempSync(join(tmpdir(), "oraknid-count-")), "runs");
+    const leg = scriptedLeg(() => [{ write: "parser.js", content: "x\n" }, { say: "DONE" }], {
+      stopHook: true,
+    });
+    rig = await harness({
+      legs: [{ kind: "claude-code", name: "Claude A", leg }],
+      plan: {
+        summary: "A parser.",
+        tasks: [task("a", "Build the parser", ["sh count.sh && test -f parser.js"], ["parser.js"])],
+        jobVerify: [],
+      },
+    });
+    const { id } = await rig.repoJob("A parser", {
+      files: { "count.sh": `echo x >> ${counter}\n` },
+    });
+    const done = await rig.ended(id);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+    // Once tried before the work (ADR-052 §2), once by the Stop hook; not a third time.
+    expect(readFileSync(counter, "utf8").split("\n").filter(Boolean)).toHaveLength(2);
+  }, 60_000);
+
+  it("holds the turn while they fail, and at its end uses the run that let it end", async () => {
+    const counter = join(mkdtempSync(join(tmpdir(), "oraknid-count-")), "runs");
+    // The hook holds the turn once (the check fails), the agent writes it, then the hook passes.
+    const leg = scriptedLeg(
+      (t) =>
+        t.turn === 1
+          ? [{ say: "DONE" }]
+          : [{ write: "parser.js", content: "x\n" }, { say: "DONE" }],
+      { stopHook: true },
+    );
+    rig = await harness({
+      legs: [{ kind: "claude-code", name: "Claude A", leg }],
+      plan: {
+        summary: "A parser.",
+        tasks: [task("a", "Build the parser", ["sh count.sh && test -f parser.js"], ["parser.js"])],
+        jobVerify: [],
+      },
+    });
+    const { id } = await rig.repoJob("A parser", {
+      files: { "count.sh": `echo x >> ${counter}\n` },
+    });
+    const done = await rig.ended(id);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+    // Before the work, held once, passed once: the turn's end reuses the last.
+    expect(readFileSync(counter, "utf8").split("\n").filter(Boolean)).toHaveLength(3);
+    expect(rig.events(id, "task.checks-held")).toHaveLength(1);
   }, 60_000);
 });

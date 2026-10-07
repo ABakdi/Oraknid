@@ -1556,9 +1556,27 @@ export async function runAttempt(
     if (!task.verify.length) return null;
     const results = await runChecks();
     const bad = results.find((r) => !r.ok);
-    if (!bad || looksBroken(bad)) return null;
+    if (!bad || looksBroken(bad)) {
+      // It lets the turn end now, nothing done after: the turn's end uses this run (bug 5).
+      stopRun = { verify: [...task.verify], tree: await treeState(), results };
+      return null;
+    }
     event("task.checks-held", { command: bad.command, exitCode: bad.exitCode });
     return `Oraknid ran the task's checks and this one fails, so the task isn't done yet:\n${fence(bad.command)}\nfailed (exit ${bad.exitCode}):\n${fence(bad.output.slice(-2000))}\nFix the work, not the check, then finish. If the check itself is wrong, say why and finish.`;
+  };
+
+  /**
+   * The checks the Stop hook ran when it let the turn end (ADR-052 §2): the
+   * same checks on the same work aren't run again at the turn's end (bug 5).
+   */
+  let stopRun = null as { verify: string[]; tree: string; results: VerifyResult[] } | null;
+  /** The work as it stands, to tell whether it changed since the checks ran. */
+  const treeState = async () => {
+    try {
+      return hash(await ws.tree.diffSince(scopeBase));
+    } catch {
+      return `unknown:${now()}`;
+    }
   };
 
   const openSession = async (prompt: string, resume: string | null = null) => {
@@ -2309,6 +2327,9 @@ export async function runAttempt(
         continue;
       }
       turns++;
+      // What the Stop hook ran as it let this turn end, if it did: used once (bug 5).
+      const ranAtStop = stopRun;
+      stopRun = null;
       // The job's folder is still a worktree of the project, else put back and the attempt fails
       // (Jobs-and-Projects → Ending a job, after the piano job).
       const strayed = safeStrayed(ws.tree);
@@ -2398,7 +2419,16 @@ export async function runAttempt(
         event("task.verifying", {});
         // A check that is wrong is The Eye's to fix, not the Leg's (The-Eye → A check that is
         // wrong); so is one the agent shows is broken (ADR-052 §2).
-        const results = await repairBroken(await runChecks(), end.text, () => runChecks());
+        // Run once per turn end: what the Stop hook just ran on this same work stands (bug 5).
+        const same =
+          ranAtStop &&
+          ranAtStop.verify.join("\n") === task.verify.join("\n") &&
+          ranAtStop.tree === (await treeState());
+        const results = await repairBroken(
+          same ? ranAtStop.results : await runChecks(),
+          end.text,
+          () => runChecks(),
+        );
         const failed = results.find((r) => !r.ok);
         verified = !failed;
         event("task.verified", {
