@@ -640,6 +640,8 @@ export function createGate(c: GateContext) {
     }
 
     let rules = null as Awaited<ReturnType<typeof rulesOf>> | null;
+    /** A removal the plan names, read with the facts. */
+    let planned = null as Planned | null;
     const facts = async (): Promise<GateFacts> => {
       rules ??= await rulesOf(r, a.judged);
       const { first, policy } = rules;
@@ -671,7 +673,6 @@ export function createGate(c: GateContext) {
         autonomy: policy.autonomy,
       };
     };
-    let planned = null as Planned | null;
 
     // What I let run once runs (ADR-053), before the hook's questions waiting here.
     if (!hook && r.command && grants.length) {
