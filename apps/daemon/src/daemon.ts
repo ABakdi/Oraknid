@@ -42,7 +42,6 @@ import { StepJournal } from "./engine/journal.ts";
 import { recover } from "./engine/recovery.ts";
 import { type JobProgram, JobRunner } from "./engine/runner.ts";
 import { EventBus } from "./events/bus.ts";
-import { forgetJob } from "./eye/attempt.ts";
 import { type EyeBrain, PoolLegBrain } from "./eye/brain.ts";
 import { startBudgetWatch } from "./eye/budgets.ts";
 import { EyeDecisions } from "./eye/decisions.ts";
@@ -53,6 +52,7 @@ import { eyeProgram } from "./eye/program.ts";
 import { startEyeReports } from "./eye/reports.ts";
 import { forgetGuidance, recordAnswer, resumeConversations } from "./eye/talk.ts";
 import { EyeThinking } from "./eye/thinking.ts";
+import { forgetJob } from "./harness/gate.ts";
 import { Helper } from "./helper/service.ts";
 import { isLocalRequest } from "./http/guard.ts";
 import { requestIds, tagConsoleWithRequestIds } from "./http/request-id.ts";
@@ -775,7 +775,7 @@ export async function startDaemon(options: DaemonOptions) {
     const to = (e.payload as { to?: string } | null)?.to;
     if (e.type === "job.state" && e.jobId && (to === "completed" || to === "cancelled")) {
       for (const item of inbox.list({ jobId: e.jobId, state: "open" })) inbox.withdraw(item.id);
-      forgetJob(e.jobId);
+      forgetJob(db, e.jobId);
       forgetGuidance(e.jobId);
       // Its homes on the Legs go, keys and files (Audit 2, S2-08).
       removeJobHomes(paths.legs, e.jobId, legConfigDir, legCodexHome);

@@ -93,9 +93,15 @@ Every request of a Leg goes through three layers, in order:
    never automatic, and an agent **stuck on blocks**: three in a row or
    twenty in a task, and The Eye asks me, listing what was blocked and
    why: "Let it run this one" or "Keep it blocked" (the agent then goes
-   another way, or says it can't be done without it). Blocks through
-   Claude Code's PreToolUse hook count the same, and are asked the same
-   (2026-10-07). Two more, each asked once, specifically:
+   another way, or says it can't be done without it). Every block
+   counts in the same row, whatever said no: the rules, the judge,
+   Claude Code's own classifier, a block through its PreToolUse hook,
+   and my own refusals (a Deny, a planned change I kept blocked, a
+   request refused again at once because I had refused it), listed as
+   "you" (2026-10-07). A block that can't be held for my answer (the
+   agent's own classifier, a file tool through the hook) or one that is
+   my own answer is asked at the agent's next action. Two more, each
+   asked once, specifically:
    - **A change the plan names**: layer 1 blocks on its own a command on
      the job's server that only removes what the job's plan names (a
      path, a compose project, volumes, containers): "The agent wants to
@@ -108,6 +114,16 @@ Every request of a Leg goes through three layers, in order:
      rm -rf /root/misahaty"): the command, why it was blocked, and
      **Allow** (once; the agent goes on) · **I'll do it** · **Leave it
      out** · **Stop the job**, instead of "keeps going wrong".
+
+All of it is decided on one path, the Gate ([[ADR-056-The-Harness]]
+§3), for every source of an action: the Leg's permission prompt, Claude
+Code's PreToolUse hook, a job's tool through the MCP broker, a command
+on one of the job's servers, and a check's command (Oraknid's own:
+refused when never allowed or gated, never asked, never counted). What
+I allow is a grant with a scope (once, the job, the plan) kept with the
+task across restarts; what I refused stays refused for the task, a call
+of a job's tool by its arguments (refusing one email isn't refusing
+every email).
 
 Every decision is in the audit log (`policy.decision`: the action, the
 verdict, its layer, its reason; the judge's own `policy.judged`), and in

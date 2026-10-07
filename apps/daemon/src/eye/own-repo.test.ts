@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ownRepoPage } from "./attempt.ts";
+import { ownRepoPage } from "../harness/gate.ts";
 
 const repos = [{ github: { owner: "ABakdi", name: "oraknid-piano" } }, { github: null }];
 
