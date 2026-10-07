@@ -220,6 +220,15 @@ export function autoModeHooks(
                 },
               };
             }
+            // What the owner let run once (ADR-053): allowed here, Claude Code's classifier not asked.
+            if (d.decision === "allow")
+              return {
+                hookSpecificOutput: {
+                  hookEventName: "PreToolUse",
+                  permissionDecision: "allow",
+                  permissionDecisionReason: d.reason,
+                },
+              };
             return {
               hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "ask" },
             };

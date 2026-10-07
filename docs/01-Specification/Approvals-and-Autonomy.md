@@ -93,7 +93,21 @@ Every request of a Leg goes through three layers, in order:
    never automatic, and an agent **stuck on blocks**: three in a row or
    twenty in a task, and The Eye asks me, listing what was blocked and
    why: "Let it run this one" or "Keep it blocked" (the agent then goes
-   another way, or says it can't be done without it).
+   another way, or says it can't be done without it). Blocks through
+   Claude Code's PreToolUse hook count the same, and are asked the same
+   (2026-10-07). Two more, each asked once, specifically:
+   - **A change the plan names**: layer 1 blocks on its own a command on
+     the job's server that only removes what the job's plan names (a
+     path, a compose project, volumes, containers): "The agent wants to
+     run `rm -rf /root/misahaty` on spinet-staging (in the plan you
+     approved: “…”). Run it?" **Allow** lets that exact command run
+     once; anything the plan doesn't name stays blocked; production asks
+     per change as always.
+   - **What the agent needs of me**: a task ends with a failed check and
+     the agent saying it is blocked or needs me ("Owner action required:
+     rm -rf /root/misahaty"): the command, why it was blocked, and
+     **Allow** (once; the agent goes on) · **I'll do it** · **Leave it
+     out** · **Stop the job**, instead of "keeps going wrong".
 
 Every decision is in the audit log (`policy.decision`: the action, the
 verdict, its layer, its reason; the judge's own `policy.judged`), and in
@@ -104,8 +118,10 @@ Claude Code runs in its own auto mode (`--permission-mode auto`, its
 own classifier) at Auto and Full, with Oraknid's rules before every
 tool as a PreToolUse hook: a block is denied with its reason, a
 production change or what is never automatic comes back to Oraknid as a
-permission prompt, and what Claude Code's classifier refuses comes back
-as an event shown in the session. The other Legs go through all three
+permission prompt (so does a block that asks me: the plan's own change,
+the agent stuck on blocks; a hook can't wait for my answer, the prompt
+can), what I let run once is allowed by the hook itself, and what Claude
+Code's classifier refuses comes back as an event shown in the session. The other Legs go through all three
 layers. At Careful Claude Code asks Oraknid for everything, as before.
 
 ## Leg permission prompts

@@ -118,4 +118,48 @@ with it. [[The-Eye]] → Resolving what it doesn't know, Cancelling from
 the chat. `eye_messages.action.place` records where a request was taken
 (no migration: the action is JSON).
 
+## Note (2026-10-07): the approved plan authorises its changes; checks by alias alone
+Two server jobs of mine on spinet-staging ended in "keeps going wrong"
+and I cancelled them.
+- **What the approved plan names is mine to allow at once.** Deleting
+  `/root/misahaty` was in the plan I approved, but layer 1 blocked `rm
+  -rf /root/misahaty` and the agent had to stop. Now a layer-1 block of a
+  change on the job's server that only removes what the plan names (an
+  `rm` of paths it names, `docker compose down -v` of the project it
+  names, volumes or containers it names; `servers/remote.ts`
+  `removalTargets`, `namedIn`; the plan's text is its summary and tasks,
+  `jobPlan`) is one approval: "The agent wants to run `…` on <server>
+  (in the plan you approved: “<the plan's line>”). Run it?" — **Allow**
+  runs that exact command once. Commands the plan doesn't name stay
+  blocked; production asks per change as before. ADR-053 → Note
+  (2026-10-07).
+- **A check names the alias alone.** A check The Eye wrote carried the
+  agent's ssh setup: `n=$(HOME=<the job's home> ssh -o BatchMode=yes -F
+  <the job's home>/.ssh/config oraknid-spinet-staging docker ps -q
+  --filter name=harvest- | wc -l); [ "$n" -eq 2 ]`. It didn't start with
+  `ssh`, so it wasn't read as a server check and ran in the check
+  sandbox, where the job's home isn't (checks run without the Leg's
+  home): ssh said "Can't open user config file …/jobs/<job>/ho: No such
+  file or directory", the path cut by ssh's own message (`%.100s`), not
+  by Oraknid. Now a check is put in its **plain form** before it runs
+  (`plainServerCheck`: `HOME=…` and ssh's options taken off an ssh to an
+  alias) and stored so before the work; a check that wraps its ssh in
+  local shell runs **whole on the server**, its ssh taken off, when every
+  ssh in it goes to the same server (`serverCheckOf`). The plan digest,
+  the check repair and `skills/server-work.md` say: `ssh <alias>
+  <command>`, never `HOME=`, `-F`, `-i`, `-o` or the job's paths.
+- **Setup errors are broken checks**: ssh that can't open its config or
+  key or resolve its host, "No such file or directory" on Oraknid's own
+  paths, a refused connection (`brokenCheckHint`) are repaired before the
+  work, never charged to the agent.
+- **Guard checks pass before the work.** A check of what must keep true
+  ends with `# guard`; failing before any work it is wrong, and is
+  repaired from the state its output shows (the repair is told it is a
+  guard). The planner prefers "still running" by name (`-ge 1`) to an
+  exact count.
+- The agent's server prompt says the checks are Oraknid's: never make
+  one pass another way (it had written a shim outside its scope to make
+  the check pass); a block it can't do without is said in its last
+  message.
+
 Related: [[ADR-026-Servers]] · [[ADR-034-Projects-First]] · [[ADR-042-Several-Repos-And-Servers]] · [[ADR-043-Server-Insight]] · [[ADR-045-The-Eye-Speaks-Up]] · [[Servers]] · [[The-Eye]]

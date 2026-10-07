@@ -259,8 +259,36 @@ both take `--repo <name>` (its name in the project), as
 `oraknid github-branch <branch> --repo web`; without it, the project's
 only repo, or its only linked one.
 
+- **Checks on a server** (2026-10-07, [[ADR-049-Server-Chat-And-Server-Jobs]]):
+  written `ssh <alias> <command>`, the alias alone; one that carries the
+  agent's own ssh setup (`HOME=…`, `-F <its config>`, `-o …`) is put in
+  that plain form before the work, and Oraknid runs it over its own
+  connection; one that wraps its ssh in local shell (`n=$(ssh <alias>
+  docker ps -q | wc -l); [ "$n" -ge 2 ]`) runs whole on the server. A
+  check that can't set up (ssh can't open its config or key, resolve or
+  reach its host; "No such file or directory" on Oraknid's own paths)
+  looks broken and is repaired, never charged to the agent.
+- **Guard checks** (what the work must keep true, marked `# guard`) pass
+  before the work too: one that fails then is wrong and is repaired from
+  the state its output shows, "still running" by name rather than an
+  exact count.
+
 BR-1 holds: a task is still done only when Oraknid's own run of its
 checks passes; the change of a check is visible, never silent.
+
+## What the agent needs of me (2026-10-07)
+
+An agent can end its turn with a failed check because something only I
+can do or allow stands in its way: "The check is right and the fix is
+blocked by a guardrail that only the owner can lift… Owner action
+required: rm -rf /root/misahaty". The Eye reads its last message
+(`saysOwnerNeeded`) and asks me that, before the ladder or "keeps going
+wrong": the command it was blocked on (the blocked one it names, else
+the last blocked, else the one its words give), why, the failing check,
+and **Allow** (that exact command runs once and the agent is told to go
+on) · **I'll do it** (the task is mine) · **Leave it out** · **Stop the
+job**. My own words instead go to the agent. Asked once per command in
+an attempt; in the inbox and the conversation.
 
 ## Talking to The Eye
 

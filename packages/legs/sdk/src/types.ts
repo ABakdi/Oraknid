@@ -54,10 +54,15 @@ export type PermissionDecision =
 
 /**
  * Oraknid's word before a tool runs, in a Leg's own auto mode (ADR-053):
- * deny it with a message, ask (through `onPermission`), or no opinion
- * (null), leaving the Leg's own auto mode to decide.
+ * deny it with a message, ask (through `onPermission`), allow it (what
+ * the owner let run once), or no opinion (null), leaving the Leg's own
+ * auto mode to decide.
  */
-export type PreToolDecision = { decision: "deny"; message: string } | { decision: "ask" } | null;
+export type PreToolDecision =
+  | { decision: "deny"; message: string }
+  | { decision: "ask" }
+  | { decision: "allow"; reason: string }
+  | null;
 
 export interface UsageSnapshot {
   inputTokens: number;

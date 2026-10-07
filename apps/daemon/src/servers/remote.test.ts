@@ -1,6 +1,17 @@
 import type { PolicyContext } from "@oraknid/core";
 import { describe, expect, it } from "vitest";
-import { copyAlias, parseSsh, readsOnly, serverVerdict, withoutSudo } from "./remote.ts";
+import {
+  copyAlias,
+  isGuardCheck,
+  namedIn,
+  parseSsh,
+  plainServerCheck,
+  readsOnly,
+  removalTargets,
+  serverCheckOf,
+  serverVerdict,
+  withoutSudo,
+} from "./remote.ts";
 
 const aliases = ["oraknid-vps"];
 
@@ -89,5 +100,98 @@ describe("a command on a server (ADR-049)", () => {
       "judge",
     );
     expect(serverVerdict("ls -la", [prod], policy)).toBeNull();
+  });
+});
+
+// 2026-10-07, "Remove the misahaty compose project": a check The Eye wrote with the
+// job's own ssh setup failed every time, though what it checked was true.
+const JOB_HOME = "/home/abakdi/.local/share/oraknid/legs/01K6ZLEG/jobs/01K70JOBJOBJOB/home";
+const SEEN = `n=$(HOME=${JOB_HOME} ssh -o BatchMode=yes -F ${JOB_HOME}/.ssh/config oraknid-spinet-staging docker ps -q --filter name=harvest- | wc -l); [ "$n" -eq 2 ]`;
+
+describe("a check on a server, in its plain form (ADR-049)", () => {
+  const staging = ["oraknid-spinet-staging"];
+
+  it("takes off the job's own ssh setup: HOME=, -F, -o", () => {
+    expect(plainServerCheck(SEEN, staging)).toBe(
+      `n=$(ssh oraknid-spinet-staging docker ps -q --filter name=harvest- | wc -l); [ "$n" -eq 2 ]`,
+    );
+    expect(
+      plainServerCheck(
+        `HOME=${JOB_HOME} ssh -F ${JOB_HOME}/.ssh/config -o BatchMode=yes oraknid-spinet-staging 'test ! -e /root/misahaty'`,
+        staging,
+      ),
+    ).toBe("ssh oraknid-spinet-staging 'test ! -e /root/misahaty'");
+    // Another host's ssh is left as it is.
+    expect(plainServerCheck("ssh -F x other uptime", staging)).toBe("ssh -F x other uptime");
+  });
+
+  it("runs a check wrapped in local shell whole on the server", () => {
+    expect(serverCheckOf(SEEN, staging)).toEqual({
+      alias: "oraknid-spinet-staging",
+      remote: `n=$(docker ps -q --filter name=harvest- | wc -l); [ "$n" -eq 2 ]`,
+      plain: `n=$(ssh oraknid-spinet-staging docker ps -q --filter name=harvest- | wc -l); [ "$n" -eq 2 ]`,
+    });
+    expect(
+      serverCheckOf(
+        `[ "$(ssh oraknid-spinet-staging 'docker ps -q --filter name=harvest-' | wc -l)" -ge 1 ] # guard: Harvest still runs`,
+        staging,
+      )?.remote,
+    ).toBe(`[ "$(docker ps -q --filter name=harvest- | wc -l)" -ge 1 ]`);
+    expect(
+      serverCheckOf("ssh oraknid-spinet-staging 'test ! -e /root/x' # guard", staging),
+    ).toEqual({
+      alias: "oraknid-spinet-staging",
+      remote: "test ! -e /root/x",
+      plain: "ssh oraknid-spinet-staging 'test ! -e /root/x' # guard",
+    });
+    // Not a server check: nothing on a server, another host, a copy.
+    expect(serverCheckOf("pnpm test", staging)).toBeNull();
+    expect(
+      serverCheckOf("ssh other uptime && ssh oraknid-spinet-staging uptime", staging),
+    ).toBeNull();
+    expect(serverCheckOf("scp oraknid-spinet-staging:/x . && test -s x", staging)).toBeNull();
+    // What it runs only reads: a check on production may run it.
+    expect(readsOnly(`n=$(docker ps -q --filter name=harvest- | wc -l); [ "$n" -eq 2 ]`)).toBe(
+      true,
+    );
+    expect(readsOnly(`n=$(rm -rf /srv); [ "$n" ]`)).toBe(false);
+    expect(isGuardCheck("ssh a 'x' # guard: Harvest still runs")).toBe(true);
+    expect(isGuardCheck("ssh a 'x'")).toBe(false);
+  });
+});
+
+describe("what a change on a server removes, and whether the plan names it (ADR-049)", () => {
+  it("reads the paths, compose projects and volumes a change removes", () => {
+    expect(removalTargets("rm -rf /root/misahaty")).toEqual(["/root/misahaty"]);
+    expect(removalTargets("sudo -n rm -rf /root/misahaty/ /etc/misahaty")).toEqual([
+      "/root/misahaty",
+      "/etc/misahaty",
+    ]);
+    expect(removalTargets("cd /root/misahaty && docker compose down -v")).toEqual(["misahaty"]);
+    expect(removalTargets("docker compose -p misahaty down -v --remove-orphans")).toEqual([
+      "misahaty",
+    ]);
+    expect(removalTargets("docker volume rm misahaty_pgdata misahaty_media")).toEqual([
+      "misahaty_pgdata",
+      "misahaty_media",
+    ]);
+    // Anything else, or a path through the shell or near the root: not one of these.
+    expect(removalTargets("rm -rf /root")).toBeNull();
+    expect(removalTargets("rm -rf /root/*")).toBeNull();
+    expect(removalTargets("rm -rf $DIR")).toBeNull();
+    expect(removalTargets("rm -rf /root/misahaty && curl -X POST https://x")).toBeNull();
+    expect(removalTargets("systemctl restart nginx")).toBeNull();
+  });
+
+  it("finds the plan's line that names it", () => {
+    const plan =
+      "Remove Misahaty\n- Stop its compose project misahaty and delete its volumes.\n- Delete /root/misahaty (code and config).";
+    expect(namedIn("/root/misahaty", plan)).toBe("- Delete /root/misahaty (code and config).");
+    expect(namedIn("misahaty", plan)).toBe("Remove Misahaty");
+    expect(namedIn("/root/misahaty", "Delete /root/misahaty.")).toBe("Delete /root/misahaty.");
+    // A path the plan doesn't name, or names only inside another.
+    expect(namedIn("/root", plan)).toBeNull();
+    expect(namedIn("/root/misahaty", "Delete /root/misahaty-old")).toBeNull();
+    expect(namedIn("/root/misahaty", "Keep /root/misahaty/data")).toBeNull();
   });
 });
