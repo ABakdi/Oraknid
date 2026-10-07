@@ -58,6 +58,7 @@ the check repair didn't know the project's repo and kept them.
   the repo doesn't have is repaired, on a task adapted before too.
 
 *Extended 2026-10-03:* several repos per project, and servers with roles ([[ADR-042-Several-Repos-And-Servers]]).
+*Extended 2026-10-07:* a link may be on GitLab, Gitea or Forgejo (its `host`), served by the same tool and gates ([[ADR-062-Git-Hosts]]).
 
 ## Changed (2026-10-03): the project's Repo tab
 The link was in the project's Settings and went unseen. A **Repo** tab,

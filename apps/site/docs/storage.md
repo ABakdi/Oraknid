@@ -52,6 +52,10 @@ A file always goes to **one** provider, whole. One too big for any of them is re
 
 A backup plan can keep its backups in cloud storage: the pool, or one provider. See [Backups](backups.html).
 
+## Agents and cloud storage
+
+Agents get nothing of your storage unless a job's skill asks for the **storage** tool (`requires.tools: [storage]` in the skill). Then its agents can list and search the pool, upload a file of the job's folder (a write: asked unless the job's autonomy lets it through), download a file into the job's folder (never over one there), and ask for a public link where the provider makes them (Drive, Dropbox, OneDrive, S3…), which always asks you first. They never reach a file outside the job's folder, a hidden one or Git's, and never see a credential.
+
 ## Asking the helper
 
 The helper can list your providers and a folder, search, upload a file of yours you name ("put ~/Documents/lease.pdf in my storage, in papers"), move a file, and download one to a folder of this computer (never over a file already there). Uploading and deleting are proposed for you to confirm. It won't send hidden files, anything in a hidden folder (your keys, configs) or Oraknid's own data, and nothing it does makes a file public.

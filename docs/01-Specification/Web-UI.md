@@ -473,6 +473,17 @@ browse.
 - **On a phone**: the list fills the screen, a repository opens full
   screen with a way back; code and diffs scroll inside their block, the
   page never sideways.
+- **GitLab, Gitea and Forgejo** (2026-10-07, [[ADR-062-Git-Hosts]]):
+  their accounts in a card under GitHub's (here and in Settings →
+  Connections: kind, address, token, the steps to make one for each;
+  add, check, remove; not away from home). Their repositories are in the
+  same list, a badge naming the host, and the account filter lists
+  `login · host` too; New repository may be made on one. A repository
+  there is at `/repos/<host>!<owner>/<name>/…` (a GitLab group's
+  subgroups in the owner), with its host named in the header, Open on
+  `<host>`, and Merge requests for Pull requests on GitLab; linking it to
+  a project and New work on it go through its host. New work's repo
+  picker lists every host's, the host named on each.
 
 ### Chats
 
@@ -620,8 +631,18 @@ Settings → Connections has **Email accounts** too: add Gmail, Outlook
 (with an app password, and a link to where each provider makes one) or
 another server, by IMAP or POP3 with SMTP; remove one; auto-send per
 account (off by default), file sent mail in Sent, and for POP delete
-from the server (off by default). Sign-in with Google or Microsoft
-(OAuth) waits until a few releases from now. Not from away.
+from the server (off by default). Not from away.
+
+**Sign-in with Google and Microsoft** (2026-10-07, [[ADR-063-Mail-OAuth]]):
+a card under Email accounts holds the app I registered with each, the
+steps to register it, the redirect to give it (with Copy), its client ID
+and, for Google, its client secret (never shown back: "Kept; type to
+replace it"), each said ready or not set up. Once one is ready, **Sign
+in with Google** or **with Microsoft** is above the add form (here and
+in Mail's Add an account): Google's page opens in a new tab and comes
+back to Oraknid; Microsoft's shows a code to type on its page, with the
+link, while Oraknid waits. An account signed in this way is marked so,
+and its Reconnect signs in again instead of asking a password.
 
 Adding an account: the address's servers are found from its MX records
 and filled in (Namecheap, Google, Microsoft, Zoho, Fastmail and others);

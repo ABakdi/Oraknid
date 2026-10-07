@@ -20,7 +20,9 @@ never sent by an agent without me.
   password for Gmail and Outlook). Passwords in the keychain. A failed
   login shows "Reconnect", never a silent failure. *Changed
   2026-10-03:* OAuth (Google and Microsoft sign-in) is taken out for
-  now and comes back after a few releases; see As built.
+  now and comes back after a few releases; see As built. *Changed
+  2026-10-07:* it is back, through an app I register
+  ([[ADR-063-Mail-OAuth]]).
 - **Sync**: IMAP IDLE per account's inbox, a periodic pass for other
   folders; headers and bodies cached in SQLite, bodies fetched on first
   open; threads by `Message-ID`/`In-Reply-To`/`References`, and Gmail's
@@ -153,8 +155,8 @@ The source spec's list (pasted 2026-10-03), where each stands:
 
 ## Consequences
 - Gmail and Outlook need an app password (and two-step verification)
-  until OAuth comes back; POP must be turned on in their settings to be
-  used.
+  until OAuth comes back (back 2026-10-07: [[ADR-063-Mail-OAuth]]); POP
+  must be turned on in their settings to be used.
 - Mail adds a long-lived connection per account to the daemon.
 
 Related: [[ADR-021-Tools-Broker]] · [[Security]] · [[Chats-and-Helper]]

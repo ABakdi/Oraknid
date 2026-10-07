@@ -44,6 +44,9 @@ server I set up once in **Settings → Tools**: its command, its secrets
 what it returns is untrusted ([[ADR-021-Tools-Broker]]). A job gets its
 skill's tools when it is created; the job form shows each one, marks
 those not set up, and the job can't start until they are.
+Some are Oraknid's own, named the same way: `email` (with a mail
+account, [[ADR-032-Email]]) and `storage` (my cloud storage, with a
+provider, [[ADR-046-Cloud-Storage]] → The storage tool, 2026-10-07).
 
 ## Checks for results that aren't code
 

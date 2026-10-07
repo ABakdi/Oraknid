@@ -111,6 +111,8 @@ proof not run yet. Released: v0.1.0 to v0.2.4
 - [[ADR-055-Terminal-App]] — `oraknid` in the terminal with slash commands; an install without the web UI
 - [[ADR-056-The-Harness]] — the task harness taken apart: one attempt log, one gate for every action, one verifier, one place that decides an attempt's end, a controller (stages 1–2 built: scenarios and fixes, the Gate)
 - [[ADR-057-Codex-Adapter]] — OpenAI's Codex CLI as a Leg: `codex exec --json` per turn in Oraknid's sandbox, its own sandbox off, every action through Oraknid's policy by its PreToolUse hook, a CODEX_HOME per Leg
+- [[ADR-062-Git-Hosts]] — GitLab, Gitea and Forgejo beside GitHub: accounts by token, one GitHost interface GitHub's client fills too, read in Repos, linked, cloned and pushed to by Oraknid
+- [[ADR-063-Mail-OAuth]] — Gmail and Outlook sign in with Google or Microsoft again, through an app I register: the browser with PKCE or Microsoft's code, XOAUTH2, tokens in the keychain
 - [[ADR-048-Updates]] — updates from inside Oraknid: install.sh records what it installed; Oraknid checks GitHub on its channel (dev: pre-releases and new work on dev; stable: releases) and updates in one click, the database copied first, a failed update rolled back
 - [[ADR-049-Server-Chat-And-Server-Jobs]] — a chat on each server: The Eye answers from its state document or sends an agent into it as a server job (the server's own hidden project), says what will change first, runs its checks on the server, asks before any change on production, and writes the job's changes into the state document
 - [[ADR-043-Server-Insight]] · [[ADR-044-Backups]] — Phase 13: Docker, databases, the proxy, traffic and logs of a server; scheduled, encrypted database backups

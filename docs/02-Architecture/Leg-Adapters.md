@@ -56,7 +56,7 @@ See [[ADR-011-Claude-Code-Adapter]].
 | Resume | `resume: session_id`. MCP and settings are passed again. Sessions live under the Leg's `CLAUDE_CONFIG_DIR` (30-day retention); their format is internal and never parsed. |
 | Interrupt / kill | `interrupt()`; `close()` + kill the process group. SIGTERM leaves the turn unfinished. |
 | Permissions | `canUseTool` → The Eye's policy. Mode `default`. Never `bypassPermissions`. |
-| Usage | `result.modelUsage[model]` (input, output, cache, contextWindow; running totals); `getContextUsage()`. |
+| Usage | `result.modelUsage[model]` (input, output, cache, contextWindow; running totals). After each turn's `result`, `getContextUsage()` (in the installed SDK, 0.3.286, a control request answering Claude Code's `/context`: `totalTokens`, `maxTokens`) gives what fills the window and its size, preferred to the result's sum; asked at most three seconds, its absence or silence leaving the result's numbers (2026-10-07). |
 | Quota | `rate_limit_event.rate_limit_info`: `status`, `rateLimitType` (`five_hour`, `seven_day`, `seven_day_opus`, `seven_day_sonnet`…), `utilization`, `resetsAt` (**epoch seconds**). Seen live: while a window is `allowed`, `utilization` is absent, so Oraknid estimates it. A 429 shows up as `system/api_retry` or an assistant `error: "rate_limit"`. |
 | Accounts | One `CLAUDE_CONFIG_DIR` per Leg. I log into it from the Leg's card in the web UI; Oraknid runs the official `claude auth login` for that folder underneath. Oraknid never reads tokens ([[ADR-009-Multiple-Accounts-Per-Provider]]). |
 | Host isolation | `settingSources: []`, explicit `mcpServers`. Not `--bare` (it skips subscription credentials). |
@@ -92,7 +92,7 @@ The adapter is therefore a **minimal agent loop owned by Oraknid**:
 | Interrupt / kill | Abort the HTTP request (Ollama, llama.cpp and vLLM stop generating). |
 | Resume | Not native. Always a fresh session from a context pack. |
 | Usage | `usage` fields. llama.cpp adds `timings`. |
-| Context window | Ollama: `/api/ps` `context_length` (set by `num_ctx` / Modelfile); llama.cpp: `/props` `n_ctx`; vLLM: `/v1/models` `max_model_len`; LM Studio: `/api/v1/models`. |
+| Context window | Ollama: `/api/ps` `context_length` (set by `num_ctx` / Modelfile); llama.cpp: `/props` `n_ctx`; vLLM: `/v1/models` `max_model_len`; LM Studio: `/api/v1/models` (0.4+: the loaded instance's `config.context_length`, else the model's `max_context_length`), `/api/v0/models` before it (`loaded_context_length`, `max_context_length`); built 2026-10-07, shared with Oraknid's own agent (`contextWindowOf`). |
 | Models / VRAM | Ollama `/api/ps` (`size_vram`), `/api/tags`; others via `nvidia-smi`. |
 | Quota | None. Rate limits don't apply. |
 
@@ -114,7 +114,7 @@ one stays for plain servers.
 | Checks | At a turn's end it asks `onStop` (Oraknid runs the task's checks, as for Claude Code's Stop hook); without one, `SessionStart.checks` run in the sandbox. A failing check is handed back (three rounds at most). |
 | Resume | Native: `nativeSessionId()` is `oa-<uuid>`; the messages and todo list are kept in `<data>/legs/oraknid-agent-sessions/<id>.json` after each turn and read back on `resumeFrom`. |
 | Interrupt / kill | Abort the request and the command running; what the model said is kept, marked interrupted. |
-| Probe | Lists the models; tests tool calling: native calls, else a JSON grammar (`response_format: json_schema`, enforced by llama.cpp and Ollama, the answer turned back into a tool call by a fetch shim), else none (`toolCalls` on each model; the profile's `probed` keeps it to text work). Context from `/props` (llama.cpp) or `/api/show` (Ollama). |
+| Probe | Lists the models; tests tool calling: native calls, else a JSON grammar (`response_format: json_schema`, enforced by llama.cpp and Ollama, the answer turned back into a tool call by a fetch shim), else none (`toolCalls` on each model; the profile's `probed` keeps it to text work). Context from `/props` (llama.cpp), `/api/show` (Ollama) or LM Studio's `/api/v1/models`. |
 | Quota | A 429 is a `rate_limit` with `retry-after`. |
 
 ## OpenCode — Phase 2
