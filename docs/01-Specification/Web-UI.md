@@ -60,6 +60,7 @@ Eye's conversation sit beside them ([[Chats-and-Helper]]).
 │ Inbox         │                                               │
 │ Mail          │                                               │
 │ Legs          │                                               │
+│ Models        │                                               │
 │ Chats         │                                               │
 │ Servers       │                                               │
 │ Cloud storage │                                               │
@@ -72,7 +73,8 @@ Eye's conversation sit beside them ([[Chats-and-Helper]]).
 ```
 
 New work is a button in the header, and in More on a phone; Cloud
-storage sits between Servers and Terminal (2026-10-03).
+storage sits between Servers and Terminal (2026-10-03); Models after
+Legs (2026-10-07).
 
 - **Command palette (⌘K / Ctrl+K)**: jump to anything, and run any
   control (pause job, new job, approve…). A job shows its name with its
@@ -87,8 +89,8 @@ storage sits between Servers and Terminal (2026-10-03).
   it needs, a conversation takes the whole height like Chats; changing
   tabs never jumps the page. Nothing runs off the right edge on a phone:
   long names are cut with their full text on hover, and wrap in legends.
-- **Keyboard**: `?` lists every shortcut; `g` then `o`/`p`/`r`/`i`/`l`/
-  `c`/`s`/`t`/`m`/`y`/`k`/`d`/`,` goes to Overview, Projects, Repos, Inbox, Legs,
+- **Keyboard**: `?` lists every shortcut; `g` then `o`/`p`/`r`/`i`/`l`/`e`/
+  `c`/`s`/`t`/`m`/`y`/`k`/`d`/`,` goes to Overview, Projects, Repos, Inbox, Legs, Models,
   Chats, Servers, Terminal, Mail, Cloud storage, Skills, Docs, Settings (`g j` went with the
   Jobs page, 2026-10-03); `1`…`9` goes to that tab on a page with tabs
   (a job's own tabs inside Work don't take them); `[` folds the sidebar; `n` new work; Ctrl+K
@@ -764,7 +766,11 @@ In tabs, each one concern in sections; the tab is in the address
 that opened Settings:
 - **General**: this computer (keychain, sandbox, sleep inhibition),
   storage use and pruning, notifications, theme.
-- **Eye & jobs**: The Eye's models, jobs at once, same-provider fallback,
+- **Eye & jobs**: The Eye's models and the interview's rounds; **Jobs at
+  once** (jobs at once, tasks at once in a job, and **Claude share of a
+  job**, 2026-10-07, [[ADR-052-A-Harness-For-Any-Model]] §3: Claude as
+  needed, only when nothing else can, or at most 25, 50 or 75% of a
+  job's attempts); same-provider fallback;
   and **Work at once** (2026-10-04, [[ADR-050-Parallel-By-Default]]): tasks
   at once across all jobs (Automatic, what this computer takes, or a
   number), heavy tasks at once, the memory to keep free, the CPU above

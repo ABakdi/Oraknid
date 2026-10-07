@@ -261,7 +261,7 @@ record, so a model that needed help on a kind of work starts it lower in
 trust next time, and one that succeeds is trusted more. A pause, a
 restart, a quota or a provider failure is never recorded against it.
 
-**A job's Claude share** (budget `claudeShare`, else Settings → Work,
+**A job's Claude share** (budget `claudeShare`, else Settings → Eye & jobs → Jobs at once,
 `work.claudeShare`; unset: as needed) is the most of its attempts that
 may run on Claude: past it, Claude takes a task only when nothing else
 can.

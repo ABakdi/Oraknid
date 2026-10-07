@@ -20,6 +20,7 @@ as an alarm that tells me to come and look.
 | Context per session | Leg | 60% of window | Rotate the session (BR-3). |
 | Wall-clock time | job, task | job: 8 h alarm | Notify me (soft). Hard only if I set it. |
 | Money | job, project, Leg | 0 | Only paid Legs need it. Stop and ask (hard). |
+| Claude share (2026-10-07) | job (else Settings → Eye & jobs, `work.claudeShare`) | as needed | Past it, Claude takes a task only when nothing else can ([[ADR-052-A-Harness-For-Any-Model]] §3, Legs-and-Capability-Profiles → The ladder). |
 
 The quota-window share is how full this job may make any window of a
 Leg: at a hard 50%, a Leg whose `seven_day` window is at 62% is not
@@ -102,6 +103,10 @@ and a job's quota share stops routing to a Leg past it.
 
 When no allowed Leg has quota, the job goes `blocked` with the earliest
 reset time. A timer resumes it at the reset, and I'm notified both
-times.
+times. An agent's own words count as its quota ("Individual quota reached …
+Resets in 51h49m11s", 2026-10-07): it is out until then and never
+routed to, and the blocked job names it and the time ("Antigravity is
+out of quota until …"); a paused Leg is named as paused, with what to
+do, never as out of quota.
 
 Related: [[The-Eye]] · [[Legs-and-Capability-Profiles]] · [[Business-Rules]] · [[Web-UI]]
