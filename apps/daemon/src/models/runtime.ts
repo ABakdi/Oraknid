@@ -95,7 +95,11 @@ export async function startLlamaServer(
   const log = createWriteStream(o.logFile, { flags: "a" });
   const child = (deps.spawn ?? spawn)(o.binary, llamaArgs(o), {
     stdio: ["ignore", "pipe", "pipe"],
-    env: process.env,
+    // A prebuilt llama.cpp keeps its libraries beside its programs (install.sh --local-models).
+    env: {
+      ...process.env,
+      LD_LIBRARY_PATH: [dirname(o.binary), process.env.LD_LIBRARY_PATH].filter(Boolean).join(":"),
+    },
   });
   child.stdout?.pipe(log);
   child.stderr?.pipe(log);

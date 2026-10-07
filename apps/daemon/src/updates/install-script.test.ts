@@ -242,3 +242,46 @@ describe("the update script (ADR-048)", () => {
     expect(run?.log.join("\n")).toContain("Using this version's install.sh.");
   });
 });
+
+describe("install.sh --local-models (ADR-054)", () => {
+  /** install.sh's own function, run in a shell on a release's asset names. */
+  const pick = (kind: string, arch: string, names: string[]) =>
+    spawnSync(
+      "sh",
+      [
+        "-c",
+        'ORAKNID_INSTALL_LIB=1 . "$0"; pick_llama_asset "$1" "$2"',
+        join(ROOT, "install.sh"),
+        kind,
+        arch,
+      ],
+      { input: `${names.join("\n")}\n`, encoding: "utf8" },
+    ).stdout.trim();
+  const builds = (gpu: string) =>
+    spawnSync(
+      "sh",
+      ["-c", 'ORAKNID_INSTALL_LIB=1 . "$0"; builds_for "$1"', join(ROOT, "install.sh"), gpu],
+      {
+        encoding: "utf8",
+      },
+    ).stdout.trim();
+  const release = [
+    "llama-b7000-bin-macos-arm64.zip",
+    "llama-b7000-bin-ubuntu-x64.zip",
+    "llama-b7000-bin-ubuntu-vulkan-x64.zip",
+    "llama-b7000-bin-ubuntu-arm64.zip",
+    "llama-b7000-bin-win-cuda-12.4-x64.zip",
+    "llama-b7000-bin-ubuntu-rocm-6.4-x64.tar.gz",
+  ];
+
+  it("picks the Linux build for this computer's GPU and architecture", () => {
+    expect(pick("vulkan", "x64", release)).toBe("llama-b7000-bin-ubuntu-vulkan-x64.zip");
+    expect(pick("rocm", "x64", release)).toBe("llama-b7000-bin-ubuntu-rocm-6.4-x64.tar.gz");
+    expect(pick("cpu", "x64", release)).toBe("llama-b7000-bin-ubuntu-x64.zip");
+    expect(pick("cpu", "arm64", release)).toBe("llama-b7000-bin-ubuntu-arm64.zip");
+    // No Linux CUDA build in this release: Vulkan is tried next.
+    expect(pick("cuda", "x64", release)).toBe("");
+    expect(builds("cuda")).toBe("cuda vulkan cpu");
+    expect(builds("cpu")).toBe("cpu");
+  });
+});
