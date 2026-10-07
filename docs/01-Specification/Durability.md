@@ -9,9 +9,16 @@ does anything twice.
 
 - The daemon runs as a **systemd user service** (`oraknid.service`),
   enabled at login, with lingering enabled so it starts at boot even
-  before I log in ([[OS-Integration]]).
-- `oraknid` CLI: `start`, `stop`, `status`, `logs`, `open` (opens the UI),
-  `doctor` (checks the setup and says what is wrong).
+  before I log in ([[OS-Integration]]); where there is no systemd, an
+  OpenRC or runit service running as me ([[ADR-036-One-Script-Install]]).
+- `oraknid` CLI: alone, the terminal app ([[Terminal-App]]); `start`,
+  `stop`, `status`, `logs`, `open` (opens the UI), `pair`, `pin`,
+  `doctor` (checks the setup and says what is wrong), `install`
+  (`--gui` adds the web UI), `uninstall`, `update` ([[ADR-048-Updates]]).
+- **An update must start** (2026-10-07): after the install script, the
+  new version has to load and, with the service, answer `oraknid status`
+  within a minute; otherwise the update is rolled back to the version
+  before, its database copy kept ([[ADR-048-Updates]]).
 - Windows comes in the final phase, behind the same interfaces.
 
 ## Sleep inhibition
@@ -63,9 +70,12 @@ point is a step boundary; the step in flight sees its abort signal:
 3. Record a checkpoint and a handoff for each task.
 4. The job becomes `paused`. The UI said "Pausing…" until this point.
 
-**Resume** restarts each task from its handoff and checkpoint, in a
-fresh session from a context pack (BR-2): a Leg's native session is
-never resumed for a job's work.
+**Resume** restarts each task from its handoff and checkpoint. The same
+model taking it up again resumes its own native session where its Leg
+can (its probe says so), told why it stopped; another model, a Leg that
+can't resume, or work that was rolled back gets a fresh session from a
+context pack (BR-2; until 2026-10-07 a native session was never resumed,
+[[ADR-052-A-Harness-For-Any-Model]] §1).
 
 Pausing never runs verification, never replans, and never touches
 side effects.
@@ -75,6 +85,13 @@ failed attempt; the attempt cut short by a crash is closed as abandoned
 at the next start, and the next attempt builds its handoff from that
 session's log. A message to The Eye left without a reply is handled at
 the next start. Shutdown stops every timer first and starts no new run.
+
+**Kept across a restart** (2026-10-07, [[ADR-056-The-Harness]] stage 1):
+each task's memory (`task.memory.<task>`): that it read untrusted content
+(a resumed session isn't trusted again), what I let run once, what I
+refused (asking again is a gate bypass, D8) and the stuck rule's count.
+Questions The Eye or a Leg raised for an attempt a crash cut short are
+withdrawn when the job starts again. Cleared when the task settles.
 
 **Paused for room** (2026-10-04, [[ADR-050-Parallel-By-Default]]): when
 the computer is in danger, Oraknid pauses one running task the same

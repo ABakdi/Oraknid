@@ -2,7 +2,7 @@
 
 Touches [[API-Contract]], [[Security]], [[Approvals-and-Autonomy]],
 [[The-Eye]], [[ADR-051-Oraknid-Over-MCP]].
-Written 2026-10-04. Planned, not started.
+Written 2026-10-04. Planned, not started; it comes after [[Phase-15-Agents-That-Deliver]] (2026-10-07: the work it would hand over has to be reliable first, [[Roadmap]] → Changes of order).
 
 ## Why
 

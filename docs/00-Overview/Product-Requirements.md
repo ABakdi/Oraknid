@@ -4,9 +4,11 @@
 
 Oraknid is a local background daemon with a web UI. It runs jobs to
 verified completion by orchestrating a pool of AI coding agents and
-local models (Legs) under a supervisor (The Eye). It keeps job memory
+local models (Legs) under a supervisor (The Eye), from a web UI or a
+terminal app. It keeps job memory
 in Silk, outside every Leg's session. It is economical with tokens,
-catches drift, asks me before anything irreversible, survives crashes
+catches drift, settles ordinary commands by rules and a model judge
+and asks me before anything irreversible, survives crashes
 and reboots, and keeps the machine awake while it works. One owner,
 several devices. Linux first.
 
@@ -32,6 +34,7 @@ several devices. Linux first.
 | Project repo | One git repo of a project, with its branches and GitHub link. | [[ADR-042-Several-Repos-And-Servers]] |
 | Backup plan / run | One database's scheduled, encrypted backup, and each time it ran. | [[ADR-044-Backups]] |
 | Cloud provider | One storage account in the pool, through rclone. | [[ADR-046-Cloud-Storage]] |
+| Local model | A model downloaded and run on this computer, with its roles. | [[ADR-054-Local-Models]] |
 
 Full data model: [[Core-Entities]].
 
@@ -40,7 +43,7 @@ Full data model: [[Core-Entities]].
 | Module | What it does | Spec | Phase |
 | :-- | :-- | :-- | :-- |
 | The Eye | Plan, route, monitor, verify, self-prompt. | [[The-Eye]] | 1 |
-| Legs | Adapters, pool, health, profiles. | [[Legs-and-Capability-Profiles]] | 1 (Claude Code, OpenAI-compatible); 2, 5 |
+| Legs | Adapters, pool, health, profiles. | [[Legs-and-Capability-Profiles]] | 1 (Claude Code, OpenAI-compatible); 2, 5; 15 (Oraknid's own agent, Codex) |
 | Silk | Job memory, handoffs, context packs. | [[Silk]] | 1 |
 | Drift control | Detectors, escalation ladder, checkpoints. | [[Drift-Control]] | 1 |
 | Budgets | Tokens, quota windows, context, time, money. | [[Budgets-and-Quotas]] | 1 |
@@ -59,13 +62,18 @@ Full data model: [[Core-Entities]].
 | Lockdown | A PIN on every device, Audit 2's fixes. | [[Security]] | 10 |
 | Workspace | Pages in tabs, shortcuts, a terminal workspace, device rights, a public Nest, the app's own look, the product site. | [[Web-UI]] · [[The-Nest]] | 11 |
 | Email | A mail client, agents that read, sort and draft. | [[Web-UI]] → Mail | 12 |
-| Projects first | The project as the place (its Eye, Work, Workflow, Repo tabs), Nest pages by mode, the one-script install, questions with options, GitHub per project, Repos, Docs and the helper, several repos and servers, server insight, backups, The Eye speaking up, cloud storage, job names. | [[Jobs-and-Projects]] · [[Phase-13-Projects-First]] | 13 |
+| Projects first | The project as the place (its Eye, Work, Workflow, Repo tabs), Nest pages by mode, the one-script install, questions with options, GitHub per project, Repos, Docs and the helper, several repos and servers, server insight, backups, The Eye speaking up, cloud storage, job names; then updates from inside, archive and delete, a chat and jobs on each server, The Eye thinking out loud, parallel by default within the machine's limits. | [[Jobs-and-Projects]] · [[Phase-13-Projects-First]] | 13 |
+| Agents that deliver | A harness for any model (whole goals, checks in the loop, the ladder, only usable agents, the Gate), auto mode, Oraknid's own agent. | [[The-Eye]] · [[Approvals-and-Autonomy]] · [[Phase-15-Agents-That-Deliver]] | 15 |
+| Local models | Find, download, run and manage models on this computer; roles as tools for every agent. | [[Web-UI]] → Models · [[ADR-054-Local-Models]] | 15 |
+| Terminal app | `oraknid` in a terminal with slash commands; an install without the web UI. | [[Terminal-App]] | 15 |
+| Oraknid over MCP | Oraknid as an MCP server for other agents (planned). | [[Phase-14-Oraknid-Over-MCP]] | 14 |
 
 ## Business rules in one paragraph
 
 Done means verified by The Eye, never claimed by a Leg. Silk is the
 only continuity, and sessions stay short. Oraknid works with any set of
-Legs and needs none in particular. Gated actions wait for approval,
+Legs and needs none in particular. Ordinary commands are settled by
+rules and a model judge; what I might not want waits for approval,
 external actions are never duplicated, and pausing loses nothing. The
 database is written before the world is touched. Budgets are hard
 except time, and no money is spent by default. The machine stays awake
@@ -77,7 +85,8 @@ can always take over. Full table: [[Business-Rules]].
 ## Technical foundation
 
 TypeScript everywhere. A Node.js daemon and The Nest. Express for HTTP
-and WebSocket. React, shadcn/ui and Tailwind for the UI. A pnpm monorepo
+and WebSocket. React, shadcn/ui and Tailwind for the UI; Ink for the
+terminal app. A pnpm monorepo
 ([[ADR-001-Monorepo]]). Persistence, queue, transport and visualization
 choices are recorded as ADRs (listed in [[Home]]). Overview:
 [[Architecture-Overview]].

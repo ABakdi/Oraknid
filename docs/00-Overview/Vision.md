@@ -28,7 +28,8 @@ it needs me, it tells me.
 - **It is honest.** "Done" means tests, builds and checks actually
   passed. A Leg saying so doesn't count.
 - **It is economical.** Sessions stay short. Context comes from Silk,
-  never from long transcripts. Cheap Legs do cheap work.
+  never from long transcripts. Cheap Legs do cheap work, and a task
+  climbs to a stronger model only when a cheaper one fails it.
 - **It is mine to shape.** Which agents, which accounts, which local
   models, which skills, which rules. Oraknid adapts to what I give it
   and assumes nothing about what I have.
@@ -48,7 +49,10 @@ it needs me, it tells me.
 4. **Durable.** Lossless pause and resume. Crash recovery that never
    repeats work or external side effects. Sleep inhibition while jobs run.
 5. **Human in the loop by design.** Autonomy levels, approval gates,
-   and inline answers to a Leg's questions.
+   and inline answers to a Leg's questions. Since auto mode
+   (2026-10-07, [[ADR-053-Auto-Mode]]) rules and a model judge settle
+   ordinary commands; I'm asked for what I might not want: a server
+   job's plan, production, sending, publishing, deleting, paying.
 
 ## Scope discipline
 
@@ -69,8 +73,11 @@ babysitting Claude Code:
 (remote relay) → Antigravity → non-coding skills → dedicated decision
 models for The Eye → daily use (New work, repos, chats, the helper) →
 servers → lockdown (a PIN on every device) → workspace → email, all
-built by 2026-10-03. Then containers and teams. Windows comes last,
-once the system works fully on Linux. See [[Roadmap]].
+built by 2026-10-03 → projects first (built 2026-10-06) → agents that
+deliver with any model: a harness, auto mode, local models and a
+terminal app (in progress since 2026-10-07) → Oraknid over MCP. Then
+containers and teams. Windows comes last, once the system works fully
+on Linux. See [[Roadmap]].
 
 **Not in Oraknid at all:** a hosted multi-tenant service, or Oraknid's
 own model training. A public Nest ([[ADR-031-Public-Nest]]) isn't one:

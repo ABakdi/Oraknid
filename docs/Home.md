@@ -3,41 +3,48 @@
 *Always watching, many legs. A local background orchestrator that runs
 AI coding agents and local models from goal to verified completion.*
 
-**Where it stands (2026-10-04):** Phases 1 to 12 are built and tested
+**Where it stands (2026-10-07):** Phases 1 to 12 are built and tested
 on `dev`; what is left in each is hands-on (mine), named in its phase
-note and in the [[Roadmap]]. Phase 13 is built on `dev` (M13.1 to
-M13.17); open: the piano job's last push check, mine to resume, M13.12's
-SQLite files and sizes inside containers, and [[Audit-2]] S2-02 (fixed
-in part). Next: those runs, then Later.
+note and in the [[Roadmap]]. Phase 13 is built through M13.26; open:
+the piano job's last push check, mine to resume, M13.12's SQLite files
+and sizes inside containers, and [[Audit-2]] S2-02 (fixed in part).
+Phase 15, agents that deliver, is in progress before Phase 14: M15.1 to
+M15.6 built (the harness's first fixes, auto mode, whole goals and the
+ladder, Oraknid's own agent, local models, the terminal app), M15.8's
+stages 1 and 2 done (scenarios and fifteen fixes; the Gate), its stage
+3 (the Verifier and the attempt log) under way, a Codex Leg built
+([[ADR-057-Codex-Adapter]], not yet run on a real job), and M15.7's
+proof not run yet. Released: v0.1.0 to v0.2.4
+([[ADR-047-Releases]]).
 
 ## 00 — Overview
 - [[Vision]] — why Oraknid exists, what it must feel like, pillars, MVP scope
 - [[Product-Requirements]] — entities, modules, rules in one paragraph, foundation
-- [[Glossary]] — every term (The Eye, Legs, The Web, Silk, The Nest…) with one meaning
+- [[Glossary]] — every term (The Eye, Legs, The Web, Silk, The Nest, auto mode, the Gate, the ladder…) with one meaning
 
 ## 01 — Specification
 - [[Core-Entities]] — the data model and life cycles
 - [[Business-Rules]] — the constitution, BR-1 to BR-23
 - [[Jobs-and-Projects]] — creating, following, controlling and ending jobs
 - [[The-Eye]] — planning, routing, self-prompting, verification, evaluation
-- [[Legs-and-Capability-Profiles]] — the pool, health, profiles and learning
+- [[Legs-and-Capability-Profiles]] — the pool, health, profiles and learning, unusable agents, the ladder, Oraknid's own agent and the Local Leg
 - [[Silk]] — job memory, handoffs, context packs, the markdown mirror
 - [[Drift-Control]] — detectors D1–D8, the escalation ladder, rollback
 - [[Budgets-and-Quotas]] — tokens, quota windows, context, time, money
-- [[Approvals-and-Autonomy]] — autonomy levels, gated actions, the inbox
+- [[Approvals-and-Autonomy]] — autonomy levels (Auto, Careful, Full), auto mode, the Gate, gated actions, the inbox
 - [[Skills]] — the skill format, the library, the interview stage
 - [[Chats-and-Helper]] — free chats with my models, and the Oraknid helper
-- [[Servers]] — my servers: state documents, oraknid-monitor, terminal
+- [[Servers]] — my servers: state documents, oraknid-monitor, terminal, a chat and jobs on each, backups
 - [[Durability]] — service, sleep inhibition, crash recovery, lossless pause, watchdog
 - [[Notifications]] — desktop, web push, email, routing
 - [[Security]] — secrets, scope, command filter, prompt injection, pairing, the PIN, device rights, mail, audit
-- [[Web-UI]] — every screen, live, mobile: tabs, shortcuts, going back, set up in place, Mail, the lock
+- [[Web-UI]] — every screen, live, mobile: tabs, shortcuts, going back, set up in place, Mail, Models, the lock
 - [[Terminal-App]] — `oraknid` in a terminal: The Eye's conversation, a prompt, slash commands, numbered lists; installs without the web UI
 - [[The-Nest]] — the remote relay, private or public (Phase 4, Phase 11)
 
 ## 02 — Architecture
-- [[Architecture-Overview]] — packages, layers, data flow, paths
-- [[Leg-Adapters]] — the adapter interface; Claude Code, OpenAI-compatible, OpenCode, Antigravity, checked 2026-10-02
+- [[Architecture-Overview]] — packages (the guard, the harness, the terminal app, local models), layers, data flow, paths
+- [[Leg-Adapters]] — the adapter interface; Claude Code, OpenAI-compatible, OpenCode, Antigravity, Oraknid's own agent, Codex
 - [[Persistence-and-Recovery]] — tables, write discipline, recovery, backups
 - [[Realtime-Transport]] — topics, frames, reconnect
 - [[Nest-Protocol]] — the end-to-end tunnel through The Nest, registering on a public Nest, the loader
@@ -60,8 +67,8 @@ in part). Next: those runs, then Later.
 - [[Phase-10-Lockdown]] — built: the PIN, Audit 2's fixes, settings in tabs
 - [[Phase-11-Workspace]] — built: pages in tabs, terminal workspace, device rights, a public Nest, the app's own look and the product site; both Nests deployed; the mark kept, its pupil made vertical and gently wavy (2026-10-03)
 - [[Phase-12-Email]] — built: the Mail page, IMAP and POP3, agents' drafts; my Gmail syncs; an approved agent draft and an IMAP account to try
-- [[Phase-13-Projects-First]] — built on `dev`: projects first, Nest pages by mode, the one-script install, questions with options, Workflow, GitHub per project, Repos, Docs and the helper, several repos and servers, server insight, backups, The Eye speaks up, cloud storage, job names
-- [[Phase-15-Agents-That-Deliver]] — in progress, before Phase 14: a harness for any model, auto mode, local models, the terminal app
+- [[Phase-13-Projects-First]] — built on `dev` through M13.26: projects first, Nest pages by mode, the one-script install, questions with options, Workflow, GitHub per project, Repos, Docs and the helper, several repos and servers, server insight, backups, The Eye speaks up, cloud storage, job names; setup fixes, updates, the planner and agents fixed, archive and delete, a chat and jobs on each server, The Eye thinking out loud, parallel by default
+- [[Phase-15-Agents-That-Deliver]] — in progress, before Phase 14: M15.1–M15.6 built (a harness for any model, auto mode, Oraknid's own agent, local models, the terminal app), M15.8 stages 1–2 done (the Gate), a Codex Leg (M15.9), the Verifier and attempt log to come, the proof (M15.7) not run
 - [[Phase-14-Oraknid-Over-MCP]] — planned: Oraknid as an MCP server, a command center for any agent
 - Later: containers per job, teams
 
@@ -95,14 +102,15 @@ in part). Next: those runs, then Later.
 - [[ADR-034-Projects-First]] · [[ADR-035-Nest-Pages-By-Mode]] — Phase 13: the project is the place, jobs its history; what a public and a private Nest show
 - [[ADR-036-One-Script-Install]] · [[ADR-037-Questions-With-Options]] · [[ADR-038-Project-Accounts]] — Phase 13: one install script with services for systemd, OpenRC and runit; questions with options; a project's GitHub repo and servers, chosen once
 - [[ADR-045-The-Eye-Speaks-Up]] · [[ADR-046-Cloud-Storage]] — Phase 13: The Eye reports in the conversation and every answer says what it does; my storage providers as one pool
-- [[ADR-047-Releases]] — v0.1.0: semantic versions, a tag and a GitHub pre-release with a pinned install script; `main` follows the releases
+- [[ADR-047-Releases]] — semantic versions, a tag and a GitHub pre-release with a pinned install script; `main` follows the releases; 0.x.y until I say 1.0 (v0.1.0 to v0.2.4)
 - [[ADR-050-Parallel-By-Default]] — tasks in parallel by default, admitted by the machine (memory, CPU, disk, pressure), the Legs' sessions and my cap; a guard that pauses work before the computer crashes and tells me once per incident
 - [[ADR-051-Oraknid-Over-MCP]] — proposed (Phase 14): Oraknid as an MCP server; connected clients with rights I give; long jobs started, followed and steered from any agent; GitHub, mail and servers without secrets
 - [[ADR-052-A-Harness-For-Any-Model]] — whole goals in one session, checks in the loop, a ladder up when a model fails, only usable agents, The Eye on the strongest model, Oraknid's own agent
 - [[ADR-053-Auto-Mode]] — a safety layer instead of approvals per command: open-source rules, a model judge on doubt, me only for what I might not want
 - [[ADR-054-Local-Models]] — download, run and manage local models; roles like translation and OCR as tools for every agent
 - [[ADR-055-Terminal-App]] — `oraknid` in the terminal with slash commands; an install without the web UI
-- [[ADR-056-The-Harness]] — the task harness taken apart: one attempt log, one gate for every action, one verifier, one place that decides an attempt's end, a controller
+- [[ADR-056-The-Harness]] — the task harness taken apart: one attempt log, one gate for every action, one verifier, one place that decides an attempt's end, a controller (stages 1–2 built: scenarios and fixes, the Gate)
+- [[ADR-057-Codex-Adapter]] — OpenAI's Codex CLI as a Leg: `codex exec --json` per turn in Oraknid's sandbox, its own sandbox off, every action through Oraknid's policy by its PreToolUse hook, a CODEX_HOME per Leg
 - [[ADR-048-Updates]] — updates from inside Oraknid: install.sh records what it installed; Oraknid checks GitHub on its channel (dev: pre-releases and new work on dev; stable: releases) and updates in one click, the database copied first, a failed update rolled back
 - [[ADR-049-Server-Chat-And-Server-Jobs]] — a chat on each server: The Eye answers from its state document or sends an agent into it as a server job (the server's own hidden project), says what will change first, runs its checks on the server, asks before any change on production, and writes the job's changes into the state document
 - [[ADR-043-Server-Insight]] · [[ADR-044-Backups]] — Phase 13: Docker, databases, the proxy, traffic and logs of a server; scheduled, encrypted database backups

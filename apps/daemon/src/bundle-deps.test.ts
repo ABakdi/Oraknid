@@ -25,6 +25,7 @@ function workspaceDirs(): Map<string, string> {
     "packages/tunnel",
     "packages/legs/sdk",
     "packages/legs/claude-code",
+    "packages/legs/codex",
     "packages/legs/opencode",
     "packages/legs/antigravity",
     "packages/legs/openai-compatible",

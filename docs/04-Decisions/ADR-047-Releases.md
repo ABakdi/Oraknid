@@ -37,6 +37,11 @@ what is in it, and a command that installs exactly that.
 ## As built (2026-10-04)
 - v0.1.0, the first: Phases 1 to 13.
 - v0.2.0 (2026-10-07): Phase 15's harness, auto mode, local models and the terminal app, and the rest of Phase 13 (M13.18–M13.26). Versions stay 0.x.y, the minor raised for each batch of features and the patch for fixes, until I say 1.0.
+- v0.2.1 (2026-10-07): an installed daemon starts again; an update whose new version doesn't start is rolled back ([[ADR-048-Updates]]).
+- v0.2.2 (2026-10-07): cancel from the chat; The Eye looks up what it doesn't know.
+- v0.2.3 (2026-10-07): server jobs: an approved plan covers its own removals, the agent's need asked as itself, checks in plain form.
+- v0.2.4 (2026-10-07): the harness, stage 1 ([[ADR-056-The-Harness]]): scenarios from my real jobs, fifteen fixes.
 - Oraknid tells me of a new release and installs it from inside (2026-10-04, [[ADR-048-Updates]]): an install from `dev` counts pre-releases and new work on dev, one from `main` or a tag only releases, so a release meant for `main`'s installs is published as a release, not a pre-release.
+- v0.3.0 (2026-10-08): Codex as a Leg, the harness's Gate (ADR-056 stage 2), the canon brought up to date.
 
 Related: [[ADR-036-One-Script-Install]] · [[ADR-048-Updates]]

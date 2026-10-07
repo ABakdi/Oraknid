@@ -7,7 +7,7 @@ import { Empty, ErrorNote, Loading, PageHeader, StateBadge } from "@/components/
 import { useConfirm } from "@/components/confirm";
 import { FindAgents } from "@/components/find-agents";
 import { LegAvatar } from "@/components/leg-avatar";
-import { LegLogin } from "@/components/leg-login";
+import { canLogIn, LegLogin } from "@/components/leg-login";
 import { LegPlanUsageDetail } from "@/components/plan-usage";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -121,7 +121,7 @@ export function LegsPage({ focus }: { focus?: string } = {}) {
           }
         >
           {t(
-            "Let Oraknid find the agents on this machine, or add one by hand: a Claude Code or Antigravity account, OpenCode, or an OpenAI-compatible server (Ollama, LM Studio, llama.cpp, vLLM). Any number of each; none is required.",
+            "Let Oraknid find the agents on this machine, or add one by hand: a Claude Code, Antigravity or Codex account, OpenCode, or an OpenAI-compatible server (Ollama, LM Studio, llama.cpp, vLLM). Any number of each; none is required.",
           )}
         </Empty>
       ) : null}
@@ -153,8 +153,7 @@ export function LegsPage({ focus }: { focus?: string } = {}) {
                   </span>
                 )}
               </button>
-              {(leg.kind === "claude-code" || leg.kind === "antigravity") &&
-              leg.health !== "healthy" ? (
+              {canLogIn(leg) && leg.health !== "healthy" ? (
                 <LegLogin legId={leg.id} legName={leg.name} kind={leg.kind} />
               ) : null}
             </CardTitle>
@@ -201,8 +200,7 @@ export function LegsPage({ focus }: { focus?: string } = {}) {
                   <RefreshCw className="size-3.5" />
                   {t("Test")}
                 </Button>
-                {(leg.kind === "claude-code" || leg.kind === "antigravity") &&
-                leg.health === "healthy" ? (
+                {canLogIn(leg) && leg.health === "healthy" ? (
                   <LegLogin legId={leg.id} legName={leg.name} kind={leg.kind} />
                 ) : null}
                 <Button

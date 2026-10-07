@@ -63,11 +63,21 @@ const CLAUDE_PRIVATE = [
   "ide",
 ];
 
+/**
+ * Shared from a Codex Leg's CODEX_HOME (ADR-057): its login, nothing else.
+ * Its sessions, logs, state database and settings are each job's own.
+ */
+const CODEX_SHARED = ["auth.json"];
+const codexPrivates = (dir: string) =>
+  existsSync(dir) ? readdirSync(dir).filter((n) => !CODEX_SHARED.includes(n)) : [];
+
 export interface JobHome {
   /** HOME for the job's sessions. */
   home: string;
   /** The Claude config folder for the job's sessions, when the Leg has one. */
   configDir: string | null;
+  /** The CODEX_HOME for the job's sessions, when the Leg is Codex's (ADR-057). */
+  codexHome: string | null;
   /** The Leg's entries linked in: bound at their own path in the job's sandbox. */
   shared: string[];
 }
@@ -103,11 +113,12 @@ export function prepareJobHome(o: {
   jobId: string;
   legHome: string;
   legConfigDir?: string | null;
+  legCodexHome?: string | null;
 }): JobHome {
   const home = jobHomeDir(o.legsDir, o.legId, o.jobId);
   const root = dirname(home);
   mkdirSync(root, { recursive: true, mode: 0o700 });
-  syncBack(o.legsDir, o.legId, o.legHome, o.legConfigDir ?? null);
+  syncBack(o.legsDir, o.legId, o.legHome, o.legConfigDir ?? null, o.legCodexHome ?? null);
   const shared: string[] = [];
   mirror(o.legHome, home, HOME_PRIVATE, shared);
   let configDir: string | null = null;
@@ -115,7 +126,12 @@ export function prepareJobHome(o: {
     configDir = join(root, "claude-config");
     mirror(o.legConfigDir, configDir, CLAUDE_PRIVATE, shared);
   }
-  return { home, configDir, shared };
+  let codexHome: string | null = null;
+  if (o.legCodexHome) {
+    codexHome = join(root, "codex-home");
+    mirror(o.legCodexHome, codexHome, codexPrivates(o.legCodexHome), shared);
+  }
+  return { home, configDir, codexHome, shared };
 }
 
 /**
@@ -126,6 +142,7 @@ export function removeJobHomes(
   legsDir: string,
   jobId: string,
   configDirOf: (legId: string) => string | null = () => null,
+  codexHomeOf: (legId: string) => string | null = () => null,
 ): void {
   if (!existsSync(legsDir)) return;
   for (const leg of readdirSync(legsDir)) {
@@ -134,6 +151,8 @@ export function removeJobHomes(
     backInto(join(legsDir, leg, "home"), join(dir, "home"), HOME_PRIVATE);
     const configDir = configDirOf(leg);
     if (configDir) backInto(configDir, join(dir, "claude-config"), CLAUDE_PRIVATE);
+    const codexHome = codexHomeOf(leg);
+    if (codexHome) backInto(codexHome, join(dir, "codex-home"), codexPrivates(codexHome));
     rmSync(dir, { recursive: true, force: true });
   }
 }
@@ -148,12 +167,15 @@ export function syncBack(
   legId: string,
   legHome: string,
   legConfigDir: string | null,
+  legCodexHome: string | null = null,
 ): void {
   const dir = jobsDir(legsDir, legId);
   if (!existsSync(dir)) return;
   for (const job of readdirSync(dir)) {
     backInto(legHome, join(dir, job, "home"), HOME_PRIVATE);
     if (legConfigDir) backInto(legConfigDir, join(dir, job, "claude-config"), CLAUDE_PRIVATE);
+    if (legCodexHome)
+      backInto(legCodexHome, join(dir, job, "codex-home"), codexPrivates(legCodexHome));
   }
 }
 

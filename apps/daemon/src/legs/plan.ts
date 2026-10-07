@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, sep } from "node:path";
+import { codexInstallDir } from "@oraknid/leg-codex";
 import type { SandboxPlan } from "@oraknid/leg-sdk";
 import { type Sandbox, withLocalPorts } from "@oraknid/os";
 import { prepareJobHome } from "./job-home.ts";
@@ -43,6 +44,15 @@ export function legLocalPorts(config: unknown): number[] {
   return [...ports].filter((p) => p > 0 && p < 65536);
 }
 
+/** A Codex Leg's own CODEX_HOME (ADR-057): as set when it was added, else its folder's. */
+export function codexHomeOf(leg: LegRow, legsDir: string): string {
+  const config = leg.config as Record<string, unknown>;
+  const dir =
+    typeof config.codexHome === "string" ? config.codexHome : join(legsDir, leg.id, "codex-home");
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return dir;
+}
+
 export function sandboxPlan(
   leg: LegRow,
   sandbox: Sandbox,
@@ -62,14 +72,34 @@ export function sandboxPlan(
   if (jobId) {
     const legConfigDir =
       leg.kind === "claude-code" && typeof config.configDir === "string" ? config.configDir : null;
-    const own = prepareJobHome({ legsDir, legId: leg.id, jobId, legHome, legConfigDir });
+    const legCodexHome = leg.kind === "codex" ? codexHomeOf(leg, legsDir) : null;
+    const own = prepareJobHome({
+      legsDir,
+      legId: leg.id,
+      jobId,
+      legHome,
+      legConfigDir,
+      legCodexHome,
+    });
     home = own.home;
     if (own.configDir) configDir = own.configDir;
+    // A job's CODEX_HOME of its own, the Leg's login linked in (ADR-057).
+    if (own.codexHome) configDir = own.codexHome;
     writable.push(...own.shared);
   }
   if (leg.kind === "opencode" || leg.kind === "antigravity") {
     const dir = binaryDir(String(config.binary ?? (leg.kind === "opencode" ? "opencode" : "agy")));
     if (dir) readonly.push(dir);
+  }
+  if (leg.kind === "codex") {
+    // Its standalone package (the binary, its rg and resources), read-only; never my ~/.codex's login.
+    const dir = codexInstallDir(String(config.binary ?? "codex"));
+    if (dir) readonly.push(dir);
+    // Outside a job, the Leg's own CODEX_HOME.
+    if (!configDir) {
+      configDir = codexHomeOf(leg, legsDir);
+      writable.push(configDir);
+    }
   }
   if (leg.kind === "claude-code") {
     const dir = binaryDir(String(config.binary ?? "claude"));

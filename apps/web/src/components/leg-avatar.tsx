@@ -20,6 +20,7 @@ const KIND_HUE: Record<string, number> = {
   opencode: 160,
   "openai-compatible": 310,
   "oraknid-agent": 200,
+  codex: 100,
 };
 
 /** A small stable hash (FNV-1a), so a Leg keeps its colour across pages and reloads. */

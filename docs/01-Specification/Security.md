@@ -62,7 +62,12 @@ sandbox limits damage, but it doesn't make that safe.
 ## Command allow/deny list
 
 - Evaluated on every command a Leg wants to run (through the adapter's
-  permission hook) and on every command The Eye runs.
+  permission hook) and on every command The Eye runs. Since 2026-10-07
+  every source goes through one Gate ([[ADR-056-The-Harness]] §3): a
+  Leg's permission prompt, Claude Code's PreToolUse hook, a job's tool
+  through the MCP broker, a command on a job's server, a check's
+  command; one list of credential paths and lockfiles serves every rule
+  (`packages/contracts` `sensitive.ts`).
 - Shipped defaults deny destructive and escalating patterns (`rm -rf /`,
   `sudo`, `chmod -R 777`, `curl … | sh`, writes to `~/.ssh`,
   force-pushes, and so on) and gate `git push`, merges, publishing,

@@ -35,6 +35,7 @@ erDiagram
 | `archivedWith` | What archiving did besides hiding it (2026-10-04, migration 0036): `githubArchived` (the GitHub repos it archived) and `folderDeleted`; null when it isn't archived. Unarchiving reads it ([[Jobs-and-Projects]] → Archiving and deleting a project). |
 | `skillIds` | The skills its jobs may use; The Eye picks one per job (Phase 8). Empty: the default. |
 | `serverIds` | The servers its jobs may use, none by default ([[Servers]]). |
+| `serverId` | Set on a server's own project only (2026-10-04, migration 0037, [[ADR-049-Server-Chat-And-Server-Jobs]]): made with the server's first chat message, hidden from Projects, its jobs are the server's jobs. |
 | `serverRoles` | Each of its servers' role in it, by server id (2026-10-03, [[ADR-042-Several-Repos-And-Servers]]): `role` (a word of mine: testing, staging, production…) and `production` (true or false when I marked it; null: production when the role is `production` or `prod`). |
 | `repos` | Its git repositories (2026-10-03, [[ADR-042-Several-Repos-And-Servers]]): one with `folder` "" when its folder is the repo, several each in its folder, none when it isn't a git repo. Each: `name` (in the project; its folder's last part by default), `folder`, `releaseBranch`, `workBranch`, `github` (its link, or none: `account`, `owner`, `name`, `visibility`, `origin` new or existing, `ready`, `linkedAt`, [[ADR-038-Project-Accounts]]). For a project of one repo, the project's own branches are its repo's. |
 | `github` | In the API's view only: the link of a project of one repo (its repo's), null for several. Until 2026-10-03 the project's single link was stored here; migration 0031 moved it into its one repo. |
@@ -65,9 +66,9 @@ and deleting a project).
 | `description`, `describedAs` | One or two plain sentences: what it's for (`purpose`), what it did once it ended (`outcome`), or mine (`mine`, kept). |
 | `inputs` | Extra docs, folders or links attached on creation. |
 | `skillId`, `skillVersion` | The skill is pinned to a version for the job's whole life. |
-| `autonomy` | `supervised` · `standard` · `full` (see [[Approvals-and-Autonomy]]). |
+| `autonomy` | `auto` (default) · `careful` · `full` (2026-10-07, [[ADR-053-Auto-Mode]]; `standard` and `supervised` were moved to `auto` and `careful` by migration 0039 and still parse; see [[Approvals-and-Autonomy]]). |
 | `allowedLegIds` | Empty means "any healthy Leg". |
-| `budget` | See [[Budgets-and-Quotas]]. |
+| `budget` | See [[Budgets-and-Quotas]]; with `claudeShare`, the most of its attempts that may run on Claude when its tasks climb (2026-10-07, [[ADR-052-A-Harness-For-Any-Model]] §3). |
 | `state` | See below. |
 | `pauseReason`, `blockedReason` | Written in my language, shown in the UI. |
 | `resumeState` | The active state a `paused`, `waiting` or `blocked` job returns to. |
@@ -159,11 +160,13 @@ why it ended (`completed`, `rotated`, `interrupted`, `killed`, `crashed`,
 
 | Leg field | Meaning |
 | :-- | :-- |
-| `id`, `name`, `kind` | e.g. "Claude — personal", `claude-code`. |
+| `id`, `name`, `kind` | e.g. "Claude — personal", `claude-code`. Kinds: `claude-code`, `openai-compatible`, `opencode`, `antigravity`, `oraknid-agent`, `codex` (2026-10-07). |
 | `config` | Kind-specific: binary path, config directory, endpoint URL, model name. No secrets. Those are referenced in the keychain. |
 | `secretRef` | Keychain entry, if any. |
 | `enabled`, `health` | `healthy` · `degraded` · `rate-limited` · `unavailable` · `disabled`. |
 | `quota` | The latest known account-wide quota windows and when they reset. |
+| `limitedUntil` | Out of quota or resting after a provider failure until then, read from its own words ("Resets in 51h49m11s"); never routed to before (M15.1). |
+| features | What its probe found it can do (`resume`, `tools`, usage reported or estimated, quota windows), kept in the setting `leg.features.<leg>` (2026-10-07, [[ADR-056-The-Harness]] §2): resume follows it, never a list of kinds. |
 
 ## Leg model
 
@@ -279,9 +282,11 @@ A machine of mine ([[Servers]]): name, host, port, user, my
 description, how Oraknid logs in (`oraknid-key`, `my-key` or, until
 setup, `password`), the pinned host key (and a different one offered,
 waiting for me), setup `new` or `ready`, oraknid-monitor's hash, last
-seen, the last error. Its **state documents** are versioned (written by
-`eye` or `owner`); its **samples** are kept 24 hours. Credentials are in
-the keychain, never here.
+seen, the last error, and my **Production** mark (2026-10-04: every change
+there asks me, at any autonomy). Its **state documents** are versioned
+(written by `eye` or `owner`, each with the job whose end wrote it);
+its **samples** are kept 24 hours. Credentials are in the keychain, never
+here. Its own project holds its chat and its jobs (Project → `serverId`).
 
 ## Mail account, folder, message, draft
 
@@ -294,5 +299,36 @@ Oraknid's own for POP); **messages** (headers, a body once opened,
 flags, thread); **drafts** (Oraknid's own, an agent's marked as such,
 waiting for my approval); the senders whose images I allow; a POP
 account's downloaded UIDLs.
+
+## Backup plan, run and key
+
+From [[ADR-044-Backups]]: a **backup plan** (a server's database, its
+kind, how it is reached, a schedule, the destination: this computer,
+another server or cloud storage; how many to keep, an age key or none,
+`enabled`, the next time); each **backup run** (state, why, size,
+duration, SHA-256, where it went, its key, the error in words, Verify's
+result, when retention removed it); a **backup key** (a name, the age
+public key; its private half in the keychain). Passwords and connection
+strings are in the keychain, never here.
+
+## Cloud provider
+
+From [[ADR-046-Cloud-Storage]]: one storage account in the pool: a
+name, the rclone backend and its section in Oraknid's own rclone
+config, the bucket or folder shown, a space limit or pay as you go, its
+place in the priority order, the last used and free space and error.
+Every credential is in the encrypted rclone config.
+
+## Local model
+
+From [[ADR-054-Local-Models]] (2026-10-07, migration 0038): its source
+(`huggingface` or `ollama`), repository and file, its name as a model of
+the Local Leg, the runner (`llama.cpp` or `ollama`), its state
+(`downloading` · `paused` · `ready` · `loading` · `loaded` · `failed`),
+each part's checksum and size, kinds (`text`, `vision`, `speech`,
+`embedding`), licence, context and layers read from the file, run
+settings, measured tokens a second, how it calls tools, when last used.
+Each **role** (`translate`, `ocr`, `transcribe`, `embed`, `mail`, `code`,
+`general`) names one model in the setting `models.roles`.
 
 Related: [[Business-Rules]] · [[Glossary]] · [[Data-Map]] · [[Persistence-and-Recovery]]

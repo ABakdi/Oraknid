@@ -10,7 +10,7 @@ I add as many Legs as I want, all optional (BR-4):
 
 - several Claude Code accounts, each with its own config directory
 - several local models on one or more OpenAI-compatible servers
-- OpenCode and Antigravity accounts, and anything else with an adapter
+- OpenCode, Antigravity and Codex accounts, and anything else with an adapter
 
 A Leg is one account (or one local server). Each Leg has a name I choose.
 
@@ -35,6 +35,7 @@ windows:
 | Claude — personal | Opus (effort low/medium/high), Sonnet, Haiku |
 | Ollama on localhost | qwen3-coder:30b, llama3.2:3b, … (each installed model) |
 | Antigravity (Phase 5) | each model `agy --model` offers, with `--effort` |
+| Codex | each model Codex's catalog lists (`codex debug models`), with its reasoning levels (low … ultra) |
 
 - `probe` discovers the available models (from the agent or `/v1/models`
   / `/api/tags`). I can hide any of them.
@@ -74,6 +75,12 @@ Oraknid's own tokens in that window by model.
   (80%) and at (100%) the limit say so in words. In the Leg's details,
   the same windows larger, the models' share of Oraknid's tokens, and
   the last eight days as a line with each fill and reset.
+- **Codex** (ChatGPT plan, [[ADR-057-Codex-Adapter]]): its five-hour
+  and weekly windows from Codex's own app server
+  (`account/rateLimits/read`), read the same way: no prompt, no tokens,
+  inside the sandbox, at most every 5 minutes while I look; never the
+  prompt fallback. A usage-limit error in a session ("Try again at
+  3:45 PM") rests the Leg until then. With an API key, no windows.
 - **Other kinds** say what they have: OpenCode's free models no window,
   Antigravity its quota errors when they come, a local model nothing.
 
@@ -82,8 +89,8 @@ Oraknid's own tokens in that window by model.
 **Find agents on this machine** (Legs page) lists what Oraknid can
 drive here, so I don't type paths and ports (added 2026-10-02):
 
-- the `claude`, `opencode` and `agy` programs, on my `PATH` or where
-  their installers put them, with their versions;
+- the `claude`, `opencode`, `agy` and `codex` programs, on my `PATH` or
+  where their installers put them, with their versions;
 - model servers answering on their usual local ports: Ollama (11434),
   LM Studio (1234), llama.cpp (8080) and vLLM (8000), with their
   models.
@@ -91,8 +98,8 @@ drive here, so I don't type paths and ports (added 2026-10-02):
 Each comes with a suggested name and **Create**; **Create all** adds
 every one not yet a Leg. One already used by a Leg is marked so, and
 can still be created again (another account). Nothing is added without
-my click, and nothing of mine is borrowed: a created Claude Code or
-Antigravity Leg still logs in from its own card. Oraknid only looks; it
+my click, and nothing of mine is borrowed: a created Claude Code,
+Antigravity or Codex Leg still logs in from its own card. Oraknid only looks; it
 installs nothing.
 
 ### Adding a Leg
@@ -114,7 +121,15 @@ installs nothing.
    For Antigravity: the `agy` binary, installed by me from Google's
    own installer; **Log in** on its card opens Google's sign-in page
    and I paste the code back, as for Claude Code
-   ([[ADR-020-Antigravity-Adapter]]).
+   ([[ADR-020-Antigravity-Adapter]]). For Codex: the `codex` binary,
+   installed by me from OpenAI's installer, and a CODEX_HOME of the
+   Leg's own created under Oraknid's data (never my `~/.codex`); **Log
+   in** on its card runs `codex login --device-auth` there and shows
+   OpenAI's link and a one-time code I enter on that page, nothing to
+   paste back; where device codes are off for my ChatGPT account, its
+   browser sign-in, which only completes in a browser on this computer.
+   Or an OpenAI API key instead, kept in the keychain
+   ([[ADR-057-Codex-Adapter]]).
 3. **Test.** Oraknid runs a tiny health prompt, reads the model and
    context window, and reports usage support. A failed test says
    exactly what failed and saves nothing until it passes, or until I
@@ -261,7 +276,7 @@ record, so a model that needed help on a kind of work starts it lower in
 trust next time, and one that succeeds is trusted more. A pause, a
 restart, a quota or a provider failure is never recorded against it.
 
-**A job's Claude share** (budget `claudeShare`, else Settings → Work,
+**A job's Claude share** (budget `claudeShare`, else Settings → Eye & jobs → Jobs at once,
 `work.claudeShare`; unset: as needed) is the most of its attempts that
 may run on Claude: past it, Claude takes a task only when nothing else
 can.
@@ -282,6 +297,7 @@ Oraknid changes.
 | `openai-compatible` | MVP | Ollama, LM Studio, llama.cpp, vLLM. Tested on Ollama + NVIDIA. |
 | `opencode` | Phase 2 | |
 | `antigravity` | Phase 5 | Runs unattended; a real job passed on 2026-10-02 ([[Leg-Adapters]]). |
+| `codex` | 2026-10-07 | OpenAI's Codex CLI, headless ([[ADR-057-Codex-Adapter]]): a ChatGPT plan or an API key. Built against a stand-in following codex-cli 0.161.0; not yet run on a real job. Default profile: GPT's frontier models (Sol, Astra, Terra, GPT-5.x) at 4–5 with implementation, debugging, refactoring, tests and review at 5, hard tasks, `subscription`, quota weight 3; mini, nano and luna models at 3–4, medium. Estimated, like every default, until outcomes move them; routing gives them rungs from the profile, and a job's Claude share doesn't count them. |
 | `oraknid-agent` | Phase 15 | Oraknid's own tool loop over any OpenAI-compatible model ([[ADR-052-A-Harness-For-Any-Model]] §6); the **Local** Leg of [[ADR-054-Local-Models]] is one, kept by the Models page. Built 2026-10-07 against stand-ins; not yet run on a real model. |
 
 ### Oraknid's own agent and the Local Leg (2026-10-07)

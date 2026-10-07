@@ -1,8 +1,9 @@
 # Phase 15 — Agents that deliver, fast, with any model
 
 Touches [[The-Eye]], [[Approvals-and-Autonomy]], [[Legs-and-Capability-Profiles]],
-[[Drift-Control]], [[Web-UI]], [[ADR-052-A-Harness-For-Any-Model]],
-[[ADR-053-Auto-Mode]], [[ADR-054-Local-Models]], [[ADR-055-Terminal-App]].
+[[Drift-Control]], [[Web-UI]], [[Terminal-App]], [[Servers]],
+[[ADR-052-A-Harness-For-Any-Model]], [[ADR-053-Auto-Mode]],
+[[ADR-054-Local-Models]], [[ADR-055-Terminal-App]], [[ADR-056-The-Harness]].
 Written 2026-10-07. Comes before [[Phase-14-Oraknid-Over-MCP]].
 
 ## Why
@@ -154,6 +155,18 @@ the repository in a temp folder (`pnpm install --frozen-lockfile --filter
 the site built, apps/web untouched); the daemon's build puts Ink in its
 own chunk.
 
+### After M15.6: fixes and what my first jobs on 0.2.0 asked for (2026-10-07, v0.2.1 to v0.2.3)
+- [x] An installed daemon starts: it lists every package Oraknid's own agent uses (v0.2.1)
+  Tested: daemon `bundle-deps.test.ts` (every third-party package a bundled workspace package uses is the daemon's own dependency).
+- [x] An update has to start, not only build: the new version must load and, with the service, answer `oraknid status` within a minute, or it is rolled back ([[ADR-048-Updates]] → As built, v0.2.1)
+  Tested: `install-script.test.ts` → goes back when the new version builds but doesn't start (the checkout back on the commit before); the update tests never reach my own Oraknid.
+- [x] Cancel from the chat: **Cancel** in every Eye chat (projects and servers) while a job hasn't ended, a menu with several, its open questions withdrawn; `/cancel` in the terminal app with y/N ([[The-Eye]] → Cancelling from the chat, v0.2.2)
+  Tested: daemon `resolve.test.ts` (a server job waiting for its plan approval cancelled: the approval withdrawn, the chat says so); web `eye-chat.test.tsx` (the job the conversation is about cancelled after a short confirm); `tui.test.tsx` (`/cancel` with no job chosen after y/N, n keeps it; with several going, asked which first).
+- [x] The Eye looks up what it doesn't know before asking: names searched in servers' state documents, other chats, past jobs and Silk; work that belongs to a server taken to its chat as a server job, to another project there; asked only when nothing matches, the matches as options when several; "again" or "start another job" carries the earlier job's goal and what it learned; each chat's recent jobs, and a server's state document, read before it answers ([[The-Eye]] → Resolving what it doesn't know, v0.2.2)
+  Tested: daemon `resolve.test.ts` ("remove misahaty" in the piano chat taken to the server it runs on as a new try at the job cancelled there; still asking when nothing knows the name; two servers offered as options, then the one I chose; an earlier job's goal carried into "start another job"; names read, not everyday words; referring back only when the words say so).
+- [x] Server jobs that did the work and ended asking "keeps going wrong" (v0.2.3): an approved plan covers its own removals (one specific approval, Allow runs that command once, anything else stays blocked); blocks through Claude Code's PreToolUse hook count toward the stuck rule; an agent saying it can't finish without me is asked that (Allow, I'll do it, Leave it out, Stop the job); a check written with the job's own ssh setup runs in its plain `ssh <alias>` form on the server; a check whose ssh can't set up is a broken check; a guard check that fails before the work is rewritten ([[Approvals-and-Autonomy]] → Auto mode, [[ADR-049-Server-Chat-And-Server-Jobs]])
+  Tested: daemon `server-jobs.test.ts` (the plan's change blocked by layer 1 through Claude Code's hook: one approval, run once, one it doesn't name stays blocked; the hook's blocks counted and asked with them; "can't finish without me" asked as itself, no "keeps going wrong"; a check with the job's `-F` path run in its plain form on the server; before the work, a broken ssh check and a failing guard repaired, nobody charged), `remote.test.ts` (the job's ssh setup taken off; a check wrapped in local shell run whole on the server; what a change removes and the plan's line that names it), core `harness.test.ts` (a check whose ssh can't set up is broken; "the owner must" heard).
+
 ### M15.8 — The harness taken apart ([[ADR-056-The-Harness]])
 - [x] Today's behaviour pinned by scenario tests from my real jobs; the bugs the code map found fixed, one commit each (stop the job stops the job; merge re-checks with their runners; checks reach every agent; resume by the agent's capability; untrusted mark, allow-once, refused actions and stuck counts survive a restart; per-task caches cleared; questions The Eye raised withdrawn after a restart; checks run once per turn end)
   Tested: daemon `harness/scenarios.test.ts`, end to end with stand-in agents (`testing/harness-rig.ts`: a whole daemon, scripted Legs of any kind, Claude Code's PreToolUse hook and Stop hook, a scripted Eye, the stand-in SSH server), each asserting the outcome and what I was asked, how many times and in which words: the misahaty removal (one plan approval, the removal its plan names blocked by layer 1 through the hook, asked specifically, allowed, done in one attempt); a check written with the job's private `-F`/`HOME=` ssh setup run in its plain form on the server; a plan of five crumbs made one task, one approval, one session; an agent out of quota ("Resets in 51h49m11s") kept out, never routed to again, not counted; a deprecated model hidden and replaced; a broken check repaired before any agent, nobody charged; a piano-like web app of four independent parts side by side, all merged, nothing asked.
@@ -181,6 +194,10 @@ own chunk.
   Changed where the check paths diverged (a commit and a test each): the job's own checks on a server weren't read by the rules (`ssh <alias> 'npm publish'` ran; refused now); the merge's and the job's GitHub checks named a missing `--repo` in other words than the task's (the same now); stage 2's limit, a hook's action Claude Code's classifier let run didn't end the stuck row (its result ends it now).
 - [ ] Monitors and `decideOutcome`, pure and table-tested; the escalation policy
 - [ ] Agent sessions by capability; the task controller; `runAttempt` gone; ratchet tests
+
+### M15.9 — A Codex Leg ([[ADR-057-Codex-Adapter]])
+- [x] Codex as a Leg kind (`packages/legs/codex`): `codex exec --json` per turn inside Oraknid's sandbox with Codex's own sandbox off, a CODEX_HOME per Leg (a job's own with only the login linked), every command, file of a patch and MCP call through Oraknid's policy by its PreToolUse hook, the checks by its Stop hook; sign-in from the card with a device code or an OpenAI API key; models and reasoning levels from its catalog; plan windows from its app server; usage limits with their reset time; discovery, a default profile, Add a Leg (2026-10-07)
+  Tested: `packages/legs/codex` `adapter.test.ts` against a stand-in `codex` (`fake-codex.mjs`): usage limits and their reset read from Codex's wording; the policy asked about commands, each file of a patch and MCP calls, not Codex's bookkeeping; tool items' results; the catalog's models with their levels and context; the plan's windows; `exec resume` given only flags it takes; the probe (version, login, catalog); running totals counted once; an API key only through its environment; auto mode's layer 1 refusing first; the Stop hook holding a turn while checks fail, three times at most; a thread to resume that is gone; the sandbox with its CODEX_HOME and the hook reaching Oraknid from there. Not run on a real job: the hook's being called in `exec` must be checked on the first one (ADR-057 → Consequences).
 
 ### M15.7 — The proof
 - [ ] My piano project (React, every feature of its spec) built in under 30 minutes from the spec, verified by its checks, with free models doing the simple parts and climbing when they fail

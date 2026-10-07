@@ -5,7 +5,7 @@ Oraknid runs on your own Linux computer, in the background. You open it in a bro
 ## What you need
 
 - **Linux** (it is developed on Arch; any recent distribution works).
-- At least one agent account or model: Claude Code, OpenCode, Antigravity, or anything that speaks the OpenAI API (Ollama, llama.cpp, a hosted API).
+- At least one agent account or model: Claude Code, Codex, OpenCode, Antigravity, or anything that speaks the OpenAI API (Ollama, llama.cpp, a hosted API).
 
 The install script brings the rest.
 
@@ -63,7 +63,7 @@ Oraknid looks for a new version on its own, a minute after it starts and then ev
 - installed with `--dev`: new pre-releases, and new work on `dev` (**New work on dev (N commits)**);
 - installed from `main` or a release's tag: releases only, never a pre-release.
 
-**Settings → About & updates** shows the version, the channel, how it was installed, when it last looked (**Check now** looks at once) and what is new in each newer release. **Update now** asks first, saying how many jobs are running (they pause at a safe point while Oraknid restarts, and go on after it); then Oraknid copies its database to `~/.local/share/oraknid/backups/pre-update-….db` (the last three are kept), runs the install script again in the background, and restarts. The page follows it, says "Oraknid is restarting…" while it can't answer, and ends with **Updated to v0.2.0** and **Reload the page**. Any other Oraknid tab you left open says **Oraknid was updated** with **Reload** (a tab in the background reloads by itself). Your data, projects and settings stay where they are: the update replaces only the program in `~/.local/share/oraknid/app`. If the new version fails to build, Oraknid builds the one you had again and says so. The log is in `~/.local/share/oraknid/logs/update.log`.
+**Settings → About & updates** shows the version, the channel, how it was installed, when it last looked (**Check now** looks at once) and what is new in each newer release. **Update now** asks first, saying how many jobs are running (they pause at a safe point while Oraknid restarts, and go on after it); then Oraknid copies its database to `~/.local/share/oraknid/backups/pre-update-….db` (the last three are kept), runs the install script again in the background, and restarts. The page follows it, says "Oraknid is restarting…" while it can't answer, and ends with **Updated to v0.2.0** and **Reload the page**. Any other Oraknid tab you left open says **Oraknid was updated** with **Reload** (a tab in the background reloads by itself). Your data, projects and settings stay where they are: the update replaces only the program in `~/.local/share/oraknid/app`. If the new version fails to build, or builds but doesn't start (it must answer within a minute), Oraknid builds the one you had again and says so. The log is in `~/.local/share/oraknid/logs/update.log`.
 
 From a terminal it is the same:
 
@@ -114,7 +114,7 @@ oraknid pin reset
 
 ## Add a Leg
 
-A **Leg** is an agent or model Oraknid can hand work to. Go to **Legs** and use **Find agents on this computer**: it lists what it finds (a Claude Code login, OpenCode, Antigravity, a local Ollama) and adds them in one click. Sign in where it asks.
+A **Leg** is an agent or model Oraknid can hand work to. Go to **Legs** and use **Find agents on this computer**: it lists what it finds (a Claude Code login, Codex, OpenCode, Antigravity, a local Ollama) and adds them in one click. Sign in where it asks.
 
 ## Start work
 

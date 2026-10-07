@@ -1,6 +1,6 @@
 {
   "name": "@oraknid/daemon",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "bin": {
@@ -24,6 +24,7 @@
     "@oraknid/guard": "workspace:^",
     "@oraknid/leg-antigravity": "workspace:^",
     "@oraknid/leg-claude-code": "workspace:^",
+    "@oraknid/leg-codex": "workspace:^",
     "@oraknid/leg-openai-compatible": "workspace:^",
     "@oraknid/leg-opencode": "workspace:^",
     "@oraknid/leg-oraknid-agent": "workspace:^",
