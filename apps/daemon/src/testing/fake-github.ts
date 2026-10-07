@@ -7,7 +7,10 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
  * branches, a tree, files (text, binary, too large), a README, commits in
  * pages with their diffs, and pull requests. It answers with ETags (and
  * 304 to If-None-Match) and an hourly allowance in the usual headers,
- * which a test can use up. Every request is counted.
+ * which a test can use up. Every request is counted. me/piano has GitHub
+ * Actions too (ADR-058): workflows and their files, runs a test pushes and
+ * finishes, jobs with steps, logs and artifacts behind a signed redirect
+ * (which must never get the token), re-runs, cancels and dispatches.
  */
 export interface FakeGitHub {
   api: string;

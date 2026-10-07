@@ -21,7 +21,7 @@ export type Api = RouterClient<Router>;
 export const hasDocker =
   !process.env.ORAKNID_CI &&
   spawnSync("docker", ["info", "--format", "{{.ServerVersion}}"], { encoding: "utf8" }).status ===
-  0;
+    0;
 
 export async function rigDaemon(o: Partial<DaemonOptions> & { dir?: string } = {}) {
   const dir = o.dir ?? mkdtempSync(join(tmpdir(), "oraknid-backups-"));
