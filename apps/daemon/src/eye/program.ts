@@ -87,7 +87,7 @@ import {
 } from "./interview.ts";
 import { ensureLinks } from "./links.ts";
 import { dependentsOf } from "./questions.ts";
-import { forgetTaskMemory, readTaskMemory, rememberForTask } from "./task-memory.ts";
+import { forgetTaskMemory, withdrawTaskQuestions } from "./task-memory.ts";
 import { storeWeb, taskRows } from "./web-store.ts";
 
 export interface EyeDeps {
@@ -238,12 +238,10 @@ export function eyeProgram(d: EyeDeps): JobProgram {
     }
     // So does what The Eye asked for an attempt cut short by a crash: its next attempt asks
     // again if it must (bug 9).
-    for (const t of taskRows(d.db, ctx.jobId)) {
-      const { asked } = readTaskMemory(d.db, t.id);
-      if (!asked.length) continue;
-      for (const id of asked) if (d.inbox.get(id)?.state === "open") d.inbox.withdraw(id);
-      rememberForTask(d.db, t.id, { asked: [] });
-    }
+    for (const t of taskRows(d.db, ctx.jobId))
+      withdrawTaskQuestions(d.db, ctx.jobId, t.id, (id) => {
+        if (d.inbox.get(id)?.state === "open") d.inbox.withdraw(id);
+      });
 
     // Only one program runs a job: a task still marked running was cut short (pause, crash, stop).
     d.bus.atomically(() => {
@@ -946,7 +944,7 @@ async function runTask(
   // what its attempts remembered across restarts (bug 8).
   const forget = (taskId: string) => {
     forgetTaskVerdicts(job.id, taskId);
-    forgetTaskMemory(d.db, taskId);
+    forgetTaskMemory(d.db, job.id, taskId, "the task settled");
   };
   switch (outcome.kind) {
     case "done":

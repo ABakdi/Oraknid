@@ -2,10 +2,11 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { WebPlan } from "@oraknid/contracts";
-import { like } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
-import { settings } from "../db/schema.ts";
+import { tasks } from "../db/schema.ts";
 import { forgetJobVerdicts } from "../eye/auto-mode.ts";
+import { readTaskMemory } from "../eye/task-memory.ts";
 import { type Harness, harness, waitFor } from "../testing/harness-rig.ts";
 import { scriptedLeg } from "../testing/scripted-leg.ts";
 
@@ -112,11 +113,13 @@ describe("a job that ends keeps nothing of its tasks (stage 1, found)", () => {
     });
     const { id } = await rig.repoJob("A parser");
     await waitFor("the task untrusted", () => rig?.events(id, "task.untrusted").length === 1);
-    const kept = () =>
-      rig?.d.db.select().from(settings).where(like(settings.key, "task.memory.%")).all() ?? [];
-    expect(kept()).toHaveLength(1);
+    // What the task remembers, read from the attempt log (stage 3).
+    const db = rig.d.db;
+    const taskId = db.select().from(tasks).where(eq(tasks.jobId, id)).get()?.id as string;
+    const kept = () => readTaskMemory(db, taskId).untrusted;
+    expect(kept()).toMatch(/read from the web/);
     await rig.api.jobs.cancel({ id });
     expect((await rig.ended(id)).state).toBe("cancelled");
-    await waitFor("its task's memory gone", () => kept().length === 0, 5000);
+    await waitFor("its task's memory gone", () => kept() === null, 5000);
   }, 60_000);
 });

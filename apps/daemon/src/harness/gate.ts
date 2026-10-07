@@ -41,7 +41,7 @@ import {
 import type { EyeBrain } from "../eye/brain.ts";
 import { approveAllLikeThis, policyFor } from "../eye/policy.ts";
 import { addMessage } from "../eye/talk.ts";
-import { forgetTaskMemory, readTaskMemory, rememberForTask } from "../eye/task-memory.ts";
+import { forgetTaskMemory, readTaskMemory } from "../eye/task-memory.ts";
 import type { InboxStore, NewInboxItem } from "../inbox/store.ts";
 import { jobHomeDir, scratchFor } from "../legs/job-home.ts";
 import {
@@ -56,6 +56,7 @@ import { jobPlan } from "../servers/server-jobs.ts";
 import type { SilkStore } from "../silk/store.ts";
 import type { McpDeclaration, ToolRegistry, ToolRow } from "../tools/registry.ts";
 import { githubLinksOf } from "../workspace/github-tool.ts";
+import { type AttemptEventData, AttemptLog } from "./log.ts";
 
 // The Gate (ADR-056 §3): every action of an agent, from every source — the
 // Leg's permission prompt, Claude Code's PreToolUse hook, the MCP broker,
@@ -136,6 +137,8 @@ export interface GateContext {
     verify: string[];
   };
   leg: { legId: string; legName: string };
+  /** The attempt it serves: its decisions go to the attempt log (ADR-056 §1). */
+  attemptId?: string | null;
   cwd: string;
   /** The job's servers, filled in when the attempt prepares them. */
   servers: JobServerRef[];
@@ -156,12 +159,33 @@ type Pending = { why: string; blocks: Blocked[]; by: Blocked["layer"] };
 
 export function createGate(c: GateContext) {
   const { db, bus, job, task, leg, servers } = c;
+  /**
+   * The attempt log (ADR-056 §1): every decision, question and mark is
+   * written there, and what the task remembers is read back from it.
+   */
+  const log = new AttemptLog(db, c.now).at({
+    jobId: job.id,
+    taskId: task.id,
+    attemptId: c.attemptId ?? null,
+  });
   const memory = readTaskMemory(db, task.id);
   /** What I refused (D8), kept across attempts and restarts. */
   const denied = new Set<string>(memory.denied);
-  /** The grants I gave and not used yet (ADR-056 §3): durable. */
+  /** The grants I gave and not used yet (ADR-056 §3): durable, in the log. */
   const grants: Grant[] = [...memory.grants];
-  const keepGrants = () => rememberForTask(db, task.id, { grants, allowOnce: [] });
+  let decisions = 0;
+  type Decided = Omit<AttemptEventData["GateDecision"], "actionId" | "tool" | "action">;
+  /** A decision, in the log: what the task remembers is read back from these. */
+  const record = (r: PermissionRequest | null, d: Decided, action?: string) =>
+    log.append("GateDecision", {
+      actionId: `${c.attemptId ?? task.id}:g${++decisions}`,
+      tool: r?.tool ?? "Bash",
+      action: (action ?? (r ? (r.command ? plain(r.command) : (r.path ?? r.tool)) : "")).slice(
+        0,
+        200,
+      ),
+      ...d,
+    });
   /** Planned changes and commands I kept blocked when asked: not asked again in this attempt. */
   const keptBlocked = new Set<string>();
   /** What was blocked in this attempt, oldest first: for the agent's "the owner must…". */
@@ -182,10 +206,11 @@ export function createGate(c: GateContext) {
   /** The stuck rule's key: blocks are counted per task (ADR-053), kept across a restart (bug 8). */
   const stuckKey = `${job.id}:${task.id}`;
   stuck.restore(stuckKey, memory.stuck);
-  const keepStuck = () => rememberForTask(db, task.id, { stuck: stuck.snapshot(stuckKey) });
-  const count = (b: Blocked) => {
+  /** A block counted toward the stuck rule, in the log with its decision; stuck, said so. */
+  const count = (b: Blocked, r: PermissionRequest | null, d: Omit<Decided, "counts">) => {
+    record(r, { ...d, counts: b.layer }, b.action);
     const s = stuck.blocked(stuckKey, b);
-    keepStuck();
+    if (s) log.append("Signal", { kind: "stuck", code: null, evidence: s.why });
     return s;
   };
   /**
@@ -193,19 +218,31 @@ export function createGate(c: GateContext) {
    * like any other. Stuck by it, I'm asked at the agent's next action, not
    * on top of the answer I just gave.
    */
-  const ownerBlocked = (r: PermissionRequest, reason: string) => {
-    const s = count({
-      action: (r.command ? plain(r.command) : r.tool).slice(0, 200),
-      reason,
-      layer: "owner",
-    });
+  const ownerBlocked = (r: PermissionRequest, reason: string, refusal?: string) => {
+    const s = count(
+      {
+        action: (r.command ? plain(r.command) : r.tool).slice(0, 200),
+        reason,
+        layer: "owner",
+      },
+      r,
+      { source: "owner", by: "owner", verdict: "deny", reason, ...(refusal ? { refusal } : {}) },
+    );
     if (s) pending = { ...s, by: "owner" };
   };
-  /** An action ran: the row ends (written only when there was one). */
-  const endRow = () => {
-    if (!stuck.snapshot(stuckKey)?.row.length) return;
-    stuck.allowed(stuckKey);
-    keepStuck();
+  /** An action ran: the row ends. The decision that let it run says so in the log (`endsRow`). */
+  const endRow = () => stuck.allowed(stuckKey);
+  /** I let it run: the owner's decision, in the log; the row ends. */
+  const ownerAllowed = (r: PermissionRequest, reason: string, scope?: GrantScope) => {
+    record(r, {
+      source: "owner",
+      by: "owner",
+      verdict: "allow",
+      reason,
+      endsRow: true,
+      ...(scope ? { scope } : {}),
+    });
+    endRow();
   };
 
   const audit = (
@@ -225,7 +262,7 @@ export function createGate(c: GateContext) {
   const markUntrusted = (reason: string) => {
     if (untrusted) return;
     untrusted = true;
-    rememberForTask(db, task.id, { untrusted: reason });
+    log.append("Signal", { kind: "untrusted", code: null, evidence: reason });
     c.on.event("task.untrusted", { reason });
   };
 
@@ -312,11 +349,6 @@ export function createGate(c: GateContext) {
     const ssh = servers.length ? parseSsh(p, aliases()) : null;
     return onceGrantFor(grants, p, ssh?.whole ? ssh.remote.trim() : null);
   };
-  const spendGrant = (i: number) => {
-    grants.splice(i, 1);
-    keepGrants();
-  };
-
   /** Layer 2: the judge, reasoning-blind (ADR-053); its silence or error is a block. */
   const askJudge = async (r: PermissionRequest, first: PolicyVerdict, policy: PolicyContext) => {
     const row = db
@@ -383,7 +415,7 @@ export function createGate(c: GateContext) {
     const itemId = c.inbox.open(item);
     o.opened?.(itemId);
     asked.push(itemId);
-    rememberForTask(db, task.id, { asked });
+    log.append("QuestionAsked", { itemId, ask: _kind, title: item.title.slice(0, 200) });
     const waits = o.waits !== false;
     if (waits) {
       c.on.event("task.waiting", { itemId, reason: o.reason ?? "" });
@@ -398,6 +430,7 @@ export function createGate(c: GateContext) {
     } finally {
       if (waits) waitingOnOwner--;
     }
+    if (answer !== null) log.append("QuestionAnswered", { itemId, answer: answer.slice(0, 500) });
     if (waits && answer !== null) c.on.activity();
     return { itemId, answer };
   };
@@ -442,7 +475,7 @@ export function createGate(c: GateContext) {
     const action = r.command ?? r.tool;
     if (answer === ALLOW) {
       audit(r, { verdict: "allow", layer: "owner", reason: `allowed once: ${where}` }, action);
-      endRow();
+      ownerAllowed(r, `allowed once: ${where}`, "once");
       return { allow: true, why: `owner: allowed once, ${where}` };
     }
     keptBlocked.add(plain(action));
@@ -511,10 +544,16 @@ export function createGate(c: GateContext) {
     if (answer === null) return PAUSING;
     if (answer === LET_IT_RUN) {
       audit(r, { verdict: "allow", layer: "owner", reason: "let it run, stuck on blocks" });
-      endRow();
+      ownerAllowed(r, "let it run, stuck on blocks", "once");
       return { allow: true };
     }
     audit(r, { verdict: "block", layer: "owner", reason: "kept blocked, stuck on blocks" });
+    record(r, {
+      source: "owner",
+      by: "owner",
+      verdict: "deny",
+      reason: "kept blocked, stuck on blocks",
+    });
     return {
       allow: false,
       message: `${refused.allow ? "" : refused.message} The owner looked at what was blocked and keeps it so: find another way, or say the task can't be done without it and why, then stop.`,
@@ -574,18 +613,17 @@ export function createGate(c: GateContext) {
         gated ? { gated } : { allowRule: shape ?? allowRuleFor(r.command ?? r.tool) },
       );
       audit(r, { verdict: "allow", layer: "owner", reason: "approved, with all like it" }, action);
-      endRow();
+      ownerAllowed(r, "approved, with all like it", "job");
       return { allow: true };
     }
     if (answer === "Approve") {
       audit(r, { verdict: "allow", layer: "owner", reason: "approved" }, action);
-      endRow();
+      ownerAllowed(r, "approved", "once");
       return { allow: true };
     }
     audit(r, { verdict: "block", layer: "owner", reason: "denied" }, action);
     denied.add(refusalKey(r));
-    ownerBlocked(r, "denied");
-    rememberForTask(db, task.id, { denied: [...denied] });
+    ownerBlocked(r, "denied", refusalKey(r));
     // The consequence, said in the project's conversation (ADR-045).
     addMessage(
       c,
@@ -619,7 +657,13 @@ export function createGate(c: GateContext) {
     const r = a.request;
     const hook = a.source === "hook";
     // The broker judges every call to a job's tool: the Leg's own ask for it passes (ADR-021).
-    if (isBrokered(r.tool, brokered))
+    if (isBrokered(r.tool, brokered)) {
+      record(r, {
+        source: a.source,
+        by: "rule",
+        verdict: "allow",
+        reason: "a job's tool, judged by its broker",
+      });
       return hook
         ? {
             verdict: "allow",
@@ -628,12 +672,14 @@ export function createGate(c: GateContext) {
             leaveToLeg: true,
           }
         : { verdict: "allow", by: "rule", reason: "a job's tool, judged by its broker" };
+    }
     // Stuck on blocks it couldn't be asked about at once: asked now, with this action held.
     if (pending && (!hook || r.command)) {
       const s = pending;
       pending = null;
       if (hook) {
         deferred.set(plain(r.command as string), () => askStuck(r, s, { allow: true }));
+        record(r, { source: a.source, by: "owner", verdict: "ask", reason: s.why });
         return ASK;
       }
       return fromPermission(await askStuck(r, s, { allow: true }), "owner", s.why);
@@ -702,6 +748,14 @@ export function createGate(c: GateContext) {
     if (step.verdict === "allow") {
       if (step.by === "grant" && step.scope === "once") return ranOnce(r, step);
       if (step.log && (r.command || !READS.has(r.tool) || hook)) audit(r, step.log);
+      record(r, {
+        source: a.source,
+        by: step.by,
+        verdict: "allow",
+        reason: step.reason,
+        ...(step.scope ? { scope: step.scope } : {}),
+        ...(step.endsRow ? { endsRow: true } : {}),
+      });
       if (step.endsRow) endRow();
       if (step.leaveToLeg)
         return { verdict: "allow", by: step.by, reason: step.reason, leaveToLeg: true };
@@ -717,7 +771,10 @@ export function createGate(c: GateContext) {
     if (step.log) audit(r, step.log);
 
     if (step.verdict === "ask" && step.ask === "approval") {
-      if (hook) return ASK;
+      if (hook) {
+        record(r, { source: a.source, by: "owner", verdict: "ask", reason: step.reason });
+        return ASK;
+      }
       return fromPermission(await askApproval(r, step.reason, step.gated), "owner", step.reason);
     }
 
@@ -744,6 +801,15 @@ export function createGate(c: GateContext) {
       layer: step.layer,
     });
     if (drift === null && r.command) blockedHere.push({ command: r.command, reason: step.reason });
+    const asDecided: Omit<Decided, "counts"> = {
+      source: a.source,
+      by: step.by,
+      verdict: step.verdict === "ask" ? "ask" : "deny",
+      reason: step.reason,
+    };
+    const counts = step.verdict === "deny" ? step.counts : null;
+    const counted = counts !== null;
+    if (!counted) record(r, asDecided);
     // A change the plan names: one specific approval, at once (ADR-049).
     if (step.verdict === "ask" && planned) {
       const p = planned;
@@ -761,12 +827,16 @@ export function createGate(c: GateContext) {
       why: `${step.layer}: ${step.reason}`,
     };
     // Blocks count toward the stuck rule (3 in a row, 20 in the task): stuck, I'm asked.
-    if (step.verdict === "deny" && step.counts !== null) {
-      const s = count({
-        action: (r.command ? plain(r.command) : r.tool).slice(0, 200),
-        reason: step.reason,
-        layer: step.counts as Blocked["layer"],
-      });
+    if (counted) {
+      const s = count(
+        {
+          action: (r.command ? plain(r.command) : r.tool).slice(0, 200),
+          reason: step.reason,
+          layer: counts as Blocked["layer"],
+        },
+        r,
+        asDecided,
+      );
       if (s) {
         const asDecision: PermissionDecision = { allow: false, message, why: refused.why };
         if (!hook) return fromPermission(await askStuck(r, s, asDecision), "owner", s.why);
@@ -776,7 +846,7 @@ export function createGate(c: GateContext) {
           return ASK;
         }
         // Not a command the prompt can be asked for (a file tool): asked at the next action.
-        pending = { ...s, by: step.counts as Blocked["layer"] };
+        pending = { ...s, by: counts as Blocked["layer"] };
       }
     }
     return refused;
@@ -784,8 +854,19 @@ export function createGate(c: GateContext) {
 
   /** Ran because I let it, once: the grant is used up, the audit log says so, the stuck row ends. */
   const ranOnce = (r: PermissionRequest, step: Extract<GateStep, { verdict: "allow" }>) => {
-    spendGrant(onceFor(r.command as string));
+    const i = onceFor(r.command as string);
+    const spent = grants[i]?.match;
+    grants.splice(i, 1);
     audit(r, { verdict: "allow", layer: "owner", reason: "let it run once" }, r.command ?? r.tool);
+    record(r, {
+      source: "owner",
+      by: "grant",
+      verdict: "allow",
+      reason: step.reason,
+      scope: "once",
+      endsRow: true,
+      ...(spent !== undefined ? { spent } : {}),
+    });
     endRow();
     return {
       verdict: "allow",
@@ -824,24 +905,29 @@ export function createGate(c: GateContext) {
         layer: "leg",
       });
       if (r.command) blockedHere.push({ command: r.command, reason, byLeg: true });
-      const s = count({
-        action: (r.command ? plain(r.command) : action).slice(0, 200),
-        reason,
-        layer: "leg",
-      });
+      const s = count(
+        { action: (r.command ? plain(r.command) : action).slice(0, 200), reason, layer: "leg" },
+        r,
+        { source: "leg", by: "leg", verdict: "deny", reason },
+      );
       if (s) pending = { ...s, by: "leg" };
     },
 
     /** I let a command run once (ADR-053): a grant, kept until it is used. */
     grantOnce(command: string, reason: string) {
-      grants.push({
+      const grant: Grant = {
         kind: "allow-once",
         scope: "once",
         match: plain(command),
         reason,
         at: c.now(),
-      });
-      keepGrants();
+      };
+      grants.push(grant);
+      record(
+        null,
+        { source: "owner", by: "owner", verdict: "allow", reason, scope: "once", grant },
+        grant.match,
+      );
       logDecision(bus, job.id, {
         taskId: task.id,
         tool: "Bash",
@@ -872,8 +958,16 @@ export function createGate(c: GateContext) {
 
     /** The attempt ended: what it asked me and I didn't answer goes (bug 9). */
     withdrawAsked() {
-      for (const id of asked) c.inbox.withdraw(id);
-      if (asked.length) rememberForTask(db, task.id, { asked: [] });
+      for (const itemId of asked) {
+        c.inbox.withdraw(itemId);
+        log.append("QuestionAnswered", { itemId, answer: null, withdrawn: true });
+      }
+      asked.length = 0;
+    },
+
+    /** An action's result came back (ADR-056 §1): in the log. */
+    ran(actionId: string, ok: boolean) {
+      log.append("ActionResult", { actionId, ok });
     },
   };
 }
@@ -980,5 +1074,5 @@ export function ownRepoPage(
 export function forgetJob(db: Db, jobId: string) {
   forgetJobVerdicts(jobId);
   for (const t of db.select({ id: tasks.id }).from(tasks).where(eq(tasks.jobId, jobId)).all())
-    forgetTaskMemory(db, t.id);
+    forgetTaskMemory(db, jobId, t.id, "its job ended");
 }
