@@ -66,7 +66,6 @@ import {
   worktreeGit,
 } from "../workspace/git.ts";
 import type { GitHub } from "../workspace/github.ts";
-import { githubLinkOf } from "../workspace/github-tool.ts";
 import { type Projects, viewOf } from "../workspace/projects.ts";
 import { isSeveral } from "../workspace/repos.ts";
 import { MultiTree, multiTreeOf, singleTree, type WorkTree } from "../workspace/tree.ts";
@@ -613,7 +612,6 @@ function verifierFor(d: EyeDeps, job: typeof jobs.$inferSelect, where: Where, si
     plan: () => (job.unsandboxed ? null : sandboxPlan(firstLeg(d), d.sandbox, d.legsDir)),
     servers: () => servers,
     refuse: checkRefusal(d.db, job.id, where.cwd, servers),
-    linkFor: (repo) => githubLinkOf(d.db, job.id, repo),
     signal,
   });
 }

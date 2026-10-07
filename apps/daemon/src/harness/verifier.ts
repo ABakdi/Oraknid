@@ -64,8 +64,6 @@ export interface VerifierWhere {
   /** The Gate's refusal of a check's command, or null (ADR-056 §3). */
   refuse: (command: string, where: "local" | "server") => string | null;
   signal: AbortSignal;
-  /** The link of the repo a built-in check names, in place of the project's rule. */
-  linkFor?: (repo: string | null) => GitHubLink | string | null;
   /** The attempt log: every run is recorded as `ChecksRan`. */
   log?: { append: (kind: "ChecksRan", data: ChecksRanData) => unknown };
 }
@@ -109,7 +107,7 @@ export function createVerifier(d: VerifierDeps, job: { id: string }, where: Veri
       runBuiltinCheck(command, {
         ...(d.github ? { github: d.github } : {}),
         link: githubLinkOf(d.db, job.id),
-        linkFor: where.linkFor ?? linkFor,
+        linkFor,
         localCommit: where.localCommit,
       })
     );

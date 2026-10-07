@@ -1,5 +1,6 @@
 import type { WebPlan } from "@oraknid/contracts";
 import { afterEach, describe, expect, it } from "vitest";
+import { readEnding } from "../eye/ending.ts";
 import { type Harness, harness } from "../testing/harness-rig.ts";
 import { scriptedLeg, type TurnContext } from "../testing/scripted-leg.ts";
 
@@ -58,5 +59,27 @@ describe("the job's own checks go through the rules like every other check (stag
     await rig.ended(id, 30_000);
     expect(failure).toMatch(/Oraknid did not run this check: .*a check never does that/);
     expect(rig.ssh?.commands.some((c) => c.includes("npm publish"))).toBe(false);
+  }, 60_000);
+});
+
+describe("Oraknid's own GitHub checks name the repo the same way everywhere (stage 3)", () => {
+  it("says the job's check names a repo the project doesn't have, as the task's check does", async () => {
+    const leg = scriptedLeg(() => [{ write: "parser.js", content: "x\n" }, { say: "DONE" }]);
+    rig = await harness({
+      legs: [{ kind: "claude-code", name: "Claude A", leg }],
+      plan: {
+        summary: "One part, its repo checked on GitHub at the end.",
+        tasks: [task("a", "Build the parser", ["test -f parser.js"], ["parser.js"])],
+        jobVerify: ["oraknid github-repo --repo nope"],
+      },
+    });
+    const { id } = await rig.repoJob("One part");
+    const done = await rig.ended(id, 30_000);
+    expect(done.state).toBe("completed");
+    expect(readEnding(rig.d.db, id).done?.problems).toEqual([
+      expect.stringMatching(
+        /^`oraknid github-repo --repo nope`: This project has no repo named nope: its repos are /,
+      ),
+    ]);
   }, 60_000);
 });
