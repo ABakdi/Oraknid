@@ -484,6 +484,34 @@ export const attempts = sqliteTable(
   (t) => [index("attempts_task").on(t.taskId), index("attempts_job").on(t.jobId)],
 );
 
+/**
+ * The attempt log (ADR-056 §1): an append-only, typed record of what
+ * happened in a task's attempts — the agent's actions and what the Gate
+ * decided, their results, my questions, the checks' reports, signals, the
+ * outcome. The single source of truth for what an attempt did; kept with
+ * its job, deleted with it. `seq` orders an attempt's events (a task's
+ * when there is no attempt); `id` orders them all.
+ */
+export const attemptEvents = sqliteTable(
+  "attempt_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    jobId: text("job_id").notNull(),
+    taskId: text("task_id").notNull(),
+    /** Null for what belongs to the task across its attempts (its memory forgotten). */
+    attemptId: text("attempt_id"),
+    seq: integer("seq").notNull(),
+    at: integer("at").notNull(),
+    kind: text("kind").notNull(),
+    data: json<Record<string, unknown>>("data").notNull(),
+  },
+  (t) => [
+    index("attempt_events_attempt").on(t.attemptId, t.seq),
+    index("attempt_events_task_kind").on(t.taskId, t.kind, t.id),
+    index("attempt_events_job").on(t.jobId),
+  ],
+);
+
 /** One process or conversation of a Leg (Core-Entities → Session). */
 export const sessions = sqliteTable(
   "sessions",

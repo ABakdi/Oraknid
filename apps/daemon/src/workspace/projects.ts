@@ -25,6 +25,7 @@ import {
 import { count, eq, inArray } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
 import {
+  attemptEvents,
   attempts,
   events,
   eyeMessages,
@@ -366,6 +367,7 @@ export class Projects {
       .map((t) => t.id);
     if (taskIds.length) this.db.delete(taskEdges).where(inArray(taskEdges.taskId, taskIds)).run();
     for (const table of [
+      attemptEvents,
       attempts,
       sessions,
       silkMirror,

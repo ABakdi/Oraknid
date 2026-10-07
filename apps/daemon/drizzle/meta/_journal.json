@@ -281,6 +281,13 @@
       "when": 1791344273470,
       "tag": "0039_autonomy_levels",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1791406036860,
+      "tag": "0040_attempt_log",
+      "breakpoints": true
     }
   ]
 }
