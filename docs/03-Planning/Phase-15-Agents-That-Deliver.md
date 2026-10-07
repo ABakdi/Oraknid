@@ -154,6 +154,13 @@ the repository in a temp folder (`pnpm install --frozen-lockfile --filter
 the site built, apps/web untouched); the daemon's build puts Ink in its
 own chunk.
 
+### M15.8 — The harness taken apart ([[ADR-056-The-Harness]])
+- [ ] Today's behaviour pinned by scenario tests from my real jobs; the bugs the code map found fixed, one commit each (stop the job stops the job; merge re-checks with their runners; checks reach every agent; resume by the agent's capability; untrusted mark, allow-once, refused actions and stuck counts survive a restart; per-task caches cleared; questions The Eye raised withdrawn after a restart; checks run once per turn end)
+- [ ] The Gate: one path for every action (permission prompt, pre-tool hook, MCP broker, ssh, checks), grants with a scope, every block counted
+- [ ] The Verifier: one runner, a report that tells broken from failing; the attempt log
+- [ ] Monitors and `decideOutcome`, pure and table-tested; the escalation policy
+- [ ] Agent sessions by capability; the task controller; `runAttempt` gone; ratchet tests
+
 ### M15.7 — The proof
 - [ ] My piano project (React, every feature of its spec) built in under 30 minutes from the spec, verified by its checks, with free models doing the simple parts and climbing when they fail
 - [ ] The misahaty-style server job done in one session, one approval of its plan, in minutes

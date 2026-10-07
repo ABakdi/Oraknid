@@ -102,6 +102,7 @@ in part). Next: those runs, then Later.
 - [[ADR-053-Auto-Mode]] — a safety layer instead of approvals per command: open-source rules, a model judge on doubt, me only for what I might not want
 - [[ADR-054-Local-Models]] — download, run and manage local models; roles like translation and OCR as tools for every agent
 - [[ADR-055-Terminal-App]] — `oraknid` in the terminal with slash commands; an install without the web UI
+- [[ADR-056-The-Harness]] — the task harness taken apart: one attempt log, one gate for every action, one verifier, one place that decides an attempt's end, a controller
 - [[ADR-048-Updates]] — updates from inside Oraknid: install.sh records what it installed; Oraknid checks GitHub on its channel (dev: pre-releases and new work on dev; stable: releases) and updates in one click, the database copied first, a failed update rolled back
 - [[ADR-049-Server-Chat-And-Server-Jobs]] — a chat on each server: The Eye answers from its state document or sends an agent into it as a server job (the server's own hidden project), says what will change first, runs its checks on the server, asks before any change on production, and writes the job's changes into the state document
 - [[ADR-043-Server-Insight]] · [[ADR-044-Backups]] — Phase 13: Docker, databases, the proxy, traffic and logs of a server; scheduled, encrypted database backups
