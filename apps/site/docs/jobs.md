@@ -46,7 +46,11 @@ The Eye also speaks up on its own, once per event and never to narrate: a line w
 
 Committing, merging and pushing are Oraknid's own steps, not tasks. Ask for them in your request ("commit it into dev and push it to GitHub") or later in the conversation: when the job ends Oraknid merges it into your work branch (only if you asked for that in so many words), pushes it to the project's GitHub repo (asking which one, once, if none is linked), and says so. Agents never touch the job folder's `.git`, and if one does, Oraknid puts the folder back and starts the task again.
 
-When a job has already ended and you ask for more ("add a volume control"), The Eye starts a **follow-up job** in the same project, starting from what the first one built, and links to it.
+When a job has already ended and you ask for more ("add a volume control"), The Eye starts a **follow-up job** in the same project, starting from what the first one built, and links to it. "Again", "retry" or "start another job" about an earlier job (one that was cancelled, failed or stopped) gives the new job that job's goal and what it learned.
+
+If you name something this project doesn't know, The Eye looks it up across Oraknid before asking you: your servers' state documents, the jobs and chats of your other projects and servers, what their jobs learned. When it clearly belongs elsewhere it says where and takes the request there: "**misahaty** runs on spinet-staging (its state document; the job “Back up and remove misahaty…” was cancelled there). I've taken this to spinet-staging's chat", where it becomes a server job that asks you before changing anything, with a link to it. If it could be in several places, The Eye asks which one, those places as options. It only asks what something is when nothing in Oraknid knows it.
+
+To stop a job without answering what it asks, press **Cancel** in the conversation's header, there whenever a job hasn't ended (running, waiting for you, blocked or paused): "Cancel “…”? The work so far stays in its folder." With several jobs going, a small menu picks which. Its open questions and approvals are withdrawn, and The Eye says in the conversation that it stopped.
 
 ## Answering questions
 

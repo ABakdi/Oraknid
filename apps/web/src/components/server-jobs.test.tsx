@@ -125,6 +125,7 @@ const ITEM = {
 } as unknown as InboxItem;
 
 const talked: unknown[] = [];
+const cancelled: unknown[] = [];
 
 vi.mock("@/lib/api", () => ({
   message: (e: unknown) => (e instanceof Error ? e.message : String(e)),
@@ -149,7 +150,12 @@ vi.mock("@/lib/api", () => ({
     },
     projects: { thinking: async () => [], stopThinking: async () => ({ stopped: 0 }) },
     sessions: { list: async () => [], log: async () => [] },
-    jobs: { list: async () => [JOB] },
+    jobs: {
+      list: async () => [JOB],
+      cancel: async (x: unknown) => {
+        cancelled.push(x);
+      },
+    },
     inbox: { list: async () => [ITEM], answer: async () => ({}) },
     settings: { terminal: async () => false },
     lock: { status: async () => ({ full: false }) },
@@ -194,6 +200,18 @@ describe("a server's Chat and Jobs (ADR-049)", { timeout: 30_000 }, () => {
     fireEvent.change(box, { target: { value: "rotate the logs of app y" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(talked).toEqual([{ id: "S1", text: "rotate the logs of app y" }]));
+  });
+
+  it("cancels the server job from its chat, without answering its approval", async () => {
+    await open("/servers/S1/chat");
+    await screen.findByText("Nginx and two Node apps.");
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("Cancel “Install fail2ban”?");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel the job" }));
+    await waitFor(() =>
+      expect(cancelled).toEqual([{ id: "J1", reason: "Cancelled from the chat." }]),
+    );
   });
 
   it("lists the server's jobs and what they wait on", async () => {

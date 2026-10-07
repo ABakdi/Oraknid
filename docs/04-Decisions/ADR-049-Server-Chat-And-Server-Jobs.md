@@ -98,4 +98,24 @@ inbox's links, each a place to get wrong.
   Production switch on Overview, a production badge, the state
   document's versions with the job that wrote each.
 
+## Note (2026-10-07): requests that belong to a server, from anywhere
+In the piano project's chat I asked to "stop and remove misahaty related
+container and data"; The Eye asked what misahaty was, though it is in
+spinet-staging's state document and a job about it had been cancelled
+in that server's chat. Now the names of a message a project doesn't know
+are looked up across Oraknid (state documents, other projects' and
+servers' jobs, Silk, conversations; no model), given to the triage, and
+a request that belongs to a server is taken into **that server's chat**
+(`handOver`, as if written there): its Eye reads it and starts a server
+job with its plan approval as usual, and the chat I wrote in says where
+the name was found and links there; several equally likely places are
+asked as a question with them as options. `serverTalk` and the triage of
+a server job get the server's recent jobs (how each ended, why), the
+triage the state document too; "again" or "start another job" carries
+the earlier job's goal and what it learned. The chat's header has
+**Cancel** for the job going on the server; its approvals are withdrawn
+with it. [[The-Eye]] → Resolving what it doesn't know, Cancelling from
+the chat. `eye_messages.action.place` records where a request was taken
+(no migration: the action is JSON).
+
 Related: [[ADR-026-Servers]] · [[ADR-034-Projects-First]] · [[ADR-042-Several-Repos-And-Servers]] · [[ADR-043-Server-Insight]] · [[ADR-045-The-Eye-Speaks-Up]] · [[Servers]] · [[The-Eye]]

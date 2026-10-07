@@ -20,6 +20,7 @@ import {
   inboxItems,
   jobs,
   projects,
+  serverStates,
   servers,
   taskEdges,
   tasks,
@@ -34,6 +35,19 @@ import { isSeveral } from "../workspace/repos.ts";
 import type { EyeBrain, EyeTriage } from "./brain.ts";
 import { type EndingDone, requestEnding } from "./ending.ts";
 import { ENOUGH, INTERVIEW_ENDED, ROUND_TITLE } from "./interview.ts";
+import {
+  carryOver,
+  earlierJob,
+  type Finding,
+  findingsText,
+  type Lookup,
+  lookUp,
+  recentJobs,
+  routeOf,
+  WHERE,
+  whereFound,
+  whereQuestion,
+} from "./lookup.ts";
 import { BrainStopped, type EyeThinking, PROGRAM_CALLS } from "./thinking.ts";
 import { storeWeb, taskRows } from "./web-store.ts";
 
@@ -75,6 +89,26 @@ export interface TalkDeps {
   endNow?: (jobId: string) => Promise<EndingDone>;
   /** What The Eye is thinking now (M13.25): a message of mine can stop it or add to it. */
   thinking?: EyeThinking;
+  /**
+   * Taking my request where it belongs (The-Eye → Resolving what it doesn't
+   * know): a server's chat, or another project's conversation. Without it,
+   * The Eye only says where it found what I named.
+   */
+  elsewhere?: Elsewhere;
+}
+
+/** Where a request can be taken: a server's chat, another project's conversation. */
+export interface Elsewhere {
+  /** My request in a server's chat, from `from` (where I wrote it): the job it started there, if any. */
+  toServer(
+    serverId: string,
+    text: string,
+    from: string,
+    /** My message already in that chat that carries it, when there is one. */
+    messageId?: string,
+  ): Promise<{ projectId: string; jobId: string | null }>;
+  /** My request in another project's conversation: the job it went to or started. */
+  toProject(projectId: string, text: string): Promise<{ projectId: string; jobId: string }>;
 }
 
 const ENDED = new Set(["completed", "cancelled"]);
@@ -355,6 +389,9 @@ export function answerInProject(
   const answers = completeAnswers(questions, given);
   const text = renderAnswers(questions, answers);
   const jobId = a.message.jobId;
+  // Where my request belongs (The-Eye → Resolving what it doesn't know): taken there, no model asked.
+  if (questions[0]?.id === WHERE)
+    return answerWhere(d, projectId, a.message as EyeMessage, questions, answers, text);
   if (!jobId) throw new Error("Answer it in your next message.");
   if (a.message.itemId) {
     // An item's own option, chosen through the question that says what each does (ADR-045).
@@ -366,6 +403,60 @@ export function answerInProject(
     return { id, jobId };
   }
   return { id: talk(d, jobId, text, { answers, replyTo: messageId }), jobId };
+}
+
+/**
+ * My answer to "which one is this about?": my request (the message of mine
+ * before the question) goes to the place I chose; "here" has The Eye read it
+ * here, nothing looked up again.
+ */
+function answerWhere(
+  d: TalkDeps,
+  projectId: string,
+  asked: EyeMessage,
+  questions: Question[],
+  answers: QuestionAnswer[],
+  text: string,
+): { id: string; jobId: string } {
+  const all = d.db
+    .select()
+    .from(eyeMessages)
+    .where(eq(eyeMessages.projectId, projectId))
+    .orderBy(asc(eyeMessages.createdAt), asc(eyeMessages.id))
+    .all() as EyeMessage[];
+  const at = all.findIndex((m) => m.id === asked.id);
+  const request = all
+    .slice(0, Math.max(0, at))
+    .reverse()
+    .find((m) => m.author === "owner" && m.jobId === asked.jobId);
+  if (!request) throw new Error("I can't find the request this was about.");
+  const id = add(d, asked.jobId, "owner", text, null, { answers, replyTo: asked.id }, projectId);
+  const chosen = answers[0]?.options[0] ?? "";
+  const option = questions[0]?.options.find((o) => o.id === chosen);
+  const project = d.db.select().from(projects).where(eq(projects.id, projectId)).get();
+  if (chosen && chosen !== "here" && option) {
+    const [kind, placeId] = chosen.split(":") as ["server" | "project", string];
+    const f: Finding = {
+      place: { kind, id: placeId, name: option.label },
+      terms: [],
+      evidence: [],
+      score: 0,
+    };
+    void takeThere(
+      d,
+      asked.jobId,
+      request.text,
+      f,
+      project?.name ?? "this project",
+      projectId,
+    ).catch(() => {});
+  } else if (asked.jobId) {
+    respond(d, asked.jobId, request.text, id, true);
+  } else if (project?.serverId && d.elsewhere) {
+    // A server's chat with no job: its own Eye reads it here, nothing looked up again.
+    void d.elsewhere.toServer(project.serverId, request.text, "", id).catch(() => {});
+  }
+  return { id, jobId: asked.jobId ?? "" };
 }
 
 /**
@@ -425,8 +516,8 @@ export function resumeConversations(d: TalkDeps): number {
   return n;
 }
 
-function respond(d: TalkDeps, jobId: string, text: string, messageId: string) {
-  void handle(d, jobId, text, messageId).catch((error) => {
+function respond(d: TalkDeps, jobId: string, text: string, messageId: string, settled = false) {
+  void handle(d, jobId, text, messageId, settled).catch((error) => {
     // I stopped it: said once where I stopped it, nothing kept (M13.25).
     if (error instanceof BrainStopped) return;
     // Fail safe: my words are never lost. They are kept as my decision.
@@ -454,7 +545,14 @@ function respond(d: TalkDeps, jobId: string, text: string, messageId: string) {
   });
 }
 
-async function handle(d: TalkDeps, jobId: string, text: string, messageId: string) {
+async function handle(
+  d: TalkDeps,
+  jobId: string,
+  text: string,
+  messageId: string,
+  /** The request is already where I said it belongs: nothing is looked up elsewhere. */
+  settled = false,
+) {
   const job = d.db.select().from(jobs).where(eq(jobs.id, jobId)).get();
   if (!job) return;
   // What the job waits on me for now: my message may answer it (after the piano job, 2026-10-04).
@@ -505,6 +603,12 @@ async function handle(d: TalkDeps, jobId: string, text: string, messageId: strin
     .slice(-11, -1)
     .map((m) => `${m.author === "owner" ? "Owner" : "You"}: ${m.text}`)
     .join("\n");
+  // What this conversation's jobs did, and, in a server's chat, what runs there.
+  const recent = recentJobs(d.db, job.projectId);
+  const server = project?.serverId ? stateSummary(d.db, project.serverId) : "";
+  // Names this project doesn't know, looked up across Oraknid (no model).
+  const found: Lookup | null = settled ? null : lookUp(d.db, text, { projectId: job.projectId });
+  const elsewhere = found?.findings.length ? findingsText(found) : "";
   const verdict = await d.brain.triage({
     jobId,
     cwd: job.worktree ?? project?.workspacePath ?? process.cwd(),
@@ -515,8 +619,148 @@ async function handle(d: TalkDeps, jobId: string, text: string, messageId: strin
     message: text,
     ...(open.length ? { open: openItems(open) } : {}),
     ...(unplanned ? { unplanned } : {}),
+    ...(recent ? { recent } : {}),
+    ...(server ? { server } : {}),
+    ...(elsewhere ? { elsewhere } : {}),
   });
+  // Answering what the job waits on comes first; anything else may belong elsewhere.
+  const answers = verdict.item && verdict.item.does !== "unrelated";
+  const route = found && !answers ? routeOf(found, said(verdict)) : null;
+  if (route && "to" in route) {
+    await takeThere(d, jobId, text, route.to, project?.name ?? "this project");
+    return;
+  }
+  if (route && "ask" in route) {
+    askWhere(d, jobId, route.ask, project?.name ?? "this project");
+    return;
+  }
   await act(d, jobId, job.state, text, verdict, { messageId, open, unplanned });
+}
+
+/** A server's state document, in short, for the triage of its chat (ADR-049). */
+function stateSummary(db: Db, serverId: string): string {
+  const s = db
+    .select({ body: serverStates.body })
+    .from(serverStates)
+    .where(eq(serverStates.serverId, serverId))
+    .orderBy(desc(serverStates.version))
+    .get();
+  return s ? s.body.slice(0, 6000) : "";
+}
+
+/** Whether The Eye's verdict asks me what something is, and where it says the work belongs. */
+function said(v: EyeTriage) {
+  return { place: v.place ?? null, asks: asksBack(v.intent, v.reply, v.questions?.length ?? 0) };
+}
+
+/** A reply that asks me rather than acts: questions, or words that say it doesn't know. */
+export function asksBack(intent: string, reply: string, questions: number): boolean {
+  if (questions > 0) return true;
+  return (
+    intent === "question" &&
+    /\?|clarif|not sure|don't know|do not know|unknown|unclear|need (more|to know)|can't tell|cannot tell|no idea/i.test(
+      reply,
+    )
+  );
+}
+
+/**
+ * My request taken where it belongs (The-Eye → Resolving what it doesn't
+ * know): to the server's chat, where it becomes a server job with its plan
+ * approval, or to another project's conversation. Said here in a line, with
+ * where it was found and a link.
+ */
+export async function takeThere(
+  d: TalkDeps,
+  jobId: string | null,
+  text: string,
+  f: Finding,
+  from: string,
+  inProject = "",
+) {
+  const where = `${whereFound(f)}.`;
+  const say = (
+    reply: string,
+    did: string[],
+    to: { projectId: string; jobId: string | null } | null,
+  ) =>
+    add(
+      d,
+      jobId,
+      "eye",
+      reply,
+      {
+        intent: "task",
+        did,
+        silkIds: [],
+        taskIds: [],
+        jobId: to?.jobId ?? null,
+        place: { ...f.place, projectId: to?.projectId ?? null },
+      },
+      {},
+      inProject,
+    );
+  const there =
+    f.place.kind === "server" ? `${f.place.name}'s chat` : `${f.place.name}'s conversation`;
+  if (!d.elsewhere) {
+    say(`${where} Ask for it in ${there}: that's where it belongs.`, ["Found elsewhere"], null);
+    return;
+  }
+  try {
+    const to =
+      f.place.kind === "server"
+        ? await d.elsewhere.toServer(f.place.id, text, from)
+        : await d.elsewhere.toProject(f.place.id, text);
+    const title = to.jobId
+      ? d.db.select({ t: jobs.title }).from(jobs).where(eq(jobs.id, to.jobId)).get()?.t
+      : null;
+    say(
+      `${where} I've taken this to ${there}${
+        title
+          ? f.place.kind === "server"
+            ? `, where it is the job “${title}”: it tells you what it will change on ${f.place.name} before anything does.`
+            : `, where it went to “${title}”.`
+          : "."
+      }`,
+      [`Taken to ${there}`],
+      to,
+    );
+  } catch (e) {
+    say(
+      `${where} I couldn't take it there: ${e instanceof Error ? e.message : String(e)} Ask for it there yourself.`,
+      ["Found elsewhere", "Not taken there"],
+      null,
+    );
+  }
+}
+
+/**
+ * What I named could be in several places, as likely as each other: asked
+ * which, those places as options (ADR-037), and here as the last.
+ */
+export function askWhere(
+  d: TalkDeps,
+  jobId: string | null,
+  several: Finding[],
+  hereName: string,
+  inProject = "",
+) {
+  const names = [...new Set(several.flatMap((f) => f.terms))].map((t) => `**${t}**`).join(", ");
+  add(
+    d,
+    jobId,
+    "eye",
+    `I found ${names} in more than one place: ${several.map((f) => f.place.name).join(", ")}. Which one is this about?`,
+    {
+      intent: "question",
+      did: ["Looked it up across Oraknid"],
+      silkIds: [],
+      taskIds: [],
+      jobId: null,
+    },
+    { questions: [whereQuestion(several, hereName)] },
+    inProject,
+  );
 }
 
 /** The items a job waits on, for the triage: each with its id, its questions or its options. */
@@ -755,8 +999,16 @@ async function act(
         const plan = v.tasks.length
           ? `\n\nWhat I'd do, in tasks:\n${v.tasks.map((t) => `- ${t.title}: ${t.instructions}`).join("\n")}`
           : "";
+        // "Again", "start another job": the earlier job's goal and what it learned come along.
+        const pid = d.db
+          .select({ p: jobs.projectId })
+          .from(jobs)
+          .where(eq(jobs.id, jobId))
+          .get()?.p;
+        const earlier = pid ? earlierJob(d.db, pid, text) : null;
+        const carried = earlier ? `\n\n${carryOver(d.db, earlier)}` : "";
         try {
-          jobRef = await d.followUp(jobId, `${text}${plan}`);
+          jobRef = await d.followUp(jobId, `${text}${plan}${carried}`);
           did.push("Started a follow-up job");
           reply = `This job had ended, so I started a follow-up job in the same project, starting from what it built. ${v.reply}`;
         } catch (e) {
@@ -927,7 +1179,8 @@ function endingReply(done: EndingDone): string {
 function openFollowUp(d: TalkDeps, jobId: string) {
   for (const m of conversation(d.db, jobId).reverse()) {
     const id = m.action?.jobId;
-    if (!id) continue;
+    // A job started in another place (a server's chat) is no follow-up of this one.
+    if (!id || m.action?.place) continue;
     const j = d.db.select().from(jobs).where(eq(jobs.id, id)).get();
     return j && !ENDED.has(j.state) ? j : null;
   }

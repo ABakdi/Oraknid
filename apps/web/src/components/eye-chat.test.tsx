@@ -15,6 +15,7 @@ const talk = vi.fn(async (_x: { id: string; text: string; mode?: string }) => ({
   jobId: JOB,
 }));
 const stopThinking = vi.fn(async (_x: { id: string }) => ({ stopped: 1 }));
+const cancel = vi.fn(async (_x: { id: string; reason?: string }) => undefined);
 
 vi.mock("@/lib/api", () => ({
   api: {
@@ -25,6 +26,7 @@ vi.mock("@/lib/api", () => ({
       stopThinking: (x: { id: string }) => stopThinking(x),
       answer: async () => ({ id: "a", jobId: JOB }),
     },
+    jobs: { cancel: (x: { id: string; reason?: string }) => cancel(x) },
     sessions: {
       log: async ({ after }: { after: number }) =>
         after === 0
@@ -250,6 +252,102 @@ describe("The Eye's conversation as a transcript (M13.25)", () => {
         text: "no, use Postgres",
         mode: "auto",
       }),
+    );
+  });
+});
+
+describe("cancelling from the chat", () => {
+  const second = {
+    ...job,
+    id: "01J9Z3K8W2Q4V6X8Y0A1B2C3J1",
+    title: "Dark mode",
+    state: "paused",
+  } as JobView;
+
+  it("cancels the job the conversation is about, after a short confirm", async () => {
+    messages = [msg("A", "owner", "Build a notes app", 1_000)];
+    show();
+    await screen.findByTestId("transcript");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("Cancel “Notes app”?");
+    expect(dialog.textContent).toContain("The work so far stays in its folder");
+    // Keep it: nothing happens.
+    fireEvent.click(screen.getByRole("button", { name: "Keep it" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(cancel).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel the job" }));
+    await waitFor(() =>
+      expect(cancel).toHaveBeenCalledWith({ id: JOB, reason: "Cancelled from the chat." }),
+    );
+  });
+
+  it("with several jobs going, a small menu picks which", async () => {
+    messages = [msg("A", "owner", "Build a notes app", 1_000)];
+    render(<EyeChat projectId={PROJECT} jobs={[job, second]} />);
+    await screen.findByTestId("transcript");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    const menu = await screen.findByRole("menu", { name: "Which job to cancel" });
+    expect([...menu.querySelectorAll("[role=menuitem]")].map((x) => x.textContent)).toEqual([
+      "Notes apprunning",
+      "Dark modepaused",
+    ]);
+    fireEvent.click(screen.getByRole("menuitem", { name: /Dark mode/ }));
+    expect((await screen.findByRole("dialog")).textContent).toContain("Cancel “Dark mode”?");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel the job" }));
+    await waitFor(() =>
+      expect(cancel).toHaveBeenCalledWith({ id: second.id, reason: "Cancelled from the chat." }),
+    );
+  });
+
+  it("shows no Cancel when no job is going, and no form for a question its ended job withdrew", async () => {
+    messages = [
+      {
+        ...msg("A", "eye", "I'm waiting for you: **Approve what will change on vps**", 1_000),
+        itemId: "01J9Z3K8W2Q4V6X8Y0A1B2C3I0",
+        questions: [
+          {
+            id: "choice",
+            shape: "single",
+            prompt: "Approve?",
+            options: [
+              { id: "o1", label: "Approve" },
+              { id: "o2", label: "Deny" },
+            ],
+            recommended: null,
+            allowOther: false,
+          },
+        ],
+      },
+    ];
+    render(<EyeChat projectId={PROJECT} jobs={[{ ...job, state: "cancelled" } as JobView]} />);
+    await screen.findByTestId("transcript");
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+    expect(screen.getByText("No longer asked: the job has ended.")).toBeTruthy();
+    expect(screen.queryByText("Approve?")).toBeNull();
+  });
+
+  it("links where it took my request: the server's chat and the job started there", async () => {
+    messages = [
+      msg("A", "owner", "remove misahaty", 1_000),
+      {
+        ...msg("B", "eye", "**misahaty** runs on spinet-staging. I've taken this there.", 2_000),
+        action: {
+          intent: "task",
+          did: ["Taken to spinet-staging's chat"],
+          silkIds: [],
+          taskIds: [],
+          jobId: "01J9Z3K8W2Q4V6X8Y0A1B2C3J9",
+          place: { kind: "server", id: "S1", name: "spinet-staging", projectId: "P9" },
+        },
+      },
+    ];
+    show();
+    const there = await screen.findByRole("link", { name: "spinet-staging's chat" });
+    expect(there.getAttribute("href")).toBe("/servers/S1/chat");
+    expect(screen.getByRole("link", { name: "Open “the new job”" }).getAttribute("href")).toBe(
+      "/jobs/01J9Z3K8W2Q4V6X8Y0A1B2C3J9",
     );
   });
 });

@@ -253,7 +253,15 @@ Its page is in tabs, in the address (`/projects/<id>/<tab>`):
   that way; the composer stays usable. I ask for work here; The Eye passes it to the job
   running, starts a follow-up when the last has ended, or a first job
   ([[The-Eye]] → Talking to The Eye). Each reply links the job it
-  touched (and the follow-up it started); a line marks where the
+  touched (and the follow-up it started); a request The Eye took to a
+  server's chat or another project (The-Eye → Resolving what it doesn't
+  know) links that chat ("spinet-staging's chat") and the job started
+  there. While a job of the conversation hasn't ended, the header has
+  **Cancel** (2026-10-07): "Cancel “<title>”? The work so far stays in
+  its folder.", Keep it focused; with several going, a small menu lists
+  them (title and state) to pick which. A question a job asked through
+  the inbox shows "No longer asked: the job has ended." once it ended,
+  without its form. A line marks where the
   conversation moves to another job. The header says which job it talks
   to now. A reply with questions shows them under it (Questions, below)
   until I answer; my answers show as a short list. What The Eye says on
@@ -479,7 +487,8 @@ About, with a **Production** switch: every job that reaches it asks
 before any change), **Chat** (2026-10-04, [[ADR-049-Server-Chat-And-Server-Jobs]]:
 The Eye's conversation about the server, the same chat as a project's
 The Eye tab; a question answered without a job, work sent into the
-server as a job, each reply linking the job it started), **Jobs** (the
+server as a job, each reply linking the job it started; **Cancel** in
+its header while a server job hasn't ended), **Jobs** (the
 jobs that worked on the server as Work rows, newest first, opened in the
 server's project's Work tab, and above them what they wait on from me),
 **Docker** (containers by compose project, each with Logs and

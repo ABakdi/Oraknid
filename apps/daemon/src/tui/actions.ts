@@ -233,15 +233,67 @@ export function makeActions(c: Ctx) {
     c.push(await jobPanel(j.id));
   };
 
-  const control = async (what: "pause" | "resume" | "cancel") => {
+  const control = async (what: "pause" | "resume") => {
     const j = needJob();
     if (what === "pause") await c.api.jobs.pause({ id: j.id });
     if (what === "resume") await c.api.jobs.resume({ id: j.id });
-    if (what === "cancel") await c.api.jobs.cancel({ id: j.id });
-    c.flash(
-      `${j.title}: ${what === "pause" ? "pausing" : what === "resume" ? "resumed" : "cancelling"}.`,
-      "ok",
-    );
+    c.flash(`${j.title}: ${what === "pause" ? "pausing" : "resumed"}.`, "ok");
+  };
+
+  /** "Cancel “…”? y/N": y cancels, anything else keeps it going. */
+  const confirmCancel = (j: JobView, how: "push" | "replace" = "push") =>
+    c[how]({
+      key: panelKey("cancel"),
+      title: `Cancel “${j.title}”?`,
+      lines: [
+        "The work so far stays in its folder; what it asked you is withdrawn.",
+        "",
+        `${ansi.bold("y")} cancels it · ${ansi.bold("n")} or Esc keeps it going`,
+      ],
+      anchor: "top",
+      hint: "y/N",
+      onText: async (answer) => {
+        c.pop();
+        if (!/^y(es)?$/i.test(answer.trim())) {
+          c.flash(`${j.title}: kept going.`, "ok");
+          return;
+        }
+        await c.api.jobs.cancel({ id: j.id, reason: "Cancelled from the terminal app." });
+        c.flash(`${j.title}: cancelling.`, "ok");
+      },
+    });
+
+  /**
+   * Cancel (The-Eye → Cancelling from the chat): the chosen job, or, with
+   * none chosen, the one this conversation is about (the project's, or the
+   * server's after /chat); several going, a list picks which. Always y/N.
+   */
+  const cancel = async () => {
+    const st = c.get();
+    const ended = (state: string) => ["draft", "completed", "cancelled", "failed"].includes(state);
+    if (st.job && !st.chatServer) {
+      const j = await c.api.jobs.get({ id: st.job.id });
+      if (ended(j.state)) throw new Error(`${j.title} has ended already.`);
+      return confirmCancel(j);
+    }
+    const pid = st.chatServer ? st.server?.projectId : st.project?.id;
+    if (!pid)
+      throw new Error("No job to cancel: pick a project with /projects, or a job with /jobs.");
+    const going = (await c.api.jobs.list({ projectId: pid }))
+      .filter((j) => !ended(j.state))
+      .reverse();
+    if (!going.length) throw new Error("No job is going in this conversation.");
+    if (going.length === 1) return confirmCancel(going[0] as JobView);
+    c.push({
+      key: panelKey("cancel-which"),
+      title: "Cancel which job?",
+      items: going.map((j) => ({ label: `${j.title}  ${jobState(j.state)}` })),
+      onPick: (i) => {
+        const j = going[i];
+        if (j) confirmCancel(j, "replace");
+      },
+      hint: "A number picks the job; then y/N.",
+    });
   };
 
   const redirect = async (arg: string) => {
@@ -1151,7 +1203,7 @@ export function makeActions(c: Ctx) {
     logs,
     pause: () => control("pause"),
     resume: () => control("resume"),
-    cancel: () => control("cancel"),
+    cancel,
     redirect,
     inbox,
     answer,

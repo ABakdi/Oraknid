@@ -576,6 +576,21 @@ export const EyeMessage = z.object({
       taskIds: z.array(Id).default([]),
       /** A follow-up job it started for new work on an ended job. */
       jobId: Id.nullable().default(null),
+      /**
+       * Where it took my request, when it belongs elsewhere (The-Eye →
+       * Resolving what it doesn't know): a server's chat, or another
+       * project's conversation. `jobId` is the job it started there, if any.
+       */
+      place: z
+        .object({
+          kind: z.enum(["server", "project"]),
+          id: z.string(),
+          name: z.string(),
+          /** The project whose conversation it is (a server's own, for a server). */
+          projectId: z.string().nullable().default(null),
+        })
+        .nullable()
+        .optional(),
     })
     .nullable(),
   /** The Eye's questions in this reply, answered with options (ADR-037). */

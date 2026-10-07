@@ -534,6 +534,50 @@ describe("the terminal app", () => {
     expect(t.calls.find((c) => c.path === "jobs.pause")?.input).toEqual({ id: "J1" });
   });
 
+  it("/cancel with no job chosen cancels the conversation's job after y/N; n keeps it", async () => {
+    const t = open();
+    t.handlers["jobs.cancel"] = () => undefined;
+    await t.until((f) => f.includes("◉ piano"));
+    await t.type("/cancel");
+    await t.press(ENTER);
+    await t.until((f) => f.includes("Cancel “Build the piano”?"));
+    expect(t.frame()).toContain("The work so far stays in its folder");
+    await t.type("n");
+    await t.press(ENTER);
+    await t.until((f) => f.includes("Build the piano: kept going."));
+    expect(t.calls.some((c) => c.path === "jobs.cancel")).toBe(false);
+    await t.type("/cancel");
+    await t.press(ENTER);
+    await t.until((f) => f.includes("Cancel “Build the piano”?"));
+    await t.type("y");
+    await t.press(ENTER);
+    await t.until(() => t.calls.some((c) => c.path === "jobs.cancel"));
+    expect(t.calls.find((c) => c.path === "jobs.cancel")?.input).toEqual({
+      id: "J1",
+      reason: "Cancelled from the terminal app.",
+    });
+    await t.until((f) => f.includes("Build the piano: cancelling."));
+  });
+
+  it("/cancel with several jobs going asks which first", async () => {
+    const t = open();
+    t.handlers["jobs.cancel"] = () => undefined;
+    t.handlers["jobs.list"] = () => [
+      job,
+      { ...job, id: "J2", title: "Tune the strings", state: "paused" },
+    ];
+    await t.until((f) => f.includes("◉ piano"));
+    await t.type("/cancel");
+    await t.press(ENTER);
+    await t.until((f) => f.includes("Cancel which job?"));
+    await t.type("1");
+    await t.until((f) => f.includes("Cancel “Tune the strings”?"));
+    await t.type("y");
+    await t.press(ENTER);
+    await t.until(() => t.calls.some((c) => c.path === "jobs.cancel"));
+    expect(t.calls.find((c) => c.path === "jobs.cancel")?.input).toMatchObject({ id: "J2" });
+  });
+
   it("answers the inbox by number", async () => {
     const t = open();
     await t.until((f) => f.includes("◉ piano"));
