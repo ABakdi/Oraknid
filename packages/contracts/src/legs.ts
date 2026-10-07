@@ -47,6 +47,19 @@ export const AntigravityLegConfig = z.object({
   models: z.array(z.string().min(1)).default([]),
 });
 
+/**
+ * A Codex Leg (ADR-057): OpenAI's official `codex`, with a CODEX_HOME of its
+ * own (created when empty), signed in from its card with a ChatGPT account,
+ * or given an OpenAI API key (`secret`, kept in the keychain). Its models
+ * come from Codex's own catalog; `models` is the fallback.
+ */
+export const CodexLegConfig = z.object({
+  binary: z.string().min(1).default("codex"),
+  /** The Leg's own CODEX_HOME; never ~/.codex. Created when empty. */
+  codexHome: z.string().min(1).optional(),
+  models: z.array(z.string().min(1)).default([]),
+});
+
 /** How a model calls tools, as the probe tested it (ADR-052 §6). */
 export const ToolCalling = z.enum(["native", "json", "none"]);
 export type ToolCalling = z.infer<typeof ToolCalling>;
@@ -110,6 +123,13 @@ export const NewLeg = z.discriminatedUnion("kind", [
     name: z.string().min(1),
     config: OraknidAgentLegConfig,
     /** The endpoint's API key, if it needs one. Goes to the secret store, never the database. */
+    secret: z.string().min(1).optional(),
+  }),
+  z.object({
+    kind: z.literal("codex"),
+    name: z.string().min(1),
+    config: CodexLegConfig,
+    /** An OpenAI API key instead of a ChatGPT sign-in. Goes to the secret store, never the database. */
     secret: z.string().min(1).optional(),
   }),
 ]);

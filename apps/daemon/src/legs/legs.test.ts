@@ -2,7 +2,11 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import type { LegKind } from "@oraknid/contracts";
 import { FAKE_AGY } from "@oraknid/leg-antigravity/fake";
+import { createCodexAdapter } from "@oraknid/leg-codex";
+import { FAKE_CODEX } from "@oraknid/leg-codex/fake";
+import type { LegAdapter } from "@oraknid/leg-sdk";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { RouterClient } from "@orpc/server";
@@ -26,7 +30,7 @@ afterEach(async () => {
   daemon = undefined;
 });
 
-async function start(leg = fakeLeg()) {
+async function start(leg = fakeLeg(), more: Partial<Record<LegKind, LegAdapter>> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "oraknid-legs-"));
   const fake = fakeOs({ keychain: true });
   cleanup = leg.cleanup;
@@ -35,7 +39,7 @@ async function start(leg = fakeLeg()) {
     port: 0,
     dbFile: ":memory:",
     os: fake.os,
-    adapters: { "claude-code": leg.adapter, "openai-compatible": leg.adapter },
+    adapters: { "claude-code": leg.adapter, "openai-compatible": leg.adapter, ...more },
     healthIntervalMs: 60_000,
   });
   const api = createORPCClient<RouterClient<Router>>(
@@ -429,4 +433,64 @@ exec node ${FAKE_AGY} "$@"
       detail: "Signed in.",
     });
   }, 30_000);
+});
+
+describe("a Codex Leg (ADR-057)", () => {
+  it("gets a CODEX_HOME of its own, signs in from its card with a code, and a job gets its own", async () => {
+    const { d, api, dir } = await start(fakeLeg(), { codex: createCodexAdapter() });
+    await expect(
+      api.legs.create({ kind: "codex", name: "Mine", config: { codexHome: "~/.codex" } }),
+    ).rejects.toThrow(/can't use your own ~\/.codex/);
+    const leg = await api.legs.create({
+      kind: "codex",
+      name: "GPT",
+      config: { binary: FAKE_CODEX },
+    });
+    const codexHome = (leg.config as { codexHome: string }).codexHome;
+    expect(codexHome).toMatch(/legs\/.+\/codex-home$/);
+    expect(leg).toMatchObject({ health: "unavailable", hasSecret: false });
+    expect(leg.healthDetail).toBe("Not signed in: press Log in on its card.");
+    expect(leg.setupHint).toMatch(/enter the code/);
+    const started = await api.legs.loginStart({ id: leg.id });
+    expect(started).toMatchObject({ userCode: "ABCD-12345" });
+    writeFileSync(join(codexHome, ".fake-approved"), "");
+    expect(await api.legs.loginFinish({ id: leg.id, code: "entered" })).toEqual({
+      ok: true,
+      detail: "Logged in using ChatGPT.",
+    });
+    const tested = await api.legs.get({ id: leg.id });
+    expect(tested.health).toBe("healthy");
+    expect(tested.models.map((m) => m.model)).toEqual(["gpt-6-sol", "gpt-6-luna"]);
+    expect(tested.models[0]?.effortLevels).toEqual(["low", "medium", "high", "xhigh"]);
+    // A job's sessions get a CODEX_HOME of their own, with the Leg's login linked in.
+    const { sandboxPlan } = await import("./plan.ts");
+    const legsDir = resolvePaths({ ORAKNID_DATA_DIR: dir, ORAKNID_CONFIG_DIR: dir }).legs;
+    const plan = sandboxPlan(
+      d.registry.require(leg.id),
+      fakeOs().os.sandbox as never,
+      legsDir,
+      [],
+      "J1",
+    );
+    expect(plan.configDir).toMatch(/jobs\/J1\/codex-home$/);
+    expect(readFileSync(join(plan.configDir as string, "auth.json"), "utf8")).toContain("chatgpt");
+    expect(existsSync(join(plan.configDir as string, "sessions"))).toBe(false);
+    expect(plan.writable).toContain(join(codexHome, "auth.json"));
+  }, 30_000);
+
+  it("keeps an OpenAI API key in the keychain and offers the API's models", async () => {
+    const { api, store } = await start(fakeLeg(), { codex: createCodexAdapter() });
+    const leg = await api.legs.create({
+      kind: "codex",
+      name: "GPT key",
+      config: { binary: FAKE_CODEX },
+      secret: "sk-test-123",
+    });
+    expect(leg).toMatchObject({ hasSecret: true, health: "healthy", setupHint: null });
+    expect(leg.config).toMatchObject({ auth: "api-key" });
+    expect(JSON.stringify(leg.config)).not.toContain("sk-test-123");
+    expect([...store.values()]).toContain("sk-test-123");
+    expect(leg.models.map((m) => m.model)).toEqual(["gpt-6-sol"]);
+    await expect(api.legs.loginStart({ id: leg.id })).rejects.toThrow(/API key/);
+  });
 });

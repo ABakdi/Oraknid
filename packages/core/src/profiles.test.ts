@@ -9,6 +9,7 @@ import {
   learnStrength,
   record,
 } from "./profiles.ts";
+import { rungOf } from "./routing.ts";
 
 describe("Oraknid's own agent (ADR-052 §6)", () => {
   it("starts a model by its family, an unknown local one low and unproven", () => {
@@ -49,6 +50,26 @@ describe("default profiles", () => {
       "medium",
       "low",
     ]);
+  });
+
+  it("starts Codex's models by size, on a plan, the frontier ones up the ladder (ADR-057)", () => {
+    const sol = defaultProfile("codex", "gpt-6-sol");
+    const luna = defaultProfile("codex", "gpt-6-luna");
+    const mini = defaultProfile("codex", "gpt-5.4-mini");
+    expect(sol).toMatchObject({ costModel: "subscription", maxDifficulty: "high" });
+    expect(sol.tools).toEqual({ edits: true, shell: true, mcp: true, browse: true });
+    expect(sol.strengths.implementation).toBe(5);
+    expect([luna.maxDifficulty, mini.maxDifficulty]).toEqual(["medium", "medium"]);
+    expect(sol.quotaWeight).toBeGreaterThan(luna.quotaWeight);
+    for (const work of ["code", "planning"] as const)
+      expect(
+        rungOf(effectiveProfile("codex", "gpt-6-sol", emptyStoredProfile()), work, "implement"),
+      ).toBeGreaterThan(
+        rungOf(effectiveProfile("codex", "gpt-6-luna", emptyStoredProfile()), work, "implement"),
+      );
+    // GPT-6 is a frontier family wherever it runs.
+    expect(knownFamily("gpt-6-sol")).toBe("frontier");
+    expect(knownFamily("gpt-5-mini")).toBe("small");
   });
 
   it("starts a bare local model on small text work", () => {

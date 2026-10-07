@@ -64,6 +64,10 @@ function noteFor(leg: LegRow, remote: boolean, windows: number): string | null {
         : "OpenCode's free models: no usage window.";
     case "antigravity":
       return "No windows: its quota errors show here when they happen.";
+    case "codex":
+      return config.auth === "api-key"
+        ? "An OpenAI API key: no usage windows, billed by the token."
+        : "Not read yet: it shows after the first reading.";
     case "openai-compatible":
       return remote ? "Its server reports no usage windows." : "A local model: no limits.";
   }
@@ -172,13 +176,13 @@ export class PlanUsage {
   }
 
   /**
-   * Asks each Claude Code Leg for a fresh reading, when it is due. Waits
-   * for the readings it started; a Leg already being read is not read twice.
+   * Asks each Claude Code and Codex Leg for a fresh reading, when it is due.
+   * Waits for the readings it started; a Leg already being read is not read twice.
    */
   async refresh(): Promise<void> {
     const due = this.o.registry
       .all()
-      .filter((l) => l.enabled && !l.paused && l.kind === "claude-code");
+      .filter((l) => l.enabled && !l.paused && (l.kind === "claude-code" || l.kind === "codex"));
     await Promise.all(due.map((leg) => this.#refreshOne(leg)));
   }
 
@@ -207,6 +211,8 @@ export class PlanUsage {
         this.o.registry.applyPlanUsage(leg.id, report);
         return;
       }
+      // Codex's app server didn't answer this time: no prompt spent on it, it's asked again later.
+      if (leg.kind === "codex") return;
       // The tooling can't say (an older binary): sessions' events and the prompt from now on.
       this.#noReading.add(leg.id);
     }

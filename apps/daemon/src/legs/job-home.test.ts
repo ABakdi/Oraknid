@@ -120,6 +120,45 @@ describe("a home per job on a shared Leg (Audit 2, S2-08)", () => {
     expect(readFileSync(join(l.configDir, ".credentials.json"), "utf8")).toBe("the login");
   });
 
+  it("gives a Codex job its own CODEX_HOME with only the Leg's login in it (ADR-057)", () => {
+    const l = signedInLeg();
+    const codexHome = join(l.legsDir, "L1", "codex-home");
+    mkdirSync(join(codexHome, "sessions", "2026"), { recursive: true });
+    writeFileSync(join(codexHome, "auth.json"), "codex login");
+    writeFileSync(join(codexHome, "config.toml"), "settings");
+    writeFileSync(join(codexHome, "sessions", "2026", "rollout.jsonl"), "another job's thread");
+    const prep = (jobId: string) =>
+      prepareJobHome({
+        legsDir: l.legsDir,
+        legId: "L1",
+        jobId,
+        legHome: l.legHome,
+        legCodexHome: codexHome,
+      });
+    const a = prep("A");
+    expect(a.codexHome).toMatch(/jobs\/A\/codex-home$/);
+    expect(readFileSync(join(a.codexHome ?? "", "auth.json"), "utf8")).toBe("codex login");
+    expect(existsSync(join(a.codexHome ?? "", "sessions"))).toBe(false);
+    expect(existsSync(join(a.codexHome ?? "", "config.toml"))).toBe(false);
+    // A token Codex refreshed in job A, by rename, is the Leg's for every job.
+    const auth = join(a.codexHome ?? "", "auth.json");
+    writeFileSync(`${auth}.tmp`, "refreshed");
+    renameSync(`${auth}.tmp`, auth);
+    const later = Date.now() / 1000 + 5;
+    utimesSync(auth, later, later);
+    const b = prep("B");
+    expect(readFileSync(join(codexHome, "auth.json"), "utf8")).toBe("refreshed");
+    expect(readFileSync(join(b.codexHome ?? "", "auth.json"), "utf8")).toBe("refreshed");
+    removeJobHomes(
+      l.legsDir,
+      "B",
+      () => null,
+      () => codexHome,
+    );
+    expect(existsSync(b.codexHome ?? "")).toBe(false);
+    expect(readFileSync(join(codexHome, "auth.json"), "utf8")).toBe("refreshed");
+  });
+
   const sandbox = createBwrapSandbox();
   it.skipIf(!sandbox.status().available)(
     "job A's session can't read job B's files, keys or transcripts, and still has the login",

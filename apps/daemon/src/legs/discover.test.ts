@@ -52,4 +52,22 @@ describe("finding agents on this machine", () => {
       server.close();
     }
   });
+
+  it("finds Codex by its standalone installer's link, with its version, as a Leg to sign in", async () => {
+    const root = mkdtempSync(join(tmpdir(), "oraknid-discover-codex-"));
+    const home = join(root, "home");
+    const release = join(home, ".codex/packages/standalone/releases/0.161.0/bin");
+    mkdirSync(release, { recursive: true });
+    mkdirSync(join(home, ".local/bin"), { recursive: true });
+    writeFileSync(join(release, "codex"), '#!/bin/sh\necho "codex-cli 0.161.0"\n', {
+      mode: 0o755,
+    });
+    symlinkSync(join(release, "codex"), join(home, ".local/bin/codex"));
+    const found = await discoverAgents([], { path: join(root, "empty"), home, servers: [] });
+    expect(found.map((f) => [f.kind, f.label, f.suggestedName])).toEqual([
+      ["codex", "Codex 0.161.0", "Codex"],
+    ]);
+    // The launcher, not the release it points at today: it survives updates.
+    expect(found[0]?.config).toEqual({ binary: join(home, ".local/bin/codex"), models: [] });
+  });
 });

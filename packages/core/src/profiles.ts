@@ -96,6 +96,30 @@ export function defaultProfile(kind: LegKind, model: string): ProfileSettings {
       };
     return { ...agy, strengths: flat(4), quotaWeight: 3, maxDifficulty: "high" };
   }
+  if (kind === "codex") {
+    // OpenAI's models through Codex (ADR-057), on a ChatGPT plan's windows. Estimated
+    // starting points, like the others: GPT's frontier models strong at coding, the
+    // smaller ones (mini, nano, luna) for the lighter work. Learning refines them.
+    const codex = {
+      ...base,
+      costModel: "subscription" as const,
+      contextWindow: 272_000,
+      tools: AGENT_TOOLS,
+    };
+    if (knownFamily(m) === "small" || /luna|mini|nano/.test(m))
+      return {
+        ...codex,
+        strengths: flat(3, { mechanical: 4, summarize: 4, classify: 4 }),
+        quotaWeight: 1,
+        maxDifficulty: "medium",
+      };
+    return {
+      ...codex,
+      strengths: flat(4, { implementation: 5, debugging: 5, refactor: 5, tests: 5, review: 5 }),
+      quotaWeight: 3,
+      maxDifficulty: "high",
+    };
+  }
   if (kind === "opencode") {
     const oc = { ...base, costModel: "subscription" as const, tools: AGENT_TOOLS };
     // A free or trial model (OpenCode Zen's): no one vouches for it, its provider may drop it
@@ -177,7 +201,8 @@ export function isFreeModel(model: string): boolean {
 export function knownFamily(model: string): "frontier" | "mid" | "small" | null {
   const m = model.toLowerCase();
   if (/haiku|nano\b|-mini\b|flash-lite|\blite\b/.test(m)) return "small";
-  if (/opus|fable|gpt-5(?![\w.-]*mini)|gemini-[\d.]+-pro|\bo3\b|grok-4/.test(m)) return "frontier";
+  if (/opus|fable|gpt-[5-9](?![\w.-]*mini)|gemini-[\d.]+-pro|\bo3\b|grok-4/.test(m))
+    return "frontier";
   if (
     /sonnet|gpt-4\.1|gemini-[\d.]+-flash|deepseek|qwen3-coder|kimi-k2|glm-4\.[5-9]|devstral|codestral/.test(
       m,

@@ -361,7 +361,7 @@ const ACTIONS: Record<string, ActionDef> = {
   },
   add_leg: {
     description:
-      "Add a Leg (an agent or model server). For Claude Code or Antigravity, I then log it in from its card.",
+      "Add a Leg (an agent or model server). For Claude Code, Antigravity or Codex (without an API key), I then log it in from its card.",
     input: NewLeg,
     // A Leg sees what The Eye sends it: always mine to confirm (Audit 2).
     confirm: () => true,
