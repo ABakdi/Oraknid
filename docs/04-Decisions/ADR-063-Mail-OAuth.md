@@ -54,7 +54,7 @@ in without any address back to this computer.
   `oauthStart`, `oauthStatus`, `oauthCancel`, `oauthCallback`; a sign-in
   in hand checks IMAP and SMTP with the token before the account is kept;
   signing in again checks the address is the account's), the callback
-  route in `daemon.ts`; migration `0041_mail_oauth.sql` adds `auth`.
+  route in `daemon.ts`; migration `0042_mail_oauth.sql` adds `auth`.
 - **Keychain**: `mail.<account>.refresh`, `mail.oauth.google.secret`;
   settings `mail.oauth.<provider>.clientId`. The scopes: Google
   `https://mail.google.com/ openid email`; Microsoft `offline_access

@@ -22,6 +22,13 @@ separate database server.
 - Location: `$XDG_DATA_HOME/oraknid/oraknid.db` (default
   `~/.local/share/oraknid/`).
 
+## As built (2026-10-07)
+- The periodic checkpoint: `startIdleCheckpoint` (`db/open.ts`) runs
+  `wal_checkpoint(TRUNCATE)` every 5 minutes while no job is in an
+  active state (interviewing, planning, running, verifying); one a
+  reader blocks is tried at the next tick. Closing the database
+  checkpoints too, as before.
+
 ## Consequences
 - One file to back up (with `.backup()`, never by copying the file).
 - A native addon to build. Prebuilt binaries cover Linux and Windows x64.

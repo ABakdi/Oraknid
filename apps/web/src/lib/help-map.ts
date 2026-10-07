@@ -21,6 +21,8 @@ export interface HelpPage {
   /** What `{item}` is, when the page has one. */
   item?: string;
   tabs?: HelpTab[];
+  /** The guide's page about it, by slug (apps/site/docs/guide.json): `/docs/<slug>`. */
+  guide?: string;
 }
 
 export interface HelpControl {
@@ -46,18 +48,21 @@ export interface HelpControl {
 export const PAGES: HelpPage[] = [
   {
     id: "overview",
+    guide: "jobs",
     path: "/",
     name: "Overview",
     does: "What runs now: the Legs, the activity, problems, resources, Running now (Pause/Resume) and today's tokens.",
   },
   {
     id: "new",
+    guide: "jobs",
     path: "/new",
     name: "New work",
     does: "A first request, a new project or a draft: options on the left, the goal and the talk with The Eye on the right.",
   },
   {
     id: "draft",
+    guide: "jobs",
     path: "/new/{item}",
     item: "a draft job's id",
     name: "A draft",
@@ -65,6 +70,7 @@ export const PAGES: HelpPage[] = [
   },
   {
     id: "projects",
+    guide: "projects",
     path: "/projects/{item}/{tab}",
     item: "a project's id",
     name: "Projects",
@@ -110,16 +116,23 @@ export const PAGES: HelpPage[] = [
       },
       { id: "servers", name: "Servers", does: "The servers this project's jobs may use." },
       { id: "network", name: "Network", does: "Ports on this computer its jobs may reach." },
+      {
+        id: "secrets",
+        name: "Secrets",
+        does: "API keys and .env values per environment, given to its jobs and written on its servers; never shown after save.",
+      },
     ],
   },
   {
     id: "inbox",
+    guide: "inbox",
     path: "/inbox",
     name: "Inbox",
     does: "Approvals and questions from every job, answered in place, with filters.",
   },
   {
     id: "mail",
+    guide: "mail",
     path: "/mail/{item}",
     item: "a mail account's id",
     name: "Mail",
@@ -127,6 +140,7 @@ export const PAGES: HelpPage[] = [
   },
   {
     id: "legs",
+    guide: "legs",
     path: "/legs/{item}",
     item: "a Leg's id (opens its card)",
     name: "Legs",
@@ -134,12 +148,14 @@ export const PAGES: HelpPage[] = [
   },
   {
     id: "models",
+    guide: "models",
     path: "/models",
     name: "Models",
     does: "Models on this computer (ADR-054): the ones downloaded or downloading, loaded or not, with their speed, VRAM and memory; finding more on Hugging Face and in Ollama's library, filtered by what fits this computer; and the roles (translate, OCR, speech to text, embeddings, mail, simple code, general) every agent's local-models tool uses. Each loaded chat model is a model of the Local Leg.",
   },
   {
     id: "chats",
+    guide: "chats",
     path: "/chats/{item}",
     item: "a chat's id",
     name: "Chats",
@@ -147,6 +163,7 @@ export const PAGES: HelpPage[] = [
   },
   {
     id: "servers",
+    guide: "projects",
     path: "/servers/{item}/{tab}",
     item: "a server's id",
     name: "Servers",
@@ -202,12 +219,14 @@ export const PAGES: HelpPage[] = [
   },
   {
     id: "terminal",
+    guide: "web-terminal",
     path: "/terminal",
     name: "Terminal",
     does: "Terminals on this computer and my servers, in tabs, side by side or in a grid (when turned on).",
   },
   {
     id: "skills",
+    guide: "skills",
     path: "/skills/{item}",
     item: "a skill's id",
     name: "Skills",
@@ -215,6 +234,7 @@ export const PAGES: HelpPage[] = [
   },
   {
     id: "logs",
+    guide: "security",
     path: "/logs/{tab}",
     name: "Logs",
     does: "What happened (the audit trail) and the daemon's log.",
@@ -225,6 +245,7 @@ export const PAGES: HelpPage[] = [
   },
   {
     id: "settings",
+    guide: "settings",
     path: "/settings/{tab}",
     name: "Settings",
     does: "Oraknid's settings, one concern per tab.",
@@ -264,6 +285,7 @@ export const PAGES: HelpPage[] = [
   },
   {
     id: "repos",
+    guide: "repos",
     path: "/repos/{item}/{tab}",
     item: "a repository as owner/name",
     name: "Repos",
@@ -294,12 +316,14 @@ export const PAGES: HelpPage[] = [
   },
   {
     id: "storage",
+    guide: "storage",
     path: "/storage",
     name: "Cloud storage",
     does: "My storage accounts (Google Drive, Dropbox, MEGA, S3-compatible, and any other provider rclone supports) as one pool: the providers with their used and free space, the pool's folders and files (upload, download, rename, move, delete), and where uploads go. A folder of the pool is /storage/<its path>.",
   },
   {
     id: "docs",
+    guide: "finding-your-way",
     path: "/docs/{item}",
     item: "a guide page's slug",
     name: "Docs",
@@ -369,6 +393,20 @@ export const CONTROLS: HelpControl[] = [
     name: "Problems",
     does: "Errors, kills, escalations, blocked jobs, linking to the evidence.",
     where: "The Overview, right of the activity",
+  },
+  {
+    id: "overview.activity",
+    page: "overview",
+    name: "Activity",
+    does: "Every Leg's and The Eye's actions as they happen, in words; filters by job, Leg and kind; a Leg's output opens from its one line.",
+    where: "The Overview, under Legs now",
+  },
+  {
+    id: "overview.resources",
+    page: "overview",
+    name: "Resources",
+    does: "CPU, memory, disk, network and GPUs, then each Leg's processes (CPU, RAM, VRAM, disk); a sparkline or a number opens its full chart with a time range.",
+    where: "The Overview, right column, under Problems",
   },
   // New work.
   {
@@ -624,6 +662,15 @@ export const CONTROLS: HelpControl[] = [
     where: "A project → Budget & stats",
   },
   {
+    id: "project.secrets",
+    page: "projects",
+    tab: "secrets",
+    needsItem: true,
+    name: "The project's secrets",
+    does: "Its API keys and .env values per environment (dev, testing, production): masked once saved, replace or remove only; paste a .env to set many.",
+    where: "A project → Secrets",
+  },
+  {
     id: "project.servers",
     page: "projects",
     tab: "servers",
@@ -670,6 +717,13 @@ export const CONTROLS: HelpControl[] = [
     page: "inbox",
     name: "Kind filter",
     does: "Approvals or questions.",
+    where: "Inbox, the filters",
+  },
+  {
+    id: "inbox.state",
+    page: "inbox",
+    name: "State filter",
+    does: "Open (the default), answered, withdrawn, expired, or every state.",
     where: "Inbox, the filters",
   },
   // Mail.
@@ -821,6 +875,13 @@ export const CONTROLS: HelpControl[] = [
     name: "Add a server",
     does: "Adds a server by SSH.",
     where: "Servers, above the list",
+  },
+  {
+    id: "servers.sites",
+    page: "servers",
+    name: "Sites",
+    does: "Every domain across the servers: up or down from this computer, the certificate's end, where DNS points; Find sites reads them from the proxies.",
+    where: "Servers, first in the list",
   },
   {
     id: "server.discover",
@@ -1141,6 +1202,42 @@ export const CONTROLS: HelpControl[] = [
     name: "Version and updates",
     does: "The version running, its channel and how it was installed, when it last looked for an update, and the notes of what's new.",
     where: "Settings → About & updates",
+  },
+  // Moving Oraknid to another computer (ADR-061).
+  {
+    id: "settings.moving",
+    page: S,
+    tab: "about",
+    name: "Move to another computer",
+    does: "Everything (projects, jobs, Silk, servers, settings and the keychain's secrets) as one archive encrypted to a passphrase, and such an archive imported into a fresh install. Projects' folders aren't in it.",
+    where: "Settings → About & updates",
+  },
+  {
+    id: "settings.export-all",
+    page: S,
+    tab: "about",
+    name: "Export everything",
+    does: "Makes the encrypted archive with the passphrase typed twice (12 characters or more) and downloads it once, to this computer's browser.",
+    where: "Settings → About & updates → Move to another computer",
+    via: ["settings.moving"],
+  },
+  {
+    id: "settings.import-all",
+    page: S,
+    tab: "about",
+    name: "Import an archive",
+    does: "On a fresh install: its secrets and settings now, its database when Oraknid restarts. Then each project whose folder is missing can be cloned again from its page.",
+    where: "Settings → About & updates → Move to another computer",
+    via: ["settings.moving"],
+  },
+  {
+    id: "settings.import-records",
+    page: S,
+    tab: "general",
+    name: "Import a job or project zip",
+    does: "A zip exported from a job's or a project's page adds its jobs here as ended, read-only records (Silk, events, logs); nothing runs.",
+    where: "Settings → General → Storage",
+    via: ["settings.storage"],
   },
   {
     id: "settings.check-updates",
@@ -1605,6 +1702,8 @@ export function screensText(): string {
   const pages = PAGES.map(
     (p) =>
       `- ${p.id}: ${p.name} (${p.path}${p.item ? `; item: ${p.item}` : ""}): ${p.does}${
+        p.guide ? ` Guide: /docs/${p.guide}.` : ""
+      }${
         p.tabs ? `\n  tabs: ${p.tabs.map((x) => `${x.id} (${x.name}: ${x.does})`).join("; ")}` : ""
       }`,
   ).join("\n");

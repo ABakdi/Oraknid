@@ -29,12 +29,15 @@ function CommandDialog({
   children,
   className,
   showCloseButton = true,
+  shouldFilter,
   ...props
 }: React.ComponentProps<typeof Dialog> & {
   title?: string;
   description?: string;
   className?: string;
   showCloseButton?: boolean;
+  /** False: the caller filters and orders the items itself. */
+  shouldFilter?: boolean;
 }) {
   return (
     <Dialog {...props}>
@@ -46,7 +49,10 @@ function CommandDialog({
         className={cn("top-[18%] translate-y-0 overflow-hidden p-0 sm:max-w-xl", className)}
         showCloseButton={showCloseButton}
       >
-        <Command className="**:data-[slot=command-input-wrapper]:h-13 **:data-[slot=command-input-wrapper]:pr-12 [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2.5 [&_[cmdk-item]]:py-2.5 [&_[cmdk-list]]:max-h-[min(60dvh,420px)]">
+        <Command
+          {...(shouldFilter === undefined ? {} : { shouldFilter })}
+          className="**:data-[slot=command-input-wrapper]:h-13 **:data-[slot=command-input-wrapper]:pr-12 [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2.5 [&_[cmdk-item]]:py-2.5 [&_[cmdk-list]]:max-h-[min(60dvh,420px)]"
+        >
           {children}
         </Command>
       </DialogContent>

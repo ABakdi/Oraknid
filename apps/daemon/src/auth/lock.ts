@@ -279,6 +279,8 @@ export const LOCK_FREE = new Set(["/lock/status", "/lock/unlock"]);
 /** Home only whatever the device's rights (ADR-030): a device can't widen itself or mint others. */
 export const ALWAYS_HOME = [
   "/secrets/",
+  // Moving Oraknid (ADR-061): every secret in one archive, or replaced from one.
+  "/moving/",
   "/nest/configure",
   "/nest/register",
   "/nest/pairAway",
@@ -376,6 +378,15 @@ export const HOME_ONLY = [
   "/notifications/update",
   "/notifications/configureEmail",
   "/storage/prune",
+  // A finished job's worktree removed (Sandboxing → Worktrees); a zip of jobs imported (ADR-061).
+  "/storage/removeWorktree",
+  "/storage/cleanWorktrees",
+  "/records/import",
+  // A project's secrets (ADR-059): listing stays open.
+  "/projectSecrets/set",
+  "/projectSecrets/importDotEnv",
+  "/projectSecrets/remove",
+  "/projectSecrets/setDefaultEnvironment",
   "/jobs/setWaivers",
   "/jobs/setRules",
   // Updating Oraknid restarts it (ADR-048).
@@ -385,3 +396,7 @@ export const HOME_ONLY = [
 /** What a device away from home may call: with full rights, all but ALWAYS_HOME (ADR-030). */
 export const remoteAllowed = (path: string, full = false) =>
   !(full ? ALWAYS_HOME : HOME_ONLY).some((p) => path.startsWith(p));
+
+/** Allowed away from home only because the device has full rights: each such use is audited (ADR-030). */
+export const needsFullRights = (path: string) =>
+  !remoteAllowed(path, false) && remoteAllowed(path, true);

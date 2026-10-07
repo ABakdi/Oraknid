@@ -11,6 +11,7 @@ import { GitHubCard } from "@/components/github-card";
 import { LockCard } from "@/components/lock-card";
 import { MailAccountsCard } from "@/components/mail-accounts-card";
 import { MailOAuthAppsCard } from "@/components/mail-oauth";
+import { MovingCard } from "@/components/moving";
 import { type PageTab, PageTabs } from "@/components/page-tabs";
 import { RulesCard } from "@/components/rules-card";
 import { StorageCard } from "@/components/storage-card";
@@ -162,9 +163,14 @@ export function SettingsPage({ tab }: { tab?: string }) {
     // Oraknid's version, its channel, and its updates (ADR-048).
     about: () =>
       wrap(
-        <Section help="settings.updates" title={t("Version and updates")}>
-          <UpdatesCard />
-        </Section>,
+        <>
+          <Section help="settings.updates" title={t("Version and updates")}>
+            <UpdatesCard />
+          </Section>
+          <Section title={t("Moving")}>
+            <MovingCard />
+          </Section>
+        </>,
       ),
   };
   const tabs: PageTab[] = TABS.map((x) => ({
@@ -403,6 +409,10 @@ const EVENTS: [NotifyEvent, string][] = [
   ["backup.failed", "A backup failed"],
   ["update.available", "A new version of Oraknid"],
   ["machine.danger", "The computer in danger"],
+  ["job.resumed", "A job paused for quota resumed by itself"],
+  ["sleep.problem", "The computer can't be kept awake"],
+  ["site.down", "A site is down"],
+  ["site.up", "A site is up again"],
 ];
 const DEFAULTS: Record<NotifyEvent, Route> = {
   approval: { desktop: true, push: true, email: "after-15-min" },
@@ -418,6 +428,10 @@ const DEFAULTS: Record<NotifyEvent, Route> = {
   "backup.failed": { desktop: true, push: true, email: "now" },
   "update.available": { desktop: true, push: true, email: "never" },
   "machine.danger": { desktop: true, push: true, email: "never" },
+  "job.resumed": { desktop: true, push: true, email: "never" },
+  "sleep.problem": { desktop: true, push: true, email: "never" },
+  "site.down": { desktop: true, push: true, email: "now" },
+  "site.up": { desktop: true, push: true, email: "never" },
 };
 
 function NotificationsCard() {

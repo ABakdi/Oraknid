@@ -26,9 +26,11 @@ durable step engine runs on the same database ([[ADR-003-Job-Execution-Engine]])
 | `tools` | MCP servers for skills ([[ADR-021-Tools-Broker]]). |
 | `chats`, `chat_messages`, `helper_messages` | Chats and the helper ([[Chats-and-Helper]]). |
 | `servers`, `server_states`, `server_samples` | My servers (with my Production mark), their state documents (each with the job whose end wrote it), oraknid-monitor's readings ([[Servers]]). |
-| `mail_accounts`, `mail_folders`, `mail_messages`, `mail_drafts`, `mail_image_senders`, `mail_pop_uidls` | Mail ([[ADR-032-Email]]). |
+| `sites`, `site_checks` | Sites across my servers: domain, where served, DNS and certificate last read, up or down; each uptime check, kept 7 days (migration 0041, [[ADR-060-Sites-Domains-And-Uptime]]). |
+| `mail_accounts`, `mail_folders`, `mail_messages`, `mail_drafts`, `mail_image_senders`, `mail_pop_uidls` | Mail ([[ADR-032-Email]]); an account's `auth` (password, Google or Microsoft) since migration 0042 ([[ADR-063-Mail-OAuth]]). |
 | `backup_plans`, `backup_runs`, `backup_keys` | Database backups: plans, each run, the age public keys (migration 0033, [[ADR-044-Backups]]). |
 | `cloud_providers` | My storage accounts in the pool (migration 0034, [[ADR-046-Cloud-Storage]]). |
+| `project_secrets` | A project's secrets by environment and name, never a value (that is in the keychain); migration 0041, [[ADR-059-Project-Secrets]]. |
 | `local_models` | Models downloaded to this computer, their files' checksums, run settings and measurements (migration 0038, [[ADR-054-Local-Models]]). |
 
 Git checkpoints are refs in the repository, not rows ([[Sandboxing]]).
@@ -46,7 +48,8 @@ let an `eye_messages` row have none); 0039 renamed the autonomy levels
   process happen **after** the commit, and are recorded as steps.
 - Leg output chunks are written to the NDJSON log file and batched into
   `events` as condensed summaries every 250 ms.
-- `synchronous=FULL`; WAL checkpointed when idle.
+- `synchronous=FULL`; WAL checkpointed when idle (every 5 minutes while
+  no job is active, `wal_checkpoint(TRUNCATE)`, 2026-10-07).
 
 ## Recovery sequence
 
@@ -79,6 +82,25 @@ The order is set out in [[Durability]]. Implementation notes:
   finished jobs I choose; a running job's logs are refused. Silk,
   sessions, stats and audit entries are kept unless I delete the job;
   a pruned session's output view is then empty.
-- Export: a job or project as a zip (JSON + Silk markdown + logs).
+- Export: a job or project as a zip (JSON + Silk markdown + logs), built
+  2026-10-07 ([[ADR-061-Moving-Oraknid]]): **Export** on a job's result
+  and on a project's page, a one-time download. Per job: `job.json` (its
+  record as `jobs.export` gives it), `rows.json` (its rows: the job, its
+  skill's version, tasks and edges, attempts and the attempt log,
+  sessions, Silk, The Eye's messages and plans, events), `silk/*.md`,
+  `logs/*.ndjson`; all scrubbed of known secrets and secret-shaped text.
+  **Import** (Settings → Storage) adds its jobs as ended, read-only
+  records under a project of the zip's name (made with a folder of
+  Oraknid's, `imported/…`, when none has it); a job already here is
+  skipped; nothing runs.
+- Moving to another computer ([[ADR-061-Moving-Oraknid]]): `oraknid
+  export --all` (or Settings → About) is the database by `.backup()`,
+  the config folder and the keychain's entries in one age-encrypted
+  archive; `oraknid import` puts it in place on a fresh install; one
+  imported from the web waits as `import-pending.db` and replaces the
+  database at the next start, before it opens, the one before kept as
+  `backups/pre-import-<time>.db`.
+- Worktrees of finished jobs: their sizes and removal in Settings →
+  Storage ([[Sandboxing]] → Worktrees).
 
 Related: [[Durability]] · [[Data-Map]] · [[ADR-002-Persistence]] · [[ADR-003-Job-Execution-Engine]]

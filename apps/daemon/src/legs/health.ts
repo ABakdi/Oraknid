@@ -1,3 +1,5 @@
+import { rmSync } from "node:fs";
+import { join } from "node:path";
 import type { LegKind } from "@oraknid/contracts";
 import type { LegAdapter } from "@oraknid/leg-sdk";
 import type { Sandbox } from "@oraknid/os";
@@ -20,20 +22,25 @@ export function startHealthChecks(o: HealthOptions) {
   const http = o.fetch ?? fetch;
   let running = false;
 
-  async function check(leg: LegRow): Promise<void> {
-    if (!leg.enabled) return o.registry.setHealth(leg.id, "disabled", "Disabled by me.");
+  /** The adapter's probe of a Leg, saved or not. */
+  async function probe(leg: LegRow) {
     const adapter = o.adapters[leg.kind as LegKind];
     if (!adapter)
-      return o.registry.setHealth(leg.id, "unavailable", `No adapter for ${leg.kind} yet.`);
-    const probe = await adapter
+      return { ok: false as const, detail: `No adapter for ${leg.kind} yet.`, models: [] };
+    return adapter
       .probe(o.registry.toConfig(leg), sandboxPlan(leg, o.sandbox, o.legsDir))
       .catch((e: Error) => ({ ok: false as const, detail: e.message, models: [] }));
-    if (!probe.ok) return o.registry.setHealth(leg.id, "unavailable", probe.detail);
-    o.registry.syncModels(leg.id, probe.models);
-    if ("features" in probe) o.registry.setFeatures(leg.id, probe.features);
+  }
+
+  async function check(leg: LegRow): Promise<void> {
+    if (!leg.enabled) return o.registry.setHealth(leg.id, "disabled", "Disabled by me.");
+    const found = await probe(leg);
+    if (!found.ok) return o.registry.setHealth(leg.id, "unavailable", found.detail);
+    o.registry.syncModels(leg.id, found.models);
+    if ("features" in found) o.registry.setFeatures(leg.id, found.features);
     if (leg.kind === "openai-compatible") await readVram(leg);
     if (leg.limitedUntil && leg.limitedUntil > now()) return; // still waiting for the window to reset
-    o.registry.setHealth(leg.id, "healthy", probe.detail, null);
+    o.registry.setHealth(leg.id, "healthy", found.detail, null);
   }
 
   /** Ollama reports what each loaded model holds in VRAM; other servers simply don't answer. */
@@ -66,6 +73,18 @@ export function startHealthChecks(o: HealthOptions) {
   timer.unref();
   return {
     check: (id: string) => check(o.registry.require(id)),
+    /**
+     * A Leg not saved yet, tested (Legs spec → Adding a Leg): nothing is
+     * written but the scratch home its probe needs, removed after.
+     */
+    async trial(leg: LegRow): Promise<{ ok: boolean; detail: string }> {
+      try {
+        const r = await probe(leg);
+        return { ok: r.ok, detail: r.detail };
+      } finally {
+        rmSync(join(o.legsDir, leg.id), { recursive: true, force: true });
+      }
+    },
     checkAll,
     stop: () => clearInterval(timer),
   };

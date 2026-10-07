@@ -59,6 +59,53 @@ const until = async (cond: () => boolean, ms = 2000) => {
   }
 };
 
+describe("a Leg is tested before it is saved (Legs spec → Adding a Leg)", () => {
+  it("saves nothing when the test fails, and says what failed", async () => {
+    const { api, d, dir } = await start(
+      fakeLeg({ ok: false, detail: "Nothing answers at http://localhost:9/v1" }),
+    );
+    const saved = () => d.db.select().from(legs).all().length;
+    await expect(
+      api.legs.create({
+        kind: "openai-compatible",
+        name: "local",
+        config: { baseUrl: "http://localhost:9/v1" },
+        secret: "sk-local-test-key",
+      }),
+    ).rejects.toThrow(
+      "The test failed, so nothing was saved: Nothing answers at http://localhost:9/v1. Fix it and try again, or save it disabled.",
+    );
+    expect(saved()).toBe(0);
+    // Its trial home is gone with it.
+    const left = existsSync(join(dir, "legs"))
+      ? (await import("node:fs")).readdirSync(join(dir, "legs"))
+      : [];
+    expect(left.filter((n) => n.startsWith("trial-"))).toEqual([]);
+  });
+
+  it("saves it disabled when I ask, after a failed test", async () => {
+    const { api } = await start(fakeLeg({ ok: false, detail: "Nothing answers." }));
+    const leg = await api.legs.create({
+      kind: "openai-compatible",
+      name: "local",
+      config: { baseUrl: "http://localhost:9/v1" },
+      saveDisabled: true,
+    });
+    expect(leg.enabled).toBe(false);
+    expect(leg.health).toBe("disabled");
+  });
+
+  it("saves one that passes, tested", async () => {
+    const { api } = await start();
+    const leg = await api.legs.create({
+      kind: "openai-compatible",
+      name: "local",
+      config: { baseUrl: "http://localhost:9/v1" },
+    });
+    expect(leg.health).toBe("healthy");
+  });
+});
+
 describe("adding Legs", () => {
   it("creates a Claude Code account dir I log into, and tests it straight away", async () => {
     const { api, dir } = await start();

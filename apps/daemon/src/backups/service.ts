@@ -46,10 +46,12 @@ import {
   PLACED,
   pgFormatOf,
   plainError,
+  readSizes,
   readTest,
   restoreCommand,
   sane,
   secretLine,
+  sizeCommand,
   testCommand,
 } from "./dump.ts";
 import {
@@ -70,6 +72,14 @@ import {
 // hashing it on the way. Passwords and private keys are in the keychain.
 
 type PlanRow = typeof backupPlans.$inferSelect;
+
+/** A plan's databases and their sizes, read with its login (ADR-043). */
+export interface DatabaseSizes {
+  plan: string;
+  target: BackupTarget;
+  databases: { name: string; bytes: number }[];
+  error: string | null;
+}
 type RunRow = typeof backupRuns.$inferSelect;
 
 const PASSWORD = (planId: string) => `backup.plan.${planId}.password`;
@@ -356,6 +366,66 @@ export class Backups {
 
   plan(id: string): Promise<BackupPlanView> {
     return this.#planView(this.#planRow(id));
+  }
+
+  /**
+   * Each database's size on a server, read with its backup plans' logins
+   * (ADR-043: more with the credentials of ADR-044): PostgreSQL and
+   * MySQL/MariaDB plans, one read each; the password on stdin, never on a
+   * command line; an error in words, scrubbed of it. SQLite plans give
+   * their file, sized by the insight itself.
+   */
+  async databaseSizes(serverId: string): Promise<DatabaseSizes[]> {
+    const rows = this.d.db
+      .select()
+      .from(backupPlans)
+      .where(eq(backupPlans.serverId, serverId))
+      .orderBy(backupPlans.name)
+      .all();
+    const out: DatabaseSizes[] = [];
+    let client: Client | undefined;
+    for (const p of rows) {
+      if (p.target.kind === "sqlite") {
+        if (p.target.path && !p.target.container)
+          out.push({ plan: p.name, target: p.target, databases: [], error: null });
+        continue;
+      }
+      const command = sizeCommand(p.target);
+      if (!command) continue;
+      const password = await this.d.secrets.get(PASSWORD(p.id));
+      try {
+        checkTarget(p.target);
+        client ??= await this.d.servers.client(serverId);
+        const r = await exec(client, command, {
+          stdin: `${secretLine(p.target.kind, password)}\n`,
+          timeoutMs: 30_000,
+        });
+        if (r.code !== 0) {
+          const srv = this.d.servers.row(serverId);
+          out.push({
+            plan: p.name,
+            target: p.target,
+            databases: [],
+            error: plainError(p.target, r.code, `${r.stdout}\n${r.stderr}`, {
+              server: srv.name,
+              user: srv.user,
+              password,
+            }),
+          });
+          continue;
+        }
+        const all = readSizes(r.stdout);
+        out.push({
+          plan: p.name,
+          target: p.target,
+          databases: p.target.database ? all.filter((x) => x.name === p.target.database) : all,
+          error: null,
+        });
+      } catch (error) {
+        out.push({ plan: p.name, target: p.target, databases: [], error: words(error) });
+      }
+    }
+    return out;
   }
 
   #check(p: {

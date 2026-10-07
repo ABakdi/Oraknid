@@ -79,11 +79,24 @@ Legs (2026-10-07).
 - **Command palette (⌘K / Ctrl+K)**: jump to anything, and run any
   control (pause job, new job, approve…). A job shows its name with its
   description under it, and is found by either (2026-10-04).
+  As built (2026-10-07, `command-palette.tsx`, `lib/palette.ts`): it
+  jumps to the pages, my projects, jobs, inbox items, chats, servers,
+  Legs, local models, skills, GitHub repos and the guide's pages, and runs
+  New work, New chat, Open the terminal, Check for updates, Pause, Resume
+  and Cancel a job (Cancel asks a second time, naming what happens) and
+  each option of an open approval (Approve, Deny…). The search is fuzzy
+  (each word's letters in order, a plain match and a word's start first),
+  over the name, what is under it and its words, at most eight of a group
+  so every group shows. With nothing typed it lists what I opened from it
+  lately (eight, on this device), then the pages and controls. Its lists
+  load when it opens, each on its own (no GitHub leaves the rest).
 - **The sidebar folds** to icons (a button, or `[`), remembered per
   device; pages with a side panel of their own (Chats, Terminal, Email,
   a job opened in a project's Work tab) fold it by themselves while
   they are open. Above the fold button, Oraknid's version and whether
   an update waits (2026-10-04, [[ADR-048-Updates]]; Settings → About & updates).
+  When the sleep lock can't be taken, **may sleep** in the header (yellow,
+  its reason in a tooltip; [[Durability]] → Sleep inhibition, 2026-10-07).
 - **Pages use their space** (2026-10-03): a page with more than one
   concern is in tabs, the tab in the address; each tab fills the height
   it needs, a conversation takes the whole height like Chats; changing
@@ -102,6 +115,11 @@ Legs (2026-10-07).
   touch targets are at least 44 px (buttons, fields, tabs and the close
   of every dialog, on any touch screen). More closes on a tap outside,
   on Esc and when I pick a page; nothing on a phone traps me.
+- **Full rights, on the device** (2026-10-07, [[ADR-030-Device-Rights]]):
+  a device with full rights shows it in the header on every page ("Full
+  rights", "Full rights, away" through The Nest), and on the Terminal
+  away from home, with what it allows and that each use away from home
+  is in the audit log. A standard device shows nothing.
 - **Going back** (2026-10-03): everything I drill into has a back
   control before its title: a job (back to its project's Work), a draft,
   a Leg opened from elsewhere, a skill, an inbox item, and on a phone a
@@ -133,10 +151,10 @@ Legs (2026-10-07).
 | :-- | :-- |
 | **Plan usage** | (2026-10-03, [[ADR-039-Plan-Usage-In-View]]) A row per Claude Code Leg (and any Leg with windows), the one closest to a limit first: each window fullest first, as a bar and a percentage, when it resets, Oraknid's tokens in it, and how old the figures are ("as of 4 min ago"); near (80%) and at (100%) the limit said in words. Fresh figures are asked for every minute while it is open. |
 | **Legs now** | One card per Leg: state (idle / working / waiting / rate-limited / down), the model in use, the current task, context used by the current session. Its windows are in Plan usage. |
-| **Activity stream** | Every Leg's and The Eye's actions as they happen, filterable by job, Leg and kind. Leg output appears as condensed lines that expand. |
+| **Activity stream** | Every Leg's and The Eye's actions as they happen, filterable by job, Leg and kind. Leg output appears as condensed lines that expand. As built (2026-10-07, `overview-activity.tsx`, `lib/events.ts`): each line says what happened in words ("Said", "Task", "Asks you", "Used away from home"…, the raw type on hover), with its Leg and its job; three filters (every job / a job, every Leg / a Leg, every kind / jobs, tasks, Leg output, Legs, inbox, approvals and rules, The Eye, the helper, projects and repos, servers and terminal, devices and the lock, Oraknid itself); a Leg's output (what it said, thought or ran) is its first line, cut at 140 characters, and opens to all of it. A project's Activity tab names its lines the same way. |
 | **Health** | (2026-10-04, [[ADR-050-Parallel-By-Default]]) The computer: all good, needs a look, or in danger; tasks running at once of the most allowed (decided by this computer, or my limit); memory, CPU and swap now; anything wrong (memory and swap, a full disk, the OOM killer, heat, a session running away) with what Oraknid did; the tasks paused to make room. While in danger a red banner says the same on every page. |
 | **Problems** | Errors, drift events, kills, escalations, blocked jobs. Each links to the evidence. |
-| **Resources** | Per Leg and per process: CPU, RAM, GPU and VRAM (local models), disk I/O, network. Sparklines, with the full chart a click away. |
+| **Resources** | Per Leg and per process: CPU, RAM, GPU and VRAM (local models), disk I/O, network. Sparklines, with the full chart a click away. As built (2026-10-07, `overview-resources.tsx`): the computer (CPU, memory, disk I/O, network, each GPU with its VRAM), then the processes grouped per Leg (each session's process tree under its Leg, local models together, Oraknid's own last), each group's sum and each process's CPU, RAM, VRAM and disk read and written. Network is measured for the whole computer, not per process (said under the list). A sparkline, or a process's CPU or RAM, opens its full chart in a dialog, over 5 minutes, 15 minutes or an hour (what the daemon keeps), live. |
 | **Running now** | (2026-10-03, [[ADR-034-Projects-First]]) Every job going, waiting, paused or queued, across projects: its name and description (2026-10-04), its project, its progress, a queued mark, and Pause or Resume on its row. A job opens in its project's Work tab. `/jobs` comes here. |
 | **Totals** | Tokens today, by Leg. Jobs running and queued (the tile goes to Running now). Inbox count. |
 | **The last two weeks** | (2026-10-03) The charts across every project (Charts, below): tasks done per day, success and failure by Leg and by task kind, the Legs compared, cost once money is counted. |
@@ -193,6 +211,14 @@ soon as a model can" until then), its state, branch and tokens, and
   branch, with a confirmation; conflicting files are listed.
 - **Plan editor:** drag to reorder dependencies, edit task text, add and
   remove tasks. Running tasks are paused before an edit is applied.
+
+A finished job's **result** (the folder, branch, commits, Merge) also
+has **Remove worktree** (its folder goes, its branch stays; work not
+merged or not committed is said and asked again) and **Export** (the
+job as a zip, [[ADR-061-Moving-Oraknid]]), 2026-10-07. A project's page
+has **Export** (every job of it) and, for a project with GitHub-linked
+repos, **Clone again** (a folder missing on this computer, after a
+move).
 
 ### Charts (job, project and global level)
 
@@ -356,6 +382,15 @@ Its page is in tabs, in the address (`/projects/<id>/<tab>`):
   when it waits for a new server).
 - **Skills**, **Servers**, **Network** (the ports on this computer its
   jobs may reach, like a local database; [[Sandboxing]]).
+- **Secrets** (2026-10-07, [[ADR-059-Project-Secrets]]): the project's API
+  keys and `.env` values for one environment at a time (`dev`, `testing`,
+  `production`, chosen at the top), and which one new jobs run in. Each
+  is a row: its name, `••••••••`, when it was set, **Replace** (a
+  password box, empty: the old value is never shown) and **Remove**
+  (asked first). **Add** takes a name (upper case, an environment
+  variable's) and a value; a pasted `.env` sets many at once and says
+  the lines it skipped, by number, never by value. Changing them away
+  from home needs a device with full rights.
 
 **Open folder** and **Terminal here** in its header (2026-10-04): the
 project's folder in this computer's file manager, to look at or test the
@@ -379,6 +414,12 @@ I go; **Start** and **Delete**. **Start** stays disabled until there is
 a goal and a project, and says why; what it waits for that can be set
 up (a Leg, a tool) is offered beside it. Its budget starts as the
 chosen project's. Once started, it lands in the project's Eye tab.
+When the sandbox doesn't work on this computer (2026-10-07,
+[[ADR-006-Sandbox]]) a red note says so with why and that `oraknid
+doctor` says how to fix it; a draft then has the switch **Run this job
+without the sandbox (asks first)**, and Start asks "Run this job without
+the sandbox?" (its agents get my rights on this computer; recorded,
+shown in red). Without the switch Start is refused in words.
 
 ### New project (2026-10-04, M13.19)
 
@@ -519,6 +560,22 @@ end wrote it). A server marked production, on its page or in a project,
 has a red **production** badge in its header. Each part shows when it was read and a Refresh; what it
 couldn't read is in a yellow box with why. On a phone everything is a
 list that wraps, nothing scrolls sideways.
+
+A server not reached for a while ([[ADR-026-Servers]]) keeps its last
+document and readings, with a **stale since …** badge in its header and a
+yellow dot in the list (2026-10-07).
+
+**Sites** (2026-10-07, [[ADR-060-Sites-Domains-And-Uptime]]), first in
+the Servers list (`/servers/sites`): every domain across my servers, a
+row each: up, down (since when) or not checked; its server and proxy, or
+"added by hand"; the last check (status, latency, or the error in
+words) and its uptime over 24 hours and 7 days, with the last day's
+latency as a sparkline; the certificate's end (red under two weeks, or
+ended) and issuer; DNS (its addresses, a CNAME, whether it points at
+its server). **Find sites** reads my servers' proxies; a domain or a URL
+can be added by hand; each row has Check now, Remove (asked first), a
+switch to stop checking it and how often (1 to 60 minutes). It reads
+again every minute while in sight.
 
 ### Cloud storage (2026-10-03, [[ADR-046-Cloud-Storage]])
 
@@ -722,7 +779,10 @@ in the component, not again as buttons beside Submit. An agent stuck on
 blocks (ADR-053) is an approval listing each blocked action and its
 reason, answered "Let it run this one" or "Keep it blocked". Each item names its
 project and job (the job's description on hover, 2026-10-04). Filters: project, job, kind, state, and a search over
-the text.
+the text. As built (2026-10-07): State is Open (the default), Answered,
+Withdrawn, Expired or every state; with Open, "Show answered (n)"
+under the list goes to every state; the item I came to see stays shown
+whatever the filters.
 
 ### Legs
 
@@ -786,7 +846,13 @@ In tabs, each one concern in sections; the tab is in the address
 (`/settings/<tab>`), and changing tabs keeps the way back to the page
 that opened Settings:
 - **General**: this computer (keychain, sandbox, sleep inhibition),
-  storage use and pruning, notifications, theme.
+  storage use and pruning, notifications, theme. Storage also lists
+  **Finished jobs' worktrees** with their sizes, what each would lose
+  (commits not merged, files not committed), a remove button each (it
+  asks, and says what is lost) and **Clean up finished jobs' worktrees**
+  (the ones with nothing to lose; the others named), and **Import a job
+  or project zip** (2026-10-07, [[Sandboxing]] → Worktrees,
+  [[ADR-061-Moving-Oraknid]]).
 - **Eye & jobs**: The Eye's models and the interview's rounds; **Jobs at
   once** (jobs at once, tasks at once in a job, and **Claude share of a
   job**, 2026-10-07, [[ADR-052-A-Harness-For-Any-Model]] §3: Claude as
@@ -835,6 +901,14 @@ that opened Settings:
   for its kept secrets) and lists Server, Database and Where to, each
   ✓, ✗ or not tried with its words; a database it lists is one click
   away. At 390 px every field is one column, nothing scrolls sideways.
+- **About & updates → Moving** (2026-10-07, [[ADR-061-Moving-Oraknid]]):
+  **Move to another computer**: a passphrase typed twice (12 characters
+  or more) and **Export everything** (a one-time download of the
+  encrypted archive, with what it holds); on a fresh install, an archive
+  and its passphrase and **Import** (its secrets and settings now; "Restart
+  Oraknid to finish", and how many projects' folders aren't here).
+  Otherwise it says importing is for a fresh install, or `oraknid import
+  --replace`.
 - **About & updates** (2026-10-04, [[ADR-048-Updates]]): the version
   running, its channel (dev or stable) and how it was installed
   (install.sh, from which ref, into which folder; or "running from a

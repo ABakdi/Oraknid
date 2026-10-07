@@ -103,7 +103,7 @@ and a job's quota share stops routing to a Leg past it.
 
 When no allowed Leg has quota, the job goes `blocked` with the earliest
 reset time. A timer resumes it at the reset, and I'm notified both
-times. An agent's own words count as its quota ("Individual quota reached …
+times (the resume is `job.resumed`, 2026-10-07). An agent's own words count as its quota ("Individual quota reached …
 Resets in 51h49m11s", 2026-10-07): it is out until then and never
 routed to, and the blocked job names it and the time ("Antigravity is
 out of quota until …"); a paused Leg is named as paused, with what to

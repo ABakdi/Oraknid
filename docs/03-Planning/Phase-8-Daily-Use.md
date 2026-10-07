@@ -45,7 +45,7 @@ to a model or to ask Oraknid to do things for me.
 
 ### M8.7 — The Oraknid helper
 - [x] A floating chat at the bottom left that does things for me through Oraknid's own API: creating a project or a draft, changing settings, finding things; it asks what it needs, and asks before starting a job, creating a repo or deleting ([[ADR-024-Oraknid-Helper]])
-- [ ] Checked live 2026-10-02: from one sentence it made a project from a new folder, a draft in it, and proposed the start, which ran on my Confirm. Still to add: more of the API as actions (Chats, GitHub repos list, inbox answers)
+- [x] Checked live 2026-10-02: from one sentence it made a project from a new folder, a draft in it, and proposed the start, which ran on my Confirm. Added 2026-10-07: more of the API as actions, each through the UI's own procedure: finding agents, any Settings setting by name, editing a draft, waiving a gate, chats (open, continue, list), my GitHub repos, inbox answers (an approval confirmed), deleting a chat, skill or project and removing a Leg or server (confirmed), the home-only rule per device ([[ADR-024-Oraknid-Helper]] → As built 2026-10-07). Tested in `helper-actions.test.ts`; the new actions not yet tried live
 
 ## Exit criterion
 

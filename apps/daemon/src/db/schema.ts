@@ -914,3 +914,79 @@ export const localModels = sqliteTable("local_models", {
   lastUsedAt: integer("last_used_at"),
   createdAt: integer("created_at").notNull(),
 });
+
+/**
+ * A project's secrets (ADR-059): one row per name and environment; the
+ * value is in the keychain under `project.secret.<id>`, never here.
+ */
+export const projectSecrets = sqliteTable(
+  "project_secrets",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id").notNull(),
+    environment: text("environment", { enum: ["dev", "testing", "production"] }).notNull(),
+    name: text("name").notNull(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [uniqueIndex("project_secrets_name").on(t.projectId, t.environment, t.name)],
+);
+
+/**
+ * Sites across my servers (ADR-060): a domain, where it is served, what
+ * its DNS and certificate said last, and its uptime state.
+ */
+export const sites = sqliteTable("sites", {
+  id: text("id").primaryKey(),
+  /** The domain, lower case. */
+  host: text("host").notNull().unique(),
+  /** What the uptime check GETs. */
+  url: text("url").notNull(),
+  /** The server whose proxy serves it; null for one I added by hand. */
+  serverId: text("server_id"),
+  /** nginx, caddy, traefik, haproxy, or owner (added by hand). */
+  source: text("source").notNull(),
+  upstream: text("upstream"),
+  /** Removed by me: found again, it stays hidden. */
+  hidden: integer("hidden", { mode: "boolean" }).notNull().default(false),
+  checkEnabled: integer("check_enabled", { mode: "boolean" }).notNull().default(true),
+  intervalMin: integer("interval_min").notNull().default(5),
+  lastCheckAt: integer("last_check_at"),
+  /** The last check: up, down, or null before any. */
+  up: integer("up", { mode: "boolean" }),
+  /** Failed checks in a row. */
+  fails: integer("fails").notNull().default(0),
+  /** Down (notified) since; null when up. */
+  downSince: integer("down_since"),
+  /** What DNS said: A, AAAA, CNAME and whether it points at its server. */
+  dns: json<{
+    a: string[];
+    aaaa: string[];
+    cname: string[];
+    pointsHere: boolean | null;
+    error: string | null;
+  }>("dns"),
+  dnsAt: integer("dns_at"),
+  certExpiresAt: integer("cert_expires_at"),
+  certIssuer: text("cert_issuer"),
+  certNames: json<string[]>("cert_names"),
+  certValid: integer("cert_valid", { mode: "boolean" }),
+  certError: text("cert_error"),
+  certAt: integer("cert_at"),
+  createdAt: integer("created_at").notNull(),
+});
+
+/** Each uptime check of a site (ADR-060), kept 7 days. */
+export const siteChecks = sqliteTable(
+  "site_checks",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    siteId: text("site_id").notNull(),
+    at: integer("at").notNull(),
+    up: integer("up", { mode: "boolean" }).notNull(),
+    status: integer("status"),
+    latencyMs: integer("latency_ms"),
+    error: text("error"),
+  },
+  (t) => [index("site_checks_site").on(t.siteId, t.at)],
+);

@@ -22,26 +22,27 @@ import { createOpenAICompatibleAdapter } from "@oraknid/leg-openai-compatible";
 import { createOpenCodeAdapter } from "@oraknid/leg-opencode";
 import { createOraknidAgentAdapter } from "@oraknid/leg-oraknid-agent";
 import type { LegAdapter } from "@oraknid/leg-sdk";
+import { call, ORPCError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/node";
 import { eq } from "drizzle-orm";
 import express from "express";
 import { z } from "zod";
-import { router } from "./api/router.ts";
+import { type ApiContext, router } from "./api/router.ts";
 import { startAuditExport } from "./audit/audit.ts";
 import { Devices, tokenOf } from "./auth/devices.ts";
-import { AppLock, LOCK_FREE, remoteAllowed, unlockOf } from "./auth/lock.ts";
+import { AppLock, LOCK_FREE, needsFullRights, remoteAllowed, unlockOf } from "./auth/lock.ts";
 import { Backups } from "./backups/service.ts";
 import { Chats } from "./chats/service.ts";
 import { attachCloudRoutes, Downloads } from "./cloud/routes.ts";
 import { Cloud } from "./cloud/service.ts";
 import { STORAGE_TOOL, storageServer } from "./cloud/tool.ts";
-import { closeDatabase, openDatabase } from "./db/open.ts";
+import { closeDatabase, openDatabase, startIdleCheckpoint } from "./db/open.ts";
 import { jobs as jobsTable, projects as projectsTable, tasks as tasksTable } from "./db/schema.ts";
 import { SideEffects } from "./engine/effects.ts";
 import { JobStore } from "./engine/jobs.ts";
 import { StepJournal } from "./engine/journal.ts";
 import { recover } from "./engine/recovery.ts";
-import { type JobProgram, JobRunner } from "./engine/runner.ts";
+import { type JobProgram, JobRunner, noSandboxRefusal } from "./engine/runner.ts";
 import { EventBus } from "./events/bus.ts";
 import { type EyeBrain, PoolLegBrain } from "./eye/brain.ts";
 import { startBudgetWatch } from "./eye/budgets.ts";
@@ -54,7 +55,7 @@ import { startEyeReports } from "./eye/reports.ts";
 import { forgetGuidance, recordAnswer, resumeConversations } from "./eye/talk.ts";
 import { EyeThinking } from "./eye/thinking.ts";
 import { forgetJob } from "./harness/gate.ts";
-import { Helper } from "./helper/service.ts";
+import { Helper, type HelperWho } from "./helper/service.ts";
 import { isLocalRequest } from "./http/guard.ts";
 import { requestIds, tagConsoleWithRequestIds } from "./http/request-id.ts";
 import { InboxStore } from "./inbox/store.ts";
@@ -70,6 +71,8 @@ import { type MailOptions, MailService } from "./mail/service.ts";
 import { EMAIL_TOOL, emailServer } from "./mail/tool.ts";
 import { LocalModels, type LocalModelsOptions } from "./models/service.ts";
 import { MODELS_TOOL, modelsServer } from "./models/tool.ts";
+import { applyPendingImport } from "./moving/move.ts";
+import { attachMovingRoutes } from "./moving/routes.ts";
 import { NestLink } from "./nest/link.ts";
 import { Notifications } from "./notify/notifications.ts";
 import { startNotificationRouter } from "./notify/router.ts";
@@ -81,10 +84,14 @@ import { DEFAULT_HOST, DEFAULT_PORT, isDefaultDataDir, type Paths } from "./path
 import { diskSpace } from "./resources/disks.ts";
 import { startGuard } from "./resources/guard.ts";
 import { thresholdsOf, Work } from "./resources/work.ts";
+import { ProjectSecrets } from "./secrets/service.ts";
+import { ENV_TOOL_NAME, envServer, envTool } from "./secrets/tool.ts";
+import { startRefreshAfterStop } from "./servers/after-end.ts";
 import { resumeServerConversations, serverJobsDir } from "./servers/server-jobs.ts";
 import { Servers } from "./servers/service.ts";
 import { DEFAULT_RUNNING_JOBS, MAX_RUNNING_JOBS, readSetting } from "./settings.ts";
 import { SilkStore } from "./silk/store.ts";
+import { Sites, type SitesDeps } from "./sites/service.ts";
 import { SkillStore } from "./skills/store.ts";
 import { startNightlyBackups } from "./storage/storage.ts";
 import { attachTerminal, TERMINAL_SETTING } from "./term/server.ts";
@@ -123,6 +130,8 @@ export interface DaemonOptions {
   machineReading?: () => MachineReading | null;
   /** Seconds between oraknid-monitor readings (tests: shorter). */
   serverSampleSec?: number;
+  /** Sites: where DNS and certificates are read, and the pace (tests; ADR-060). */
+  sites?: Partial<Pick<SitesDeps, "resolver" | "tls" | "tickMs" | "timeoutMs">>;
   /** How often backup plans are looked at (ms; tests). */
   backupTickMs?: number;
   /** rclone's binary (tests); found on the PATH otherwise (ADR-046). */
@@ -206,6 +215,8 @@ export async function startDaemon(options: DaemonOptions) {
   // Auto mode's rules (ADR-053): CC Safety Net reads a home of Oraknid's own; the bash grammar loads once.
   configureSafetyNet(join(paths.dataDir, "guard"));
   void initParser().catch((e) => console.error("auto mode: the command parser did not load", e));
+  // An archive imported from another computer waits here for this start (ADR-061).
+  const imported = options.dbFile ? false : await applyPendingImport(paths);
   const db = await openDatabase({ file: options.dbFile ?? paths.db, backupsDir: paths.backups });
   // The keychain entries of before belong to the default data folder alone (Audit 2, S2-23).
   const secrets = new Secrets(paths.dataDir, os.keychain, {
@@ -336,8 +347,18 @@ export async function startDaemon(options: DaemonOptions) {
     ...(process.env.VITEST ? { ollamaUrl: null } : {}),
     ...options.models,
   });
+  // A project's secrets per environment: its jobs' variables, its servers' env files (ADR-059).
+  const projectSecrets = new ProjectSecrets({ db, bus, secrets, now });
+  supervisor.attachJobEnv((jobId) => projectSecrets.envForJob(jobId));
+  try {
+    toolRegistry.ensureBuiltIn(envTool(projectSecrets));
+  } catch (error) {
+    // A tool of mine named "env" stays as it is.
+    console.warn(error instanceof Error ? error.message : error);
+  }
   // Oraknid's own tools, answered in the daemon; the storage tool joins once cloud storage is made.
   const builtIns = new Map<string, BuiltInServer>([
+    [ENV_TOOL_NAME, envServer(projectSecrets)],
     [EMAIL_TOOL.name, emailServer(mail)],
     [githubToolDecl.name, githubServer({ db, bus, github, projects: projectsService })],
     [MODELS_TOOL.name, modelsServer(models)],
@@ -446,6 +467,7 @@ export async function startDaemon(options: DaemonOptions) {
     ...(options.serverSampleSec ? { sampleEverySec: options.serverSampleSec } : {}),
   });
   serverService.start();
+  projectSecrets.attachServers(serverService);
   // Cloud storage through rclone, my providers as one pool (ADR-046).
   const cloud = new Cloud({
     db,
@@ -485,6 +507,13 @@ export async function startDaemon(options: DaemonOptions) {
     now,
     ...(options.backupTickMs ? { tickMs: options.backupTickMs } : {}),
   });
+  // Database sizes with the plans' logins, in a server's Databases tab (ADR-043).
+  serverService.insight.sizes = (id) => backupPlans.databaseSizes(id);
+  // A server job that failed or was cancelled refreshes its servers' documents too (ADR-026).
+  startRefreshAfterStop({ db, bus, servers: serverService, now });
+  // Sites across my servers: DNS, certificates, uptime from here (ADR-060).
+  const sites = new Sites({ db, bus, servers: serverService, now, ...options.sites });
+  sites.start();
   // A server added while The Eye waits for one: it asks again with it (ADR-042).
   bus.subscribe((e) => {
     if (e.type === "server.added") serverAdded(inbox);
@@ -498,6 +527,8 @@ export async function startDaemon(options: DaemonOptions) {
     effects,
     inbox,
     bus,
+    // No sandbox here: a job starts only if I chose to run it without one (ADR-006).
+    refuseStart: (job) => noSandboxRefusal(job, os.sandbox.status()),
     program:
       options.program ??
       eyeProgram({
@@ -540,6 +571,7 @@ export async function startDaemon(options: DaemonOptions) {
     mail,
     servers: serverService,
     backups: backupPlans,
+    sites,
     cloud,
     dataDir: paths.dataDir,
     inbox,
@@ -547,6 +579,8 @@ export async function startDaemon(options: DaemonOptions) {
     logsDir: paths.logs,
     workDir: join(paths.dataDir, "helper"),
     now,
+    // Its actions that are the UI's procedures, called with my device's rights (ADR-024).
+    api: (path, input, who) => helperApi(path, input, who),
   });
   // Notifications start before recovery, so "Oraknid recovered" and its questions reach me (Audit 1 → D1-03).
   const notifications = new Notifications({
@@ -690,6 +724,15 @@ export async function startDaemon(options: DaemonOptions) {
         );
         return;
       }
+      // A use of full rights away from home is in the audit log (ADR-030).
+      if (remote && needsFullRights(req.path))
+        bus.publish({
+          type: "device.awayUse",
+          topic: "overview",
+          jobId: null,
+          payload: { device: who, path: req.path },
+          actor: "owner",
+        });
       return next();
     }
     res.status(401).json({
@@ -786,6 +829,11 @@ export async function startDaemon(options: DaemonOptions) {
   os.inhibitor.onChange((state) =>
     bus.publish({ type: "system.inhibitor", topic: "overview", jobId: null, payload: state }),
   );
+  // The WAL folded back when no job is active (ADR-002).
+  const checkpoint = startIdleCheckpoint(db, {
+    idle: () => countActiveJobs(db)() === 0,
+    log: (m) => console.error(m),
+  });
   const inhibit = createInhibitController({
     inhibitor: os.inhibitor,
     activeJobs: countActiveJobs(db),
@@ -850,7 +898,19 @@ export async function startDaemon(options: DaemonOptions) {
     for (const j of db.select().from(jobsTable).where(eq(jobsTable.state, "blocked")).all()) {
       if (j.blockedUntil && j.blockedUntil <= now()) {
         db.update(jobsTable).set({ blockedUntil: null }).where(eq(jobsTable.id, j.id)).run();
-        void runner.resume(j.id).catch((e) => console.error("auto-resume failed", e));
+        void runner
+          .resume(j.id)
+          .then(() =>
+            // I'm told it goes on, as I was told it stopped (Budgets-and-Quotas).
+            bus.publish({
+              type: "job.auto-resumed",
+              topic: `job:${j.id}`,
+              jobId: j.id,
+              payload: { reason: "Its agents have quota again; it goes on by itself." },
+              actor: "oraknid",
+            }),
+          )
+          .catch((e) => console.error("auto-resume failed", e));
       }
     }
   }, 30_000);
@@ -891,63 +951,113 @@ export async function startDaemon(options: DaemonOptions) {
 
   // Files in and out of the pool, and one-time downloads (ADR-046): before the procedures.
   attachCloudRoutes(app, cloud, downloads);
+  // A zip of jobs or a project, and a whole Oraknid's archive, imported (ADR-061).
+  attachMovingRoutes(app, { db, bus, paths, secrets, known: () => secrets.known() });
+  if (imported)
+    bus.publish({
+      type: "oraknid.imported",
+      topic: "overview",
+      jobId: null,
+      payload: { applied: true },
+      actor: "owner",
+    });
   cloud.onTransfer((t) => live.broadcastTransfer(t));
+
+  /** What every procedure is called with: the device asking, and Oraknid's services. */
+  const apiContext = (
+    device: string | null,
+    remote: boolean,
+    session: string | undefined,
+  ): ApiContext => ({
+    device,
+    remote,
+    session,
+    lock,
+    startedAt,
+    webUi,
+    paths,
+    bus,
+    now,
+    inhibitor: () => os.inhibitor.state(),
+    secrets,
+    sandbox: () => sandboxStatus,
+    service: os.service,
+    notifications,
+    recentMetrics: metricsLoop.recent,
+    work,
+    machineHealth: () => guard.health(),
+    jobs: jobsStore,
+    runner,
+    registry,
+    health,
+    planUsage,
+    logins,
+    nest,
+    silk,
+    inbox,
+    projects: projectsService,
+    skills,
+    tools: toolRegistry,
+    decisions,
+    chats,
+    github,
+    repos,
+    hosts,
+    helper,
+    servers: serverService,
+    backups: backupPlans,
+    sites,
+    cloud,
+    downloads,
+    mail,
+    devices,
+    updates,
+    models,
+    projectSecrets,
+    brain,
+    thinking,
+    openPath:
+      options.openPath ??
+      ((path) => spawn("xdg-open", [path], { detached: true, stdio: "ignore" }).unref()),
+    tmpDir: join(paths.dataDir, "tmp"),
+  });
+
+  /** A procedure by its dotted path, for the helper; what the input got wrong said in words. */
+  async function helperApi(path: string, input: unknown, who: HelperWho) {
+    let proc: unknown = router;
+    for (const k of path.split(".")) proc = (proc as Record<string, unknown> | undefined)?.[k];
+    if (!proc) throw new Error(`No procedure ${path}.`);
+    try {
+      return await call(proc as never, input as never, {
+        context: apiContext(who.device, who.remote, undefined),
+      });
+    } catch (error) {
+      if (!(error instanceof ORPCError)) throw error;
+      const issues = (
+        error.data as { issues?: { path?: unknown[]; message: string }[] } | undefined
+      )?.issues;
+      throw new Error(
+        issues?.length
+          ? `Its input was wrong: ${issues
+              .map(
+                (x) =>
+                  `${(x.path ?? []).map((p) => (typeof p === "object" && p ? (p as { key: unknown }).key : p)).join(".")}: ${x.message}`,
+              )
+              .join("; ")}`
+          : error.message,
+      );
+    }
+  }
 
   const rpc = new RPCHandler(router);
   app.use("/api", async (req, res, next) => {
     const { matched } = await rpc.handle(req, res, {
       prefix: "/api",
-      context: {
-        device: (res.locals.device as string | null | undefined) ?? null,
-        remote: res.locals.remote === true,
-        session: res.locals.session as string | undefined,
-        lock,
-        startedAt,
-        webUi,
-        paths,
-        bus,
-        now,
-        inhibitor: () => os.inhibitor.state(),
-        secrets,
-        sandbox: () => sandboxStatus,
-        service: os.service,
-        notifications,
-        recentMetrics: metricsLoop.recent,
-        work,
-        machineHealth: () => guard.health(),
-        jobs: jobsStore,
-        runner,
-        registry,
-        health,
-        planUsage,
-        logins,
-        nest,
-        silk,
-        inbox,
-        projects: projectsService,
-        skills,
-        tools: toolRegistry,
-        decisions,
-        chats,
-        github,
-        repos,
-        hosts,
-        helper,
-        servers: serverService,
-        backups: backupPlans,
-        cloud,
-        downloads,
-        mail,
-        devices,
-        updates,
-        models,
-        brain,
-        thinking,
-        openPath:
-          options.openPath ??
-          ((path) => spawn("xdg-open", [path], { detached: true, stdio: "ignore" }).unref()),
-        tmpDir: join(paths.dataDir, "tmp"),
-      },
+      context: apiContext(
+        (res.locals.device as string | null | undefined) ?? null,
+        res.locals.remote === true,
+        res.locals.session as string | undefined,
+      ),
     });
     if (!matched) next();
   });
@@ -1080,6 +1190,7 @@ export async function startDaemon(options: DaemonOptions) {
       clearInterval(mirrorTimer);
       clearInterval(unclaimed);
       clearInterval(blockedTimer);
+      checkpoint.stop();
       updates.stop();
       budgets.stop();
       naming.stop();
@@ -1094,6 +1205,7 @@ export async function startDaemon(options: DaemonOptions) {
       logins.stopAll();
       chats.stopAll();
       serverService.stop();
+      sites.stop();
       backupPlans.stop();
       cloud.stop();
       await mail.stop();
@@ -1140,6 +1252,7 @@ export async function startDaemon(options: DaemonOptions) {
     projects: projectsService,
     servers: serverService,
     backups: backupPlans,
+    sites,
     cloud,
     mail,
     github,
@@ -1149,6 +1262,7 @@ export async function startDaemon(options: DaemonOptions) {
     models,
     cliToken: devices.cliToken,
     inbox,
+    helper,
     effects,
     recovery,
     naming,

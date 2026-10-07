@@ -63,4 +63,14 @@ me to a page or point at the control I'm looking for.
   drawer is open. On a phone it steps aside anyway and comes back with a
   tap, as before.
 
+## As built (2026-10-07)
+- **The guide covers every screen.** New pages: Finding your way (the
+  palette, the keyboard, Docs, the helper showing me), The inbox, Chats
+  and the helper, Skills, Repos, The terminal in your browser, Settings
+  and updates; `guide.json` orders them with the rest.
+- **The map points to the guide.** A page of `help-map.ts` may name its
+  guide page (`guide`, a slug); the screens text the helper reads says
+  "Guide: /docs/<slug>." beside it, and a test checks every slug is a
+  page of `guide.json` with its `.md`.
+
 Related: [[ADR-024-Oraknid-Helper]] · [[Chats-and-Helper]] · [[Web-UI]] · [[ADR-033-Product-Site]]

@@ -1,4 +1,4 @@
-import type { LegView } from "@oraknid/contracts";
+import type { LegView, NewLeg } from "@oraknid/contracts";
 import { useState } from "react";
 import { ErrorNote, StateBadge } from "@/components/common";
 import { canLogIn, LegLogin } from "@/components/leg-login";
@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { api } from "@/lib/api";
+import { api, message } from "@/lib/api";
 import { t } from "@/lib/i18n";
 
 /** Adding a Leg by hand, tested straight away (Legs → Adding a Leg); from Legs, and wherever one is missing. */
@@ -51,28 +51,31 @@ export function AddLeg({
   const [result, setResult] = useState<LegView | null>(null);
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState(false);
-  const create = async () => {
+  /** Tested before it is saved: a failed test saves nothing, unless I save it disabled. */
+  const create = async (disabled = false) => {
     setBusy(true);
     setError(undefined);
+    const send = (input: NewLeg) =>
+      api.legs.create(disabled ? { ...input, saveDisabled: true } : input);
     try {
       const leg =
         kind === "claude-code"
-          ? await api.legs.create({
+          ? await send({
               kind,
               name,
               config: { binary, ...(configDir ? { configDir } : {}) },
             })
           : kind === "antigravity"
-            ? await api.legs.create({ kind, name, config: { binary: agyBinary, models: [] } })
+            ? await send({ kind, name, config: { binary: agyBinary, models: [] } })
             : kind === "codex"
-              ? await api.legs.create({
+              ? await send({
                   kind,
                   name,
                   config: { binary: codexBinary, models: [] },
                   ...(codexKey && secret ? { secret } : {}),
                 })
               : kind === "opencode"
-                ? await api.legs.create({
+                ? await send({
                     kind,
                     name,
                     config: ownProvider
@@ -94,7 +97,7 @@ export function AddLeg({
                     ...(ownProvider && secret ? { secret } : {}),
                   })
                 : kind === "oraknid-agent"
-                  ? await api.legs.create({
+                  ? await send({
                       kind,
                       name,
                       config: {
@@ -107,7 +110,7 @@ export function AddLeg({
                       },
                       ...(secret ? { secret } : {}),
                     })
-                  : await api.legs.create({
+                  : await send({
                       kind,
                       name,
                       config: { baseUrl },
@@ -403,6 +406,11 @@ export function AddLeg({
               </>
             )}
             <ErrorNote error={error} />
+            {error && /nothing was saved/.test(message(error)) ? (
+              <Button variant="outline" size="sm" disabled={busy} onClick={() => create(true)}>
+                {t("Save it disabled")}
+              </Button>
+            ) : null}
           </div>
         )}
         <DialogFooter>
@@ -420,7 +428,7 @@ export function AddLeg({
               <Button variant="secondary" onClick={() => onOpenChange(false)}>
                 {t("Cancel")}
               </Button>
-              <Button disabled={!name || busy} onClick={create}>
+              <Button disabled={!name || busy} onClick={() => create()}>
                 {busy ? t("Testing…") : name ? t("Add and test") : t("Give it a name")}
               </Button>
             </>

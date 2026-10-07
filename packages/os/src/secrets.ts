@@ -14,6 +14,8 @@ export interface SecretStore {
   get(name: string): Promise<string | undefined>;
   set(name: string, value: string): Promise<void>;
   delete(name: string): Promise<boolean>;
+  /** The names of its entries, never their values (moving Oraknid, ADR-061). */
+  names?(): Promise<string[]>;
 }
 
 export class SecretStoreUnavailable extends Error {

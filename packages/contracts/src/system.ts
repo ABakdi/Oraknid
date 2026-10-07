@@ -67,6 +67,22 @@ export const StorageUsage = z.object({
 });
 export type StorageUsage = z.infer<typeof StorageUsage>;
 
+/** A finished job's worktree on disk (Sandboxing → Worktrees): its size and what removing it loses. */
+export const JobWorktree = z.object({
+  jobId: z.string(),
+  title: z.string(),
+  state: z.string(),
+  folder: z.string(),
+  branch: z.string().nullable(),
+  into: z.string().nullable(),
+  bytes: z.number().int().nonnegative(),
+  /** Commits on its branch not merged into the work branch (the branch stays). */
+  unmerged: z.number().int().nonnegative(),
+  /** Files changed and not committed (lost with the worktree). */
+  uncommitted: z.number().int().nonnegative(),
+});
+export type JobWorktree = z.infer<typeof JobWorktree>;
+
 export const PruneRequest = z.object({
   jobIds: z.array(z.string()).min(1),
   /** Raw logs last written before this time go. */

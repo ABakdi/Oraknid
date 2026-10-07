@@ -25,6 +25,36 @@ sandbox limits damage, but it doesn't make that safe.
   environment to that process only, never logged. Log output is
   scrubbed of known secret values.
 
+## Project secrets (2026-10-07, [[ADR-059-Project-Secrets]])
+- A project's secrets (per environment: `dev`, `testing`, `production`)
+  are values in the keychain (`project.secret.<id>`); SQLite has only
+  their names (`project_secrets`). No call, view, event, export or
+  helper action returns a value: the UI shows `••••••••` and offers
+  Replace and Remove only. Names Oraknid sets itself (`PATH`, `HOME`,
+  `ORAKNID_*`, `GIT_*`, `CLAUDE_*`, `CODEX_*`, `OPENCODE_*`, `XDG_*`,
+  `LD_*`, `SSH_*`…) are refused.
+- A job's sessions get its own project's secrets of its environment as
+  variables in the sandbox's clean environment; another project's never.
+  Unsandboxed jobs, The Eye's planning, chats and the helper get none.
+  Like the Legs' own keys, they reach the sandbox through a private
+  0600 file read and deleted at its start, never its command line,
+  which every user of the computer can read; software running as me
+  could still read a running session's environment (this computer is
+  mine alone, above).
+- On a server they are written by the daemon (the `env` tool's
+  `write_env_file`), never by the agent: `umask 077`, a temporary file
+  renamed into place, `chmod 600`, the values on the command's stdin,
+  never on a command line (a test reads every command the server ran).
+  Only to one of the job's servers; production values only to a
+  production server. The call is an `external-write`, a `deploy` for
+  production values, through the Gate.
+- Every value read becomes a known secret, so events, Leg logs, Silk,
+  results and exports are scrubbed of it. Setting, replacing and
+  removing are audited by name (`project.secret.set`, `.removed`,
+  `project.secrets.used`, `project.secret.written`). Away from home,
+  changing them needs a device with full rights. Deleting a project
+  deletes its secrets.
+
 ## Filesystem and process scope (BR-12)
 
 - Each job works in its own git worktree under the project, or in the
@@ -224,6 +254,22 @@ sandbox limits damage, but it doesn't make that safe.
   real path, never a hidden one or Git's; the providers' credentials
   never leave the daemon, and what the tool returns is untrusted data.
 
+## Moving Oraknid (2026-10-07, [[ADR-061-Moving-Oraknid]])
+- `oraknid export --all` (or Settings → About) holds every keychain entry
+  of this data folder (server keys, tokens, passwords, project secrets)
+  inside an archive encrypted with age to my passphrase (12 characters
+  or more, typed twice; scrypt), never written in clear: the zip is
+  made in memory and encrypted before it is written or downloaded.
+  The web's export is a one-time link for this computer's browser only,
+  home only whatever the device's rights (`moving.*`); so is the import.
+- `oraknid import` stores each secret in the new computer's keychain
+  under that data folder's own id; it refuses a data folder that has
+  projects or jobs unless `--replace` (its database kept with
+  `.backup()` first), and refuses a wrong passphrase or a damaged
+  archive before anything is written.
+- A job's or a project's zip is scrubbed of known secrets and
+  secret-shaped text like `jobs.export`; it holds no keychain value.
+
 ## Mail
 - Mail passwords (app passwords) are in the keychain, never in SQLite.
   An account is saved only once its incoming server (IMAP or POP3) and
@@ -303,7 +349,10 @@ sandbox limits damage, but it doesn't make that safe.
   every device: the PIN and the idle lock, pairing and revoking devices,
   giving rights, The Nest's configuration and registering on a public
   Nest, the encrypted store's passphrase. Rights are given at home, with
-  the PIN again; a device can't widen itself.
+  the PIN again; a device can't widen itself. The device shows its full
+  rights in the header, and each use of them away from home (a call a
+  standard device couldn't make, the helper's too) is in the audit log
+  as `device.awayUse` with the device and the call (2026-10-07).
 - Every response carries a content policy: no framing by another site,
   scripts and images only from Oraknid itself; a request another site
   made my browser send, other than opening a page, is refused.
