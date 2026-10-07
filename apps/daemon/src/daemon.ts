@@ -34,13 +34,13 @@ import { Backups } from "./backups/service.ts";
 import { Chats } from "./chats/service.ts";
 import { attachCloudRoutes, Downloads } from "./cloud/routes.ts";
 import { Cloud } from "./cloud/service.ts";
-import { closeDatabase, openDatabase } from "./db/open.ts";
+import { closeDatabase, openDatabase, startIdleCheckpoint } from "./db/open.ts";
 import { jobs as jobsTable, projects as projectsTable, tasks as tasksTable } from "./db/schema.ts";
 import { SideEffects } from "./engine/effects.ts";
 import { JobStore } from "./engine/jobs.ts";
 import { StepJournal } from "./engine/journal.ts";
 import { recover } from "./engine/recovery.ts";
-import { type JobProgram, JobRunner } from "./engine/runner.ts";
+import { type JobProgram, JobRunner, noSandboxRefusal } from "./engine/runner.ts";
 import { EventBus } from "./events/bus.ts";
 import { type EyeBrain, PoolLegBrain } from "./eye/brain.ts";
 import { startBudgetWatch } from "./eye/budgets.ts";
@@ -69,6 +69,8 @@ import { type MailOptions, MailService } from "./mail/service.ts";
 import { EMAIL_TOOL, emailServer } from "./mail/tool.ts";
 import { LocalModels, type LocalModelsOptions } from "./models/service.ts";
 import { MODELS_TOOL, modelsServer } from "./models/tool.ts";
+import { applyPendingImport } from "./moving/move.ts";
+import { attachMovingRoutes } from "./moving/routes.ts";
 import { NestLink } from "./nest/link.ts";
 import { Notifications } from "./notify/notifications.ts";
 import { startNotificationRouter } from "./notify/router.ts";
@@ -80,10 +82,14 @@ import { DEFAULT_HOST, DEFAULT_PORT, isDefaultDataDir, type Paths } from "./path
 import { diskSpace } from "./resources/disks.ts";
 import { startGuard } from "./resources/guard.ts";
 import { thresholdsOf, Work } from "./resources/work.ts";
+import { ProjectSecrets } from "./secrets/service.ts";
+import { ENV_TOOL_NAME, envServer, envTool } from "./secrets/tool.ts";
+import { startRefreshAfterStop } from "./servers/after-end.ts";
 import { resumeServerConversations, serverJobsDir } from "./servers/server-jobs.ts";
 import { Servers } from "./servers/service.ts";
 import { DEFAULT_RUNNING_JOBS, MAX_RUNNING_JOBS, readSetting } from "./settings.ts";
 import { SilkStore } from "./silk/store.ts";
+import { Sites, type SitesDeps } from "./sites/service.ts";
 import { SkillStore } from "./skills/store.ts";
 import { startNightlyBackups } from "./storage/storage.ts";
 import { attachTerminal, TERMINAL_SETTING } from "./term/server.ts";
@@ -121,6 +127,8 @@ export interface DaemonOptions {
   machineReading?: () => MachineReading | null;
   /** Seconds between oraknid-monitor readings (tests: shorter). */
   serverSampleSec?: number;
+  /** Sites: where DNS and certificates are read, and the pace (tests; ADR-060). */
+  sites?: Partial<Pick<SitesDeps, "resolver" | "tls" | "tickMs" | "timeoutMs">>;
   /** How often backup plans are looked at (ms; tests). */
   backupTickMs?: number;
   /** rclone's binary (tests); found on the PATH otherwise (ADR-046). */
@@ -195,6 +203,8 @@ export async function startDaemon(options: DaemonOptions) {
   // Auto mode's rules (ADR-053): CC Safety Net reads a home of Oraknid's own; the bash grammar loads once.
   configureSafetyNet(join(paths.dataDir, "guard"));
   void initParser().catch((e) => console.error("auto mode: the command parser did not load", e));
+  // An archive imported from another computer waits here for this start (ADR-061).
+  const imported = options.dbFile ? false : await applyPendingImport(paths);
   const db = await openDatabase({ file: options.dbFile ?? paths.db, backupsDir: paths.backups });
   // The keychain entries of before belong to the default data folder alone (Audit 2, S2-23).
   const secrets = new Secrets(paths.dataDir, os.keychain, {
@@ -321,10 +331,20 @@ export async function startDaemon(options: DaemonOptions) {
     ...(process.env.VITEST ? { ollamaUrl: null } : {}),
     ...options.models,
   });
+  // A project's secrets per environment: its jobs' variables, its servers' env files (ADR-059).
+  const projectSecrets = new ProjectSecrets({ db, bus, secrets, now });
+  supervisor.attachJobEnv((jobId) => projectSecrets.envForJob(jobId));
+  try {
+    toolRegistry.ensureBuiltIn(envTool(projectSecrets));
+  } catch (error) {
+    // A tool of mine named "env" stays as it is.
+    console.warn(error instanceof Error ? error.message : error);
+  }
   const broker = new McpBroker({
     registry: toolRegistry,
     sandbox: os.sandbox,
     builtIns: new Map([
+      [ENV_TOOL_NAME, envServer(projectSecrets)],
       [EMAIL_TOOL.name, emailServer(mail)],
       [githubToolDecl.name, githubServer({ db, bus, github, projects: projectsService })],
       [MODELS_TOOL.name, modelsServer(models)],
@@ -429,6 +449,7 @@ export async function startDaemon(options: DaemonOptions) {
     ...(options.serverSampleSec ? { sampleEverySec: options.serverSampleSec } : {}),
   });
   serverService.start();
+  projectSecrets.attachServers(serverService);
   // Cloud storage through rclone, my providers as one pool (ADR-046).
   const cloud = new Cloud({
     db,
@@ -453,6 +474,13 @@ export async function startDaemon(options: DaemonOptions) {
     now,
     ...(options.backupTickMs ? { tickMs: options.backupTickMs } : {}),
   });
+  // Database sizes with the plans' logins, in a server's Databases tab (ADR-043).
+  serverService.insight.sizes = (id) => backupPlans.databaseSizes(id);
+  // A server job that failed or was cancelled refreshes its servers' documents too (ADR-026).
+  startRefreshAfterStop({ db, bus, servers: serverService, now });
+  // Sites across my servers: DNS, certificates, uptime from here (ADR-060).
+  const sites = new Sites({ db, bus, servers: serverService, now, ...options.sites });
+  sites.start();
   // A server added while The Eye waits for one: it asks again with it (ADR-042).
   bus.subscribe((e) => {
     if (e.type === "server.added") serverAdded(inbox);
@@ -466,6 +494,8 @@ export async function startDaemon(options: DaemonOptions) {
     effects,
     inbox,
     bus,
+    // No sandbox here: a job starts only if I chose to run it without one (ADR-006).
+    refuseStart: (job) => noSandboxRefusal(job, os.sandbox.status()),
     program:
       options.program ??
       eyeProgram({
@@ -508,6 +538,7 @@ export async function startDaemon(options: DaemonOptions) {
     mail,
     servers: serverService,
     backups: backupPlans,
+    sites,
     cloud,
     dataDir: paths.dataDir,
     inbox,
@@ -754,6 +785,11 @@ export async function startDaemon(options: DaemonOptions) {
   os.inhibitor.onChange((state) =>
     bus.publish({ type: "system.inhibitor", topic: "overview", jobId: null, payload: state }),
   );
+  // The WAL folded back when no job is active (ADR-002).
+  const checkpoint = startIdleCheckpoint(db, {
+    idle: () => countActiveJobs(db)() === 0,
+    log: (m) => console.error(m),
+  });
   const inhibit = createInhibitController({
     inhibitor: os.inhibitor,
     activeJobs: countActiveJobs(db),
@@ -818,7 +854,19 @@ export async function startDaemon(options: DaemonOptions) {
     for (const j of db.select().from(jobsTable).where(eq(jobsTable.state, "blocked")).all()) {
       if (j.blockedUntil && j.blockedUntil <= now()) {
         db.update(jobsTable).set({ blockedUntil: null }).where(eq(jobsTable.id, j.id)).run();
-        void runner.resume(j.id).catch((e) => console.error("auto-resume failed", e));
+        void runner
+          .resume(j.id)
+          .then(() =>
+            // I'm told it goes on, as I was told it stopped (Budgets-and-Quotas).
+            bus.publish({
+              type: "job.auto-resumed",
+              topic: `job:${j.id}`,
+              jobId: j.id,
+              payload: { reason: "Its agents have quota again; it goes on by itself." },
+              actor: "oraknid",
+            }),
+          )
+          .catch((e) => console.error("auto-resume failed", e));
       }
     }
   }, 30_000);
@@ -859,6 +907,16 @@ export async function startDaemon(options: DaemonOptions) {
 
   // Files in and out of the pool, and one-time downloads (ADR-046): before the procedures.
   attachCloudRoutes(app, cloud, downloads);
+  // A zip of jobs or a project, and a whole Oraknid's archive, imported (ADR-061).
+  attachMovingRoutes(app, { db, bus, paths, secrets, known: () => secrets.known() });
+  if (imported)
+    bus.publish({
+      type: "oraknid.imported",
+      topic: "overview",
+      jobId: null,
+      payload: { applied: true },
+      actor: "owner",
+    });
   cloud.onTransfer((t) => live.broadcastTransfer(t));
 
   const rpc = new RPCHandler(router);
@@ -902,12 +960,14 @@ export async function startDaemon(options: DaemonOptions) {
         helper,
         servers: serverService,
         backups: backupPlans,
+        sites,
         cloud,
         downloads,
         mail,
         devices,
         updates,
         models,
+        projectSecrets,
         brain,
         thinking,
         openPath:
@@ -1022,6 +1082,7 @@ export async function startDaemon(options: DaemonOptions) {
       clearInterval(mirrorTimer);
       clearInterval(unclaimed);
       clearInterval(blockedTimer);
+      checkpoint.stop();
       updates.stop();
       budgets.stop();
       naming.stop();
@@ -1036,6 +1097,7 @@ export async function startDaemon(options: DaemonOptions) {
       logins.stopAll();
       chats.stopAll();
       serverService.stop();
+      sites.stop();
       backupPlans.stop();
       cloud.stop();
       await mail.stop();
@@ -1082,6 +1144,7 @@ export async function startDaemon(options: DaemonOptions) {
     projects: projectsService,
     servers: serverService,
     backups: backupPlans,
+    sites,
     cloud,
     mail,
     devices,

@@ -15,6 +15,7 @@ import {
   Task,
 } from "./entities.ts";
 import { Event } from "./events.ts";
+import { SecretEnvironment } from "./secrets.ts";
 
 // Creating and following projects and jobs (docs/01-Specification/Jobs-and-Projects.md).
 
@@ -136,6 +137,8 @@ export const NewJob = z.object({
   verify: z.array(z.string().min(1)).default([]),
   /** Run without the sandbox: explicit, audited, shown in red (ADR-006). */
   unsandboxed: z.boolean().default(false),
+  /** Which of its project's secrets its sessions get (ADR-059); the project's default when left out. */
+  environment: SecretEnvironment.optional(),
 });
 export type NewJob = z.infer<typeof NewJob>;
 

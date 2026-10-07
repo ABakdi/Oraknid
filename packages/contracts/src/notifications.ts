@@ -31,6 +31,14 @@ export const NotifyEvent = z.enum([
   "update.available",
   /** The machine in danger: memory, swap, disk, a runaway session (ADR-050), once per incident. */
   "machine.danger",
+  /** A job paused for quota resumed by itself at the reset (Budgets-and-Quotas). */
+  "job.resumed",
+  /** Taking the sleep lock failed: the jobs go on, the machine may sleep (Durability). */
+  "sleep.problem",
+  /** A site down twice in a row, once (ADR-060). */
+  "site.down",
+  /** A site that was down answers again (ADR-060). */
+  "site.up",
 ]);
 export type NotifyEvent = z.infer<typeof NotifyEvent>;
 

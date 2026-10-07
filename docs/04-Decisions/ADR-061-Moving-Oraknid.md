@@ -59,6 +59,24 @@ project as a zip, which wasn't built.
 - A wrong passphrase, a damaged archive or one from a newer Oraknid is
   refused before anything is replaced.
 
+## As built (2026-10-07)
+- `apps/daemon/src/moving/`: `zip.ts` (a small zip writer and reader:
+  deflate or store, CRC checked, names relative with no `..`, 500 MB
+  inflated at most for a records zip), `records.ts` (export and import of
+  jobs), `move.ts` (the archive), `reclone.ts` (Clone again),
+  `routes.ts` (the two uploads). Archives are made in memory.
+- A records zip holds `rows.json` beside `job.json` so the import puts
+  the rows back as they were (an active job becomes `cancelled`, its
+  worktree null, its sessions' logs under this data folder); sessions
+  whose Legs aren't here are kept but not listed by `sessions.list`.
+- The passphrase is 12 characters or more (the archive's only lock).
+- The web's import stages the database; there is no restart from the
+  page: "Restart Oraknid to finish" (`oraknid stop`, `oraknid start`).
+- The CLI's `oraknid export --all` reads the keychain itself (the
+  encrypted file's passphrase is asked when there is no keychain) and
+  the database through `.backup()` of the file, with or without the
+  daemon running; `oraknid import` needs it stopped.
+
 ## Consequences
 - The archive holds every secret; its passphrase is the only lock. I
   keep it as I keep a password manager's export.

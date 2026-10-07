@@ -8,12 +8,14 @@ import { LegComparison, TokensChart } from "@/components/charts";
 import { BackButton, Empty, ErrorNote, Loading, PageHeader, Stat } from "@/components/common";
 import { EyeChat } from "@/components/eye-chat";
 import { ProjectBudgetCard } from "@/components/job-budget";
+import { CloneAgainButton, ExportRecordsButton } from "@/components/moving";
 import { NewProjectDialog } from "@/components/new-project";
 import { type PageTab, PageTabs } from "@/components/page-tabs";
 import { ProjectList } from "@/components/project-list";
 import { ProjectNetworkCard } from "@/components/project-network";
 import { ProjectMenu, ProjectRemovalDialog, type RemovalKind } from "@/components/project-removal";
 import { isSeveral, ProjectReposCard, ProjectRepoTab } from "@/components/project-repo";
+import { ProjectSecretsCard } from "@/components/project-secrets";
 import { ProjectServersCard } from "@/components/project-servers";
 import { ProjectSkillsCard } from "@/components/project-skills";
 import { currentJob, ProjectWork, ProjectWorkflow } from "@/components/project-work";
@@ -295,6 +297,7 @@ function ProjectDetail({
     { id: "skills", label: t("Skills"), content: () => <ProjectSkillsCard projectId={id} /> },
     { id: "servers", label: t("Servers"), content: () => <ProjectServersCard projectId={id} /> },
     { id: "network", label: t("Network"), content: () => <ProjectNetworkCard projectId={id} /> },
+    { id: "secrets", label: t("Secrets"), content: () => <ProjectSecretsCard projectId={id} /> },
   ];
   return (
     <PageTabs
@@ -394,6 +397,8 @@ function ProjectActions({ project }: { project: ProjectView }) {
           <Trash2 className="size-4" />
           {t("Delete…")}
         </Button>
+        <ExportRecordsButton projectId={project.id} />
+        {project.repos.some((r) => r.github) ? <CloneAgainButton projectId={project.id} /> : null}
       </div>
       <ProjectRemovalDialog
         project={project}

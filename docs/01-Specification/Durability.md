@@ -13,7 +13,10 @@ does anything twice.
   OpenRC or runit service running as me ([[ADR-036-One-Script-Install]]).
 - `oraknid` CLI: alone, the terminal app ([[Terminal-App]]); `start`,
   `stop`, `status`, `logs`, `open` (opens the UI), `pair`, `pin`,
-  `doctor` (checks the setup and says what is wrong), `install`
+  `doctor` (checks the setup and says what is wrong), `start-job`
+  (a draft; `--unsandboxed` when the sandbox doesn't work here, asked
+  first, [[ADR-006-Sandbox]]), `export --all` and `import`
+  ([[ADR-061-Moving-Oraknid]]), `install`
   (`--gui` adds the web UI), `uninstall`, `update` ([[ADR-048-Updates]]).
 - **An update must start** (2026-10-07): after the install script, the
   new version has to load and, with the service, answer `oraknid status`
@@ -29,7 +32,9 @@ does anything twice.
   state.
 - The UI's header shows whether the inhibitor is held and why.
 - If taking the lock fails, the job continues, the UI shows a warning,
-  and I'm notified once.
+  and I'm notified once (2026-10-07: "may sleep" in the header with the
+  reason, and the `sleep.problem` notification, again only after the
+  lock was held once more).
 
 ## Crash and reboot recovery
 

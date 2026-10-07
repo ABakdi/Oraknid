@@ -52,6 +52,19 @@ local models. Agent permission settings alone are too weak.
   and the worktree's links stay read-only. Before, git there said "not a
   git repository" and agents failed simple git commands.
 
+- 2026-10-07: **no sandbox, no job**, as decided above. `jobs.start`
+  refuses a draft when the sandbox isn't available here, in words that
+  say what to do (fix it: `oraknid doctor`; or start this job without
+  it). Starting it without the sandbox is explicit: `jobs.start` with
+  `unsandboxed` and `confirm` (the New work page's switch "Run this job
+  without the sandbox" and its confirmation; `oraknid start-job <id>
+  --unsandboxed`, which asks y/N), from home or a device with full
+  rights; it is audited (`job.unsandboxed`, actor `owner`) and the job
+  shows its red banner. A job resumed after a restart is not refused.
+- 2026-10-07: **removing a job's worktree** (Sandboxing → Worktrees):
+  per job, or every finished job's from Settings → Storage, with sizes;
+  one with work not merged or not committed only after a confirmation.
+
 ## Why not containers
 Heavier, slower to start per session, and GPU passthrough adds work.
 Kept as a later option.

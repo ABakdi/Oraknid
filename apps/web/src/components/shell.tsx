@@ -22,6 +22,7 @@ import {
   Sparkles,
   SquareTerminal,
   Sun,
+  TriangleAlert,
   Wand2,
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
@@ -251,6 +252,25 @@ export function Shell({ children }: { children: ReactNode }) {
             </TooltipTrigger>
             <TooltipContent>
               {t("Keeping the machine awake: {why}", { why: system.data?.inhibitor.why ?? "" })}
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
+        {system.data?.inhibitor.problem && !awake ? (
+          // Taking the sleep lock failed: the jobs go on, the machine may sleep (Durability).
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="flex items-center gap-1 text-xs text-warning"
+                data-testid="inhibitor-warning"
+              >
+                <TriangleAlert className="size-3.5" />
+                <span className="hidden sm:inline">{t("may sleep")}</span>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              {t("Can't keep the machine awake: {problem}", {
+                problem: system.data.inhibitor.problem,
+              })}
             </TooltipContent>
           </Tooltip>
         ) : null}

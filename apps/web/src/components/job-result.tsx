@@ -2,6 +2,7 @@ import { Copy, FolderOpen, GitMerge } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ErrorNote } from "@/components/common";
+import { ExportRecordsButton } from "@/components/moving";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { RemoveWorktreeButton } from "@/components/worktrees-card";
 import { api, message } from "@/lib/api";
 import { ago } from "@/lib/format";
 import { t } from "@/lib/i18n";
@@ -101,6 +103,8 @@ export function JobResult({ jobId }: { jobId: string }) {
               <FolderOpen className="size-4" />
               {t("Open")}
             </Button>
+            <RemoveWorktreeButton jobId={jobId} onDone={result.reload} />
+            <ExportRecordsButton jobId={jobId} />
           </div>
         ) : null}
         {r.repos.length ? (

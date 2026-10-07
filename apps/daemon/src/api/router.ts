@@ -1,5 +1,6 @@
 import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { Readable } from "node:stream";
 import {
   Autonomy,
   Budget,
@@ -41,6 +42,7 @@ import {
   JobRename,
   JobResult,
   JobView,
+  JobWorktree,
   LegPlanUsage,
   LegView,
   LogSource,
@@ -185,15 +187,19 @@ import type { InboxStore } from "../inbox/store.ts";
 import { discoverAgents } from "../legs/discover.ts";
 import type { LegLogins } from "../legs/login.ts";
 import type { PlanUsage } from "../legs/plan-usage.ts";
-import type { LegRegistry } from "../legs/registry.ts";
+import type { LegRegistry, LegRow } from "../legs/registry.ts";
 import { readSessionLog } from "../legs/session-log.ts";
 import type { MailService } from "../mail/service.ts";
 import type { LocalModels } from "../models/service.ts";
+import { exportAll, isFresh } from "../moving/move.ts";
+import { cloneAgain } from "../moving/reclone.ts";
+import { exportZip } from "../moving/records.ts";
 import type { NestLink } from "../nest/link.ts";
 import type { Notifications } from "../notify/notifications.ts";
 import type { Secrets } from "../os/secrets.ts";
 import type { Paths } from "../paths.ts";
 import { readResources, type Work, writeResources } from "../resources/work.ts";
+import type { ProjectSecrets } from "../secrets/service.ts";
 import {
   ensureServerProject,
   handOver,
@@ -216,6 +222,7 @@ import {
   writeSetting,
 } from "../settings.ts";
 import type { SilkStore } from "../silk/store.ts";
+import type { Sites } from "../sites/service.ts";
 import type { SkillStore } from "../skills/store.ts";
 import { pruneLogs, storageUsage } from "../storage/storage.ts";
 import { TERMINAL_SETTING } from "../term/server.ts";
@@ -229,9 +236,12 @@ import { NotAGitRepo, type Projects } from "../workspace/projects.ts";
 import { ProjectRemoval } from "../workspace/removal.ts";
 import { jobResult, mergeJob, taskDiff } from "../workspace/result.ts";
 import { projectFrom } from "../workspace/sources.ts";
+import { cleanFinishedWorktrees, jobWorktrees, removeJobWorktree } from "../workspace/worktrees.ts";
 import { backupsRouter } from "./backups.ts";
-import { cloudRouter } from "./cloud.ts";
+import { cloudRouter, notAway } from "./cloud.ts";
 import { modelsRouter } from "./models.ts";
+import { projectSecretsRouter } from "./secrets.ts";
+import { sitesRouter } from "./sites.ts";
 import {
   Activity,
   activity,
@@ -272,7 +282,11 @@ export interface ApiContext {
   jobs: JobStore;
   runner: JobRunner;
   registry: LegRegistry;
-  health: { check(id: string): Promise<void> };
+  health: {
+    check(id: string): Promise<void>;
+    /** A Leg not saved yet, tested (Legs spec → Adding a Leg). */
+    trial?(leg: LegRow): Promise<{ ok: boolean; detail: string }>;
+  };
   /** A Leg's plan usage in view (ADR-039). */
   planUsage: PlanUsage;
   /** Logging Claude Code Legs in from the UI. */
@@ -299,6 +313,8 @@ export interface ApiContext {
   servers: Servers;
   /** Scheduled, encrypted database backups (ADR-044). */
   backups: Backups;
+  /** Sites, domains, certificates and uptime (ADR-060). */
+  sites: Sites;
   /** Cloud storage, and one-time download links (ADR-046). */
   cloud: Cloud;
   downloads: Downloads;
@@ -309,6 +325,8 @@ export interface ApiContext {
   updates: Updates;
   /** Local models (ADR-054). */
   models: LocalModels;
+  /** A project's secrets per environment (ADR-059). */
+  projectSecrets: ProjectSecrets;
   brain: EyeBrain;
   /** What The Eye is thinking now, and what it thought (M13.25). */
   thinking?: EyeThinking;
@@ -398,6 +416,62 @@ const GatedActionSchema = z.enum([
 
 /** Errors carry a sentence for the UI (BR-17). */
 const userError = (message: string) => new ORPCError("BAD_REQUEST", { message });
+
+/**
+ * A draft marked to run without the sandbox, by my explicit choice
+ * (ADR-006): confirmed, never away from home on a standard device,
+ * audited as `job.unsandboxed` and shown in red from then on.
+ */
+function runWithoutSandbox(c: ApiContext, id: string, confirmed: boolean) {
+  const job = c.jobs.require(id);
+  if (job.unsandboxed) return;
+  if (job.state !== "draft")
+    throw new Error("Only a job that hasn't started yet can be run without the sandbox.");
+  if (!confirmed)
+    throw new Error(
+      "Running without the sandbox gives the agents your own rights on this computer: confirm it.",
+    );
+  if (c.remote && !c.devices.isFull(c.device))
+    throw new Error(
+      "A job outside the sandbox can only be started on the computer running Oraknid.",
+    );
+  c.jobs.db.update(jobsTable).set({ unsandboxed: true }).where(eq(jobsTable.id, id)).run();
+  c.bus.publish({
+    type: "job.unsandboxed",
+    topic: `job:${id}`,
+    jobId: id,
+    payload: { warning: "This job runs without the sandbox, by my choice." },
+    actor: "owner",
+  });
+}
+
+const DownloadLink = z.object({ url: z.string(), expiresAt: z.number(), name: z.string() });
+const MoveCounts = z.object({
+  projects: z.number(),
+  jobs: z.number(),
+  servers: z.number(),
+  secrets: z.number(),
+});
+
+/** What exporting a job's or a project's records needs (ADR-061). */
+const recordsDeps = (c: ApiContext) => ({
+  db: c.jobs.db,
+  bus: c.bus,
+  logsDir: c.paths.logs,
+  known: () => c.secrets.known(),
+  record: (jobId: string) => jobExport(c, jobId),
+  now: c.now,
+});
+
+/** A file made in memory, downloaded once through a link (ADR-046's downloads). */
+function linkTo(c: ApiContext, file: { name: string; data: Buffer }) {
+  const link = c.downloads.mint(async () => ({
+    stream: Readable.from([file.data]),
+    name: file.name,
+    size: file.data.length,
+  }));
+  return { ...link, name: file.name };
+}
 
 /** A job started: its tools are set up first (ADR-021). */
 async function startJob(c: ApiContext, id: string) {
@@ -1250,9 +1324,13 @@ export const router = {
   },
   /** Database backups: plans, runs, keys, Verify, Restore (ADR-044). */
   backups: backupsRouter,
+  /** Sites across my servers: DNS, certificates, uptime (ADR-060). */
+  sites: sitesRouter,
   /** Cloud storage: providers and the pool (ADR-046). */
   cloud: cloudRouter,
   models: modelsRouter,
+  /** A project's secrets per environment (ADR-059). */
+  projectSecrets: projectSecretsRouter,
   /** A text of mine rephrased by a quick model, for any textarea (Chats-and-Helper → Fix wording). */
   text: {
     polish: base
@@ -2138,12 +2216,31 @@ export const router = {
             throw new Error(
               "A job outside the sandbox can only be made on the computer running Oraknid.",
             );
-          return { id: c.projects.createJob(input) };
+          const id = c.projects.createJob(input);
+          // Which of its project's secrets its sessions get (ADR-059).
+          if (input.environment) c.projectSecrets.setJobEnvironment(id, input.environment);
+          return { id };
         }),
       ),
+    /**
+     * Starts a draft. Without a sandbox on this computer a job is refused
+     * unless I start it explicitly without one: `unsandboxed` with
+     * `confirm`, from home or a device with full rights (ADR-006).
+     */
     start: base
-      .input(z.object({ id: z.string() }))
-      .handler(({ context: c, input }) => guard(() => startJob(c, input.id))),
+      .input(
+        z.object({
+          id: z.string(),
+          unsandboxed: z.boolean().optional(),
+          confirm: z.boolean().optional(),
+        }),
+      )
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          if (input.unsandboxed) runWithoutSandbox(c, input.id, input.confirm === true);
+          return startJob(c, input.id);
+        }),
+      ),
     get: base
       .input(z.object({ id: z.string() }))
       .output(JobView)
@@ -2431,13 +2528,33 @@ export const router = {
       .handler(({ context: c, input }) =>
         guard(() => c.registry.view(c.registry.require(input.id))),
       ),
-    /** Adds a Leg and tests it straight away (Legs spec → Adding a Leg). */
+    /**
+     * Adds a Leg, tested before it is saved (Legs spec → Adding a Leg): a
+     * failed test saves nothing and says what failed, unless I save it
+     * disabled. A Leg with a home of its own to sign in or keep its key in
+     * (Claude Code, Antigravity, Codex) can't pass before it has one: it
+     * is saved, and tested again when signed in.
+     */
     create: base
-      .input(NewLeg)
+      .input(z.intersection(NewLeg, z.object({ saveDisabled: z.boolean().optional() })))
       .output(LegView)
       .handler(({ context: c, input }) =>
         guard(async () => {
-          const leg = await c.registry.create(input);
+          const { saveDisabled, ...rest } = input;
+          const fresh = rest as NewLeg;
+          const signsIn =
+            fresh.kind === "claude-code" || fresh.kind === "antigravity" || fresh.kind === "codex";
+          let failed: string | null = null;
+          if (!signsIn && c.health.trial) {
+            const r = await c.health.trial(c.registry.trialRow(fresh));
+            if (!r.ok) failed = r.detail;
+          }
+          if (failed && !saveDisabled)
+            throw new Error(
+              `The test failed, so nothing was saved: ${failed.replace(/\.?$/, ".")} Fix it and try again, or save it disabled.`,
+            );
+          const leg = await c.registry.create(fresh);
+          if (failed) c.registry.update(leg.id, { enabled: false });
           await c.health.check(leg.id);
           return c.registry.view(c.registry.require(leg.id));
         }),
@@ -2610,6 +2727,69 @@ export const router = {
         lines: tailFile(c.paths.daemonLog, input.lines),
       })),
   },
+  /**
+   * A job or a project as a zip, downloaded once through a link (ADR-061);
+   * the import of one is an upload (`POST /api/records/import`).
+   */
+  records: {
+    exportJob: base
+      .input(z.object({ id: z.string() }))
+      .output(DownloadLink)
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          notAway(c.remote);
+          return linkTo(c, exportZip(recordsDeps(c), { jobId: input.id }));
+        }),
+      ),
+    exportProject: base
+      .input(z.object({ id: z.string() }))
+      .output(DownloadLink)
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          notAway(c.remote);
+          return linkTo(c, exportZip(recordsDeps(c), { projectId: input.id }));
+        }),
+      ),
+  },
+  /**
+   * Moving Oraknid to another computer (ADR-061): everything as one
+   * archive encrypted to a passphrase, downloaded once; the import is an
+   * upload (`POST /api/moving/import`), applied at the next start.
+   */
+  moving: {
+    exportAll: base
+      .input(z.object({ passphrase: z.string().min(1).max(1024) }))
+      .output(DownloadLink.extend({ counts: MoveCounts }))
+      .handler(({ context: c, input }) =>
+        guard(async () => {
+          notAway(c.remote);
+          const r = await exportAll({
+            paths: c.paths,
+            secrets: c.secrets,
+            passphrase: input.passphrase,
+            db: c.jobs.db,
+            now: c.now,
+          });
+          c.bus.publish({
+            type: "oraknid.exported",
+            topic: "overview",
+            jobId: null,
+            payload: { counts: r.manifest.counts },
+            actor: "owner",
+          });
+          return { ...linkTo(c, r), counts: r.manifest.counts };
+        }),
+      ),
+    /** Whether this is a fresh install, which an archive can be imported into. */
+    fresh: base.output(z.boolean()).handler(({ context: c }) => isFresh(c.paths)),
+    /** A project whose folder isn't on this computer: its linked repos cloned again into it. */
+    cloneAgain: base
+      .input(z.object({ projectId: z.string() }))
+      .output(z.object({ cloned: z.array(z.string()) }))
+      .handler(({ context: c, input }) =>
+        guard(() => cloneAgain(c.projects.require(input.projectId), c.github)),
+      ),
+  },
   /** Storage use and pruning (Persistence-and-Recovery → Backups and pruning, M1.9). */
   storage: {
     usage: base.output(StorageUsage).handler(({ context: c }) => storageUsage(c.jobs.db, c.paths)),
@@ -2617,6 +2797,30 @@ export const router = {
       .input(PruneRequest)
       .output(z.object({ files: z.number(), bytes: z.number() }))
       .handler(({ context: c, input }) => guard(() => pruneLogs(c.jobs.db, c.bus, c.paths, input))),
+    /** Finished jobs' worktrees still on disk, with their sizes (Sandboxing → Worktrees). */
+    worktrees: base
+      .output(z.array(JobWorktree))
+      .handler(({ context: c }) => guard(() => jobWorktrees(c.jobs.db))),
+    /**
+     * A finished job's worktree removed, its branch kept; one with work not
+     * merged or not committed only with `confirm`.
+     */
+    removeWorktree: base
+      .input(z.object({ jobId: z.string(), confirm: z.boolean().default(false) }))
+      .output(z.object({ bytes: z.number() }))
+      .handler(({ context: c, input }) =>
+        guard(() => removeJobWorktree(c.jobs.db, c.bus, input.jobId, input.confirm)),
+      ),
+    /** Every finished job's worktree with nothing unmerged or uncommitted; the others named. */
+    cleanWorktrees: base
+      .output(
+        z.object({
+          removed: z.number(),
+          bytes: z.number(),
+          kept: z.array(z.object({ jobId: z.string(), title: z.string() })),
+        }),
+      )
+      .handler(({ context: c }) => guard(() => cleanFinishedWorktrees(c.jobs.db, c.bus))),
   },
   /** Each agent's sessions and what they did (Checkpoint 1 → F1-3). */
   sessions: {
