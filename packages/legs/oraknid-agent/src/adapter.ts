@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
+import { Experimental_StdioMCPTransport as StdioMCPTransport } from "@ai-sdk/mcp/mcp-stdio";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import {
   Channel,
@@ -250,9 +252,30 @@ export function createOraknidAgentAdapter(deps: OraknidAgentDeps = {}): LegAdapt
       let queue = Promise.resolve();
       const checks = (s.checks ?? []).filter((c) => c.trim());
 
+      // The job's tools (ADR-021): Oraknid's bridges to its broker, which judges every call.
+      const mcp: MCPClient[] = [];
+      const mcpTools: ToolSet = {};
+      const mcpProblems: string[] = [];
+      if (mode !== "none")
+        for (const [server, spec] of Object.entries(s.mcpServers ?? {})) {
+          try {
+            const client = await createMCPClient({
+              transport: new StdioMCPTransport({ command: spec.command, args: spec.args }),
+            });
+            mcp.push(client);
+            for (const [name, t] of Object.entries(await client.tools()))
+              mcpTools[`mcp__${server}__${name}`.slice(0, 64)] = t as ToolSet[string];
+          } catch (error) {
+            mcpProblems.push(`${server}: ${(error as Error).message}`);
+          }
+        }
+
       const system = [
         PREAMBLE,
         mode === "none" ? TEXT_ONLY : "",
+        mcpProblems.length
+          ? `Some of this job's tools didn't start: ${mcpProblems.join("; ")}.`
+          : "",
         checks.length
           ? `Before you finish, these checks must pass (run them yourself with bash):\n${checks.map((c) => `- \`${c}\``).join("\n")}`
           : "",
@@ -295,8 +318,8 @@ export function createOraknidAgentAdapter(deps: OraknidAgentDeps = {}): LegAdapt
         return r.output;
       }
 
-      const tools = (signal: AbortSignal): ToolSet =>
-        Object.fromEntries(
+      const tools = (signal: AbortSignal): ToolSet => ({
+        ...Object.fromEntries(
           TOOL_SPECS.map((spec) => [
             spec.name,
             tool({
@@ -306,7 +329,9 @@ export function createOraknidAgentAdapter(deps: OraknidAgentDeps = {}): LegAdapt
                 callTool(spec.name, input ?? {}, o.toolCallId, signal),
             }),
           ]),
-        );
+        ),
+        ...mcpTools,
+      });
 
       /** The work so far in fewer tokens, near the model's window: the task, a summary, the latest steps. */
       async function compact(messages: ModelMessage[], signal: AbortSignal) {
@@ -412,16 +437,29 @@ export function createOraknidAgentAdapter(deps: OraknidAgentDeps = {}): LegAdapt
               const out = pending.get(part.toolCallId);
               pending.delete(part.toolCallId);
               if (out?.length) for (const e of out) events.push(e);
-              else
+              else if (part.type === "tool-error")
                 events.push({
                   type: "tool.result",
                   id: part.toolCallId,
                   ok: false,
-                  output:
-                    part.type === "tool-error"
-                      ? `${part.toolName}: ${errorText(part.error)}`
-                      : clip(String(part.output)),
+                  output: `${part.toolName}: ${errorText(part.error)}`,
                 });
+              else {
+                // A job's tool, answered through the broker: MCP's content as text.
+                const r = part.output as
+                  | { content?: { text?: string }[]; isError?: boolean }
+                  | string;
+                events.push({
+                  type: "tool.result",
+                  id: part.toolCallId,
+                  ok: typeof r === "string" || !r?.isError,
+                  output: clip(
+                    typeof r === "string"
+                      ? r
+                      : (r?.content?.map((c) => c.text ?? "").join("\n") ?? JSON.stringify(r)),
+                  ),
+                });
+              }
               break;
             }
             case "finish-step": {
@@ -569,6 +607,7 @@ export function createOraknidAgentAdapter(deps: OraknidAgentDeps = {}): LegAdapt
           killed = true;
           turn?.abort();
           save(id, { model: s.model, history, todos });
+          await Promise.all(mcp.map((c) => c.close().catch(() => {})));
           events.push({ type: "session.ended", reason: "killed", error: null });
           events.end();
         },

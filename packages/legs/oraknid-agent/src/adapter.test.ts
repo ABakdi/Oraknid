@@ -394,4 +394,50 @@ describe("oraknid-agent: the loop", () => {
     expect(readFileSync(join(start.cwd, "p.sh"), "utf8")).toBe("echo $HOME $$ $&\n");
     await s.kill();
   });
+
+  it("calls the job's tools through their MCP servers (Oraknid's bridges)", async () => {
+    // A tiny stdio MCP server standing in for a bridge to the broker.
+    const dir = mkdtempSync(join(tmpdir(), "oraknid-agent-mcp-"));
+    const file = join(dir, "echo.mjs");
+    writeFileSync(
+      file,
+      `import { createInterface } from "node:readline";
+const send = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
+createInterface({ input: process.stdin }).on("line", (line) => {
+  const m = JSON.parse(line);
+  if (m.id === undefined) return;
+  if (m.method === "initialize")
+    return send({ jsonrpc: "2.0", id: m.id, result: { protocolVersion: m.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "echo", version: "1" } } });
+  if (m.method === "tools/list")
+    return send({ jsonrpc: "2.0", id: m.id, result: { tools: [{ name: "echo", description: "Echoes.", inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] } }] } });
+  if (m.method === "tools/call")
+    return send({ jsonrpc: "2.0", id: m.id, result: { content: [{ type: "text", text: "echo: " + m.params.arguments.text }] } });
+  send({ jsonrpc: "2.0", id: m.id, result: {} });
+});
+`,
+    );
+    const server = await serve((req) =>
+      req.messages.at(-1)?.role === "tool"
+        ? { text: "used the tool" }
+        : { toolCalls: [{ name: "mcp__oraknid-echo__echo", arguments: { text: "hi" } }] },
+    );
+    const s = await createOraknidAgentAdapter().start(
+      startFor(server.baseUrl, {
+        mcpServers: { "oraknid-echo": { command: process.execPath, args: [file] } },
+      }),
+    );
+    const events = await readUntil(s, turnEnded, 15_000);
+    expect(events.at(-1)).toMatchObject({ reason: "completed", text: "used the tool" });
+    expect(events.find((e) => e.type === "tool.called")).toMatchObject({
+      tool: "mcp__oraknid-echo__echo",
+      input: { text: "hi" },
+    });
+    expect(events.find((e) => e.type === "tool.result")).toMatchObject({
+      ok: true,
+      output: "echo: hi",
+    });
+    const sent = server.requests.find((r) => !probeReply(r));
+    expect(sent?.tools?.map((t) => t.function.name)).toContain("mcp__oraknid-echo__echo");
+    await s.kill();
+  });
 });
