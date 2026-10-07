@@ -72,6 +72,7 @@ export const BACKUP_ACTIONS: Record<string, ActionDef> = {
     },
   },
   create_backup_plan: {
+    path: "backups.createPlan",
     description:
       'Create a backup plan for a database on one of my servers. target: {serverId, kind (postgres|mysql|mongodb|redis|sqlite), container (its Docker container name, or null on the host), host, port, database (null: all), user, path (SQLite file), options (optional, per kind: {postgres: {sslmode, schemas, format: plain|custom, extra}} | {mysql: {tls, singleTransaction, routines, events, triggers}} | {mongodb: {authSource, replicaSet, tls, readPreference}} | {redis: {tls}})}; schedule: {kind:"hourly",minute} | {kind:"daily",at:"03:30"} | {kind:"weekly",day:0-6 (0 Sunday),at} | {kind:"cron",line}; destination: {kind:"local",folder} | {kind:"server",serverId,folder}; retention: {count, days} (null: no limit); keyId: an age key id or null. Never ask for the password in the chat: the owner adds it in the plan\'s form.',
     input: PlanInput,
@@ -85,6 +86,7 @@ export const BACKUP_ACTIONS: Record<string, ActionDef> = {
     },
   },
   update_backup_plan: {
+    path: "backups.updatePlan",
     description:
       "Change a backup plan: its id and the fields to change (as in create_backup_plan), or enabled false to pause it.",
     // Left out, `enabled` stays as it is: a rename doesn't switch a paused plan back on.

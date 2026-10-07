@@ -24,6 +24,7 @@ can't use what I use at home; and The Nest should serve other people.
 ### M11.3 — Full rights for a device ([[ADR-030-Device-Rights]])
 - [x] Chosen at pairing and on the device's row, at home, with the PIN
 - [x] Away from home with full rights: terminal through the tunnel (its own channel), servers and the rest; tested end to end
+- [x] Shown on the device (a badge in the header, and on the Terminal away from home), and every use away from home in the audit log (`device.awayUse`, by a call or through the helper), 2026-10-07. Tested: `lock.test.ts` (one event for a full-rights call from away, none for reads or refusals), `helper-actions.test.ts` (refused for a standard device, done and audited with full rights), web `full-rights.test.tsx`
 
 ### M11.4 — A public Nest ([[ADR-031-Public-Nest]])
 - [x] Public mode with self-registration and its limits; private stays the default

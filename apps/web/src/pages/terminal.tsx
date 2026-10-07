@@ -2,6 +2,7 @@ import "@xterm/xterm/css/xterm.css";
 import { Columns2, Grid2x2, Laptop, Maximize2, Plus, Server, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { ErrorNote, Loading, PageHeader } from "@/components/common";
+import { FullRightsBadge } from "@/components/full-rights";
 import { TerminalCard } from "@/components/terminal-card";
 import { Button } from "@/components/ui/button";
 import {
@@ -148,6 +149,8 @@ export function TerminalPage({ target }: { target?: string }) {
   return (
     <div className="-mb-24 flex h-[calc(100dvh-7.5rem)] min-h-0 flex-col gap-2 md:-mb-8 md:h-[calc(100dvh-4.5rem)]">
       <div className="flex shrink-0 items-center gap-1 border-b">
+        {/* Away from home, the terminal is here by this device's full rights (ADR-030). */}
+        <FullRightsBadge status={remote() ? lock.data : null} className="mr-1" />
         <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto [scrollbar-width:none]">
           {sessions.map((s, i) => (
             <div

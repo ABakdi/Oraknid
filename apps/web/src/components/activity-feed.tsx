@@ -3,10 +3,10 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
+import { describe, eventTitle } from "@/lib/events";
 import { clock } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { useEvents, useLive } from "@/lib/live";
-import { describe } from "@/pages/overview";
 
 /**
  * Everything that happened, newest first, live: one job's, or a project's
@@ -63,7 +63,9 @@ export function ActivityFeed({
               <details key={e.seq} className="group">
                 <summary className="flex min-w-0 cursor-pointer gap-2 marker:content-['']">
                   <span className="shrink-0 text-muted-foreground">{clock(e.at)}</span>
-                  <span className="shrink-0 text-primary">{e.type}</span>
+                  <span className="shrink-0 text-primary" title={e.type}>
+                    {t(eventTitle(e))}
+                  </span>
                   {job ? (
                     <span className="hidden max-w-40 shrink-0 truncate font-sans sm:inline">
                       {job}

@@ -281,7 +281,10 @@ sandbox limits damage, but it doesn't make that safe.
   every device: the PIN and the idle lock, pairing and revoking devices,
   giving rights, The Nest's configuration and registering on a public
   Nest, the encrypted store's passphrase. Rights are given at home, with
-  the PIN again; a device can't widen itself.
+  the PIN again; a device can't widen itself. The device shows its full
+  rights in the header, and each use of them away from home (a call a
+  standard device couldn't make, the helper's too) is in the audit log
+  as `device.awayUse` with the device and the call (2026-10-07).
 - Every response carries a content policy: no framing by another site,
   scripts and images only from Oraknid itself; a request another site
   made my browser send, other than opening a page, is refused.

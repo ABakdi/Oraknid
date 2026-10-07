@@ -378,3 +378,7 @@ export const HOME_ONLY = [
 /** What a device away from home may call: with full rights, all but ALWAYS_HOME (ADR-030). */
 export const remoteAllowed = (path: string, full = false) =>
   !(full ? ALWAYS_HOME : HOME_ONLY).some((p) => path.startsWith(p));
+
+/** Allowed away from home only because the device has full rights: each such use is audited (ADR-030). */
+export const needsFullRights = (path: string) =>
+  !remoteAllowed(path, false) && remoteAllowed(path, true);
