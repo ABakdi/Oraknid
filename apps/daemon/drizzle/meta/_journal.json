@@ -288,6 +288,13 @@
       "when": 1791406036860,
       "tag": "0040_attempt_log",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "6",
+      "when": 1791409764335,
+      "tag": "0041_project_secrets_and_sites",
+      "breakpoints": true
     }
   ]
 }
