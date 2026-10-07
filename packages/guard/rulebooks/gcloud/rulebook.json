@@ -1,0 +1,393 @@
+{
+  "rulebook_version": 2,
+  "name": "gcloud",
+  "version": "1.0.0",
+  "description": "Official CC Safety Net rulebook for destructive gcloud operations on documented command paths. Curated coverage, not a complete model of the gcloud CLI.",
+  "author": "cc-safety-net",
+  "allowed_commands": ["gcloud"],
+  "rules": [
+    {
+      "name": "block-gcloud-projects-delete",
+      "command": "gcloud",
+      "match": {
+        "command_path": ["projects", "delete"]
+      },
+      "reason": "Deletes a Google Cloud project and everything in it. Recovery is possible only for a limited period. Ask the user to delete projects.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-gcloud-compute-instances-delete",
+      "command": "gcloud",
+      "match": {
+        "command_path": ["compute", "instances", "delete"]
+      },
+      "reason": "Deletes VM instances and may delete attached disks depending on flags and configuration. Ask the user to delete instances.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-gcloud-storage-rm",
+      "command": "gcloud",
+      "match": {
+        "command_path": ["storage", "rm"]
+      },
+      "reason": "Deletes objects, versions, folders, or buckets; recursive mode can remove all versions. Ask the user to delete storage data.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-gcloud-sql-instances-delete",
+      "command": "gcloud",
+      "match": {
+        "command_path": ["sql", "instances", "delete"]
+      },
+      "reason": "Deletes a Cloud SQL instance and its data. Ask the user to delete database instances.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-gcloud-container-clusters-delete",
+      "command": "gcloud",
+      "match": {
+        "command_path": ["container", "clusters", "delete"]
+      },
+      "reason": "Deletes a GKE cluster. Ask the user to delete clusters.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-gcloud-kms-keys-versions-destroy",
+      "command": "gcloud",
+      "match": {
+        "command_path": ["kms", "keys", "versions", "destroy"]
+      },
+      "reason": "Schedules destruction of a key version, which can make encrypted data permanently unreadable. Ask the user; restore works only before the scheduled destruction.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-gcloud-alpha-projects-delete",
+      "command": "gcloud",
+      "match": {
+        "command_path": ["alpha", "projects", "delete"]
+      },
+      "reason": "Schedules deletion of a Google Cloud project. Some resources can be deleted before the recovery period ends. Ask the user to delete projects.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-gcloud-beta-projects-delete",
+      "command": "gcloud",
+      "match": {
+        "command_path": ["beta", "projects", "delete"]
+      },
+      "reason": "Schedules deletion of a Google Cloud project. Some resources can be deleted before the recovery period ends. Ask the user to delete projects.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-gcloud-alpha-compute-instances-delete",
+      "command": "gcloud",
+      "match": {
+        "command_path": ["alpha", "compute", "instances", "delete"]
+      },
+      "reason": "Deletes VM instances and can delete attached disks according to flags and disk configuration. Ask the user to delete instances.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-gcloud-beta-compute-instances-delete",
+      "command": "gcloud",
+      "match": {
+        "command_path": ["beta", "compute", "instances", "delete"]
+      },
+      "reason": "Deletes VM instances and can delete attached disks according to flags and disk configuration. Ask the user to delete instances.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-gcloud-preview-compute-instances-delete",
+      "command": "gcloud",
+      "match": {
+        "command_path": ["preview", "compute", "instances", "delete"]
+      },
+      "reason": "Deletes VM instances and can delete attached disks according to flags and disk configuration. Ask the user to delete instances.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-gcloud-alpha-storage-rm",
+      "command": "gcloud",
+      "match": {
+        "command_path": ["alpha", "storage", "rm"]
+      },
+      "reason": "Deletes objects, object versions, managed folders, or buckets. Recursive mode removes all object versions. Ask the user to delete storage data.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-gcloud-alpha-sql-instances-delete",
+      "command": "gcloud",
+      "match": {
+        "command_path": ["alpha", "sql", "instances", "delete"]
+      },
+      "reason": "Deletes a Cloud SQL instance and its data. A final backup occurs only when requested. Ask the user to delete database instances.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-gcloud-beta-sql-instances-delete",
+      "command": "gcloud",
+      "match": {
+        "command_path": ["beta", "sql", "instances", "delete"]
+      },
+      "reason": "Deletes a Cloud SQL instance and its data. A final backup occurs only when requested. Ask the user to delete database instances.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-gcloud-alpha-container-clusters-delete",
+      "command": "gcloud",
+      "match": {
+        "command_path": ["alpha", "container", "clusters", "delete"]
+      },
+      "reason": "Deletes a GKE cluster, its nodes, its running Pods, and some related resources. Ask the user to delete clusters.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-gcloud-beta-container-clusters-delete",
+      "command": "gcloud",
+      "match": {
+        "command_path": ["beta", "container", "clusters", "delete"]
+      },
+      "reason": "Deletes a GKE cluster, its nodes, its running Pods, and some related resources. Ask the user to delete clusters.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-gcloud-alpha-kms-keys-versions-destroy",
+      "command": "gcloud",
+      "match": {
+        "command_path": ["alpha", "kms", "keys", "versions", "destroy"]
+      },
+      "reason": "Schedules destruction of a key version, which can make encrypted data permanently unreadable. Ask the user; restore works only before destruction.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-gcloud-beta-kms-keys-versions-destroy",
+      "command": "gcloud",
+      "match": {
+        "command_path": ["beta", "kms", "keys", "versions", "destroy"]
+      },
+      "reason": "Schedules destruction of a key version, which can make encrypted data permanently unreadable. Ask the user; restore works only before destruction.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-gcloud-compute-disks-delete",
+      "command": "gcloud",
+      "match": {
+        "command_path": ["compute", "disks", "delete"]
+      },
+      "reason": "Deletes one or more unattached Compute Engine disks and their data. Ask the user to delete disks.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-gcloud-secrets-versions-destroy",
+      "command": "gcloud",
+      "match": {
+        "command_path": ["secrets", "versions", "destroy"]
+      },
+      "reason": "Destroys a secret version immediately by default. With delayed destruction configured, it disables and schedules the version for destruction. Ask the user before destroying secret versions.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-gcloud-storage-buckets-delete",
+      "command": "gcloud",
+      "match": {
+        "command_path": ["storage", "buckets", "delete"]
+      },
+      "reason": "Deletes one or more Cloud Storage buckets. Ask the user to delete buckets.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-gcloud-compute-snapshots-delete",
+      "command": "gcloud",
+      "match": {
+        "command_path": ["compute", "snapshots", "delete"]
+      },
+      "reason": "Deletes one or more Compute Engine snapshots that can be needed for recovery. Ask the user to delete snapshots.",
+      "intent": "manual_only"
+    }
+  ],
+  "tests": [
+    {
+      "command": "gcloud projects delete my-prod-project",
+      "expect": "blocked",
+      "rule": "block-gcloud-projects-delete"
+    },
+    {
+      "command": "gcloud compute instances delete web-1 --zone us-central1-a",
+      "expect": "blocked",
+      "rule": "block-gcloud-compute-instances-delete"
+    },
+    {
+      "command": "gcloud --project my-prod-project compute instances delete web-1",
+      "expect": "blocked",
+      "rule": "block-gcloud-compute-instances-delete"
+    },
+    {
+      "command": "gcloud --project=my-prod-project compute instances delete web-1",
+      "expect": "blocked",
+      "rule": "block-gcloud-compute-instances-delete"
+    },
+    {
+      "command": "gcloud compute instances delete web-1 --quiet",
+      "expect": "blocked",
+      "rule": "block-gcloud-compute-instances-delete"
+    },
+    {
+      "command": "gcloud storage rm gs://prod-bucket/logs --recursive",
+      "expect": "blocked",
+      "rule": "block-gcloud-storage-rm"
+    },
+    {
+      "command": "gcloud sql instances delete prod-db",
+      "expect": "blocked",
+      "rule": "block-gcloud-sql-instances-delete"
+    },
+    {
+      "command": "gcloud container clusters delete prod --zone us-central1-a",
+      "expect": "blocked",
+      "rule": "block-gcloud-container-clusters-delete"
+    },
+    {
+      "command": "gcloud kms keys versions destroy 3 --key my-key --keyring my-keyring --location global",
+      "expect": "blocked",
+      "rule": "block-gcloud-kms-keys-versions-destroy"
+    },
+    {
+      "command": "gcloud alpha projects delete my-prod-project",
+      "expect": "blocked",
+      "rule": "block-gcloud-alpha-projects-delete"
+    },
+    {
+      "command": "gcloud beta projects delete my-prod-project",
+      "expect": "blocked",
+      "rule": "block-gcloud-beta-projects-delete"
+    },
+    {
+      "command": "gcloud alpha compute instances delete web-1 --zone us-central1-a",
+      "expect": "blocked",
+      "rule": "block-gcloud-alpha-compute-instances-delete"
+    },
+    {
+      "command": "gcloud beta compute instances delete web-1 --zone us-central1-a",
+      "expect": "blocked",
+      "rule": "block-gcloud-beta-compute-instances-delete"
+    },
+    {
+      "command": "gcloud --project my-prod-project beta compute instances delete web-1 --zone us-central1-a",
+      "expect": "blocked",
+      "rule": "block-gcloud-beta-compute-instances-delete"
+    },
+    {
+      "command": "gcloud beta compute --project my-prod-project instances delete web-1 --zone us-central1-a",
+      "expect": "blocked",
+      "rule": "block-gcloud-beta-compute-instances-delete"
+    },
+    {
+      "command": "gcloud preview compute instances delete web-1 --zone us-central1-a",
+      "expect": "blocked",
+      "rule": "block-gcloud-preview-compute-instances-delete"
+    },
+    {
+      "command": "gcloud alpha storage rm gs://prod-bucket/logs --recursive",
+      "expect": "blocked",
+      "rule": "block-gcloud-alpha-storage-rm"
+    },
+    {
+      "command": "gcloud alpha sql instances delete prod-db",
+      "expect": "blocked",
+      "rule": "block-gcloud-alpha-sql-instances-delete"
+    },
+    {
+      "command": "gcloud beta sql instances delete prod-db",
+      "expect": "blocked",
+      "rule": "block-gcloud-beta-sql-instances-delete"
+    },
+    {
+      "command": "gcloud alpha container clusters delete prod --zone us-central1-a",
+      "expect": "blocked",
+      "rule": "block-gcloud-alpha-container-clusters-delete"
+    },
+    {
+      "command": "gcloud beta container clusters delete prod --zone us-central1-a",
+      "expect": "blocked",
+      "rule": "block-gcloud-beta-container-clusters-delete"
+    },
+    {
+      "command": "gcloud alpha kms keys versions destroy 3 --key my-key --keyring my-keyring --location global",
+      "expect": "blocked",
+      "rule": "block-gcloud-alpha-kms-keys-versions-destroy"
+    },
+    {
+      "command": "gcloud beta kms keys versions destroy 3 --key my-key --keyring my-keyring --location global",
+      "expect": "blocked",
+      "rule": "block-gcloud-beta-kms-keys-versions-destroy"
+    },
+    {
+      "command": "gcloud compute disks delete prod-data --zone us-central1-a",
+      "expect": "blocked",
+      "rule": "block-gcloud-compute-disks-delete"
+    },
+    {
+      "command": "gcloud secrets versions destroy 3 --secret prod-api-key",
+      "expect": "blocked",
+      "rule": "block-gcloud-secrets-versions-destroy"
+    },
+    {
+      "command": "gcloud storage buckets delete gs://prod-archive",
+      "expect": "blocked",
+      "rule": "block-gcloud-storage-buckets-delete"
+    },
+    {
+      "command": "gcloud compute snapshots delete prod-backup",
+      "expect": "blocked",
+      "rule": "block-gcloud-compute-snapshots-delete"
+    },
+    { "command": "gcloud compute instances create delete", "expect": "allowed" },
+    { "command": "gcloud compute instances list", "expect": "allowed" },
+    { "command": "gcloud projects describe my-prod-project", "expect": "allowed" },
+    { "command": "gcloud storage ls gs://prod-bucket", "expect": "allowed" },
+    { "command": "gcloud sql instances describe prod-db", "expect": "allowed" },
+    {
+      "command": "gcloud container clusters describe prod --zone us-central1-a",
+      "expect": "allowed"
+    },
+    {
+      "command": "gcloud kms keys versions describe 3 --key my-key --keyring my-keyring --location global",
+      "expect": "allowed"
+    },
+    { "command": "gcloud alpha projects describe my-prod-project", "expect": "allowed" },
+    { "command": "gcloud beta projects describe my-prod-project", "expect": "allowed" },
+    { "command": "gcloud alpha compute instances list", "expect": "allowed" },
+    { "command": "gcloud beta compute instances list", "expect": "allowed" },
+    { "command": "gcloud preview compute instances list", "expect": "allowed" },
+    { "command": "gcloud alpha storage ls gs://prod-bucket", "expect": "allowed" },
+    { "command": "gcloud alpha sql instances describe prod-db", "expect": "allowed" },
+    { "command": "gcloud beta sql instances describe prod-db", "expect": "allowed" },
+    {
+      "command": "gcloud alpha container clusters describe prod --zone us-central1-a",
+      "expect": "allowed"
+    },
+    {
+      "command": "gcloud beta container clusters describe prod --zone us-central1-a",
+      "expect": "allowed"
+    },
+    {
+      "command": "gcloud alpha kms keys versions describe 3 --key my-key --keyring my-keyring --location global",
+      "expect": "allowed"
+    },
+    {
+      "command": "gcloud beta kms keys versions describe 3 --key my-key --keyring my-keyring --location global",
+      "expect": "allowed"
+    },
+    {
+      "command": "gcloud compute disks describe prod-data --zone us-central1-a",
+      "expect": "allowed"
+    },
+    { "command": "gcloud secrets versions describe 3 --secret prod-api-key", "expect": "allowed" },
+    { "command": "gcloud storage buckets describe gs://prod-archive", "expect": "allowed" },
+    { "command": "gcloud compute snapshots describe prod-backup", "expect": "allowed" },
+    {
+      "command": "gcloud --example-unlisted-option value compute instances delete web-1",
+      "expect": "allowed"
+    }
+  ]
+}

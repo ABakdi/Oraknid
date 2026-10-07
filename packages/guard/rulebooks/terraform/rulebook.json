@@ -1,0 +1,227 @@
+{
+  "rulebook_version": 2,
+  "name": "terraform",
+  "version": "1.0.0",
+  "description": "Official CC Safety Net rulebook for destructive Terraform operations. Curated coverage, not a complete model of the Terraform CLI.",
+  "author": "cc-safety-net",
+  "allowed_commands": ["terraform"],
+  "rules": [
+    {
+      "name": "block-terraform-destroy",
+      "command": "terraform",
+      "match": {
+        "command_path": ["destroy"]
+      },
+      "reason": "Deprovisions every object managed by this configuration. Review a destroy plan first with 'terraform plan -destroy' and ask the user before destroying.",
+      "intent": "use_alternative"
+    },
+    {
+      "name": "block-terraform-apply-destroy",
+      "command": "terraform",
+      "match": {
+        "command_path": ["apply"],
+        "any_args": [
+          "-destroy",
+          "--destroy",
+          "-destroy=1",
+          "--destroy=1",
+          "-destroy=t",
+          "--destroy=t",
+          "-destroy=T",
+          "--destroy=T",
+          "-destroy=TRUE",
+          "--destroy=TRUE",
+          "-destroy=true",
+          "--destroy=true",
+          "-destroy=True",
+          "--destroy=True"
+        ]
+      },
+      "reason": "Applies a destroy plan, deprovisioning managed objects. Review it first with 'terraform plan -destroy' and ask the user.",
+      "intent": "use_alternative"
+    },
+    {
+      "name": "block-terraform-state-rm",
+      "command": "terraform",
+      "match": {
+        "command_path": ["state", "rm"],
+        "exclude_args": [
+          "-dry-run",
+          "--dry-run",
+          "-dry-run=1",
+          "--dry-run=1",
+          "-dry-run=t",
+          "--dry-run=t",
+          "-dry-run=T",
+          "--dry-run=T",
+          "-dry-run=TRUE",
+          "--dry-run=TRUE",
+          "-dry-run=true",
+          "--dry-run=true",
+          "-dry-run=True",
+          "--dry-run=True"
+        ]
+      },
+      "reason": "Stops tracking remote objects without deleting them, orphaning real infrastructure. Preview with 'terraform state rm -dry-run' or use a 'removed' block with a normal plan and apply.",
+      "intent": "use_alternative"
+    },
+    {
+      "name": "block-terraform-workspace-delete",
+      "command": "terraform",
+      "match": {
+        "command_path": ["workspace", "delete"]
+      },
+      "reason": "Deletes the workspace's state; with -force it can orphan tracked resources. Ask the user to delete workspaces manually.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-terraform-state-push",
+      "command": "terraform",
+      "match": {
+        "command_path": ["state", "push"]
+      },
+      "reason": "Overwrites backend state and can make tracked infrastructure hard to recover. Back up with 'terraform state pull', then ask the user to push state manually.",
+      "intent": "manual_only"
+    }
+  ],
+  "tests": [
+    { "command": "terraform destroy", "expect": "blocked", "rule": "block-terraform-destroy" },
+    {
+      "command": "terraform destroy -target aws_instance.web",
+      "expect": "blocked",
+      "rule": "block-terraform-destroy"
+    },
+    {
+      "command": "terraform -chdir=envs/prod destroy",
+      "expect": "blocked",
+      "rule": "block-terraform-destroy"
+    },
+    {
+      "command": "terraform apply -destroy",
+      "expect": "blocked",
+      "rule": "block-terraform-apply-destroy"
+    },
+    {
+      "command": "terraform apply --destroy",
+      "expect": "blocked",
+      "rule": "block-terraform-apply-destroy"
+    },
+    {
+      "command": "terraform apply -destroy=true",
+      "expect": "blocked",
+      "rule": "block-terraform-apply-destroy"
+    },
+    {
+      "command": "terraform apply --destroy=true",
+      "expect": "blocked",
+      "rule": "block-terraform-apply-destroy"
+    },
+    {
+      "command": "terraform apply -destroy=1",
+      "expect": "blocked",
+      "rule": "block-terraform-apply-destroy"
+    },
+    {
+      "command": "terraform apply --destroy=1",
+      "expect": "blocked",
+      "rule": "block-terraform-apply-destroy"
+    },
+    {
+      "command": "terraform apply -destroy=t",
+      "expect": "blocked",
+      "rule": "block-terraform-apply-destroy"
+    },
+    {
+      "command": "terraform apply --destroy=t",
+      "expect": "blocked",
+      "rule": "block-terraform-apply-destroy"
+    },
+    {
+      "command": "terraform apply -destroy=T",
+      "expect": "blocked",
+      "rule": "block-terraform-apply-destroy"
+    },
+    {
+      "command": "terraform apply --destroy=T",
+      "expect": "blocked",
+      "rule": "block-terraform-apply-destroy"
+    },
+    {
+      "command": "terraform apply -destroy=TRUE",
+      "expect": "blocked",
+      "rule": "block-terraform-apply-destroy"
+    },
+    {
+      "command": "terraform apply --destroy=TRUE",
+      "expect": "blocked",
+      "rule": "block-terraform-apply-destroy"
+    },
+    {
+      "command": "terraform apply -destroy=True",
+      "expect": "blocked",
+      "rule": "block-terraform-apply-destroy"
+    },
+    {
+      "command": "terraform apply --destroy=True",
+      "expect": "blocked",
+      "rule": "block-terraform-apply-destroy"
+    },
+    {
+      "command": "terraform state rm module.legacy",
+      "expect": "blocked",
+      "rule": "block-terraform-state-rm"
+    },
+    {
+      "command": "terraform -chdir=envs/prod state rm aws_instance.web",
+      "expect": "blocked",
+      "rule": "block-terraform-state-rm"
+    },
+    {
+      "command": "terraform workspace delete staging",
+      "expect": "blocked",
+      "rule": "block-terraform-workspace-delete"
+    },
+    {
+      "command": "terraform state push state.json",
+      "expect": "blocked",
+      "rule": "block-terraform-state-push"
+    },
+    {
+      "command": "terraform state push -force state.json",
+      "expect": "blocked",
+      "rule": "block-terraform-state-push"
+    },
+    {
+      "command": "terraform -chdir=envs/prod state push state.json",
+      "expect": "blocked",
+      "rule": "block-terraform-state-push"
+    },
+    { "command": "terraform plan -destroy", "expect": "allowed" },
+    { "command": "terraform apply", "expect": "allowed" },
+    { "command": "terraform apply -destroy=false", "expect": "allowed" },
+    { "command": "terraform apply plan.tfplan", "expect": "allowed" },
+    { "command": "terraform state rm -dry-run module.legacy", "expect": "allowed" },
+    { "command": "terraform state rm --dry-run module.legacy", "expect": "allowed" },
+    { "command": "terraform state rm -dry-run=true module.legacy", "expect": "allowed" },
+    { "command": "terraform state rm --dry-run=true module.legacy", "expect": "allowed" },
+    { "command": "terraform state rm -dry-run=1 module.legacy", "expect": "allowed" },
+    { "command": "terraform state rm --dry-run=1 module.legacy", "expect": "allowed" },
+    { "command": "terraform state rm -dry-run=t module.legacy", "expect": "allowed" },
+    { "command": "terraform state rm --dry-run=t module.legacy", "expect": "allowed" },
+    { "command": "terraform state rm -dry-run=T module.legacy", "expect": "allowed" },
+    { "command": "terraform state rm --dry-run=T module.legacy", "expect": "allowed" },
+    { "command": "terraform state rm -dry-run=TRUE module.legacy", "expect": "allowed" },
+    { "command": "terraform state rm --dry-run=TRUE module.legacy", "expect": "allowed" },
+    { "command": "terraform state rm -dry-run=True module.legacy", "expect": "allowed" },
+    { "command": "terraform state rm --dry-run=True module.legacy", "expect": "allowed" },
+    {
+      "command": "terraform state rm -dry-run=false module.legacy",
+      "expect": "blocked",
+      "rule": "block-terraform-state-rm"
+    },
+    { "command": "terraform state list", "expect": "allowed" },
+    { "command": "terraform state pull", "expect": "allowed" },
+    { "command": "terraform workspace new delete", "expect": "allowed" },
+    { "command": "terraform force-unlock 1234", "expect": "allowed" }
+  ]
+}
