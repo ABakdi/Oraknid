@@ -18,8 +18,8 @@ const GATES = [
   ["spend", "Spend money"],
 ] as const;
 
-/** Without a waiver these ask even at Full autonomy (Approvals → Gated actions). */
-const ALWAYS_ASKED = new Set(["send", "push", "deploy", "delete", "spend"]);
+/** Never automatic (ADR-053): without a waiver these ask at every autonomy. */
+const NEVER_AUTOMATIC = new Set(["send", "spend", "external-write"]);
 
 /**
  * One place for what a job may do on its own (Web-UI → Job, Settings tab;
@@ -46,7 +46,7 @@ export function JobSettings({ job }: { job: JobView }) {
           <CardTitle className="text-sm">{t("Waived for this job")}</CardTitle>
           <CardDescription>
             {t(
-              "A waived action runs without asking you. A task that read untrusted content asks anyway.",
+              "A waived action runs without asking you. Unwaived, sending, publishing and paying ask at every autonomy; the rest the judge decides at Auto and Full, and you at Careful. A task that read untrusted content asks anyway.",
             )}
           </CardDescription>
         </CardHeader>
@@ -63,11 +63,11 @@ export function JobSettings({ job }: { job: JobView }) {
                 />
                 <Label htmlFor={id} className="font-normal">
                   {t(label)}
-                  {ALWAYS_ASKED.has(action) ? (
-                    <span className="ml-1 text-xs text-muted-foreground">
-                      {t("(asks even at Full, unless waived)")}
-                    </span>
-                  ) : null}
+                  <span className="ml-1 text-xs text-muted-foreground">
+                    {NEVER_AUTOMATIC.has(action)
+                      ? t("(never automatic: asks unless waived)")
+                      : t("(the judge decides at Auto)")}
+                  </span>
                 </Label>
               </div>
             );

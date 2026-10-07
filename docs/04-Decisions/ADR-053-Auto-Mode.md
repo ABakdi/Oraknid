@@ -111,3 +111,81 @@ bwrap.
   rare after the first minutes of a job.
 - "Approve all like this for this job" stays for the careful level,
   matched on the parsed command's shape, not its text.
+
+## As built (2026-10-07, M15.2)
+- **Layer 1 is the package `@oraknid/guard`** (`packages/guard`):
+  `parse.ts` (web-tree-sitter 0.27 + tree-sitter-bash 0.25's wasm; the
+  grammar loads once at the daemon's start, parsing is then synchronous,
+  about 0.1 ms), `rules.ts` (block, allow, ask, judge), `readonly.ts`
+  (the read-only list, shared with the server rules of ADR-049),
+  `secrets.ts`, `safety-net.ts`, `judge.ts`, `stuck.ts`, `shape.ts`.
+  `packages/core`'s `decide()` stays the frame (the never-allowed list,
+  my rules, the gates, the file tools) and reads the guard's verdict,
+  computed just before, as `layer1`; without it (the guard failed) the
+  fixed program lists of ADR-014 decide as before, sending the rest to
+  the judge.
+- **CC Safety Net 2.6** through `cc-safety-net/api` `checkCommand({command,
+  cwd})`: it reads its configuration on every call, so Oraknid points
+  it at a home of its own (`<data>/guard`, `CC_SAFETY_NET_HOME`), never
+  the owner's `~/.cc-safety-net`, with `CC_SAFETY_NET_PROJECT_TIGHTEN_ONLY`
+  set, so a project's own `.cc-safety-net` can only add blocks. Its
+  official Terraform, AWS, gcloud and Azure rulebooks (MIT,
+  github.com/cc-safety-net/rulebooks) are vendored in
+  `packages/guard/rulebooks` and written there at start. A call costs
+  2–5 ms (it reads files, and spawns git for some git commands), so its
+  verdicts are cached per command and folder, and it is skipped when
+  every part of a command is on the read-only list with no credential
+  path in its words (our own list of CC Safety Net's secret paths
+  covers that case). The remote command of an ssh is checked by it too.
+- **Secrets**: `@secretlint/core` 13 `lintSource` with the recommended
+  preset, in process (about 0.5 ms), after twenty gitleaks-style
+  patterns (AWS keys, private keys, GitHub, GitLab, Slack, Anthropic,
+  OpenAI, Google, Stripe, npm, PyPI, SendGrid, Twilio, DigitalOcean,
+  Hugging Face tokens, JWTs, a password in a URL, a bearer header),
+  only on a command with a network program or a remote part. The
+  preset ignores AWS's documented example key, the patterns don't.
+- **Our gap rules** live in `rules.ts` → `gap()`: `docker system|volume
+  prune`; `docker compose down -v|--volumes` unless the project
+  (`-p`, `COMPOSE_PROJECT_NAME`, `-f`'s folder, or a `cd` before it) is
+  named in the task's text (its goal, title, instructions, scope and my
+  messages); `kubectl delete`; `terraform|tofu destroy`; `DROP` and
+  `TRUNCATE` given to a database client (also through `docker exec`),
+  `dropdb`, `redis-cli FLUSHALL|FLUSHDB`, MongoDB drops; a download run
+  as code (`curl … | sh`, `sh -c "$(curl …)"`, `eval`); a deploy tool
+  (vercel, netlify, fly, firebase, wrangler…) sent to production by its
+  arguments. Every block's reason opens with its category in brackets.
+- **Allow at once** also keeps what ADR-014 allowed in the sandbox: a
+  project's own script run by its interpreter (`python3 scripts/x.py`,
+  `node x.mjs`), local build tools on the folder (`tsc`, `vitest`,
+  `cargo test`, `make test`), git on the job's own history. `curl` and
+  `wget` read at once only from known hosts (the package registries and
+  code hosts); elsewhere the judge decides. A command with words known
+  only when it runs (`cat $f`, `$(…)` as an argument) is the judge's.
+- **The judge** is `EyeBrain.judgeAction({stage, prompt})`: stage 1
+  through The Eye's quick route (difficulty low, `classify`; a pinned
+  quick model if I chose one) answering `{"answer": "ALLOW"|"BLOCK"}`,
+  stage 2 through the strongest model allowed (`review`, the judging
+  pin if any). Both sessions are quiet (not shown as The Eye's
+  thinking) and read nothing. The template is `judgePrompt()`; a local
+  model can serve stage 1 through the `JudgeModels.fast` interface
+  (ADR-054). The 10 s limit covers both stages; a session that goes on
+  is killed at 15 s. A timed-out or failed verdict isn't cached.
+- **Never automatic** is `NEVER_AUTOMATIC` in core (`npm|pnpm|yarn|cargo|
+  twine|gem|poetry|bun publish`, `gh release create`, `gh repo delete`,
+  `docker push`, mail programs) and, for MCP calls, a name that sends,
+  publishes, deletes or pays. Push, merge, deploy, install and branch
+  deletes are the judge's at Auto (BR-15 still asks once a task read
+  untrusted content).
+- **Claude Code**: the SDK's `permissionMode: "auto"` (the CLI's
+  `--permission-mode auto`; prompts stay with the host,
+  `--permission-prompts host`, the default) and in-process SDK hooks in
+  place of a `--settings` script: `PreToolUse` calls
+  `SessionStart.onPreToolUse` (deny with the reason, "ask" to send it to
+  `canUseTool`, or no opinion), `PermissionDenied` becomes a
+  `permission.denied` Leg event, logged as decided by the Leg. At
+  Careful the session stays in `default` mode, every prompt Oraknid's.
+- **Stuck**: counted per task in memory; a block by Claude Code's own
+  classifier is logged but not counted (Oraknid isn't asked then, so it
+  can't hold the Leg for my answer).
+- **Not built yet**: the network egress allowlist per job (the
+  sandbox-runtime proxy) is left for later.

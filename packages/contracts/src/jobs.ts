@@ -129,7 +129,7 @@ export const NewJob = z.object({
   inputs: z.array(JobInput).default([]),
   /** Default: the built-in canon-driven skill. */
   skillId: z.string().optional(),
-  autonomy: Autonomy.default("standard"),
+  autonomy: Autonomy.default("auto"),
   allowedLegIds: z.array(Id).default([]),
   budget: Budget.optional(),
   /** Job-level verification, besides the skill's and the plan's. */

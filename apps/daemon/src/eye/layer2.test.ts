@@ -116,7 +116,7 @@ describe("projects", () => {
       projectId: p.id,
       goal: "Add a login page\nwith email and password",
       inputs: [],
-      autonomy: "standard",
+      autonomy: "auto",
       allowedLegIds: [],
       verify: ["pnpm test"],
       unsandboxed: false,

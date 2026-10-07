@@ -1,0 +1,224 @@
+{
+  "rulebook_version": 2,
+  "name": "azure",
+  "version": "1.0.0",
+  "description": "Official CC Safety Net rulebook for destructive Azure CLI operations. Curated coverage, not a complete model of the Azure CLI.",
+  "author": "cc-safety-net",
+  "allowed_commands": ["az"],
+  "rules": [
+    {
+      "name": "block-az-group-delete",
+      "command": "az",
+      "match": {
+        "command_path": ["group", "delete"]
+      },
+      "reason": "Deletes a resource group and every resource inside it. Ask the user to delete resource groups.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-az-vm-delete",
+      "command": "az",
+      "match": {
+        "command_path": ["vm", "delete"]
+      },
+      "reason": "Deletes a virtual machine; attached disks may be deleted depending on flags. Ask the user to delete VMs; 'az vm deallocate' stops compute charges but other resources can still incur charges.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-az-aks-delete",
+      "command": "az",
+      "match": {
+        "command_path": ["aks", "delete"]
+      },
+      "reason": "Deletes an AKS cluster. Ask the user to delete clusters.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-az-storage-account-delete",
+      "command": "az",
+      "match": {
+        "command_path": ["storage", "account", "delete"]
+      },
+      "reason": "Deletes a storage account and all data in it. Ask the user to delete storage accounts.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-az-sql-server-delete",
+      "command": "az",
+      "match": {
+        "command_path": ["sql", "server", "delete"]
+      },
+      "reason": "Deletes a SQL server and every database on it. Ask the user to delete SQL servers.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-az-sql-db-delete",
+      "command": "az",
+      "match": {
+        "command_path": ["sql", "db", "delete"]
+      },
+      "reason": "Deletes a database and its data. Ask the user to delete databases.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-az-keyvault-purge",
+      "command": "az",
+      "match": {
+        "command_path": ["keyvault", "purge"]
+      },
+      "reason": "Permanently deletes a soft-deleted key vault; purged secrets and keys cannot be recovered. Ask the user to purge vaults.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-az-resource-delete",
+      "command": "az",
+      "match": {
+        "command_path": ["resource", "delete"]
+      },
+      "reason": "Deletes the resource named by ID or type. Stop and explain the target and dependent resources before asking the user to delete it.",
+      "intent": "stop_and_explain"
+    },
+    {
+      "name": "block-az-cosmosdb-delete",
+      "command": "az",
+      "match": {
+        "command_path": ["cosmosdb", "delete"]
+      },
+      "reason": "Deletes a Cosmos DB account and its databases and containers. Recovery depends on backup mode. Ask the user to delete accounts.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-az-storage-container-delete",
+      "command": "az",
+      "match": {
+        "command_path": ["storage", "container", "delete"]
+      },
+      "reason": "Deletes a storage container and all blobs in it. Recovery requires container soft delete. Ask the user to delete containers.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-az-storage-blob-delete",
+      "command": "az",
+      "match": {
+        "command_path": ["storage", "blob", "delete"]
+      },
+      "reason": "Deletes a blob. Recovery requires blob soft delete or versioning. Ask the user to delete blobs.",
+      "intent": "manual_only"
+    }
+  ],
+  "tests": [
+    {
+      "command": "az group delete --name prod-rg --yes",
+      "expect": "blocked",
+      "rule": "block-az-group-delete"
+    },
+    {
+      "command": "az vm delete --name web-1 --resource-group prod-rg --yes",
+      "expect": "blocked",
+      "rule": "block-az-vm-delete"
+    },
+    {
+      "command": "az aks delete --name prod-cluster --resource-group prod-rg",
+      "expect": "blocked",
+      "rule": "block-az-aks-delete"
+    },
+    {
+      "command": "az storage account delete --name prodassets --yes",
+      "expect": "blocked",
+      "rule": "block-az-storage-account-delete"
+    },
+    {
+      "command": "az sql server delete --name prod-sql --resource-group prod-rg --yes",
+      "expect": "blocked",
+      "rule": "block-az-sql-server-delete"
+    },
+    {
+      "command": "az sql db delete --name appdb --server prod-sql --resource-group prod-rg --yes",
+      "expect": "blocked",
+      "rule": "block-az-sql-db-delete"
+    },
+    {
+      "command": "az keyvault purge --name prod-kv",
+      "expect": "blocked",
+      "rule": "block-az-keyvault-purge"
+    },
+    {
+      "command": "az resource delete --ids /subscriptions/000/resourceGroups/prod-rg/providers/Microsoft.Web/sites/prod-app",
+      "expect": "blocked",
+      "rule": "block-az-resource-delete"
+    },
+    {
+      "command": "az --subscription=prod resource delete --ids /subscriptions/000/resourceGroups/prod-rg/providers/Microsoft.Web/sites/prod-app",
+      "expect": "blocked",
+      "rule": "block-az-resource-delete"
+    },
+    {
+      "command": "az cosmosdb delete --name prod-cosmos --resource-group prod-rg --yes",
+      "expect": "blocked",
+      "rule": "block-az-cosmosdb-delete"
+    },
+    {
+      "command": "az storage container delete --name logs --account-name prodassets",
+      "expect": "blocked",
+      "rule": "block-az-storage-container-delete"
+    },
+    {
+      "command": "az storage --subscription prod container delete --name logs --account-name prodassets",
+      "expect": "blocked",
+      "rule": "block-az-storage-container-delete"
+    },
+    {
+      "command": "az storage blob delete --container-name logs --name app.log --account-name prodassets",
+      "expect": "blocked",
+      "rule": "block-az-storage-blob-delete"
+    },
+    { "command": "az group list", "expect": "allowed" },
+    {
+      "command": "az group deployment delete --name old-deployment --resource-group prod-rg",
+      "expect": "allowed"
+    },
+    { "command": "az vm deallocate --name web-1 --resource-group prod-rg", "expect": "allowed" },
+    { "command": "az vm list --resource-group prod-rg", "expect": "allowed" },
+    { "command": "az aks show --name prod-cluster --resource-group prod-rg", "expect": "allowed" },
+    { "command": "az storage account keys list --account-name prodassets", "expect": "allowed" },
+    {
+      "command": "az sql server show --name prod-sql --resource-group prod-rg",
+      "expect": "allowed"
+    },
+    {
+      "command": "az sql db show --name appdb --server prod-sql --resource-group prod-rg",
+      "expect": "allowed"
+    },
+    { "command": "az keyvault delete --name prod-kv", "expect": "allowed" },
+    {
+      "command": "az resource show --ids /subscriptions/000/resourceGroups/prod-rg/providers/Microsoft.Web/sites/prod-app",
+      "expect": "allowed"
+    },
+    {
+      "command": "az cosmosdb show --name prod-cosmos --resource-group prod-rg",
+      "expect": "allowed"
+    },
+    {
+      "command": "az storage container show --name logs --account-name prodassets",
+      "expect": "allowed"
+    },
+    {
+      "command": "az storage blob show --container-name logs --name app.log --account-name prodassets",
+      "expect": "allowed"
+    },
+    {
+      "command": "az --subscription prod group delete --name prod-rg",
+      "expect": "blocked",
+      "rule": "block-az-group-delete"
+    },
+    {
+      "command": "az -o json vm delete --name web-1 --resource-group prod-rg",
+      "expect": "blocked",
+      "rule": "block-az-vm-delete"
+    },
+    {
+      "command": "az --example-unlisted-option value group delete --name prod-rg",
+      "expect": "allowed"
+    }
+  ]
+}

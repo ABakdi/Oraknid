@@ -14,6 +14,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { LegKind, MetricsSample } from "@oraknid/contracts";
 import { type MachineReading, readingOf, scrubSecrets } from "@oraknid/core";
+import { configureSafetyNet, initParser } from "@oraknid/guard";
 import { createAntigravityAdapter } from "@oraknid/leg-antigravity";
 import { createClaudeCodeAdapter } from "@oraknid/leg-claude-code";
 import { createOpenAICompatibleAdapter } from "@oraknid/leg-openai-compatible";
@@ -189,6 +190,9 @@ export async function startDaemon(options: DaemonOptions) {
   mkdirSync(paths.dataDir, { recursive: true, mode: 0o700 });
   chmodSync(paths.dataDir, 0o700);
   setShadowRoot(join(paths.dataDir, "shadow"));
+  // Auto mode's rules (ADR-053): CC Safety Net reads a home of Oraknid's own; the bash grammar loads once.
+  configureSafetyNet(join(paths.dataDir, "guard"));
+  void initParser().catch((e) => console.error("auto mode: the command parser did not load", e));
   const db = await openDatabase({ file: options.dbFile ?? paths.db, backupsDir: paths.backups });
   // The keychain entries of before belong to the default data folder alone (Audit 2, S2-23).
   const secrets = new Secrets(paths.dataDir, os.keychain, {
@@ -984,7 +988,7 @@ export async function startDaemon(options: DaemonOptions) {
         projectId,
         goal,
         inputs: [],
-        autonomy: "standard",
+        autonomy: "auto",
         allowedLegIds: [],
         verify: [],
         unsandboxed: false,

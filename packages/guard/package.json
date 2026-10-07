@@ -1,0 +1,21 @@
+{
+  "name": "@oraknid/guard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@oraknid/contracts": "workspace:^",
+    "@secretlint/core": "13.0.7",
+    "@secretlint/secretlint-rule-preset-recommend": "13.0.7",
+    "cc-safety-net": "2.6.0",
+    "tree-sitter-bash": "0.25.1",
+    "web-tree-sitter": "0.27.0"
+  }
+}

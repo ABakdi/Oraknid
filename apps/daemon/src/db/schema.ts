@@ -249,7 +249,7 @@ export const jobs = sqliteTable(
     inputs: json<unknown[]>("inputs").notNull(),
     skillId: text("skill_id").notNull(),
     skillVersion: integer("skill_version").notNull(),
-    autonomy: text("autonomy", { enum: ["supervised", "standard", "full"] }).notNull(),
+    autonomy: text("autonomy", { enum: ["careful", "auto", "full"] }).notNull(),
     allowedLegIds: json<string[]>("allowed_leg_ids").notNull(),
     budget: json<unknown>("budget").notNull(),
     state: text("state").notNull(),

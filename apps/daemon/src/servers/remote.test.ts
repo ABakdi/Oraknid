@@ -67,7 +67,7 @@ describe("a command on a server (ADR-049)", () => {
     // Here sudo is never allowed; on the server it is the server's business.
     expect(
       serverVerdict("ssh oraknid-vps 'sudo -n systemctl reload nginx'", [vps], policy),
-    ).toMatchObject({ verdict: "classify" });
+    ).toMatchObject({ verdict: "judge" });
     // Still never allowed whatever the server: a fork bomb, a local sudo after the ssh.
     expect(serverVerdict("ssh oraknid-vps 'shutdown -h now'", [vps], policy)?.verdict).toBe("deny");
     expect(
@@ -86,7 +86,7 @@ describe("a command on a server (ADR-049)", () => {
     ).toBe("ask");
     // Reading production is the usual policy's.
     expect(serverVerdict("ssh oraknid-vps systemctl status nginx", [prod], policy)?.verdict).toBe(
-      "classify",
+      "judge",
     );
     expect(serverVerdict("ls -la", [prod], policy)).toBeNull();
   });

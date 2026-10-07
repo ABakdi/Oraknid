@@ -174,7 +174,7 @@ async function harness(
       reason: "",
     }),
     triage: async () => ({ intent: "question", reply: "Fine.", silk: null, tasks: [] }),
-    classifyCommand: async () => ({ decision: "allow" as const, reason: "fine" }),
+    judgeAction: async () => ({ decision: "allow" as const, category: null, reason: "fine" }),
     interviewRound: async () => ({ done: true, playback: "Clear.", questions: [], open: [] }),
   } as unknown as EyeBrain;
   daemon = await startDaemon({
@@ -244,7 +244,7 @@ async function newJob(api: Api, projectId: string, goal: string) {
     projectId,
     goal,
     verify: [],
-    autonomy: "standard",
+    autonomy: "auto",
     inputs: [],
     allowedLegIds: [],
     unsandboxed: false,

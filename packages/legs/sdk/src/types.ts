@@ -47,7 +47,17 @@ export interface PermissionRequest {
   path: string | null;
 }
 
-export type PermissionDecision = { allow: true } | { allow: false; message: string };
+/** A permission answer; `why` is its layer and reason, for the session's log (ADR-053). */
+export type PermissionDecision =
+  | { allow: true; why?: string }
+  | { allow: false; message: string; why?: string };
+
+/**
+ * Oraknid's word before a tool runs, in a Leg's own auto mode (ADR-053):
+ * deny it with a message, ask (through `onPermission`), or no opinion
+ * (null), leaving the Leg's own auto mode to decide.
+ */
+export type PreToolDecision = { decision: "deny"; message: string } | { decision: "ask" } | null;
 
 export interface UsageSnapshot {
   inputTokens: number;
@@ -83,6 +93,8 @@ export type LegEvent =
   | { type: "tool.result"; id: string; ok: boolean; output: string }
   | { type: "question"; text: string }
   | { type: "permission.requested"; request: PermissionRequest; decision: PermissionDecision }
+  /** A tool call refused before it ran by the Leg's own auto mode, or by Oraknid's hook in it (ADR-053). */
+  | { type: "permission.denied"; request: PermissionRequest; by: "leg" | "oraknid"; reason: string }
   | { type: "usage"; usage: UsageSnapshot }
   | { type: "rate_limit"; quota: QuotaReport }
   | { type: "turn.ended"; reason: TurnEnd; text: string; error: string | null }
@@ -119,6 +131,15 @@ export interface SessionStart {
   /** The Leg's secret (e.g. an API key), resolved from the store at start (BR-13). */
   credential: string | null;
   onPermission: (request: PermissionRequest) => Promise<PermissionDecision>;
+  /**
+   * The Leg's own auto mode, where it has one (ADR-053): Claude Code runs
+   * with `--permission-mode auto`, and `onPreToolUse` is called before
+   * every tool so Oraknid's block rules and scope still hold. "ask" (the
+   * default) sends every permission prompt to `onPermission`.
+   */
+  permissionMode?: "ask" | "auto";
+  /** Oraknid's layer 1 before every tool, in the Leg's own auto mode. */
+  onPreToolUse?: (request: PermissionRequest) => Promise<PreToolDecision>;
   /**
    * The task's checks in the loop (ADR-052 §2): asked when the agent is about
    * to end its turn. A reason keeps it working (the checks' failure, said to

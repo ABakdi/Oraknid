@@ -404,7 +404,7 @@ export const CONTROLS: HelpControl[] = [
     id: "work.autonomy",
     page: "new",
     name: "Autonomy",
-    does: "Supervised, Standard or Full: how much it asks me first.",
+    does: "Auto, Careful or Full: how much it asks me first.",
     where: "New work → Options",
   },
   {

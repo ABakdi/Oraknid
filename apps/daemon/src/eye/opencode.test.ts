@@ -51,7 +51,7 @@ const brain = {
   triage: async () => {
     throw new Error("unused");
   },
-  classifyCommand: async () => ({ decision: "allow" as const, reason: "ok" }),
+  judgeAction: async () => ({ decision: "allow" as const, category: null, reason: "ok" }),
   interviewRound: async () => ({ done: true, playback: "", questions: [], open: [] }),
 } satisfies EyeBrain;
 
@@ -135,7 +135,7 @@ describe.skipIf(!HAVE)("OpenCode Legs in a job (Phase 2)", () => {
       projectId: project.id,
       goal: "Say hi",
       verify: [],
-      autonomy: "standard",
+      autonomy: "auto",
       inputs: [],
       allowedLegIds: [oc.id],
       unsandboxed: false,
@@ -170,7 +170,7 @@ describe.skipIf(!HAVE)("OpenCode Legs in a job (Phase 2)", () => {
         projectId: project.id,
         goal: "Say hi",
         verify: [],
-        autonomy: "standard",
+        autonomy: "auto",
         inputs: [],
         allowedLegIds: [oc.id],
         unsandboxed: false,
@@ -179,9 +179,9 @@ describe.skipIf(!HAVE)("OpenCode Legs in a job (Phase 2)", () => {
       const done = await until(api, id, ["completed", "blocked"], 60_000);
       expect(done.state, done.blockedReason ?? "").toBe("completed");
       const events = (await api.jobs.export({ id })).events;
-      // Nothing asked me, a classifier, or was refused.
+      // Nothing asked me, the judge, or was refused.
       expect(
-        events.filter((e) => ["policy.auto", "task.refused", "task.waiting"].includes(e.type)),
+        events.filter((e) => ["policy.judged", "task.refused", "task.waiting"].includes(e.type)),
       ).toEqual([]);
       // Its commands ran and succeeded inside the sandbox.
       expect(
@@ -220,7 +220,7 @@ describe.skipIf(!HAVE)("OpenCode Legs in a job (Phase 2)", () => {
       projectId: project.id,
       goal: "Say hi",
       verify: [],
-      autonomy: "standard",
+      autonomy: "auto",
       inputs: [],
       allowedLegIds: [oc.id, claude.id],
       unsandboxed: false,

@@ -1,0 +1,326 @@
+{
+  "rulebook_version": 2,
+  "name": "aws",
+  "version": "1.0.0",
+  "description": "Official CC Safety Net rulebook for destructive AWS CLI operations. Curated coverage, not a complete model of the AWS API.",
+  "author": "cc-safety-net",
+  "allowed_commands": ["aws"],
+  "rules": [
+    {
+      "name": "block-aws-s3-rm",
+      "command": "aws",
+      "match": {
+        "command_path": ["s3", "rm"],
+        "exclude_args": ["--dryrun"]
+      },
+      "reason": "Deletes S3 objects; recursive use can delete an entire prefix. Preview with 'aws s3 rm --dryrun', then ask the user before deleting.",
+      "intent": "use_alternative"
+    },
+    {
+      "name": "block-aws-s3-rb",
+      "command": "aws",
+      "match": {
+        "command_path": ["s3", "rb"]
+      },
+      "reason": "Deletes a bucket; with --force it first deletes the bucket's objects. Ask the user to remove buckets.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-aws-ec2-terminate-instances",
+      "command": "aws",
+      "match": {
+        "command_path": ["ec2", "terminate-instances"],
+        "exclude_args": [
+          "--dry-run",
+          "--generate-cli-skeleton",
+          "--generate-cli-skeleton=input",
+          "--generate-cli-skeleton=yaml-input",
+          "--generate-cli-skeleton=output"
+        ]
+      },
+      "reason": "Terminates instances and can delete volumes configured for delete-on-termination. Check with '--dry-run', then ask the user before terminating.",
+      "intent": "use_alternative"
+    },
+    {
+      "name": "block-aws-cloudformation-delete-stack",
+      "command": "aws",
+      "match": {
+        "command_path": ["cloudformation", "delete-stack"],
+        "exclude_args": [
+          "--generate-cli-skeleton",
+          "--generate-cli-skeleton=input",
+          "--generate-cli-skeleton=yaml-input",
+          "--generate-cli-skeleton=output"
+        ]
+      },
+      "reason": "Deletes a stack and the resources it manages, subject to retention policies. Ask the user to delete stacks.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-aws-rds-delete-db-instance",
+      "command": "aws",
+      "match": {
+        "command_path": ["rds", "delete-db-instance"],
+        "exclude_args": [
+          "--generate-cli-skeleton",
+          "--generate-cli-skeleton=input",
+          "--generate-cli-skeleton=yaml-input",
+          "--generate-cli-skeleton=output"
+        ]
+      },
+      "reason": "Deletes a database instance; final-snapshot behavior depends on arguments and '--skip-final-snapshot' loses the data. Ask the user to delete database instances.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-aws-dynamodb-delete-table",
+      "command": "aws",
+      "match": {
+        "command_path": ["dynamodb", "delete-table"],
+        "exclude_args": [
+          "--generate-cli-skeleton",
+          "--generate-cli-skeleton=input",
+          "--generate-cli-skeleton=yaml-input",
+          "--generate-cli-skeleton=output"
+        ]
+      },
+      "reason": "Deletes a table and all of its data. Ask the user to delete tables.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-aws-eks-delete-cluster",
+      "command": "aws",
+      "match": {
+        "command_path": ["eks", "delete-cluster"],
+        "exclude_args": [
+          "--generate-cli-skeleton",
+          "--generate-cli-skeleton=input",
+          "--generate-cli-skeleton=yaml-input",
+          "--generate-cli-skeleton=output"
+        ]
+      },
+      "reason": "Deletes an EKS cluster control plane. Ask the user to delete clusters.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-aws-kms-schedule-key-deletion",
+      "command": "aws",
+      "match": {
+        "command_path": ["kms", "schedule-key-deletion"],
+        "exclude_args": [
+          "--generate-cli-skeleton",
+          "--generate-cli-skeleton=input",
+          "--generate-cli-skeleton=yaml-input",
+          "--generate-cli-skeleton=output"
+        ]
+      },
+      "reason": "Schedules KMS key destruction, which can make encrypted data permanently unreadable. Ask the user; 'cancel-key-deletion' works only during the waiting period.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-aws-s3api-delete-object",
+      "command": "aws",
+      "match": {
+        "command_path": ["s3api", "delete-object"],
+        "exclude_args": [
+          "--generate-cli-skeleton",
+          "--generate-cli-skeleton=input",
+          "--generate-cli-skeleton=yaml-input",
+          "--generate-cli-skeleton=output"
+        ]
+      },
+      "reason": "Deletes an S3 object or object version. Ask the user before deleting objects.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-aws-s3api-delete-objects",
+      "command": "aws",
+      "match": {
+        "command_path": ["s3api", "delete-objects"],
+        "exclude_args": [
+          "--generate-cli-skeleton",
+          "--generate-cli-skeleton=input",
+          "--generate-cli-skeleton=yaml-input",
+          "--generate-cli-skeleton=output"
+        ]
+      },
+      "reason": "Deletes up to 1,000 S3 objects or object versions in one request. Ask the user before bulk deletion.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-aws-s3api-delete-bucket",
+      "command": "aws",
+      "match": {
+        "command_path": ["s3api", "delete-bucket"],
+        "exclude_args": [
+          "--generate-cli-skeleton",
+          "--generate-cli-skeleton=input",
+          "--generate-cli-skeleton=yaml-input",
+          "--generate-cli-skeleton=output"
+        ]
+      },
+      "reason": "Deletes an empty S3 bucket. Ask the user before deleting buckets.",
+      "intent": "manual_only"
+    },
+    {
+      "name": "block-aws-rds-delete-db-cluster",
+      "command": "aws",
+      "match": {
+        "command_path": ["rds", "delete-db-cluster"],
+        "exclude_args": [
+          "--generate-cli-skeleton",
+          "--generate-cli-skeleton=input",
+          "--generate-cli-skeleton=yaml-input",
+          "--generate-cli-skeleton=output"
+        ]
+      },
+      "reason": "Deletes an RDS DB cluster; final-snapshot and automated-backup behavior depends on arguments. Ask the user before deletion.",
+      "intent": "manual_only"
+    }
+  ],
+  "tests": [
+    {
+      "command": "aws s3 rm s3://prod-assets/logs --recursive",
+      "expect": "blocked",
+      "rule": "block-aws-s3-rm"
+    },
+    {
+      "command": "aws --profile prod s3 rm s3://prod-assets/report.csv",
+      "expect": "blocked",
+      "rule": "block-aws-s3-rm"
+    },
+    {
+      "command": "aws --profile=prod s3 rm s3://prod-assets/report.csv",
+      "expect": "blocked",
+      "rule": "block-aws-s3-rm"
+    },
+    {
+      "command": "aws s3 rb s3://prod-assets --force",
+      "expect": "blocked",
+      "rule": "block-aws-s3-rb"
+    },
+    {
+      "command": "aws ec2 terminate-instances --instance-ids i-0abc1234",
+      "expect": "blocked",
+      "rule": "block-aws-ec2-terminate-instances"
+    },
+    {
+      "command": "aws --region us-east-1 cloudformation delete-stack --stack-name prod",
+      "expect": "blocked",
+      "rule": "block-aws-cloudformation-delete-stack"
+    },
+    {
+      "command": "aws rds delete-db-instance --db-instance-identifier prod-db --skip-final-snapshot",
+      "expect": "blocked",
+      "rule": "block-aws-rds-delete-db-instance"
+    },
+    {
+      "command": "aws dynamodb delete-table --table-name users",
+      "expect": "blocked",
+      "rule": "block-aws-dynamodb-delete-table"
+    },
+    {
+      "command": "aws eks delete-cluster --name prod",
+      "expect": "blocked",
+      "rule": "block-aws-eks-delete-cluster"
+    },
+    {
+      "command": "aws kms schedule-key-deletion --key-id 1234abcd --pending-window-in-days 7",
+      "expect": "blocked",
+      "rule": "block-aws-kms-schedule-key-deletion"
+    },
+    {
+      "command": "aws s3api delete-object --bucket prod-assets --key report.csv",
+      "expect": "blocked",
+      "rule": "block-aws-s3api-delete-object"
+    },
+    {
+      "command": "aws s3api --region us-east-1 delete-object --bucket prod-assets --key report.csv",
+      "expect": "blocked",
+      "rule": "block-aws-s3api-delete-object"
+    },
+    {
+      "command": "aws s3api delete-objects --bucket prod-assets --delete file://delete.json",
+      "expect": "blocked",
+      "rule": "block-aws-s3api-delete-objects"
+    },
+    {
+      "command": "aws s3api delete-bucket --bucket prod-assets",
+      "expect": "blocked",
+      "rule": "block-aws-s3api-delete-bucket"
+    },
+    {
+      "command": "aws rds delete-db-cluster --db-cluster-identifier prod-cluster --skip-final-snapshot",
+      "expect": "blocked",
+      "rule": "block-aws-rds-delete-db-cluster"
+    },
+    { "command": "aws s3 rm s3://prod-assets/logs --recursive --dryrun", "expect": "allowed" },
+    {
+      "command": "aws ec2 terminate-instances --instance-ids i-0abc1234 --dry-run",
+      "expect": "allowed"
+    },
+    { "command": "aws ec2 terminate-instances --generate-cli-skeleton input", "expect": "allowed" },
+    { "command": "aws ec2 terminate-instances --generate-cli-skeleton=input", "expect": "allowed" },
+    {
+      "command": "aws ec2 terminate-instances --generate-cli-skeleton=yaml-input",
+      "expect": "allowed"
+    },
+    {
+      "command": "aws ec2 terminate-instances --generate-cli-skeleton=output --instance-ids i-0abc1234",
+      "expect": "allowed"
+    },
+    {
+      "command": "aws cloudformation delete-stack --generate-cli-skeleton input",
+      "expect": "allowed"
+    },
+    {
+      "command": "aws cloudformation delete-stack --generate-cli-skeleton=input",
+      "expect": "allowed"
+    },
+    { "command": "aws rds delete-db-instance --generate-cli-skeleton input", "expect": "allowed" },
+    { "command": "aws rds delete-db-instance --generate-cli-skeleton=input", "expect": "allowed" },
+    { "command": "aws dynamodb delete-table --generate-cli-skeleton input", "expect": "allowed" },
+    { "command": "aws dynamodb delete-table --generate-cli-skeleton=input", "expect": "allowed" },
+    { "command": "aws eks delete-cluster --generate-cli-skeleton input", "expect": "allowed" },
+    { "command": "aws eks delete-cluster --generate-cli-skeleton=input", "expect": "allowed" },
+    {
+      "command": "aws kms schedule-key-deletion --generate-cli-skeleton input",
+      "expect": "allowed"
+    },
+    {
+      "command": "aws kms schedule-key-deletion --generate-cli-skeleton=input",
+      "expect": "allowed"
+    },
+    { "command": "aws s3api delete-object --generate-cli-skeleton input", "expect": "allowed" },
+    { "command": "aws s3api delete-object --generate-cli-skeleton=input", "expect": "allowed" },
+    { "command": "aws s3api delete-objects --generate-cli-skeleton input", "expect": "allowed" },
+    { "command": "aws s3api delete-objects --generate-cli-skeleton=input", "expect": "allowed" },
+    { "command": "aws s3api delete-bucket --generate-cli-skeleton input", "expect": "allowed" },
+    { "command": "aws s3api delete-bucket --generate-cli-skeleton=input", "expect": "allowed" },
+    { "command": "aws rds delete-db-cluster --generate-cli-skeleton input", "expect": "allowed" },
+    { "command": "aws rds delete-db-cluster --generate-cli-skeleton=input", "expect": "allowed" },
+    { "command": "aws s3 ls s3://prod-assets", "expect": "allowed" },
+    { "command": "aws ec2 describe-instances", "expect": "allowed" },
+    {
+      "command": "aws rds describe-db-instances --db-instance-identifier prod-db",
+      "expect": "allowed"
+    },
+    { "command": "aws dynamodb describe-table --table-name users", "expect": "allowed" },
+    { "command": "aws eks describe-cluster --name prod", "expect": "allowed" },
+    { "command": "aws kms describe-key --key-id 1234abcd", "expect": "allowed" },
+    { "command": "aws cloudformation describe-stacks --stack-name prod", "expect": "allowed" },
+    {
+      "command": "aws s3api head-object --bucket prod-assets --key delete-object",
+      "expect": "allowed"
+    },
+    { "command": "aws s3api list-objects-v2 --bucket delete-objects", "expect": "allowed" },
+    { "command": "aws s3api get-bucket-location --bucket delete-bucket", "expect": "allowed" },
+    {
+      "command": "aws rds describe-db-clusters --db-cluster-identifier delete-db-cluster",
+      "expect": "allowed"
+    },
+    {
+      "command": "aws --example-unlisted-option value ec2 terminate-instances --instance-ids i-0abc1234",
+      "expect": "allowed"
+    }
+  ]
+}

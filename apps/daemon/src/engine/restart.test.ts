@@ -47,7 +47,7 @@ const brain = {
   triage: async () => {
     throw new Error("unused");
   },
-  classifyCommand: async () => ({ decision: "allow" as const, reason: "ok" }),
+  judgeAction: async () => ({ decision: "allow" as const, category: null, reason: "ok" }),
   interviewRound: async () => ({ done: true, playback: "", questions: [], open: [] }),
 } satisfies EyeBrain;
 
@@ -82,7 +82,7 @@ describe("after a restart (Audit 1 → D1-03)", () => {
       projectId: project.id,
       goal: "g",
       verify: [],
-      autonomy: "standard",
+      autonomy: "auto",
       inputs: [],
       allowedLegIds: [],
       unsandboxed: false,

@@ -1,6 +1,15 @@
 # ADR-014 — Auto approval: rules first, then a classifier; I'm asked only when it matters
 
-**Status:** Accepted · 2026-10-01 · [[Checkpoint-1]]
+**Status:** Accepted · 2026-10-01 · [[Checkpoint-1]] · **partly superseded 2026-10-07 by [[ADR-053-Auto-Mode]]**
+
+> Superseded: the classifier's "allow or ask" is now the judge's "allow
+> or block" (reasoning-blind, two stages, 10 s), the allow list is the
+> guard's (tree-sitter-bash, CC Safety Net, the read-only list), the
+> levels are Auto, Careful and Full, and I'm asked only for plans of
+> servers, production, what is never automatic and an agent stuck on
+> blocks. Still in force: the never-allowed list first, my rules, the
+> fixed program lists as the fallback when the guard can't run, and
+> the audit of every decision.
 
 ## Context
 The first real job asked for my approval twelve times, all for harmless

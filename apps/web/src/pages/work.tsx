@@ -33,7 +33,15 @@ import { t } from "@/lib/i18n";
 import { useLive } from "@/lib/live";
 import { cn } from "@/lib/utils";
 
-type Autonomy = "supervised" | "standard" | "full";
+type Autonomy = "careful" | "auto" | "full";
+
+/** What each autonomy asks of me (ADR-053). */
+const AUTONOMY_SAYS: Record<Autonomy, string> = {
+  auto: "Rules and a model judge decide; you're asked for a server plan, production, and what is never automatic.",
+  careful:
+    "You approve the plan, and each action the rules don't allow at once, even when the judge would.",
+  full: "No judge in the job's folder or on servers not marked production; plans, production and what is never automatic still ask.",
+};
 
 /**
  * The New work page (Jobs-and-Projects → Starting work): the options on the
@@ -85,7 +93,7 @@ export function WorkPage({ draftId }: { draftId?: string }) {
   );
   const [skill, setSkill] = useState("auto");
   const [legIds, setLegIds] = useState<string[]>([]);
-  const [autonomy, setAutonomy] = useState<Autonomy>("standard");
+  const [autonomy, setAutonomy] = useState<Autonomy>("auto");
   const [tokensLimit, setTokensLimit] = useState("");
   const [money, setMoney] = useState<Budget["money"]>({ limit: 0, hard: true });
   const [share, setShare] = useState("");
@@ -471,11 +479,12 @@ export function WorkPage({ draftId }: { draftId?: string }) {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="supervised">{t("Supervised")}</SelectItem>
-                    <SelectItem value="standard">{t("Standard")}</SelectItem>
+                    <SelectItem value="auto">{t("Auto")}</SelectItem>
+                    <SelectItem value="careful">{t("Careful")}</SelectItem>
                     <SelectItem value="full">{t("Full")}</SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">{t(AUTONOMY_SAYS[autonomy])}</p>
               </div>
               <div data-help="work.tokens" className="space-y-1.5">
                 <Label htmlFor="w-tok">{t("Token limit")}</Label>

@@ -90,7 +90,11 @@ async function rig(o: {
     triage: async () => {
       throw new Error("no triage scripted");
     },
-    classifyCommand: async () => ({ decision: "allow", reason: "it serves the task" }),
+    judgeAction: async () => ({
+      decision: "allow" as const,
+      category: null,
+      reason: "it serves the task",
+    }),
     interviewRound: async () => ({ done: true, playback: "", questions: [], open: [] }),
     serverTalk: async ({ message }) => o.talk(message),
   };
@@ -293,6 +297,65 @@ describe("server chat and server jobs (ADR-049)", () => {
     const ask = await openItem(api, /wants to run `ssh oraknid-vps-one/);
     expect(ask.detail).toContain("it may change VPS One, which is production");
     await api.inbox.answer({ id: ask.id, answer: "Deny" });
+  }, 60_000);
+
+  it("auto mode: after the plan, reading the server and checking ports asks nothing (ADR-053)", async () => {
+    const { api, server } = await rig({
+      script: (t) =>
+        t.system.includes("# Your task: Look at the stack") && t.turn === 1
+          ? [
+              {
+                run: "ssh -o ConnectTimeout=1 oraknid-vps-one 'cd /root/spinet-deploy && docker compose -p spinet-deploy ps -a' 2>/dev/null; true",
+              },
+              {
+                run: "ssh -o ConnectTimeout=1 oraknid-vps-one 'docker logs --tail 50 api' 2>/dev/null; true",
+              },
+              { run: "test -s notes/change-plan.md; true" },
+              { run: "nc -z -w1 127.0.0.1 9; true" },
+              { say: "DONE" },
+            ]
+          : [{ say: "DONE" }],
+      talk: () => ({ intent: "work", reply: "I'll look.", goal: "Look at the stack" }),
+      plan: {
+        summary: "Look at the stack.",
+        tasks: [
+          {
+            key: "t1",
+            title: "Look at the stack",
+            instructions: "Read what runs.",
+            kind: "implement",
+            dependsOn: [],
+            scope: ["notes/**"],
+            verify: [],
+            requiredCapabilities: ["implementation"],
+            difficulty: "low",
+          },
+        ],
+        jobVerify: [],
+      },
+    });
+    const sent = await api.servers.talk({ id: server.id, text: "look at the stack" });
+    const job = await waitFor(
+      "a server job",
+      async () => (await api.jobs.list({ projectId: sent.projectId }))[0],
+    );
+    expect(job.autonomy).toBe("auto");
+    const plan = await openItem(api, /^Approve what will change on VPS One/);
+    await api.inbox.answer({ id: plan.id, answer: "Approve" });
+    await waitFor("the job's end", async () => {
+      const j = await api.jobs.get({ id: job.id });
+      return j.state === "completed" || j.state === "blocked" ? j : null;
+    });
+    // One approval: the plan's. Every command was settled by the rules, none by the judge.
+    expect((await api.inbox.list({})).filter((i) => i.kind === "approval")).toHaveLength(1);
+    const decisions = (
+      await api.audit.search({ jobId: job.id, type: "policy.decision", limit: 100 })
+    )
+      .map((e) => e.payload as { action: string; layer: string; verdict: string })
+      .filter((p) => p.layer !== "owner");
+    expect(decisions.length).toBeGreaterThanOrEqual(4);
+    for (const p of decisions)
+      expect(p, JSON.stringify(p)).toMatchObject({ layer: "rules", verdict: "allow" });
   }, 60_000);
 
   it("refuses work on a server away from home on a standard device (lock.ts)", async () => {

@@ -8,6 +8,7 @@ import type {
   McpServer,
   PermissionDecision,
   PermissionRequest,
+  PreToolDecision,
   SandboxPlan,
 } from "@oraknid/leg-sdk";
 import type { Sandbox, Watched } from "@oraknid/os";
@@ -48,6 +49,9 @@ export interface StartRequest {
   /** Ports on this computer the session may reach: its project's (Sandboxing → network). */
   localPorts?: number[];
   onPermission: (request: PermissionRequest) => Promise<PermissionDecision>;
+  /** The Leg's own auto mode and Oraknid's hook before every tool in it (ADR-053). */
+  permissionMode?: "ask" | "auto";
+  onPreToolUse?: (request: PermissionRequest) => Promise<PreToolDecision>;
   /** The task's checks before the agent may end its turn (ADR-052 §2): a reason keeps it working. */
   onStop?: (lastMessage: string) => Promise<string | null>;
   /** The job's tools through the broker (ADR-021): servers, and what the sandbox must reach. */
@@ -184,6 +188,8 @@ export class LegSupervisor {
             ),
         credential: await registry.credential(leg),
         onPermission: req.onPermission,
+        ...(req.permissionMode ? { permissionMode: req.permissionMode } : {}),
+        ...(req.onPreToolUse ? { onPreToolUse: req.onPreToolUse } : {}),
         ...(req.onStop ? { onStop: req.onStop } : {}),
         ...(req.tools ? { mcpServers: req.tools.servers } : {}),
       });
