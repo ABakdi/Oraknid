@@ -26,7 +26,7 @@ afterEach(async () => {
 });
 
 describe("the terminal app on a daemon", () => {
-  it("talks to it with the CLI's token: the project, live, commands, settings, a missing procedure", async () => {
+  it("talks to it with the CLI's token: the project, live, commands, settings, local models", async () => {
     const dir = mkdtempSync(join(tmpdir(), "oraknid-tui-"));
     daemon = await startDaemon({
       paths: resolvePaths({ ORAKNID_DATA_DIR: dir, ORAKNID_CONFIG_DIR: dir }),
@@ -89,9 +89,10 @@ describe("the terminal app on a daemon", () => {
     await until((f) => f.includes("max-tasks-per-job: auto") && f.includes("interview-rounds:"));
     await esc();
 
-    // A procedure this daemon hasn't got is said, not an error.
+    // Local models (ADR-054) through the daemon's own procedures; a daemon without them is
+    // tested against the stand-in API (tui.test.tsx).
     await run("/models");
-    await until((f) => f.includes("Local models (ADR-054) are not in this Oraknid yet."));
+    await until((f) => f.includes("Local models") && f.includes("None yet."));
     await esc();
 
     await run("/doctor");
