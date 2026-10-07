@@ -579,4 +579,17 @@ describe("my answers to “keeps going wrong” (bugs 10, 11)", () => {
     expect(all.at(-2)?.outcome).toBe("redirected");
     expect(all.at(-1)?.outcome).toBe("succeeded");
   }, 60_000);
+
+  it("“Leave it out” says nothing of the model: no failure recorded (bug 11)", async () => {
+    const { id, item } = await goingWrong(() => false);
+    const before = learned();
+    await rig?.api.inbox.answer({
+      id: item.id,
+      answers: [{ questionId: "what", options: ["leave-out"], text: "" }],
+    });
+    const done = await rig?.ended(id);
+    expect(done?.tasks.map((t) => t.state)).toEqual(["skipped"]);
+    expect(outcomes(id).at(-1)?.outcome).toBe("abandoned");
+    expect(learned()).toBe(before);
+  }, 60_000);
 });

@@ -229,7 +229,10 @@ class EndAttempt extends Error {
     readonly outcome: AttemptOutcome,
     /** The Leg or its model couldn't be used, not the task failing: not counted (ADR-052 §4). */
     readonly unavailable = false,
-    /** Ended by my answer (try again, another Leg): not counted against the task (bug 10). */
+    /**
+     * Ended by my answer: a "try again" isn't counted against the task (bug 10), and no
+     * choice of mine is learned as the model's failure (bug 11).
+     */
     readonly byOwner = false,
   ) {
     super(outcome.kind);
@@ -2150,12 +2153,15 @@ export async function runAttempt(
       return true;
     }
     await closeSession();
-    if (answer === ILL_DO_IT) throw new EndAttempt({ kind: "owner-held" });
-    if (answer === LEAVE_IT_OUT) throw new EndAttempt({ kind: "skipped", dependents: true });
-    throw new EndAttempt({
-      kind: "cancel-job",
-      reason: `Stopped by me: "${task.title}" couldn't finish without me.`,
-    });
+    // My choices, not the model's failures (bug 11).
+    if (answer === ILL_DO_IT) throw new EndAttempt({ kind: "owner-held" }, false, true);
+    if (answer === LEAVE_IT_OUT)
+      throw new EndAttempt({ kind: "skipped", dependents: true }, false, true);
+    throw new EndAttempt(
+      { kind: "cancel-job", reason: `Stopped by me: "${task.title}" couldn't finish without me.` },
+      false,
+      true,
+    );
   };
 
   const ask = async (drift: Drift): Promise<never> => {
@@ -2211,14 +2217,19 @@ export async function runAttempt(
     const text = await waitForAnswer(d.inbox, d.bus, itemId, signal);
     const answered = d.inbox.get(itemId);
     const choice = readKeepsGoingWrong(text, answered?.answers ?? null);
-    if (choice.kind === "mine") throw new EndAttempt({ kind: "owner-held" });
+    // My choices, not the model's failures (bug 11).
+    if (choice.kind === "mine") throw new EndAttempt({ kind: "owner-held" }, false, true);
     if (choice.kind === "leave-out")
-      throw new EndAttempt({ kind: "skipped", dependents: choice.dependents });
+      throw new EndAttempt({ kind: "skipped", dependents: choice.dependents }, false, true);
     if (choice.kind === "stop")
-      throw new EndAttempt({
-        kind: "cancel-job",
-        reason: `Stopped by me after "${task.title}" kept going wrong; the work so far stays on its branch.`,
-      });
+      throw new EndAttempt(
+        {
+          kind: "cancel-job",
+          reason: `Stopped by me after "${task.title}" kept going wrong; the work so far stays on its branch.`,
+        },
+        false,
+        true,
+      );
     if (choice.advice) {
       d.silk.add({
         jobId: job.id,
@@ -2643,6 +2654,8 @@ export async function runAttempt(
               : "reassigned"
             : "abandoned",
         false,
+        // What I chose (skip it, take it over, stop, try again) says nothing of the model.
+        !error.byOwner,
       );
       return error.outcome;
     }
