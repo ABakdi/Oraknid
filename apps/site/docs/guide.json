@@ -1,6 +1,7 @@
 [
   ["getting-started", "Getting started", "Install it, open it, set your PIN, add a Leg."],
   ["jobs", "Jobs and The Eye", "Starting work, following it, talking to The Eye."],
+  ["terminal", "Oraknid in a terminal", "The conversation and every command, without a browser."],
   ["legs", "Legs", "The agents and models Oraknid hands work to."],
   ["projects", "Projects, repos and servers", "Where work happens, and what it may reach."],
   ["backups", "Backups", "Your servers' databases, on a schedule, encrypted, checked."],

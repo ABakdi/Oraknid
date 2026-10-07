@@ -97,5 +97,18 @@ services.
   the daemon. A full commit id the checkout has is checked out without
   fetching (going back after a failed update); `ORAKNID_UPDATE=1` prints
   no pairing code.
+- **With or without the web UI** (2026-10-07, [[ADR-055-Terminal-App]]):
+  `--gui` / `--no-gui`. Neither given, the script uses what the record of
+  an earlier install says, else asks on the terminal (`/dev/tty`, so it
+  works under `curl | sh`), else installs the web UI when `$DISPLAY`,
+  `$WAYLAND_DISPLAY` or `$BROWSER` is set and terminal only when none is.
+  Terminal only runs `pnpm install --frozen-lockfile --filter
+  '!@oraknid/web'` and `pnpm exec turbo run build --filter
+  '!@oraknid/web'` (apps/web's dependencies are not installed, a web build
+  left from before is removed), records `"gui": false`, and ends with
+  "open it in a terminal with: oraknid" and no pairing code. Updates pass
+  `--gui` or `--no-gui` as recorded (only to a script that knows them);
+  `oraknid install --gui` builds the web UI in place, records `"gui":
+  true` and restarts the service on it.
 
 Related: [[OS-Integration]] · [[ADR-012-Sleep-Inhibition]] · [[ADR-033-Product-Site]] · [[ADR-048-Updates]]

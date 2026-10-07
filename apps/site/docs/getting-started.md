@@ -1,6 +1,6 @@
 # Getting started
 
-Oraknid runs on your own Linux computer, in the background. You open it in a browser, describe work, and it gets done by the agents you already have.
+Oraknid runs on your own Linux computer, in the background. You open it in a browser or in a terminal, describe work, and it gets done by the agents you already have.
 
 ## What you need
 
@@ -48,7 +48,11 @@ curl -fsSL https://raw.githubusercontent.com/ABakdi/Oraknid/dev/install.sh | sh 
 - `--dir <path>`: where the program lives (default `~/.local/share/oraknid/app`).
 - `--from <path|url>`: install from another clone, a folder or a git URL, instead of GitHub.
 - `--no-service`: build and link, but don't run it in the background.
+- `--no-gui`: terminal only, without the web interface: smaller and quicker to build, for a server or a machine you reach over SSH. You use Oraknid with `oraknid` in a terminal ([Oraknid in a terminal](terminal.html)).
+- `--gui`: with the web interface (what you get on a desktop).
 - `--uninstall`: remove the service and the `oraknid` command. Your data stays.
+
+With neither `--gui` nor `--no-gui`, the script asks, when it runs in a terminal; otherwise it installs the web interface when the computer has a display, and terminal only when it has none. Running it again keeps what you chose the first time, and so do updates. To add the web interface later: `oraknid install --gui`.
 
 Run it again to update: it fetches, rebuilds, and restarts the service.
 
@@ -97,6 +101,8 @@ oraknid open
 ```
 
 This opens the web interface on `http://127.0.0.1:7417`. The first time, the page asks you to pair this browser with a six-digit code: the command prints it. `oraknid pair` gives a new one, for a phone or another browser.
+
+Or stay in the terminal: `oraknid` alone opens Oraknid there, The Eye's conversation and a prompt, with slash commands for everything else (`/projects`, `/jobs`, `/inbox`, `/servers`…). See [Oraknid in a terminal](terminal.html). Installed with `--no-gui`, that is how you use it: there is no web page to open, and a phone, which needs the web interface, can't be paired until you add it with `oraknid install --gui`.
 
 ## Set your PIN
 

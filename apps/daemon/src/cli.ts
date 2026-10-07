@@ -10,7 +10,7 @@ import {
   statSync,
   writeSync,
 } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { format } from "node:util";
 import type { UpdatesView } from "@oraknid/contracts";
@@ -28,6 +28,7 @@ import type { Router } from "./api/router.ts";
 import { type RuntimeInfo, startDaemon } from "./daemon.ts";
 import { runDoctor } from "./doctor.ts";
 import { DEFAULT_HOST, DEFAULT_PORT, resolvePaths } from "./paths.ts";
+import { addWebUi as addWebUiIn, findAppDir } from "./updates/install.ts";
 import { readRun, updateLog } from "./updates/runner.ts";
 import { Updates } from "./updates/service.ts";
 import { VERSION } from "./version.ts";
@@ -37,6 +38,26 @@ const program = new Command()
   .name("oraknid")
   .description("Always watching, many legs.")
   .version(VERSION);
+
+program
+  .command("tui", { isDefault: true })
+  .description("open Oraknid in this terminal (what `oraknid` alone does)")
+  .action(async () => {
+    const info = await findRunning();
+    if (!info) fail("Oraknid is not running. Start it with: oraknid start");
+    // Loaded only here: the service never loads Ink or React (ADR-055).
+    const { runTui } = await import("./tui/index.tsx");
+    try {
+      await runTui({
+        url: info.url,
+        token: info.token ?? "",
+        stateFile: join(paths.configDir, "tui.json"),
+      });
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+    process.exit(0);
+  });
 
 program
   .command("run")
@@ -142,6 +163,7 @@ program
   .action(async () => {
     const info = await findRunning();
     if (!info) fail("Oraknid is not running. Start it with: oraknid start");
+    await needWebUi(info);
     // The code stays in this terminal: a command line is readable by every
     // user of this machine (/proc), so it never goes in the address (Audit 2).
     const { code } = await api(info).devices.pairStart();
@@ -156,6 +178,7 @@ program
   .action(async () => {
     const info = await findRunning();
     if (!info) fail("Oraknid is not running. Start it with: oraknid start");
+    await needWebUi(info);
     const { code, expiresAt } = await api(info).devices.pairStart();
     console.log(`Pairing code: ${code}`);
     console.log(
@@ -199,13 +222,15 @@ program
   .description(
     "run Oraknid as a background service with what this system uses (systemd, OpenRC, runit)",
   )
-  .action(async () => {
+  .option("--gui", "also build the web UI, on an install made for the terminal only")
+  .action(async ({ gui }: { gui?: boolean }) => {
     const entry = process.argv[1] ?? "";
     if (!entry.endsWith(".mjs") && !entry.endsWith(".js")) {
       fail(
         "Install from a build: pnpm --filter @oraknid/daemon build, then run dist/cli.mjs install.",
       );
     }
+    if (gui) addWebUi();
     // A daemon started by hand would hold the port the service needs.
     const running = await findRunning();
     if (running) {
@@ -349,6 +374,33 @@ function api(info: { url: string; token?: string }) {
       headers: { authorization: `Bearer ${info.token ?? ""}` },
     }),
   );
+}
+
+/** A browser or a phone needs the web UI; a terminal-only install says so (ADR-055). */
+async function needWebUi(info: { url: string; token?: string }) {
+  const s = await api(info).system.status();
+  if (s.webUi === false)
+    fail(
+      "This Oraknid has no web UI (it was installed for the terminal only), and a browser or a phone needs it.\n" +
+        "Use it here with: oraknid\n" +
+        "Add the web UI with: oraknid install --gui",
+    );
+}
+
+/** `oraknid install --gui`: builds the web UI in the app's folder, then the service restarts on it. */
+function addWebUi() {
+  const appDir = findAppDir();
+  if (!appDir) fail("The app's folder (with install.sh) wasn't found next to this program.");
+  console.log(`Adding the web UI in ${appDir}`);
+  try {
+    addWebUiIn(appDir, (cmd, args, o) => {
+      console.log(`+ ${cmd} ${args.join(" ")}`);
+      return spawnSync(cmd, args, { ...o, stdio: "inherit" }).status ?? 1;
+    });
+  } catch (error) {
+    fail(`The web UI wasn't added: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  console.log("✓ The web UI is built; the service restarts on it.");
 }
 
 function readRuntime(): (RuntimeInfo & { token?: string }) | undefined {

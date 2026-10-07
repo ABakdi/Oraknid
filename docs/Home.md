@@ -32,6 +32,7 @@ in part). Next: those runs, then Later.
 - [[Notifications]] — desktop, web push, email, routing
 - [[Security]] — secrets, scope, command filter, prompt injection, pairing, the PIN, device rights, mail, audit
 - [[Web-UI]] — every screen, live, mobile: tabs, shortcuts, going back, set up in place, Mail, the lock
+- [[Terminal-App]] — `oraknid` in a terminal: The Eye's conversation, a prompt, slash commands, numbered lists; installs without the web UI
 - [[The-Nest]] — the remote relay, private or public (Phase 4, Phase 11)
 
 ## 02 — Architecture

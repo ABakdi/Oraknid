@@ -250,6 +250,8 @@ export interface ApiContext {
   session: string | undefined;
   lock: AppLock;
   startedAt: number;
+  /** Whether this Oraknid has the web UI; false on a terminal-only install (ADR-055). */
+  webUi: boolean;
   paths: Paths;
   bus: EventBus;
   now: () => number;
@@ -773,6 +775,7 @@ export const router = {
       secrets: c.secrets.status(),
       sandbox: c.sandbox(),
       service: c.service.status(),
+      webUi: c.webUi,
     })),
     doctor: base.output(z.array(DoctorCheck)).handler(({ context: c }) =>
       runDoctor(c.paths, {
@@ -1822,6 +1825,11 @@ export const router = {
         guard(async () => {
           // A phone away from home opens only with the PIN (ADR-029).
           if (!c.lock.hasPin()) throw new Error("Set your PIN first (Settings → Security).");
+          // The phone loads the web UI from this daemon (ADR-055).
+          if (!c.webUi)
+            throw new Error(
+              "This Oraknid has no web UI, and a phone needs it: add it with `oraknid install --gui`, then pair the phone.",
+            );
           if (input.full) await c.lock.verify(c.device ?? "cli", input.pin ?? "", false);
           const r = await c.nest.pairAway(input.name);
           if (input.full) c.devices.setRights(r.deviceId, true);

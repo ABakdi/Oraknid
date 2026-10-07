@@ -19,6 +19,8 @@ export const InstallRecord = z.object({
   from: z.string(),
   /** Whether the background service was installed (not `--no-service`). */
   service: z.boolean().default(true),
+  /** Whether the web UI was built (not `--no-gui`, ADR-055); a record from before says nothing: it was. */
+  gui: z.boolean().default(true),
 });
 export type InstallRecord = z.infer<typeof InstallRecord>;
 

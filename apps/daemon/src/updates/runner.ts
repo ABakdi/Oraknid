@@ -28,6 +28,8 @@ export interface UpdatePlan {
   ref: string;
   /** Whether the background service runs Oraknid (else it is restarted by hand). */
   service: boolean;
+  /** Whether the web UI is built (ADR-055); left out: it is. */
+  gui?: boolean;
   fromVersion: string;
   fromCommit: string;
 }
@@ -175,8 +177,11 @@ else
 	say "Using this version's install.sh."
 	cp "$APP/install.sh" "$U/install.sh"
 fi
-# shellcheck disable=SC2086 # NO_SERVICE is one option or none
-sh "$U/install.sh" --ref "$REF" --dir "$APP" --from "$FROM" $NO_SERVICE
+# With or without the web UI, as installed (ADR-055); an install.sh from before the choice builds it.
+GUI=''
+if grep -q -- '--no-gui' "$U/install.sh"; then GUI=${plan.gui === false ? "--no-gui" : "--gui"}; fi
+# shellcheck disable=SC2086 # NO_SERVICE and GUI are one option or none
+sh "$U/install.sh" --ref "$REF" --dir "$APP" --from "$FROM" $NO_SERVICE $GUI
 code=$?
 if [ "$code" = 0 ]; then
 	restart_by_hand
@@ -189,7 +194,7 @@ if [ "$(git -C "$APP" rev-parse HEAD 2>/dev/null)" = "$PREV" ]; then
 fi
 say "Going back to $FROMV ($PREV)."
 # shellcheck disable=SC2086
-if sh "$U/install.sh" --ref "$PREV" --dir "$APP" --from "$FROM" $NO_SERVICE; then
+if sh "$U/install.sh" --ref "$PREV" --dir "$APP" --from "$FROM" $NO_SERVICE $GUI; then
 	cp "$U/install-before.json" "$APP/.oraknid-install.json" 2>/dev/null || true
 	restart_by_hand
 	finish rolled-back "$code"
