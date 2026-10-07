@@ -8,10 +8,17 @@ A **Leg** is an agent or model Oraknid hands tasks to. You can have as many as y
 | OpenCode | The open coding agent, with any provider it supports | A key, or its free models |
 | Antigravity | Google's agent CLI | Google sign-in, from the Leg's card |
 | OpenAI-compatible | Any API that speaks it: Ollama, llama.cpp, a hosted model | An address and, if needed, a key |
+| Oraknid's own agent | Oraknid's tool loop over any model behind an OpenAI-compatible API (OpenRouter, a provider's free endpoint, your local models) | An address and, if needed, a key |
 
 ## Adding Legs
 
 **Legs → Find agents on this computer** lists what is installed and adds it. You can also add one by hand. Each Leg gets a folder of its own: your personal agent settings are never used or changed.
+
+## Oraknid's own agent
+
+**Oraknid's own agent** works like Claude Code with any model: it reads, searches and edits files, runs commands in the sandbox, keeps a todo list and fetches pages, calling tools until the task is done, and summarises its earlier work when the model's context fills up. It uses your job's tools (GitHub, mail, the local models' roles) like the other agents, and its sessions are kept, so a retry goes on from where it was.
+
+Add one with **Add a Leg → Oraknid's own agent**: the endpoint (for example `https://openrouter.ai/api/v1`), the models (empty: every model it lists) and a key if it needs one. Its test asks each model to call a tool with one tiny request: a model with native tool calls uses them; one without uses a JSON format the server enforces (llama.cpp and Ollama do); one that can do neither gets only text work (summarising, sorting, translating). Your [local models](models.html) get a Leg of this kind by themselves, called **Local**.
 
 ## Models, strengths and quotas
 

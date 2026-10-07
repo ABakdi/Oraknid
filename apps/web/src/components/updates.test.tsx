@@ -19,6 +19,7 @@ const script = (channel: "dev" | "stable" = "stable") =>
     installedAt: "2026-10-04T09:00:00Z",
     from: "https://github.com/ABakdi/Oraknid.git",
     service: true,
+    gui: true,
   }) as const;
 
 const release = (tag: string, prerelease = false) => ({

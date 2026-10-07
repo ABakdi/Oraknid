@@ -29,6 +29,8 @@ export const SystemStatus = z.object({
     /** What to run to put it right; null when nothing is wrong. */
     fix: z.string().nullable(),
   }),
+  /** Whether this Oraknid has the web UI; false on a terminal-only install (ADR-055). */
+  webUi: z.boolean().default(true),
 });
 export type SystemStatus = z.infer<typeof SystemStatus>;
 

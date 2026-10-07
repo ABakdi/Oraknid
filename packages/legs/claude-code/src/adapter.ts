@@ -59,6 +59,8 @@ const userMessage = (text: string): SDKUserMessage =>
 
 /** Windows that belong to one model rather than the whole account. */
 const MODEL_WINDOWS = new Set(["seven_day_opus", "seven_day_sonnet"]);
+/** How many times the Stop hook may keep a turn going while the checks fail (ADR-052 §2). */
+export const STOP_HOLDS = 3;
 
 /** resetsAt arrives in epoch seconds; Oraknid keeps milliseconds. */
 const toMs = (t: number | undefined) => (t === undefined ? null : t < 1e12 ? t * 1000 : t);
@@ -355,6 +357,8 @@ export function createClaudeCodeAdapter(deps: { query?: QueryFn } = {}): LegAdap
       let killed = false;
       let rateLimited = false;
       let turnText = "";
+      /** Times the Stop hook kept this turn going (ADR-052 §2). */
+      let held = 0;
 
       const canUseTool: CanUseTool = async (tool, toolInput) => {
         const request = toRequest(tool, toolInput);
@@ -383,6 +387,33 @@ export function createClaudeCodeAdapter(deps: { query?: QueryFn } = {}): LegAdap
       }
       if (s.effort) options.effort = s.effort as EffortLevel;
       if (s.resumeFrom) options.resume = s.resumeFrom;
+      // The task's checks in the loop (ADR-052 §2): Claude Code's Stop hook, in process. While
+      // they fail, the session can't end its turn; three times at most per turn, then it may.
+      const onStop = s.onStop;
+      if (onStop) {
+        // Beside auto mode's hooks, never in place of them.
+        options.hooks = {
+          ...options.hooks,
+          Stop: [
+            {
+              hooks: [
+                async (input) => {
+                  if (input.hook_event_name !== "Stop" || held >= STOP_HOLDS) return {};
+                  const last =
+                    "last_assistant_message" in input &&
+                    typeof input.last_assistant_message === "string"
+                      ? input.last_assistant_message
+                      : turnText;
+                  const reason = await onStop(last).catch(() => null);
+                  if (!reason) return {};
+                  held++;
+                  return { decision: "block" as const, reason };
+                },
+              ],
+            },
+          ],
+        };
+      }
       // Only Oraknid's bridges to the job's tools (ADR-021); never my own servers.
       if (s.mcpServers)
         options.mcpServers = Object.fromEntries(
@@ -397,6 +428,7 @@ export function createClaudeCodeAdapter(deps: { query?: QueryFn } = {}): LegAdap
         interrupted = false;
         rateLimited = false;
         turnText = "";
+        held = 0;
         events.push({ type: "turn.started" });
         input.push(userMessage(text));
       };

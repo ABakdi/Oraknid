@@ -18,10 +18,14 @@ terminal alone.
 ## Milestones
 
 ### M15.1 — What sank the two jobs
-- [ ] A check is run once before it judges; a broken check (syntax, quoting, a missing tool) is repaired, never counted against an agent; an agent's evidence that a check is broken gets it reviewed
-- [ ] Unusable agents never routed to (out of quota, rate-limited, paused, failing to start, deprecated model), the reason read from their own words and kept until it clears; a deprecated model replaced by the one named
-- [ ] A blocked job says the real reason and what to do ("Claude is paused in Oraknid: unpause it", "Antigravity is out of quota until …")
-- [ ] Scope drift ignores Oraknid's own files (`notes/handoff.md`, `.oraknid/`)
+- [x] A check is run once before it judges; a broken check (syntax, quoting, a missing tool) is repaired, never counted against an agent; an agent's evidence that a check is broken gets it reviewed
+  Tested: core `harness.test.ts` (`brokenCheckHint`: a `test` broken by its quoting, an unterminated quote, a missing tool, a program refusing its options, against a missing file or a failing test that are the work's; `saysCheckBroken` on the misahaty agent's words); `eye.test.ts` → agents that deliver: a check with an unterminated quote is repaired before the first session starts (`task.checks-tried`, `task.check-reviewed` with `before`), one attempt, one turn; an agent saying "Oraknid's check is wrong" gets it repaired, no climb, one attempt.
+- [x] Unusable agents never routed to (out of quota, rate-limited, paused, failing to start, deprecated model), the reason read from their own words and kept until it clears; a deprecated model replaced by the one named
+  Tested: core `harness.test.ts` (`usageLimitOf`/`resetsAtFrom`: "Resets in 51h49m11s", "try again in 2 hours and 5 minutes", an ISO time, a `reset_at`; `deprecationOf`); Antigravity's `quotaError` keeps the 51 hours; `simple-work.test.ts`: an agent saying "Individual quota reached … Resets in 51h49m11s" is rate-limited until then, its attempt `unavailable`, the next route says so; "Model mimo-v2.5-free has been deprecated. Use mimo-v2.6-flash-free instead." hides it and adds mimo-v2.6-flash-free, never chosen again. A Leg that fails to start rests 2 min (`notTheTask`), not tested end to end.
+- [x] A blocked job says the real reason and what to do ("Claude is paused in Oraknid: unpause it", "Antigravity is out of quota until …")
+  Tested: `eye.test.ts` → a paused Leg: "No Leg can take "Write hello.sh": Claude A is paused in Oraknid: unpause it on its card (Legs) to go on. Unpause one to go on.", no "quota", and the conversation says to unpause it; the quota block still says "out of quota until …".
+- [x] Scope drift ignores Oraknid's own files (`notes/handoff.md`, `.oraknid/`)
+  Tested: core `harness.test.ts` (`oraknidOwn`, `detect` sees only README.md); `eye.test.ts`: a task that writes `notes/handoff.md` beside its work has no drift, one attempt.
 
 ### M15.2 — Auto mode ([[ADR-053-Auto-Mode]])
 - [x] The rule layer from open-source parts: allow at once, block at once, judge the rest; read-only commands over ssh recognised
@@ -31,7 +35,7 @@ terminal alone.
 
 Done 2026-10-07 (ADR-053 → As built; Approvals-and-Autonomy → Auto mode;
 ADR-014 partly superseded). The new package `@oraknid/guard`; autonomy
-is Auto (default), Careful or Full, old jobs moved by migration 0038.
+is Auto (default), Careful or Full, old jobs moved by migration 0039.
 Tested: `packages/guard` — `corpus.test.ts` (112 cases: the owner's
 commands of 2026-10-06 allowed, among them `ssh -F … oraknid-spinet-staging
 'cd /root/spinet-deploy && docker compose -p spinet-deploy ps -a'`,
@@ -64,27 +68,91 @@ judge), `entities.test.ts` (old autonomy names parse). Not tested
 against real models or a real Claude Code session.
 
 ### M15.3 — Whole goals, checks in the loop, the ladder ([[ADR-052-A-Harness-For-Any-Model]] §1–3, §5)
-- [ ] The planner makes substantial, independent tasks; chains of crumbs merged; a goal one agent can do is one task
-- [ ] The agent gets the goal, the acceptance criteria and the check commands, runs them itself; Claude Code's Stop hook
-- [ ] Retries resume the session with what failed
-- [ ] The ladder: rungs per kind of work, one failure moves the task up with a handoff, the top rung the strongest allowed, a Claude share per job
-- [ ] The Eye's own calls on the strongest model allowed for it
-- [ ] One interview round when the spec is complete
+- [x] The planner makes substantial, independent tasks; chains of crumbs merged; a goal one agent can do is one task
+  Tested: core `harness.test.ts` → whole goals: the misahaty removal's five crumbs become one task (steps numbered, checks and scopes joined, said in the notes); an API, a web app and e2e tests stay apart; two small steps stay two; what came after the chain depends on the merged task. The planner's rules say it with examples (prompt only, not testable without a model).
+- [x] The agent gets the goal, the acceptance criteria and the check commands, runs them itself; Claude Code's Stop hook
+  Tested: `claude-code/adapter.test.ts`: the Stop hook blocks the end with the failing check three times, then lets it end; no hook without checks. The context pack and the first message ask the agent to run its checks itself (`eye.test.ts` → resumed session's message). Other Legs: prompt only.
+- [x] Retries resume the session with what failed
+  Tested: `eye.test.ts` → a task paused mid-turn and resumed continues the same model's native session (`resumeFrom`), told why it stopped; a pause is no longer recorded against the model. Climbing to another model starts fresh with the handoff and what failed (`eye.test.ts` → the ladder).
+- [x] The ladder: rungs per kind of work, one failure moves the task up with a handoff, the top rung the strongest allowed, a Claude share per job
+  Tested: core `harness.test.ts` → the ladder (rungs per kind; after a failure only higher rungs; at the top the strongest again; the Claude share); `eye.test.ts`: a failing first turn climbs Haiku → Sonnet → Opus (`task.climbing`), each told what failed, then Opus corrects in its session; a check The Eye keeps is reviewed on each rung. Settings → Jobs at once → Claude share (`settings.claudeShare`), and a job's `budget.claudeShare`.
+- [x] The Eye's own calls on the strongest model allowed for it
+  Tested: `brain.test.ts`: a check repaired and a review go to Opus, not Sonnet; planning and the interview already did. Resting models are left out of The Eye's choice.
+- [x] One interview round when the spec is complete
+  Tested: core `specComplete`; `eye.test.ts`: a goal with a feature list is asked one round, then only played back (rounds 1, final), one inbox round.
 
 ### M15.4 — Oraknid's own agent ([[ADR-052-A-Harness-For-Any-Model]] §6)
-- [ ] The oraknid-agent Leg: a tool loop over any OpenAI-compatible model, Claude-Code-like tools, compaction, checks on "done"
-- [ ] Tool calling probed; grammar-constrained JSON for models without native calls; non-tool models limited to text work
+- [x] The oraknid-agent Leg: a tool loop over any OpenAI-compatible model, Claude-Code-like tools, compaction, checks on "done" (2026-10-07: on the AI SDK's loop; the job's MCP tools too; sessions resumed from stored history; Add a Leg offers it)
+- [x] Tool calling probed; grammar-constrained JSON for models without native calls; non-tool models limited to text work
+
+Tested: the Leg contract kit against a stand-in llama-server and the real
+bwrap sandbox; a task end to end (todo, write, bash in the sandbox, edit,
+read); the same through a JSON grammar for a model without tool calls;
+checks failing then passing; resume from stored history by a new adapter;
+compaction near a small window; a text-only model given no tools; the
+probe's three outcomes; each model's own address and the key; the job's
+tools through an MCP server; the tools' edge cases (pages, unique edits,
+the workspace's edge, glob, grep, todo, web fetch); the OpenAI-compatible
+probe saying which models call tools (`packages/legs/oraknid-agent`,
+`packages/legs/openai-compatible`, `packages/core/src/profiles.test.ts`).
 
 ### M15.5 — Local models ([[ADR-054-Local-Models]])
-- [ ] Models page and `/models`: find (Hugging Face GGUF, Ollama), download (resumable, checked), run (llama-server or Ollama), load / unload, measured speed, memory and VRAM
-- [ ] Admitted under ADR-050; idle models unloaded first under danger
-- [ ] Roles (translate, OCR / vision, speech to text, embeddings, mail, simple code) and their tools for every agent
-- [ ] `install.sh --local-models`
+- [x] Models page and `/models`: find (Hugging Face GGUF, Ollama), download (resumable, checked), run (llama-server or Ollama), load / unload, measured speed, memory and VRAM (2026-10-07: the page and the `models.*` API; `/models` is the terminal app's, M15.6)
+- [x] Admitted under ADR-050; idle models unloaded first under danger
+- [x] Roles (translate, OCR / vision, speech to text, embeddings, mail, simple code) and their tools for every agent
+- [x] `install.sh --local-models`
+
+Tested: through the daemon with a stand-in Hugging Face, ollama.com,
+Ollama registry and a local Ollama, and a stand-in llama-server program:
+search with fit, download, the GGUF's context read, load as the Local
+Leg's model (healthy, tool calls native, 42.5 t/s measured), Oraknid's
+agent doing a task on it, unload; roles suggested and set, the
+local-models tool translating, summarising and embedding, OCR refused
+outside the job's project; a load refused for room and idle models
+unloaded to make it; a checksum mismatch; pause and resume with a Range
+request; an Ollama library model from the registry; Ollama pulls and
+loads when llama-server isn't installed; fit, run plans, GGUF headers,
+quantisation and kinds; `admitModel` and the GPU check in `admit()`;
+install.sh's choice of llama.cpp build (`apps/daemon/src/models`,
+`packages/core/src/admission.test.ts`,
+`apps/daemon/src/updates/install-script.test.ts`). Never a real model, a
+real download or a real agent; llama.cpp's real release and a real GPU
+are still to try by hand.
 
 ### M15.6 — The terminal app and a terminal-only install ([[ADR-055-Terminal-App]])
-- [ ] `oraknid` opens the Ink app: the prompt, The Eye's transcript live, slash commands with completion, numbered lists, picking by number
-- [ ] `/projects`, `/jobs`, `/inbox`, `/servers` (and a server's `/chat`, `/docker`, `/db`, `/proxy`, `/logs`, `/state`, `/ssh`, `/backups`), `/agents`, `/models`, `/usage`, `/health`, `/mail`, `/repos`, `/storage`, `/chats`, `/skills`, `/settings`, `/update`, `/doctor`, `/help`
-- [ ] `install.sh --no-gui` / `--gui`, asked when unset; terminal-only skips the web build; `oraknid install --gui` later
+- [x] `oraknid` opens the Ink app: the prompt, The Eye's transcript live, slash commands with completion, numbered lists, picking by number
+- [x] `/projects`, `/jobs`, `/inbox`, `/servers` (and a server's `/chat`, `/docker`, `/db`, `/proxy`, `/logs`, `/state`, `/ssh`, `/backups`), `/agents`, `/models`, `/usage`, `/health`, `/mail`, `/repos`, `/storage`, `/chats`, `/skills`, `/settings`, `/update`, `/doctor`, `/help`
+- [x] `install.sh --no-gui` / `--gui`, asked when unset; terminal-only skips the web build; `oraknid install --gui` later
+
+Done 2026-10-07 ([[ADR-055-Terminal-App]] → As built, [[Terminal-App]],
+[[ADR-036-One-Script-Install]] → With or without the web UI). Tested:
+`apps/daemon/src/tui/tui.test.tsx` (ink-testing-library, a stand-in API
+and live socket): commands parsed, completed and ordered by where I am,
+picking by number at once or on Enter, the help; Markdown for the
+terminal; the transcript (my prompt `›`, a rendered reply, a folded
+thought, a running task), thinking live with its text, Esc stopping it,
+Tab choosing redo for a message sent while it thinks (`projects.talk`
+with `mode: "redo"`), `auto` otherwise; `/` listing and filtering, a
+server picked by typing 2, its overview, Esc back a panel at a time; a
+job's plan tree, ↑↓ Enter opening a task, `/pause` on the current job;
+the inbox answered by number; the notice and bell for a question; a
+missing procedure (`/models`) said in words; a command needing a server,
+an unknown command. `tui-daemon.test.tsx`: the app on a whole daemon
+with the CLI's token and the real live socket (the project chosen,
+`/projects`, `/settings` read and written through the real procedures,
+`/models` on a daemon without them, `/doctor`, `/servers`).
+`no-web-ui.test.ts`: `/` answered in text with the daemon's words, other
+pages 404, `system.status.webUi` (false from a terminal-only record, true
+for a clone), pairing a phone refused, the web UI served when built. `install-script.test.ts`: `choose_gui` (flags, the
+record of an earlier install, a display, `$BROWSER`, none), the record's
+`gui`, `build` terminal only (the filtered install and build, an old web
+build removed; a fake `pnpm`) and with the web UI, `--help`, updates
+passing `--no-gui`/`--gui` (and to the version before), `oraknid install
+--gui`'s steps and record. By hand: a terminal-only install and build of
+the repository in a temp folder (`pnpm install --frozen-lockfile --filter
+'!@oraknid/web'` then the filtered turbo build: the daemon, the Nest and
+the site built, apps/web untouched); the daemon's build puts Ink in its
+own chunk.
 
 ### M15.7 — The proof
 - [ ] My piano project (React, every feature of its spec) built in under 30 minutes from the spec, verified by its checks, with free models doing the simple parts and climbing when they fail

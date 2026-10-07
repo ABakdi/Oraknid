@@ -104,6 +104,12 @@ export const Budget = z.object({
   wallClockMs: BudgetLimit.nullable(),
   /** In US dollars. Defaults to 0 (BR-10). */
   money: BudgetLimit,
+  /**
+   * The job's Claude share (ADR-052 §3): the most of its attempts (0–1) that
+   * may run on Claude when its tasks climb the ladder. Unset or null: as
+   * needed, within the plan's quota rules (ADR-013).
+   */
+  claudeShare: z.number().min(0).max(1).nullable().optional(),
 });
 export type Budget = z.infer<typeof Budget>;
 
@@ -243,7 +249,13 @@ export type Task = z.infer<typeof Task>;
 
 // ── Legs ────────────────────────────────────────────────────────────
 
-export const LegKind = z.enum(["claude-code", "openai-compatible", "opencode", "antigravity"]);
+export const LegKind = z.enum([
+  "claude-code",
+  "openai-compatible",
+  "opencode",
+  "antigravity",
+  "oraknid-agent",
+]);
 export type LegKind = z.infer<typeof LegKind>;
 
 export const LegHealth = z.enum(["healthy", "degraded", "rate-limited", "unavailable", "disabled"]);

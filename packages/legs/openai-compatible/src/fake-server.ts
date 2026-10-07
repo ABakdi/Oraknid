@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import type { Script } from "@oraknid/leg-sdk/contract";
 
 /** A stand-in OpenAI-compatible server (Ollama-flavoured) following a contract script on the first turn. */
-export async function fakeServer(script: Script, opts: { usage?: boolean } = {}) {
+export async function fakeServer(script: Script, opts: { usage?: boolean; tools?: boolean } = {}) {
   const requests: { messages: { role: string; content?: string }[]; [k: string]: unknown }[] = [];
   const server = createServer((req, res) => {
     let raw = "";
@@ -17,6 +17,23 @@ export async function fakeServer(script: Script, opts: { usage?: boolean } = {})
         return json(res, { model_info: { "qwen2.context_length": 32768 } });
       if (req.url !== "/v1/chat/completions") return json(res, {}, 404);
       const body = JSON.parse(raw);
+      // The probe's tool test (not a session's turn): one call to add, unless the server has no tools.
+      if (!body.stream && /Use the add tool/.test(body.messages.at(-1)?.content ?? "")) {
+        const call = opts.tools === false ? null : { name: "add", arguments: '{"a":2,"b":3}' };
+        return json(res, {
+          choices: [
+            {
+              message: call
+                ? {
+                    role: "assistant",
+                    content: null,
+                    tool_calls: [{ id: "p", type: "function", function: call }],
+                  }
+                : { role: "assistant", content: "5" },
+            },
+          ],
+        });
+      }
       requests.push(body);
       const users = body.messages.filter((m: { role: string }) => m.role === "user").length;
       const last = body.messages.at(-1);

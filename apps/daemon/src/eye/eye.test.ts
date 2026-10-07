@@ -131,10 +131,14 @@ async function eye(
     /** Before the job is created (tools, settings). */
     setup?: (api: RouterClient<Router>) => Promise<void>;
     files?: Record<string, string>;
+    /** The job's goal, when it matters (a complete spec). */
+    goal?: string;
+    /** The scripted Leg's models, or its sessions resumable (ADR-052). */
+    leg?: Parameters<typeof scriptedLeg>[1];
   } = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), "oraknid-eyed-"));
-  const leg = scriptedLeg(script);
+  const leg = scriptedLeg(script, o.leg);
   const plans: string[] = [];
   const brain: EyeBrain = {
     plan: async () => {
@@ -215,7 +219,7 @@ async function eye(
   const { id } = await api.jobs.create({
     ...(skillId ? { skillId } : {}),
     projectId: project.id,
-    goal: "Say hi, with a test",
+    goal: o.goal ?? "Say hi, with a test",
     verify: [],
     autonomy: o.autonomy ?? "auto",
     inputs: o.inputs ?? [],
@@ -279,20 +283,30 @@ describe("The Eye, end to end", () => {
     expect(d.inhibit).toBeDefined();
   });
 
-  it("sends the exact failure back when verification fails, until the Leg gets it right (self-prompting)", async () => {
-    const { api, id, leg } = await eye((t) => {
+  it("climbs the ladder on a failure, then at the top sends the exact failure back until the Leg gets it right (ADR-052)", async () => {
+    const { api, id, leg, d } = await eye((t) => {
       if (task(t) === "Write hello.sh" && t.turn === 1)
         return [{ write: "hello.sh", content: "echo hello\n" }, { say: "DONE" }];
       return good(t);
     });
     const job = await until(api, id, ["completed", "blocked"]);
     expect(job.state).toBe("completed");
+    // One failure each moves it up a rung, with what failed: Haiku, Sonnet, then Opus.
+    const tried = leg.log.filter((x) => task(x) === "Write hello.sh" && x.turn === 1);
+    expect(tried.map((x) => x.model)).toEqual(["haiku", "sonnet", "opus"]);
+    expect(tried[1]?.message).toMatch(/what it didn't get done:[\s\S]*sh hello.sh \| grep -qx hi/);
+    const climbs = d.bus.since(0, [`job:${id}`], 500).filter((e) => e.type === "task.climbing");
+    expect(climbs.map((e) => e.payload)).toMatchObject([
+      { from: "Claude A · haiku", to: "Claude A · sonnet", work: "code" },
+      { from: "Claude A · sonnet", to: "Claude A · opus", work: "code" },
+    ]);
+    // At the top: it said DONE but the check failed, a false claim (D4), corrected in its session.
     const second = leg.log.find((x) => task(x) === "Write hello.sh" && x.turn === 2);
-    // It said DONE but the check failed: a false claim (D4), corrected with the exact failure.
+    expect(second?.model).toBe("opus");
     expect(second?.message).toMatch(
       /said it was done, but `sh hello.sh \| grep -qx hi` failed[\s\S]*exit 1/,
     );
-    expect(job.tasks[0]?.attemptCount).toBe(1);
+    expect(job.tasks[0]?.attemptCount).toBe(3);
   });
 
   it("repairs a check that is wrong itself, says so in Silk, and doesn't send the Leg after it", async () => {
@@ -346,8 +360,13 @@ describe("The Eye, end to end", () => {
     const reviewed = d.bus
       .since(0, [`job:${id}`], 500)
       .filter((e) => e.type === "task.check-reviewed");
-    expect(reviewed.map((e) => e.payload)).toMatchObject([{ broken: false }]);
-    expect(leg.log.filter((x) => task(x) === "Write hello.sh")).toHaveLength(2);
+    // Looked at on each rung the work failed on (Haiku, Sonnet, Opus), kept every time.
+    expect(reviewed.map((e) => e.payload)).toMatchObject([
+      { broken: false },
+      { broken: false },
+      { broken: false },
+    ]);
+    expect(leg.log.filter((x) => task(x) === "Write hello.sh")).toHaveLength(4);
   });
 
   it("gives a job its skill's tools through the broker: reads pass, a send waits for me (ADR-021)", async () => {
@@ -585,7 +604,8 @@ describe("The Eye, end to end", () => {
           : good(t),
       { legs: ["Claude A", "Claude B"], sameProviderFallback: true },
     );
-    const job = await until(api, id, ["completed", "blocked"]);
+    // Slow under a loaded machine (each task's checks are tried first): more time to finish.
+    const job = await until(api, id, ["completed", "blocked"], 20_000);
     expect(job.state).toBe("completed");
     const a = await api.legs.get({ id: legIds[0] as string });
     expect(a).toMatchObject({ health: "rate-limited", limitedUntil: resetsAt });
@@ -2315,10 +2335,11 @@ describe("after a crash, the next attempt knows where the last one stopped (Audi
         ? [{ run: "echo trying >/dev/null" }, { hang: true }]
         : good(t),
     );
+    // Its session is under way (its checks were tried first): the command ran.
     const end = Date.now() + 5000;
-    while ((await api.jobs.get({ id })).tasks[0]?.state !== "running" && Date.now() < end)
+    while (!leg.log.some((t) => task(t) === "Write hello.sh") && Date.now() < end)
       await new Promise((r) => setTimeout(r, 20));
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 150));
     await api.jobs.pause({ id });
     // As after a crash: the attempt was cut short and no handoff was written.
     d.db
@@ -2337,13 +2358,14 @@ describe("after a crash, the next attempt knows where the last one stopped (Audi
 describe("a task's diff (Phase 2 → M2.0)", () => {
   it("shows a done task's own commit, and a running task's work so far", async () => {
     let hang = true;
-    const { api, id } = await eye((t) =>
+    const { api, id, leg } = await eye((t) =>
       task(t) === "Test hello.sh" && hang
         ? [{ write: "test.sh", content: "draft\n" }, { hang: true }]
         : good(t),
     );
+    // Its session is under way (its checks were tried first).
     const end = Date.now() + 5000;
-    while ((await api.jobs.get({ id })).tasks[1]?.state !== "running" && Date.now() < end)
+    while (!leg.log.some((t) => task(t) === "Test hello.sh") && Date.now() < end)
       await new Promise((r) => setTimeout(r, 20));
     await new Promise((r) => setTimeout(r, 150));
     const [t1, t2] = (await api.jobs.get({ id })).tasks;
@@ -3381,4 +3403,177 @@ describe("parallel by default, admitted by resources (ADR-050)", () => {
       true,
     );
   }, 60_000);
+});
+
+describe("agents that deliver (Phase 15, ADR-052)", () => {
+  const one = (verify: string[]): WebPlan => ({
+    ...HELLO,
+    tasks: [{ ...(HELLO.tasks[0] as WebPlan["tasks"][number]), verify }],
+    jobVerify: [],
+  });
+  const events = (d: Daemon, id: string) => d.bus.since(0, [`job:${id}`], 2000);
+
+  it("tests a check before it judges: one broken by its quoting is repaired before any agent works (M15.1)", async () => {
+    const broken = 'test "$(sh hello.sh)" = "hi';
+    const fixed = 'test "$(sh hello.sh)" = hi';
+    const repaired: string[] = [];
+    const { api, id, leg, d } = await eye(good, {
+      plan: one([broken]),
+      repair: (command) => {
+        repaired.push(command);
+        return { broken: true, command: fixed, reason: "its last quote is never closed" };
+      },
+    });
+    const job = await until(api, id, ["completed", "blocked"]);
+    expect(job.state, job.blockedReason ?? "").toBe("completed");
+    expect(repaired).toEqual([broken]);
+    expect(job.tasks[0]?.verify).toEqual([fixed]);
+    const seen = events(d, id);
+    const reviewed = seen.findIndex((e) => e.type === "task.check-reviewed");
+    // The brain here is scripted: every session is an agent's.
+    const started = seen.findIndex((e) => e.type === "session.started");
+    expect(started).toBeGreaterThan(-1);
+    expect(seen[reviewed]?.payload).toMatchObject({
+      before: true,
+      broken: true,
+      replacement: fixed,
+    });
+    // Before any agent started on the task: none was ever failed by it.
+    expect(reviewed).toBeLessThan(started);
+    expect(seen.find((e) => e.type === "task.checks-tried")?.payload).toHaveProperty("checks", [
+      { command: broken, state: `broken, repaired as \`${fixed}\`` },
+    ]);
+    expect(leg.log.filter((x) => task(x) === "Write hello.sh")).toHaveLength(1);
+    expect(job.tasks[0]?.attemptCount).toBe(1);
+  });
+
+  it("reviews a check the agent shows is broken, instead of failing it again (M15.1)", async () => {
+    const wrong = "sh hello.sh | grep -qx hello";
+    const { api, id, leg, d } = await eye(
+      (t) =>
+        task(t) === "Write hello.sh"
+          ? [
+              { write: "hello.sh", content: "echo hi\n" },
+              {
+                say: "DONE: hello.sh prints hi, as the task asks. Oraknid's check is wrong: it expects hello, not hi.",
+              },
+            ]
+          : good(t),
+      {
+        plan: one([wrong]),
+        repair: (command) =>
+          command === wrong
+            ? { broken: true, command: "sh hello.sh | grep -qx hi", reason: "the task says hi" }
+            : { broken: false, command, reason: "fine" },
+      },
+    );
+    const job = await until(api, id, ["completed", "blocked"]);
+    expect(job.state, job.blockedReason ?? "").toBe("completed");
+    const reviewed = events(d, id).filter((e) => e.type === "task.check-reviewed");
+    expect(reviewed.map((e) => e.payload)).toMatchObject([
+      { command: wrong, broken: true, agentSaid: expect.stringMatching(/check is wrong/) },
+    ]);
+    // No other model and no other attempt: the work was right.
+    expect(events(d, id).some((e) => e.type === "task.climbing")).toBe(false);
+    expect(leg.log.filter((x) => task(x) === "Write hello.sh")).toHaveLength(1);
+    expect(job.tasks[0]?.attemptCount).toBe(1);
+  });
+
+  it("never counts Oraknid's own handoff note as scope drift (M15.1)", async () => {
+    const { api, id, d } = await eye((t) =>
+      task(t) === "Write hello.sh"
+        ? [
+            { write: "notes/handoff.md", content: "# Handoff\n\nWrote hello.sh.\n" },
+            { write: "hello.sh", content: "echo hi\n" },
+            { say: "DONE" },
+          ]
+        : good(t),
+    );
+    const job = await until(api, id, ["completed", "blocked"]);
+    expect(job.state, job.blockedReason ?? "").toBe("completed");
+    expect(events(d, id).filter((e) => e.type === "task.drift")).toEqual([]);
+    expect(job.tasks[0]?.attemptCount).toBe(1);
+  });
+
+  it("says a paused Leg is paused, and what to do, never that it is out of quota (M15.1)", async () => {
+    const { api, id, legIds } = await eye(good, { draft: true });
+    await api.legs.pause({ id: legIds[0] as string });
+    await api.jobs.start({ id });
+    const job = await until(api, id, ["blocked", "completed"]);
+    expect(job.state).toBe("blocked");
+    expect(job.blockedReason).toMatch(
+      /^No Leg can take "Write hello\.sh": Claude A is paused in Oraknid: unpause it on its card \(Legs\) to go on\. Unpause one to go on\.$/,
+    );
+    expect(job.blockedReason).not.toMatch(/quota/);
+    const end = Date.now() + 3000;
+    let said: string | undefined;
+    while (!said && Date.now() < end) {
+      said = (await api.jobs.conversation({ id })).find((m) =>
+        m.text.startsWith("The job is blocked"),
+      )?.text;
+      if (!said) await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(said).toMatch(/Unpause the Leg on its card in Legs, then resume the job\.$/);
+  });
+
+  it("resumes the same model's own session when it takes the task again, with what happened (M15.3)", async () => {
+    let hang = true;
+    const { api, id, leg } = await eye(
+      (t) => (task(t) === "Write hello.sh" && hang ? [{ hang: true }] : good(t)),
+      { leg: { resumable: true } },
+    );
+    const end = Date.now() + 5000;
+    while ((await api.jobs.get({ id })).tasks[0]?.state !== "running" && Date.now() < end)
+      await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => setTimeout(r, 100));
+    await api.jobs.pause({ id });
+    hang = false;
+    await api.jobs.resume({ id });
+    const job = await until(api, id, ["completed", "blocked"]);
+    expect(job.state, job.blockedReason ?? "").toBe("completed");
+    const turns = leg.log.filter((x) => task(x) === "Write hello.sh");
+    expect(turns.map((x) => [x.session, x.resumeFrom])).toEqual([
+      [1, null],
+      [2, "Claude A-session-1"],
+    ]);
+    expect(turns[1]?.message).toMatch(/^Oraknid continues this session after it stopped/);
+    expect(turns[1]?.message).toMatch(/Run its checks yourself and keep working until they pass/);
+  });
+
+  it("gives a complete spec one interview round (M15.3)", async () => {
+    const rounds: (number | undefined)[] = [];
+    const finals: boolean[] = [];
+    const spec = `# A greeting script\n\n## Features\n${["prints hi", "has a test", "runs in sh", "no dependencies", "one file", "a README line"].map((f) => `- ${f}`).join("\n")}\n`;
+    const { api, id, plans } = await eye(good, {
+      goal: spec,
+      interview: () => ({
+        done: false,
+        playback: "A greeting script.",
+        questions: [
+          {
+            id: "q1",
+            shape: "text" as const,
+            prompt: "Which shell?",
+            options: [],
+            recommended: null,
+            allowOther: true,
+          },
+        ],
+        open: [],
+      }),
+      interviewInput: (i) => {
+        rounds.push(i.rounds);
+        finals.push(!!i.final);
+      },
+    });
+    await answerRound(api, 1);
+    expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
+    // One round asked; the second call only plays back what it understood.
+    expect(rounds).toEqual([1, 1]);
+    expect(finals).toEqual([false, true]);
+    expect(plans).toEqual(["interview:1", "interview:2", "plan"]);
+    expect((await api.inbox.list({})).filter((i) => i.title.startsWith("Interview"))).toHaveLength(
+      1,
+    );
+  });
 });

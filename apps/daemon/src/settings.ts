@@ -54,6 +54,13 @@ export const DEFAULT_RUNNING_JOBS = 4;
  */
 export const MAX_TASKS_PER_JOB = "jobs.maxTasks";
 
+/**
+ * Every job's Claude share unless its budget says otherwise (ADR-052 §3,
+ * Settings → Work): the most of a job's attempts (0–1) that may run on
+ * Claude when tasks climb. Null: as needed.
+ */
+export const CLAUDE_SHARE = "work.claudeShare";
+
 /** How many rounds an interview may take (Skills → The interview); 3 unless I set it. */
 export const INTERVIEW_ROUNDS = "eye.interviewRounds";
 export const DEFAULT_INTERVIEW_ROUNDS = 3;

@@ -129,6 +129,33 @@ export function defaultProfile(kind: LegKind, model: string): ProfileSettings {
         return { ...oc, strengths: flat(2), maxDifficulty: "medium", prior: "unproven" };
     }
   }
+  if (kind === "oraknid-agent") {
+    // Oraknid's own agent over any model (ADR-052 §6): Oraknid's tools, so the
+    // model's family decides; a local model is free and runs one at a time.
+    const oa = {
+      ...base,
+      costModel: "local" as const,
+      tools: { edits: true, shell: true, mcp: false, browse: true },
+    };
+    switch (knownFamily(m)) {
+      case "frontier":
+        return { ...oa, costModel: "per-token", strengths: flat(4), maxDifficulty: "high" };
+      case "mid":
+        return {
+          ...oa,
+          strengths: flat(3, { mechanical: 4, summarize: 4 }),
+          maxDifficulty: "medium",
+        };
+      default:
+        return {
+          ...oa,
+          strengths: flat(2, { mechanical: 3, summarize: 3, classify: 3, docs: 3 }),
+          maxDifficulty: isFreeModel(m) ? "medium" : "low",
+          prior: "unproven",
+          ...(isFreeModel(m) ? { costModel: "free" as const } : {}),
+        };
+    }
+  }
   // A bare local model: good for small, mechanical and text work until it proves otherwise.
   return {
     ...base,
@@ -220,7 +247,7 @@ export function effectiveProfile(
   model: string,
   stored: StoredProfile,
 ): EffectiveProfile {
-  const d = defaultProfile(kind, model);
+  const d = textOnly(defaultProfile(kind, model), stored.probed?.toolCalls === "none");
   const learned: Strengths = { ...d.strengths };
   for (const [taskKind, cap] of Object.entries(CAPABILITY_OF) as [TaskKind, Capability][]) {
     const base = d.strengths[cap];
@@ -233,6 +260,25 @@ export function effectiveProfile(
     strengths: { ...learned, ...overridden },
     learned,
     observed: stored.observed,
+  };
+}
+
+/**
+ * A model whose probe found no tool calls does text work only (ADR-052 §6):
+ * summarising, sorting, translating; nothing that edits files or runs commands.
+ */
+export function textOnly(p: ProfileSettings, yes = true): ProfileSettings {
+  if (!yes) return p;
+  return {
+    ...p,
+    strengths: {
+      ...Object.fromEntries(ALL.map((c) => [c, 0])),
+      summarize: p.strengths.summarize ?? 2,
+      classify: p.strengths.classify ?? 2,
+    },
+    tools: { edits: false, shell: false, mcp: false, browse: false },
+    knownFailures: [...p.knownFailures, "doesn't call tools: text work only"],
+    maxDifficulty: "low",
   };
 }
 

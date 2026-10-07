@@ -18,6 +18,7 @@ import {
   scopeConflict,
   skillChecks,
   skillExcerpt,
+  specComplete,
   suspicious,
 } from "@oraknid/core";
 import type { Sandbox } from "@oraknid/os";
@@ -766,13 +767,18 @@ async function runTask(
     unsandboxed: job.unsandboxed,
     skillBody: d.skills.version(job.skillId, job.skillVersion)?.body ?? "",
     // Every job may do GitHub work through Oraknid's own tool, judged by its project's link (ADR-038).
-    tools:
-      d.tools?.registry.hasBuiltIn("github") &&
+    tools: [
+      ...(d.tools?.registry.hasBuiltIn("github") &&
       !job.tools.includes("github") &&
       // A server job's place is its server, with no repo to put on GitHub (ADR-049).
       !d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.serverId
         ? [...job.tools, "github"]
-        : job.tools,
+        : job.tools),
+      // The local models' roles, for every agent once a model is here (ADR-054).
+      ...(d.tools?.registry.hasBuiltIn("local-models") && !job.tools.includes("local-models")
+        ? ["local-models"]
+        : []),
+    ],
     serverIds:
       d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.serverIds ?? [],
     // Each server's role, production also when I marked the server itself (ADR-049).
@@ -1026,7 +1032,8 @@ async function interview(
   if (d.silk.current(job.id).some((e) => e.kind === "decision" && e.title === INTERVIEW_DONE))
     return;
   if (ctx.state() === "draft") ctx.setState("interviewing");
-  const max = interviewRounds(d.db);
+  // A goal that is a complete spec gets one round, never a dozen (ADR-052 §7).
+  const max = specComplete(job.goal) ? 1 : interviewRounds(d.db);
   for (let n = 1; ; n++) {
     // I said to end it in the conversation while no round was open: planning starts with what's known.
     if (interviewEnded(d.silk, job.id)) {

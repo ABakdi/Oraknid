@@ -19,6 +19,7 @@ import { createAntigravityAdapter } from "@oraknid/leg-antigravity";
 import { createClaudeCodeAdapter } from "@oraknid/leg-claude-code";
 import { createOpenAICompatibleAdapter } from "@oraknid/leg-openai-compatible";
 import { createOpenCodeAdapter } from "@oraknid/leg-opencode";
+import { createOraknidAgentAdapter } from "@oraknid/leg-oraknid-agent";
 import type { LegAdapter } from "@oraknid/leg-sdk";
 import { RPCHandler } from "@orpc/server/node";
 import { eq } from "drizzle-orm";
@@ -64,6 +65,8 @@ import { LegSupervisor } from "./legs/supervisor.ts";
 import { attachLive } from "./live/server.ts";
 import { type MailOptions, MailService } from "./mail/service.ts";
 import { EMAIL_TOOL, emailServer } from "./mail/tool.ts";
+import { LocalModels, type LocalModelsOptions } from "./models/service.ts";
+import { MODELS_TOOL, modelsServer } from "./models/tool.ts";
 import { NestLink } from "./nest/link.ts";
 import { Notifications } from "./notify/notifications.ts";
 import { startNotificationRouter } from "./notify/router.ts";
@@ -74,7 +77,7 @@ import { Secrets } from "./os/secrets.ts";
 import { DEFAULT_HOST, DEFAULT_PORT, isDefaultDataDir, type Paths } from "./paths.ts";
 import { diskSpace } from "./resources/disks.ts";
 import { startGuard } from "./resources/guard.ts";
-import { Work } from "./resources/work.ts";
+import { thresholdsOf, Work } from "./resources/work.ts";
 import { resumeServerConversations, serverJobsDir } from "./servers/server-jobs.ts";
 import { Servers } from "./servers/service.ts";
 import { DEFAULT_RUNNING_JOBS, MAX_RUNNING_JOBS, readSetting } from "./settings.ts";
@@ -84,6 +87,7 @@ import { startNightlyBackups } from "./storage/storage.ts";
 import { attachTerminal, TERMINAL_SETTING } from "./term/server.ts";
 import { McpBroker } from "./tools/broker.ts";
 import { ToolRegistry } from "./tools/registry.ts";
+import { findAppDir, readInstall } from "./updates/install.ts";
 import { Updates, type UpdatesOptions } from "./updates/service.ts";
 import { VERSION } from "./version.ts";
 import { setShadowRoot } from "./workspace/git.ts";
@@ -135,6 +139,8 @@ export interface DaemonOptions {
   /** Leg adapters by kind (tests replace them). */
   adapters?: Partial<Record<LegKind, LegAdapter>>;
   healthIntervalMs?: number;
+  /** The web UI's built folder; null: none, as on a terminal-only install (tests; found otherwise). */
+  webDir?: string | null;
   /** Updates (ADR-048): the app's folder, GitHub and how the update starts (tests). */
   updates?: Partial<
     Pick<
@@ -148,6 +154,13 @@ export interface DaemonOptions {
       | "version"
       | "checkEveryMs"
       | "firstCheckMs"
+    >
+  >;
+  /** Local models: the sources, Ollama's address and the programs (tests). */
+  models?: Partial<
+    Pick<
+      LocalModelsOptions,
+      "fetch" | "catalog" | "ollamaUrl" | "programs" | "spawn" | "idleCheckMs" | "loadTimeoutMs"
     >
   >;
   /** Mail timings and the providers' servers (tests). */
@@ -191,13 +204,21 @@ export async function startDaemon(options: DaemonOptions) {
   bus.scrub = (text) => scrubSecrets(text, secrets.known());
 
   await secrets.init();
+  const registry = new LegRegistry(db, bus, secrets, paths.legs, now);
   const adapters: Partial<Record<LegKind, LegAdapter>> = options.adapters ?? {
     "claude-code": createClaudeCodeAdapter(),
     "openai-compatible": createOpenAICompatibleAdapter(),
     opencode: createOpenCodeAdapter(),
     antigravity: createAntigravityAdapter(),
+    // Oraknid's own agent (ADR-052 §6): its sessions kept for resume beside the Legs' homes.
+    "oraknid-agent": createOraknidAgentAdapter({
+      sessionsDir: join(paths.legs, "oraknid-agent-sessions"),
+      credentialOf: async (leg) => {
+        const row = registry.get(leg.id);
+        return row ? registry.credential(row) : null;
+      },
+    }),
   };
-  const registry = new LegRegistry(db, bus, secrets, paths.legs, now);
   const logins = new LegLogins(paths.legs, os.sandbox);
   // No Leg keeps my own ~/.claude as its config folder (Audit 1 → S1-02).
   registry.ownConfigFolders();
@@ -257,13 +278,68 @@ export async function startDaemon(options: DaemonOptions) {
     // A tool of mine named "github" stays as it is.
     console.warn(error instanceof Error ? error.message : error);
   }
+  // Local models (ADR-054): found, downloaded, run, and their roles a tool for every agent.
+  const models = new LocalModels({
+    db,
+    bus,
+    registry,
+    checkLeg: (id) => health.check(id),
+    dataDir: paths.dataDir,
+    now,
+    reading: () => work.d.reading?.() ?? null,
+    thresholds: () => thresholdsOf(work.settings()),
+    danger: () => work.danger(),
+    inUse: () =>
+      new Set(
+        registry
+          .all()
+          .filter((l) => l.kind === "oraknid-agent")
+          .flatMap((l) => [...supervisor.modelsInUse(l.id)]),
+      ),
+    processOf: (pid) => {
+      const p = metricsLoop
+        .recent(now() - 10_000)
+        .at(-1)
+        ?.processes.find((x) => x.pid === pid);
+      return p ? { rssBytes: p.rssBytes, vramBytes: p.vramBytes } : null;
+    },
+    jobFolders: (jobId) => {
+      if (!jobId) return [];
+      const project = db
+        .select({ path: projectsTable.workspacePath })
+        .from(projectsTable)
+        .innerJoin(jobsTable, eq(jobsTable.projectId, projectsTable.id))
+        .where(eq(jobsTable.id, jobId))
+        .get();
+      return project ? [project.path] : [];
+    },
+    // Under test, never the Ollama this computer may run, unless a test gives one.
+    ...(process.env.VITEST ? { ollamaUrl: null } : {}),
+    ...options.models,
+  });
   const broker = new McpBroker({
     registry: toolRegistry,
     sandbox: os.sandbox,
     builtIns: new Map([
       [EMAIL_TOOL.name, emailServer(mail)],
       [githubToolDecl.name, githubServer({ db, bus, github, projects: projectsService })],
+      [MODELS_TOOL.name, modelsServer(models)],
     ]),
+  });
+  // The roles' tool appears once a model is downloaded (ADR-054), like the email tool with an account.
+  const offerModelsTool = () => {
+    if (!models.list().some((m) => m.state === "ready" || m.state === "loaded")) return;
+    try {
+      toolRegistry.ensureBuiltIn(MODELS_TOOL);
+    } catch (error) {
+      // A tool of mine named "local-models" stays as it is.
+      console.warn(error instanceof Error ? error.message : error);
+    }
+  };
+  offerModelsTool();
+  bus.subscribe((e) => {
+    if (e.type === "model.state" && (e.payload as { state?: string }).state === "ready")
+      offerModelsTool();
   });
   // Chats with my models: talk and research (ADR-025).
   const chats = new Chats({ db, bus, registry, supervisor, dataDir: paths.dataDir, now });
@@ -511,6 +587,13 @@ export async function startDaemon(options: DaemonOptions) {
       return file ? readFileSync(file) : null;
     },
   });
+  // The web UI (apps/web), when it has been built; a terminal-only install has none (ADR-055).
+  const web = options.webDir === undefined ? webDist() : options.webDir;
+  // Terminal only: the install record says so (a clone serving its web UI from Vite is not), or a test.
+  const webUi =
+    options.webDir === undefined
+      ? installedWithGui(options.updates?.appDir ?? findAppDir())
+      : options.webDir !== null;
   const app = express();
   app.disable("x-powered-by");
   const server = createServer(app);
@@ -620,6 +703,7 @@ export async function startDaemon(options: DaemonOptions) {
     watched: () => [
       { id: "daemon", label: "Oraknid daemon", pid: process.pid },
       ...supervisor.watched(),
+      ...models.watched(),
     ],
     onSample: (sample) => live.broadcastMetrics(sample),
     busy: () => live.metricsWatchers() > 0 || supervisor.watched().length > 0,
@@ -652,6 +736,8 @@ export async function startDaemon(options: DaemonOptions) {
         .where(eq(tasksTable.id, taskId))
         .get() ?? null,
     pause: (jobId, taskId, why) => pauseForRoom(jobId, taskId, why),
+    // Idle local models are unloaded before any task is paused (ADR-054).
+    relieve: () => models.relieve(),
     ...(options.guardIntervalMs ? { intervalMs: options.guardIntervalMs } : {}),
     ...(options.guardClearMs !== undefined ? { clearMs: options.guardClearMs } : {}),
     ...(options.guardPauseEveryMs !== undefined ? { pauseEveryMs: options.guardPauseEveryMs } : {}),
@@ -749,6 +835,7 @@ export async function startDaemon(options: DaemonOptions) {
     now,
     ...(options.healthIntervalMs ? { intervalMs: options.healthIntervalMs } : {}),
   });
+  void models.start().catch((err) => console.error("local models failed to start", err));
   // A Leg's plan usage in view, read while someone looks (ADR-039).
   const planUsage = new PlanUsage({
     db,
@@ -775,6 +862,7 @@ export async function startDaemon(options: DaemonOptions) {
         session: res.locals.session as string | undefined,
         lock,
         startedAt,
+        webUi,
         paths,
         bus,
         now,
@@ -810,6 +898,7 @@ export async function startDaemon(options: DaemonOptions) {
         mail,
         devices,
         updates,
+        models,
         brain,
         thinking,
         openPath:
@@ -825,12 +914,19 @@ export async function startDaemon(options: DaemonOptions) {
     res.json({ ok: true, version: VERSION });
   });
 
-  // The web UI (apps/web), when it has been built: static files, and the app for every other path.
-  const web = webDist();
+  // The web UI: static files, and the app for every other path.
   if (web) {
     app.use(express.static(web, { index: false, maxAge: "1h" }));
     // Relative to its folder: a path with a hidden folder in it (~/.local/…) is served all the same.
     app.get(/^\/(?!api\/|live$).*/, (_req, res) => res.sendFile("index.html", { root: web }));
+  } else {
+    // Terminal only (ADR-055): a few lines saying so, which a browser shows as they are.
+    app.get(/^\/(?!api\/|live$).*/, (req, res) => {
+      res
+        .status(req.path === "/" ? 200 : 404)
+        .type("text/plain")
+        .send(NO_WEB_UI);
+    });
   }
 
   await new Promise<void>((resolve, reject) => {
@@ -936,6 +1032,8 @@ export async function startDaemon(options: DaemonOptions) {
       await mail.stop();
       nest.stop();
       await supervisor.killAll();
+      // Every model's server stops with the daemon.
+      await models.stop();
       await inhibit.stop();
       await live.close();
       await new Promise<void>((resolve) => {
@@ -979,6 +1077,7 @@ export async function startDaemon(options: DaemonOptions) {
     mail,
     devices,
     updates,
+    models,
     cliToken: devices.cliToken,
     inbox,
     effects,
@@ -1042,6 +1141,21 @@ const UI_CSP = [
   "form-action 'self'",
   "object-src 'none'",
 ].join("; ");
+
+/** What a browser reads from an Oraknid without its web UI built (ADR-055). */
+export const NO_WEB_UI = `This Oraknid has no web UI here: it was installed for the terminal only
+(or, in a clone, the web UI isn't built).
+
+Use it in a terminal on this machine:  oraknid
+Add the web UI:                        oraknid install --gui
+`;
+
+/** Whether the install record (if any) says the web UI was installed; a clone has it. */
+function installedWithGui(appDir: string | null): boolean {
+  if (!appDir) return true;
+  const i = readInstall(appDir);
+  return i.mode !== "script" || i.gui;
+}
 
 /** apps/web/dist, found from this module (src/ or dist/), if it was built. */
 function webDist(): string | null {

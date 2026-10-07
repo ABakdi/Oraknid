@@ -188,6 +188,7 @@ import type { PlanUsage } from "../legs/plan-usage.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import { readSessionLog } from "../legs/session-log.ts";
 import type { MailService } from "../mail/service.ts";
+import type { LocalModels } from "../models/service.ts";
 import type { NestLink } from "../nest/link.ts";
 import type { Notifications } from "../notify/notifications.ts";
 import type { Secrets } from "../os/secrets.ts";
@@ -202,6 +203,7 @@ import {
 } from "../servers/server-jobs.ts";
 import type { Servers } from "../servers/service.ts";
 import {
+  CLAUDE_SHARE,
   DEFAULT_RUNNING_JOBS,
   followUpKey,
   INTERVIEW_ROUNDS,
@@ -228,6 +230,7 @@ import { jobResult, mergeJob, taskDiff } from "../workspace/result.ts";
 import { projectFrom } from "../workspace/sources.ts";
 import { backupsRouter } from "./backups.ts";
 import { cloudRouter } from "./cloud.ts";
+import { modelsRouter } from "./models.ts";
 import {
   Activity,
   activity,
@@ -250,6 +253,8 @@ export interface ApiContext {
   session: string | undefined;
   lock: AppLock;
   startedAt: number;
+  /** Whether this Oraknid has the web UI; false on a terminal-only install (ADR-055). */
+  webUi: boolean;
   paths: Paths;
   bus: EventBus;
   now: () => number;
@@ -301,6 +306,8 @@ export interface ApiContext {
   devices: Devices;
   /** Oraknid's own updates (ADR-048). */
   updates: Updates;
+  /** Local models (ADR-054). */
+  models: LocalModels;
   brain: EyeBrain;
   /** What The Eye is thinking now, and what it thought (M13.25). */
   thinking?: EyeThinking;
@@ -773,6 +780,7 @@ export const router = {
       secrets: c.secrets.status(),
       sandbox: c.sandbox(),
       service: c.service.status(),
+      webUi: c.webUi,
     })),
     doctor: base.output(z.array(DoctorCheck)).handler(({ context: c }) =>
       runDoctor(c.paths, {
@@ -1232,6 +1240,7 @@ export const router = {
   backups: backupsRouter,
   /** Cloud storage: providers and the pool (ADR-046). */
   cloud: cloudRouter,
+  models: modelsRouter,
   /** A text of mine rephrased by a quick model, for any textarea (Chats-and-Helper → Fix wording). */
   text: {
     polish: base
@@ -1822,6 +1831,11 @@ export const router = {
         guard(async () => {
           // A phone away from home opens only with the PIN (ADR-029).
           if (!c.lock.hasPin()) throw new Error("Set your PIN first (Settings → Security).");
+          // The phone loads the web UI from this daemon (ADR-055).
+          if (!c.webUi)
+            throw new Error(
+              "This Oraknid has no web UI, and a phone needs it: add it with `oraknid install --gui`, then pair the phone.",
+            );
           if (input.full) await c.lock.verify(c.device ?? "cli", input.pin ?? "", false);
           const r = await c.nest.pairAway(input.name);
           if (input.full) c.devices.setRights(r.deviceId, true);
@@ -2006,6 +2020,26 @@ export const router = {
             topic: "overview",
             jobId: null,
             payload: { maxTasksPerJob: input.max },
+            actor: "owner",
+          });
+        }),
+      ),
+    /** Every job's Claude share when its tasks climb (ADR-052 §3): null, as needed. */
+    claudeShare: base
+      .output(z.number().nullable())
+      .handler(({ context: c }) =>
+        readSetting(c.jobs.db, CLAUDE_SHARE, z.number().min(0).max(1).nullable(), null),
+      ),
+    setClaudeShare: base
+      .input(z.object({ share: z.number().min(0).max(1).nullable() }))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          writeSetting(c.jobs.db, CLAUDE_SHARE, z.number().min(0).max(1).nullable(), input.share);
+          c.bus.publish({
+            type: "settings.updated",
+            topic: "overview",
+            jobId: null,
+            payload: { claudeShare: input.share },
             actor: "owner",
           });
         }),

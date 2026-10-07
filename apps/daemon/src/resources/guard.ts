@@ -44,6 +44,11 @@ export interface GuardOptions {
   task: (taskId: string) => GuardTask | null;
   /** Pauses a task at a safe point; it starts again by itself once there is room. */
   pause: (jobId: string, taskId: string, why: string) => Promise<boolean>;
+  /**
+   * Frees memory without stopping work, tried before a task is paused:
+   * unloads idle local models (ADR-054). What it did, in words, or null.
+   */
+  relieve?: () => Promise<string | null>;
   intervalMs?: number;
   /** How long a finding must be gone before its incident closes. */
   clearMs?: number;
@@ -171,7 +176,20 @@ export function startGuard(o: GuardOptions) {
       const pressing = [...open.values()].filter((i) => i.finding.relieve);
       const worst = pressing.find((i) => i.finding.level === "danger") ?? pressing[0];
       o.work.setDanger(worst ? worst.finding.message : null);
-      if (worst && now - lastPauseAt >= (o.pauseEveryMs ?? 20_000)) {
+      // Idle local models go first (ADR-054): unloading one frees memory without stopping work.
+      const freed =
+        worst && worst.finding.kind !== "busy" && now - lastPauseAt >= (o.pauseEveryMs ?? 20_000)
+          ? await o.relieve?.().catch(() => null)
+          : null;
+      if (worst && freed) {
+        lastPauseAt = now;
+        did.set(
+          worst.finding.kind,
+          did.has(worst.finding.kind) ? `${did.get(worst.finding.kind)} ${freed}` : freed,
+        );
+        if (!step.opened.some((f) => f.kind === worst.finding.kind))
+          publish("machine.health", { kind: worst.finding.kind, did: freed });
+      } else if (worst && now - lastPauseAt >= (o.pauseEveryMs ?? 20_000)) {
         const pick = pickToPause(
           o.work.running().map((x) => ({ ...x, rssBytes: rssOf(x.taskId) })),
         );

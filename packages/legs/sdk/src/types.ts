@@ -17,6 +17,11 @@ export interface ModelOffer {
   displayName: string;
   effortLevels: string[];
   contextWindow: number | null;
+  /**
+   * How the model calls tools, where the probe tested it (ADR-052 §6):
+   * natively, through a JSON grammar, or not at all (text work only).
+   */
+  toolCalls?: "native" | "json" | "none";
 }
 
 export interface ProbeResult {
@@ -136,11 +141,25 @@ export interface SessionStart {
   /** Oraknid's layer 1 before every tool, in the Leg's own auto mode. */
   onPreToolUse?: (request: PermissionRequest) => Promise<PreToolDecision>;
   /**
+   * The task's checks in the loop (ADR-052 §2): asked when the agent is about
+   * to end its turn. A reason keeps it working (the checks' failure, said to
+   * it); null lets it stop. Adapters that can hold a turn open (Claude Code's
+   * Stop hook) call it; the others ignore it, and their prompt asks the agent
+   * to run the checks itself.
+   */
+  onStop?: (lastMessage: string) => Promise<string | null>;
+  /**
    * MCP servers this session gets, by name (ADR-021): each is Oraknid's
    * bridge to a tool the daemon runs. Their calls are judged by the
    * broker, so the Leg-level permission for them is allowed.
    */
   mcpServers?: Record<string, McpServer>;
+  /**
+   * Check commands the session runs itself before it ends a turn as done
+   * (ADR-052 §2), where the adapter can: Oraknid's own agent runs them in
+   * the sandbox and keeps working while they fail.
+   */
+  checks?: string[];
 }
 
 /** A stdio MCP server a Leg starts: here always Oraknid's bridge. */

@@ -361,12 +361,13 @@ export type EyeTriage = z.infer<typeof EyeTriage>;
 const Summary = z.object({ title: z.string().min(1), body: z.string().min(1) });
 
 const PLAN_RULES = `Rules for the plan:
+- Whole goals, not crumbs. Each task is given to one capable coding agent that plans its own steps, keeps its context and runs the checks itself, so a goal one agent can do in one session is ONE task. Split only where the pieces are substantial and truly independent: a backend and a frontend against an agreed contract, two separate services, research whose findings decide the rest. Never split a goal into its steps: "remove the compose project, keep a backup, verify it is gone" is one task, not eight; "build the piano app's keyboard with its sounds and tests" is one task, not one per file. A small job is one task.
+- Each task's "instructions" end with its acceptance criteria: what must be true when it is done, in a few lines.
 - The plan is a dependency graph, not a list. Every task's "dependsOn" names the keys of the tasks whose results it needs: the project's setup (scaffold, dependencies) before the features built on it; research before the decisions and the work that use its findings; integration and end-to-end tests after the parts they cover. Tasks that don't need each other depend on nothing in common and run side by side.
 - Each piece of work is planned once: never two tasks for the same work in other words.
 - When the owner ordered the work in phases (phase 1, 2, 3…), give each task its "phase": a later phase's tasks come after the earlier phases' work.
-- Small tasks, each doable in one focused session.
-- Every task that changes files has a "scope": globs relative to the workspace, as narrow as possible.
-- Every task that changes things has "verify": shell commands that exit 0 only when the task is really done. Oraknid runs them itself; prefer existing test, build, lint or type-check commands, and add tests as tasks when there are none.
+- Every task that changes files has a "scope": globs relative to the workspace, covering what the goal needs.
+- Every task that changes things has "verify": few, meaningful shell commands that exit 0 only when the task is really done: the build, the tests, the behaviour the goal asked for (never \`test -s notes.md\`). The agent runs them and Oraknid runs them again, in POSIX sh, from the workspace: quote them so they parse (no unbalanced quotes, \`[ … ]\` with its variables quoted), use only tools that are surely installed, prefer existing test, build, lint or type-check commands, and have the task add tests when there are none.
 - "difficulty" is honest: low for mechanical work, medium for normal features, high for design, hard debugging or architecture.
 - "jobVerify": commands that prove the whole goal is met.
 - Follow the job's method (the skill), e.g. write the canon before code when it says so.
@@ -601,7 +602,7 @@ Plan ONLY the new tasks needed to fix this. Do not repeat done work. Use new tas
       : "";
     const task = i.final
       ? `The interview has used its ${rounds} rounds: ask nothing more. Set "done" to true, write the "playback" of what you understood, and put in "assumptions" each thing you decide yourself for the gaps, one short sentence each (a sensible default, what the owner left unanswered). List in "open" only what truly can't be assumed.`
-      : `Interview like a senior engineer who respects the owner's time: this is round ${i.round ?? asked.length + 1} of at most ${rounds}. Ask only what truly blocks planning: a choice that changes what gets built and that you can't sensibly decide yourself. Everything else you decide yourself, as a sensible default, and put in "assumptions" (one short sentence each); the owner reads them in the playback and can correct them later. Never ask again anything asked already, answered or not, nor anything decided; never ask for confirmation of what the owner said. If nothing truly blocks planning, set "done" to true.
+      : `Interview like a senior engineer who respects the owner's time: this is round ${i.round ?? asked.length + 1} of at most ${rounds}.${rounds === 1 ? " The goal reads as a complete spec: ask only what it truly leaves open, often nothing." : ""} Ask only what truly blocks planning: a choice that changes what gets built and that you can't sensibly decide yourself. Everything else you decide yourself, as a sensible default, and put in "assumptions" (one short sentence each); the owner reads them in the playback and can correct them later. Never ask again anything asked already, answered or not, nor anything decided; never ask for confirmation of what the owner said. If nothing truly blocks planning, set "done" to true.
 
 Write the round: a short "playback" of what you understood${asked.length || i.answers.length ? ', ending with "Is this right?"' : ""}, then at most 5 questions, the most important first. Give each choice question options and a recommended one, so most can be answered with one click. The owner answers them one at a time, by keyboard or touch, so shape each one (ADR-037):
 - "id": short, unique and telling ("audience", "storage"…); "prompt": the question, one or two sentences.
@@ -978,6 +979,9 @@ Answer with "text": the rewritten text only.`;
           effortLevels: m.effortLevels,
           profile: m.profile,
           windows: [...view.quota, ...m.quota],
+          // A model or Leg resting after its provider failed isn't asked to think (ADR-052 §4).
+          cooldown: this.o.registry.cooldownOf(leg.id, m.id),
+          legKind: leg.kind,
         });
       }
     }
@@ -1044,13 +1048,15 @@ Answer with "text": the rewritten text only.`;
   ): Promise<Answer<T>> {
     const kind = KIND_OF[call];
     const pin = only ?? (kind ? this.o.pins?.()[kind] : null) ?? this.o.pinnedModelId();
-    // Planning and the judge's second stage go to the strongest model allowed (ADR-053).
+    // The Eye's own thinking, planning and judging alike (plans, checks repaired, reviews, the
+    // interview, the auto-mode judge's second stage), runs on the strongest model allowed for it
+    // (ADR-052 §5, ADR-053).
     const pick = this.#choose(
       difficulty,
       capabilities,
       pin,
       !only,
-      kind === "planning" || call === "judge-strong",
+      kind === "planning" || kind === "judging",
     );
     const started = Date.now();
     const shown = !quiet && jobId ? this.o.thinking : undefined;
@@ -1250,9 +1256,12 @@ export function strongestFirst<T extends Route>(ranked: T[], capabilities: Capab
     // Unproven is neutral; a record of failures counts against it.
     return attempts >= 3 ? successes / attempts - 0.7 : 0;
   };
+  // A known family before an unproven one at the same level: the best Claude by default (ADR-052 §5).
+  const known = (r: T) => (r.candidate.profile.prior === "unproven" ? 0 : 1);
   return [...ranked].sort(
     (a, b) =>
       RANK[b.candidate.profile.maxDifficulty] - RANK[a.candidate.profile.maxDifficulty] ||
+      known(b) - known(a) ||
       strength(b) - strength(a) ||
       proven(b) - proven(a) ||
       (a.candidate.health === "healthy" ? 0 : 1) - (b.candidate.health === "healthy" ? 0 : 1) ||

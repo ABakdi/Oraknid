@@ -59,8 +59,23 @@ export const thresholdsOf = (s: ResourceSettings): ResourceThresholds => ({
 /** A Leg's limit of task sessions at once: its own setting, else its kind's (ADR-050). */
 export function legSessionLimit(registry: LegRegistry, legId: string): number {
   const leg = registry.require(legId);
-  const n = (leg.config as { maxSessions?: unknown }).maxSessions;
-  return typeof n === "number" && n >= 1 ? n : defaultLegSessions(leg.kind);
+  const config = leg.config as { maxSessions?: unknown; local?: unknown; endpoints?: unknown };
+  const n = config.maxSessions;
+  if (typeof n === "number" && n >= 1) return n;
+  // This computer's models (ADR-054): one session per loaded model's server.
+  if (leg.kind === "oraknid-agent" && config.local === true)
+    return Math.max(1, Array.isArray(config.endpoints) ? config.endpoints.length : 1);
+  return defaultLegSessions(leg.kind);
+}
+
+/** A Leg whose models run on this computer's GPU (ADR-016, ADR-054). */
+function isLocalModelLeg(leg: { kind: string; config: unknown }): boolean {
+  const c = leg.config as { local?: unknown; baseUrl?: unknown };
+  if (leg.kind === "oraknid-agent") return c.local === true;
+  return (
+    leg.kind === "openai-compatible" &&
+    /\/\/(127\.0\.0\.1|localhost|\[::1\])[:/]/.test(String(c.baseUrl ?? ""))
+  );
 }
 
 /** A task asking to start. */
@@ -318,6 +333,7 @@ export class Work {
         name: l.name,
         running: this.d.supervisor.busy(l.id),
         limit: legSessionLimit(this.d.registry, l.id),
+        local: isLocalModelLeg(l),
       }));
   }
 

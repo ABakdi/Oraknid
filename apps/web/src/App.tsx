@@ -17,6 +17,7 @@ import { JobRedirect } from "@/pages/job-redirect";
 import { LegsPage } from "@/pages/legs";
 import { LogsPage } from "@/pages/logs";
 import { MailPage } from "@/pages/mail";
+import { ModelsPage } from "@/pages/models";
 import { OverviewPage } from "@/pages/overview";
 import { PairPage } from "@/pages/pair";
 import { ProjectsPage } from "@/pages/projects";
@@ -136,6 +137,8 @@ export function App() {
                 <Route path="/inbox/:id">{(p) => <InboxPage focus={p.id} />}</Route>
                 <Route path="/legs">{() => <LegsPage />}</Route>
                 <Route path="/legs/:id">{(p) => <LegsPage focus={p.id} />}</Route>
+                {/* Local models (ADR-054). */}
+                <Route path="/models">{() => <ModelsPage />}</Route>
                 <Route path="/skills/:id?">{(p) => <SkillsPage id={p.id} />}</Route>
                 <Route path="/chats">{() => <ChatsPage />}</Route>
                 <Route path="/servers/:id?/:tab?">

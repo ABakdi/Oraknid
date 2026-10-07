@@ -16,7 +16,7 @@ Set per job. Changeable while the job runs. Since auto mode
 | **Careful** | The plan (The Web) before work starts, each replan, every gated action, and every action the rules don't allow at once, even when the judge would (the old Supervised and Standard's asking). "Approve all like this" is matched on the parsed command's shape. |
 | **Full** | As Auto, without the judge for the job's own folder and the servers not marked production. Plans of servers, production and what is never automatic still ask. A write or delete outside the job's folder isn't asked at any level: it is refused (→ Writing outside its folder). |
 
-Jobs from before auto mode were moved (migration 0038): Standard became
+Jobs from before auto mode were moved (migration 0039): Standard became
 Auto, Supervised became Careful. The old names still parse in the API.
 
 **Overrides**: per job, I can waive a specific gate, e.g. "may push to

@@ -64,6 +64,20 @@ describe("OpenAI-compatible adapter", () => {
       ["qwen", 32768],
       ["tiny", 8192],
     ]);
+    expect(p.models.map((m) => m.toolCalls)).toEqual(["native", "native"]);
+    expect(p.features.tools).toBe(true);
+  });
+
+  it("tests tool calling instead of assuming it", async () => {
+    const server = await fakeServer("reply", { tools: false });
+    servers.push(server);
+    const p = await createOpenAICompatibleAdapter().probe(
+      { id: "l", name: "o", kind: "openai-compatible", config: { baseUrl: server.baseUrl } },
+      null,
+    );
+    expect(p.models.map((m) => m.toolCalls)).toEqual(["none", "none"]);
+    expect(p.features.tools).toBe(false);
+    expect(p.detail).toMatch(/2 without tool calls, kept to text work/);
   });
 
   it("says plainly when no server answers", async () => {

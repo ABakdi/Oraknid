@@ -207,6 +207,9 @@ function folderRestored(d: ReportDeps, jobId: string, p: Payload) {
 function needs(reason: string): string {
   if (/failed \d+ attempts/.test(reason))
     return "Look at the task (its attempts and the inbox), then press Resume: its tasks get eight more tries.";
+  // A paused Leg is paused, not out of quota (ADR-052 §4).
+  if (/is paused in Oraknid/.test(reason) && !/goes on by itself/.test(reason))
+    return "Unpause the Leg on its card in Legs, then resume the job.";
   if (/quota|usage limit|out of quota/i.test(reason))
     return "It resumes on its own when the limit resets; adding another Leg or allowing fallback starts it sooner.";
   if (/No Leg can take|no Legs/i.test(reason))

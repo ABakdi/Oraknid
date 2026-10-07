@@ -243,6 +243,61 @@ describe("agents that get simple work done (M13.22)", () => {
     expect((jev?.until ?? 0) - (pickle?.until ?? 0)).toBeGreaterThan(20 * 60_000);
   }, 60_000);
 
+  it("keeps an agent out of quota until the reset its own words give, 51 hours, not counted against the task (M15.1)", async () => {
+    const said = "Individual quota reached for big-pickle. Resets in 51h49m11s.";
+    const free = scriptedLeg(() => [{ fail: said }], { kind: "opencode", models: ["big-pickle"] });
+    const before = Date.now();
+    const w = await world(free, { "big-pickle": 6 });
+    expect(w.job.state, w.job.blockedReason ?? "").toBe("completed");
+    expect(w.tried.map((a) => [w.name(a.legModelId), a.outcome])).toEqual([
+      ["big-pickle", "unavailable"],
+      ["sonnet", "succeeded"],
+    ]);
+    const oc = w.d.registry.require(w.oc.id);
+    expect(oc.health).toBe("rate-limited");
+    const span = (51 * 3600 + 49 * 60 + 11) * 1000;
+    expect(oc.limitedUntil ?? 0).toBeGreaterThanOrEqual(before + span);
+    expect(oc.limitedUntil ?? 0).toBeLessThan(Date.now() + span + 1000);
+    expect(oc.healthDetail).toContain(said);
+    // The second attempt never considered it: out of quota, said so.
+    const second = routings(w.events)[1];
+    expect(second?.excluded.map((e) => e.why).join(" ")).toMatch(
+      /Opencode · big-pickle: rate-limited/,
+    );
+  }, 60_000);
+
+  it("hides a model its provider deprecated and offers the one it names instead (M15.1)", async () => {
+    const free = scriptedLeg(
+      (t) =>
+        t.model === "mimo-v2.5-free"
+          ? [
+              {
+                fail: "Model mimo-v2.5-free has been deprecated. Use mimo-v2.6-flash-free instead.",
+              },
+            ]
+          : [{ write: DOC, content: "# Audio libraries\n" }, { say: "DONE" }],
+      { kind: "opencode", models: ["mimo-v2.5-free"] },
+    );
+    const w = await world(free, { "mimo-v2.5-free": 6 });
+    expect(w.job.state, w.job.blockedReason ?? "").toBe("completed");
+    expect(w.tried[0] && [w.name(w.tried[0].legModelId), w.tried[0].outcome]).toEqual([
+      "mimo-v2.5-free",
+      "unavailable",
+    ]);
+    // Never chosen again: hidden, and the model its provider named is there in its place.
+    expect(w.tried.slice(1).map((a) => w.name(a.legModelId))).not.toContain("mimo-v2.5-free");
+    const models = w.d.registry.models(w.oc.id);
+    expect(models.map((m) => [m.model, m.hidden])).toEqual([
+      ["mimo-v2.5-free", true],
+      ["mimo-v2.6-flash-free", false],
+    ]);
+    const deprecated = w.events.find((e) => e.type === "task.model-deprecated");
+    expect(deprecated?.payload).toMatchObject({
+      model: "mimo-v2.5-free",
+      replacement: "mimo-v2.6-flash-free",
+    });
+  }, 60_000);
+
   it("still counts an error that is the task's own against it", async () => {
     const free = scriptedLeg(() => [{ fail: "The model refused: the task makes no sense" }], {
       kind: "opencode",

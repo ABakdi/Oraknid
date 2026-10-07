@@ -52,6 +52,8 @@ export interface StartRequest {
   /** The Leg's own auto mode and Oraknid's hook before every tool in it (ADR-053). */
   permissionMode?: "ask" | "auto";
   onPreToolUse?: (request: PermissionRequest) => Promise<PreToolDecision>;
+  /** The task's checks before the agent may end its turn (ADR-052 §2): a reason keeps it working. */
+  onStop?: (lastMessage: string) => Promise<string | null>;
   /** The job's tools through the broker (ADR-021): servers, and what the sandbox must reach. */
   tools?: { servers: Record<string, McpServer>; writable: string[]; readonly: string[] };
   /** Folders it may read and never write (ADR-025: a chat's projects). */
@@ -68,6 +70,8 @@ export interface Supervised {
 interface Live {
   id: string;
   legId: string;
+  /** The model's own name, e.g. a local model's (ADR-054: a model in use isn't idle). */
+  model: string;
   label: string;
   session: LegSession;
   jobId: string | null;
@@ -186,6 +190,7 @@ export class LegSupervisor {
         onPermission: req.onPermission,
         ...(req.permissionMode ? { permissionMode: req.permissionMode } : {}),
         ...(req.onPreToolUse ? { onPreToolUse: req.onPreToolUse } : {}),
+        ...(req.onStop ? { onStop: req.onStop } : {}),
         ...(req.tools ? { mcpServers: req.tools.servers } : {}),
       });
     } catch (error) {
@@ -202,6 +207,14 @@ export class LegSupervisor {
       ...session,
       kill: async () => {
         await session.kill();
+        // Its native id, for a retry that resumes it (ADR-052 §1).
+        const native = session.nativeSessionId();
+        if (native)
+          this.o.db
+            .update(sessions)
+            .set({ nativeSessionId: native })
+            .where(eq(sessions.id, id))
+            .run();
         const reason = this.#closing.get(id) ?? "killed";
         this.#closing.delete(id);
         this.#end(id, reason, null);
@@ -211,6 +224,7 @@ export class LegSupervisor {
     this.#live.set(id, {
       id,
       legId: leg.id,
+      model: model.model,
       label: `${leg.name} · ${model.displayName}`,
       session: supervised,
       jobId: req.jobId,
@@ -304,6 +318,14 @@ export class LegSupervisor {
     } finally {
       flushText();
       this.#live.delete(id);
+      // Its native id, kept even when no turn reported usage: a retry resumes it (ADR-052 §1).
+      const native = session.nativeSessionId();
+      if (native)
+        this.o.db
+          .update(sessions)
+          .set({ nativeSessionId: native })
+          .where(eq(sessions.id, id))
+          .run();
     }
   }
 
@@ -356,6 +378,11 @@ export class LegSupervisor {
 
   live(): string[] {
     return [...this.#live.keys()];
+  }
+
+  /** The models a Leg's live sessions use, by name. */
+  modelsInUse(legId: string): Set<string> {
+    return new Set([...this.#live.values()].filter((l) => l.legId === legId).map((l) => l.model));
   }
 
   /** The sessions running now: whose task each is, and when each last said anything (ADR-050). */
