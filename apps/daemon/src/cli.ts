@@ -237,7 +237,11 @@ program
       process.kill(running.pid, "SIGTERM");
       await waitFor(async () => !isAlive(running.pid) || undefined, 10_000);
     }
-    const env: Record<string, string> = { PATH: process.env.PATH ?? "/usr/bin" };
+    // Each folder once: every update installs from a service whose PATH holds ours already.
+    const path = [...new Set((process.env.PATH ?? "/usr/bin").split(":").filter(Boolean))].join(
+      ":",
+    );
+    const env: Record<string, string> = { PATH: path };
     for (const k of ["ORAKNID_DATA_DIR", "ORAKNID_CONFIG_DIR"]) {
       const v = process.env[k];
       if (v) env[k] = v;

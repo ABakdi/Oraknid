@@ -95,6 +95,12 @@ wins where the two differ.
   writes `~/.gemini/antigravity-cli/antigravity-oauth-token` (0600) in
   the Leg's own home. One Antigravity Leg is one Google account, like
   Claude Code; several are possible.
+- **Signing in again** (another account, or one out of quota): signed in,
+  `agy` opens on its prompt and shows no link, so the sign-in from the
+  Leg's card first moves that token aside
+  (`antigravity-oauth-token.before-sign-in`); a sign-in that finishes
+  drops it, one cancelled or abandoned puts it back (2026-10-07: "Asking
+  Antigravity for the link…" never ended).
 - **Tool steps** come as `step_update` with `tool_name` and
   `tool_info.parameters` (a command is `CommandLine`, a file write
   `TargetFile`), `output` when done; no id (the step index is used).

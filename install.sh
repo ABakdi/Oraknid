@@ -40,6 +40,10 @@ DATA_DIR="${ORAKNID_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/oraknid}"
 PM=""
 
 say() { printf '%s\n' "$*"; }
+# PATH with each folder once: an update runs this script from the service, whose PATH has ours already.
+dedupe_path() {
+	printf '%s' "$1" | awk -v RS=: -v ORS=: '$0 != "" && !seen[$0]++' | sed 's/:$//'
+}
 title() { printf '\n==> %s\n' "$*"; }
 warn() { printf 'warning: %s\n' "$*" >&2; }
 die() {
@@ -636,7 +640,7 @@ main() {
 	[ "$(id -u)" != 0 ] || warn "running as root: Oraknid will run as root. It is meant to run as you."
 
 	# What an earlier run put here comes first.
-	PATH="$DIR/.tools/bin:$DIR/.tools/node/bin:$PATH"
+	PATH="$(dedupe_path "$DIR/.tools/bin:$DIR/.tools/node/bin:$PATH")"
 	export PATH
 
 	# Asked first, before the long part.

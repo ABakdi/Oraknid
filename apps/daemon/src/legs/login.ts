@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { legEnv } from "@oraknid/leg-antigravity";
 import type { Sandbox } from "@oraknid/os";
@@ -30,6 +30,8 @@ interface Pending {
   output: string;
   exited: Promise<number | null>;
   timer: NodeJS.Timeout;
+  /** Antigravity's earlier sign-in, put aside while I sign in again: back if this one doesn't finish. */
+  aside?: { token: string; kept: string };
 }
 
 export class LegLogins {
@@ -41,10 +43,31 @@ export class LegLogins {
     private readonly sandbox: Sandbox | null = null,
   ) {}
 
+  #agyHome(leg: LegRow) {
+    const plan = this.sandbox ? sandboxPlan(leg, this.sandbox, this.legsDir) : null;
+    return { plan, home: plan?.home ?? join(this.legsDir, leg.id, "home") };
+  }
+
+  /**
+   * Signed in already, agy opens on its prompt and shows no link: signing in
+   * again (another account, one out of quota) puts its token aside first.
+   */
+  #putAside(leg: LegRow): Pending["aside"] {
+    const token = join(
+      this.#agyHome(leg).home,
+      ".gemini",
+      "antigravity-cli",
+      "antigravity-oauth-token",
+    );
+    if (!existsSync(token)) return undefined;
+    const kept = `${token}.before-sign-in`;
+    renameSync(token, kept);
+    return { token, kept };
+  }
+
   /** agy, in the Leg's sandbox when there is one, with the Leg's own home. */
   #agy(leg: LegRow, args: string[], terminal: boolean) {
-    const plan = this.sandbox ? sandboxPlan(leg, this.sandbox, this.legsDir) : null;
-    const home = plan?.home ?? join(this.legsDir, leg.id, "home");
+    const { plan, home } = this.#agyHome(leg);
     const env = {
       ...legEnv(home, plan),
       ...(terminal
@@ -117,6 +140,7 @@ export class LegLogins {
     if (leg.kind === "claude-code" && !(leg.config as { configDir?: string }).configDir)
       throw new Error("This Leg has no config folder of its own yet.");
     this.cancel(leg.id);
+    const aside = leg.kind === "antigravity" ? this.#putAside(leg) : undefined;
     const child = this.#spawn(leg);
     const name = leg.kind === "antigravity" ? "Antigravity" : "Claude Code";
     const pending: Pending = {
@@ -125,6 +149,7 @@ export class LegLogins {
       exited: new Promise((resolve) => child.once("close", (code) => resolve(code))),
       // A sign-in left open is abandoned after ten minutes.
       timer: setTimeout(() => this.cancel(leg.id), 10 * 60_000),
+      ...(aside ? { aside } : {}),
     };
     pending.timer.unref();
     let chose = false;
@@ -229,7 +254,7 @@ export class LegLogins {
       }
       const status = this.status(leg);
       if (status.loggedIn) {
-        this.cancel(leg.id);
+        this.cancel(leg.id, true);
         return { ok: true, detail: status.detail };
       }
       if (Date.now() > deadline || pending.child.exitCode !== null) {
@@ -280,7 +305,8 @@ export class LegLogins {
     }
   }
 
-  cancel(legId: string) {
+  /** Ends a sign-in; one that didn't finish gives back the sign-in it replaced. */
+  cancel(legId: string, signedIn = false) {
     const pending = this.#pending.get(legId);
     if (!pending) return;
     clearTimeout(pending.timer);
@@ -289,6 +315,10 @@ export class LegLogins {
     } catch {}
     if (pending.child.exitCode === null) pending.child.kill("SIGTERM");
     this.#pending.delete(legId);
+    const aside = pending.aside;
+    if (!aside || !existsSync(aside.kept)) return;
+    if (signedIn) rmSync(aside.kept, { force: true });
+    else renameSync(aside.kept, aside.token);
   }
 
   stopAll() {
