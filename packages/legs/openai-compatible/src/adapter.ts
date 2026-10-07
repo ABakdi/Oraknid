@@ -1,4 +1,4 @@
-import { testToolCalling } from "@oraknid/leg-oraknid-agent";
+import { contextWindowOf, testToolCalling } from "@oraknid/leg-oraknid-agent";
 import {
   Channel,
   emptyUsage,
@@ -347,37 +347,4 @@ async function* sse(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
       if (line.startsWith("data:")) yield line.slice(5).trim();
     }
   }
-}
-
-/** Ollama: /api/show reports the context length; llama.cpp: /props. Null when neither answers. */
-async function contextWindowOf(
-  http: typeof fetch,
-  baseUrl: string,
-  model: string,
-): Promise<number | null> {
-  const root = baseUrl.replace(/\/v1$/, "");
-  try {
-    const res = await http(`${root}/api/show`, {
-      method: "POST",
-      body: JSON.stringify({ model }),
-      signal: AbortSignal.timeout(3000),
-    });
-    if (res.ok) {
-      const info =
-        ((await res.json()) as { model_info?: Record<string, unknown> }).model_info ?? {};
-      const key = Object.keys(info).find((k) => k.endsWith(".context_length"));
-      if (key) return Number(info[key]);
-    }
-  } catch {}
-  try {
-    const res = await http(`${root}/props`, { signal: AbortSignal.timeout(3000) });
-    if (res.ok) {
-      const props = (await res.json()) as {
-        default_generation_settings?: { n_ctx?: number };
-        n_ctx?: number;
-      };
-      return props.default_generation_settings?.n_ctx ?? props.n_ctx ?? null;
-    }
-  } catch {}
-  return null;
 }

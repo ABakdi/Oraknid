@@ -28,6 +28,9 @@ import {
   type UsageSnapshot,
 } from "@oraknid/leg-sdk";
 
+/** How long the context measure may take after a turn before the result's numbers are kept. */
+const CONTEXT_USAGE_MS = 3000;
+
 /** The Leg's config (Leg-Adapters → Claude Code). */
 export interface ClaudeCodeConfig {
   /** The unmodified Claude Code binary. */
@@ -433,6 +436,36 @@ export function createClaudeCodeAdapter(deps: { query?: QueryFn } = {}): LegAdap
         );
 
       const q = query({ prompt: input, options });
+      /**
+       * What fills the context window now, as Claude Code measures it (its
+       * `/context`: system prompt, tools, memory, messages), asked after each
+       * turn. The SDK marks it as its own (`getContextUsage`); when it isn't
+       * there or doesn't answer within seconds, the result's tokens stand.
+       */
+      let measured: { tokens: number; window: number | null } | null = null;
+      const measure = async () => {
+        measured = null;
+        const ask = (q as { getContextUsage?: () => Promise<unknown> }).getContextUsage;
+        if (typeof ask !== "function" || killed) return;
+        let timer: NodeJS.Timeout | undefined;
+        try {
+          const u = (await Promise.race([
+            ask.call(q),
+            new Promise((resolve) => {
+              timer = setTimeout(() => resolve(null), CONTEXT_USAGE_MS);
+            }),
+          ])) as { totalTokens?: number; maxTokens?: number; rawMaxTokens?: number } | null;
+          if (u && typeof u.totalTokens === "number" && u.totalTokens > 0)
+            measured = {
+              tokens: u.totalTokens,
+              window: u.maxTokens || u.rawMaxTokens || null,
+            };
+        } catch {
+          // An older CLI without the control request: the result's numbers are kept.
+        } finally {
+          clearTimeout(timer);
+        }
+      };
       const begin = (text: string) => {
         interrupted = false;
         rateLimited = false;
@@ -535,10 +568,12 @@ export function createClaudeCodeAdapter(deps: { query?: QueryFn } = {}): LegAdap
               cacheReadTokens: u.cache_read_input_tokens ?? 0,
               cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
               contextTokens:
-                (u.input_tokens ?? 0) +
+                measured?.tokens ??
+                ((u.input_tokens ?? 0) +
                   (u.cache_read_input_tokens ?? 0) +
-                  (u.cache_creation_input_tokens ?? 0) || null,
-              contextWindow: window?.contextWindow ?? null,
+                  (u.cache_creation_input_tokens ?? 0) ||
+                  null),
+              contextWindow: measured?.window ?? window?.contextWindow ?? null,
               estimated: false,
             };
             events.push({ type: "usage", usage });
@@ -568,7 +603,11 @@ export function createClaudeCodeAdapter(deps: { query?: QueryFn } = {}): LegAdap
 
       void (async () => {
         try {
-          for await (const m of q) translate(m);
+          for await (const m of q) {
+            // The SDK reads its process on its own: asking here doesn't hold the stream.
+            if (m.type === "result") await measure();
+            translate(m);
+          }
           events.push({
             type: "session.ended",
             reason: killed ? "killed" : "completed",

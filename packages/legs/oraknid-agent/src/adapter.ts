@@ -696,7 +696,12 @@ async function listModels(
   });
 }
 
-/** llama.cpp: /props; Ollama: /api/show. Null when neither answers. */
+/**
+ * The context window a server runs a model with: llama.cpp's /props,
+ * Ollama's /api/show, LM Studio's /api/v1/models (the loaded instance's
+ * context length, else the model's most; /api/v0/models before LM Studio
+ * 0.4). Null when none answers.
+ */
 export async function contextWindowOf(
   http: typeof fetch,
   baseUrl: string,
@@ -725,6 +730,48 @@ export async function contextWindowOf(
         ((await res.json()) as { model_info?: Record<string, unknown> }).model_info ?? {};
       const key = Object.keys(info).find((k) => k.endsWith(".context_length"));
       if (key) return Number(info[key]);
+    }
+  } catch {}
+  return lmStudioWindow(http, root, model);
+}
+
+/** LM Studio's own REST API: what the model is loaded with, else the most it takes. */
+export async function lmStudioWindow(
+  http: typeof fetch,
+  root: string,
+  model: string,
+): Promise<number | null> {
+  try {
+    const res = await http(`${root}/api/v1/models`, { signal: AbortSignal.timeout(3000) });
+    if (res.ok) {
+      const body = (await res.json()) as {
+        models?: {
+          key?: string;
+          max_context_length?: number;
+          loaded_instances?: { id?: string; config?: { context_length?: number } }[];
+        }[];
+      };
+      const m = body.models?.find(
+        (x) => x.key === model || x.loaded_instances?.some((i) => i.id === model),
+      );
+      if (m) {
+        const loaded =
+          m.loaded_instances?.find((i) => i.id === model)?.config?.context_length ??
+          m.loaded_instances?.[0]?.config?.context_length;
+        const n = loaded ?? m.max_context_length;
+        if (n) return n;
+      }
+    }
+  } catch {}
+  try {
+    const res = await http(`${root}/api/v0/models`, { signal: AbortSignal.timeout(3000) });
+    if (res.ok) {
+      const body = (await res.json()) as {
+        data?: { id: string; loaded_context_length?: number; max_context_length?: number }[];
+      };
+      const m = body.data?.find((x) => x.id === model);
+      const n = m?.loaded_context_length ?? m?.max_context_length;
+      if (n) return n;
     }
   } catch {}
   return null;

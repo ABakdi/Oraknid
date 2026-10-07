@@ -2,6 +2,7 @@ export {
   contextWindowOf,
   createOraknidAgentAdapter,
   type Endpoint,
+  lmStudioWindow,
   type OraknidAgentConfig,
   type OraknidAgentDeps,
   readConfig,

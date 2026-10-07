@@ -68,6 +68,20 @@ describe("OpenAI-compatible adapter", () => {
     expect(p.features.tools).toBe(true);
   });
 
+  it("reads LM Studio's context windows from its own API: the loaded one, else the most", async () => {
+    const server = await fakeServer("reply", { lmstudio: true });
+    servers.push(server);
+    const p = await createOpenAICompatibleAdapter().probe(
+      { id: "l", name: "o", kind: "openai-compatible", config: { baseUrl: server.baseUrl } },
+      null,
+    );
+    // vLLM-style max_model_len still wins for tiny; qwen is loaded with 16k of its 128k.
+    expect(p.models.map((m) => [m.model, m.contextWindow])).toEqual([
+      ["qwen", 16384],
+      ["tiny", 8192],
+    ]);
+  });
+
   it("tests tool calling instead of assuming it", async () => {
     const server = await fakeServer("reply", { tools: false });
     servers.push(server);
