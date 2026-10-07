@@ -3,6 +3,53 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.4.0 — 2026-10-08 (pre-release)
+
+### GitHub Actions inside Oraknid ([ADR-058](docs/04-Decisions/ADR-058-CI-In-Oraknid.md))
+- **Where you see it:** a CI tab on every project and on Repos, with runs, their jobs and steps, and logs split by step (the failing one first, searchable).
+- **What you can do:** download artifacts; re-run, cancel and start a workflow by hand with its inputs, each through your approval and recorded.
+- **Status and notifications:** CI badges on the project header, job pages and The Eye's report; a notification when a run fails on the release or work branch.
+- **For agents and The Eye:** a check, `oraknid github-ci`, that waits for the branch's CI and fails with the failing step's log. Agents read runs and logs through the github tool, and its re-runs need approval.
+- **Elsewhere:** helper actions and `/ci` in the terminal app.
+- **GitHub's rate limit is respected:** cached data while waiting.
+- **This repository's own CI:** lint, typecheck and tests on every push and pull request. Also a release script (`scripts/release.mjs`), a release workflow, and the API's OpenAPI document (`/api/openapi.json`).
+
+### More git hosts and accounts ([ADR-062](docs/04-Decisions/ADR-062-Git-Hosts.md), [ADR-063](docs/04-Decisions/ADR-063-Mail-OAuth.md))
+- **GitLab (cloud or self-hosted), Gitea and Forgejo** by token: repos, create, link to a project, clone and push through Oraknid's own credentials, Repos browsing, merge requests, and the same built-in checks.
+- **Mail sign-in with Google and Microsoft** by OAuth (your own app, steps in the guide); app passwords still work.
+- **A storage tool for agents:** list, download into the job, upload (judged) and share links (always asked).
+- **Context windows:** LM Studio's is read from the model; Claude Code reports its real context usage.
+
+### Data, operations and servers ([ADR-059](docs/04-Decisions/ADR-059-Project-Secrets.md), [ADR-060](docs/04-Decisions/ADR-060-Sites-Domains-And-Uptime.md), [ADR-061](docs/04-Decisions/ADR-061-Moving-Oraknid.md))
+- **Project secrets per environment** (dev, testing, production), kept in the keychain, never shown again, given only to the project's jobs. Written to servers as a 0600 env file, production values only to production servers.
+- **A Sites tab under Servers:** domains and where they point, certificate expiry, uptime checks with down and back-up notifications.
+- **Moving Oraknid:** `oraknid export --all` / `oraknid import` move everything to a new machine in one passphrase-encrypted archive (also in Settings → About). A job or a project exports as a zip and imports as a record.
+- **Cleaning up:** finished jobs' worktrees can be cleaned up from Settings → Storage. The database is tidied while idle.
+- **No sandbox, no job,** unless you start one without it explicitly.
+- **Servers:**
+  - an unreachable server is shown stale;
+  - a cancelled or failed job still refreshes the state document;
+  - databases show their sizes, and SQLite files are listed.
+- **Notifications:** when a quota-paused job resumes, and when keeping the computer awake fails.
+- **Adding an agent tests it first.**
+
+### The interface and the helper
+- **A command palette** that jumps anywhere and runs controls.
+- **The Overview:** Activity in words, with filters and expandable lines; Resources grouped by agent, with full charts.
+- **Inbox:** filters by state.
+- **Full rights:** a badge for full rights, and uses away from home recorded.
+- **The helper does what the screens do:** settings, drafts, waivers, chats, repos, the inbox, deletes, each with a confirm where it matters.
+- **The guide:** new pages.
+
+### The harness, stage 4 ([ADR-056](docs/04-Decisions/ADR-056-The-Harness.md))
+- **How an attempt ends is decided in one place,** with its precedence written once and tested as a table that includes the real failures of 2026-10-06/07.
+- **Monitors** for drift, stalls, budget and going round in circles: nudged once, then corrected.
+- **A scope or security warning** found after the checks pass no longer counts as done.
+
+### Security
+- **Variables never on a command line:** a sandbox's variables (agents' keys, project secrets) are no longer passed as command-line arguments, which every user of the computer can read.
+- **Commits** take the repository's own git identity.
+
 ## 0.3.1 — 2026-10-08 (pre-release)
 
 The harness, stage 3 ([ADR-056](docs/04-Decisions/ADR-056-The-Harness.md)). Also the first published release of 0.3.0's work (Codex, the Gate): v0.3.0 was tagged but not published, because its clean install check failed on a full disk on the build machine.
