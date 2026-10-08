@@ -21,8 +21,43 @@ and usage samples. Thresholds are defaults, editable in Settings.
 | D7  | **Forbidden command**           | A command matches the deny list, or isn't on the allow list.                                                                                                                                | Any. Always blocked first, then counted as drift. |
 | D8  | **Gate bypass attempt**         | The Leg tries again a gated action I refused (e.g. `git push`).                                                                                                                             | Any. Blocked, then escalated straight to step 4.  |
 
-Cheap Legs can help with classification (e.g. "is this message a done
-claim?"). The thresholds and the final decision stay deterministic.
+The thresholds stay deterministic; whether what they caught is really
+drift is a model's call (below).
+
+**Monitors suspect, a model confirms** ([[ADR-056-The-Harness]],
+2026-10-08, after the "keys" job: a scaffold's own `pnpm install` and
+`pnpm build` read as edits out of scope, and the ladder corrected, reset,
+reassigned and killed a correct agent):
+
+1. **Known conventions first, no model.** What the project's tools write
+   by themselves is never a suspicion: a table of each common ecosystem's
+   by-products (`packages/core/src/harness/conventions.ts`: JS/TS and
+   their bundlers and test runners, Python, Rust, Go, Java/Kotlin, .NET,
+   Ruby, PHP, Elixir, Dart/Flutter, Swift, C/C++, Haskell, Zig,
+   Terraform, Nix; and for every project caches, IDE folders, OS files),
+   each applied when its marker files (`package.json`, `pyproject.toml`,
+   `Cargo.toml`, `go.mod`, `*.csproj`…) are in the project or among the
+   changed files; what the project's own ignore rules ignore; and the
+   by-products learned for the project before.
+2. **D1–D6 and the stuck patterns are suspicions.** Written to the
+   attempt log, never acted on by themselves. **D7 and D8 are hard
+   rules** and act at once, as does the attempt's turn limit.
+3. **The drift judge confirms**, only when the decision would act on a
+   suspicion: the task (goal, instructions, kind, scope), the suspicion
+   and its paths, what the agent ran and its last words, the project's
+   conventions. `expected` (a by-product of doing the task, or a change
+   it legitimately needs) drops it; `drift` sends it to the ladder below;
+   `unsure` asks the agent once, in its session, a neutral question, and
+   the judge decides on its answer. Stage 1 on the quick model, stage 2
+   on the strongest on drift or unsure; cached per task. A judge that
+   fails or takes over 30 s: the suspicion is corrected (step 1), never
+   more. No judge at all: the detectors act as before.
+4. **Learned.** By-products the judge names (globs of what tools wrote by
+   themselves) are kept for the project and are fast path from then on.
+5. **Seamless.** Suspicions and expected verdicts are never said to me:
+   no chat line, inbox item or notification, only the attempt log and a
+   `task.suspicion` line in the job's activity. I hear of drift when a
+   confirmed one escalates.
 
 **The detectors are monitors** ([[ADR-056-The-Harness]] stage 4,
 2026-10-07): pure functions (`packages/core/src/harness/monitors.ts`)
@@ -54,7 +89,9 @@ are the task's scope taken whole (`taskScope`):
 `oraknidOwn`): its `.oraknid/` folder and the handoff note an agent
 leaves when it hands over (`notes/handoff.md`, `handoff.md`,
 `handoffs/…`). Seen 2026-10-06: the misahaty job's handoff note was
-flagged as an edit outside the scope.
+flagged as an edit outside the scope. Nor is what the project's tools
+write by themselves (the known conventions above, its ignore rules,
+what was learned for it): a D1 step never puts back a build's output.
 
 What a check reads is what the task must leave behind. Seen 2026-10-04:
 a research task whose plan gave it the scope `["research",
@@ -64,7 +101,9 @@ session and reassigned the task.
 
 ## The escalation ladder
 
-Each drift event raises the task's escalation level by one step. A
+Each confirmed drift (above: the judge's `drift`, or D7, D8) raises the
+task's escalation level by one step; one the judge couldn't judge is
+corrected without raising it further. A
 step that works (verified progress follows) resets the counter, and so
 does a task I took over and hand back: it starts fresh. D1's edits outside
 the scope are put back at every step, asking me included, so the next

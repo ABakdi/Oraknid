@@ -41,6 +41,8 @@ export interface RigOptions {
   dbFile?: string;
   /** The daemon's data folder; a fresh one when left out. */
   dataDir?: string;
+  /** How long the drift judge may take (ADR-056). */
+  driftJudgeMs?: number;
   /** Started again on a database that has its Legs already (a restart). */
   again?: boolean;
 }
@@ -142,6 +144,7 @@ export async function harness(o: RigOptions) {
     metricsIntervalMs: 50,
     guardIntervalMs: 3_600_000,
     stallCheckMs: 100,
+    ...(o.driftJudgeMs ? { driftJudgeMs: o.driftJudgeMs } : {}),
     serverSampleSec: 3600,
   });
   closing.unshift(() => d.close());

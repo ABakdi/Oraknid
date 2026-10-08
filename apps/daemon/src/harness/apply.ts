@@ -6,14 +6,14 @@ import {
   type Ending,
   fence,
   ILL_DO_IT,
-  inScope,
   keepsGoingWrongAnswer,
   type LadderStep,
   LEAVE_IT_OUT,
   type Outcome,
-  oraknidOwn,
+  outsideScope,
   type Signal,
   STOP_JOB,
+  signalKey,
   unusableOf,
   usageLimitOf,
   whenSaid,
@@ -24,6 +24,7 @@ import { BrainStopped } from "../eye/brain.ts";
 import { giveToLeg } from "../eye/leg-work.ts";
 import { dependentsOf, keepsGoingWrong, readKeepsGoingWrong } from "../eye/questions.ts";
 import { parseSsh } from "../servers/remote.ts";
+import { askAgent, confirm, knowConventions } from "./confirm.ts";
 import { type AttemptCtx, type Turn, verdictFor } from "./facts.ts";
 import { ALLOW } from "./gate.ts";
 import type { AttemptOutcome } from "./types.ts";
@@ -61,10 +62,15 @@ const PREFIX: Record<TaskKind, string> = {
  */
 export async function applyOutcome(o: Outcome, x: AttemptCtx, t: Turn): Promise<"decide" | "turn"> {
   x.enter(o);
-  if (o.kind !== "Verify" && o.kind !== "RepairChecks") settle(x, t, o);
+  // The facts change and the turn is decided again: nothing goes on record yet.
+  if (o.kind !== "Verify" && o.kind !== "RepairChecks" && o.kind !== "Confirm") settle(x, t, o);
   switch (o.kind) {
     case "Verify":
       await verify(x, t);
+      return "decide";
+    case "Confirm":
+      // What the monitors suspect, confirmed by the drift judge before anything acts (ADR-056).
+      await confirm(x, t, o.signals);
       return "decide";
     case "RepairChecks": {
       const report = t.report;
@@ -137,6 +143,8 @@ async function verify(x: AttemptCtx, t: Turn) {
   const { task, d } = x;
   x.st.observed.changedPaths = await x.ws.tree.changedSince(x.scopeBase);
   x.st.observed.scope = x.scope();
+  // What the project's tools write by themselves is never a suspicion (ADR-056).
+  knowConventions(x, x.st.observed.changedPaths);
   t.checked = true;
   if (task.verify.length) {
     x.event("task.verifying", {});
@@ -201,7 +209,7 @@ function settle(x: AttemptCtx, t: Turn, o: Outcome) {
 
 /** A signal in the attempt log, once until the ladder acts on what was seen. */
 function signal(x: AttemptCtx, s: Signal) {
-  const key = `${s.kind}:${s.code}:${s.evidence}`;
+  const key = signalKey(s);
   if (x.st.signalled.has(key)) return;
   x.st.signalled.add(key);
   x.trail.append("Signal", { kind: s.kind, code: s.code, evidence: s.evidence });
@@ -221,6 +229,12 @@ async function carryOn(
       x.st.observed.lastActivityAt = x.d.now();
       return "turn";
     case "watch":
+      return "turn";
+    case "confirm":
+      // The drift judge is unsure: the agent is asked once, neutrally; its answer is heard at
+      // its turn's end (ADR-056 → Monitors suspect, a model confirms).
+      if (o.confirming && o.feedback) askAgent(x, o.confirming, o.feedback);
+      if (o.feedback) await send(o.feedback);
       return "turn";
     case "reconcile":
       // What a restart left uncertain: the agent looks, never runs it again (ADR-056 §1).
@@ -293,11 +307,12 @@ async function ladderStep(x: AttemptCtx, drift: Drift, step: LadderStep | "ask",
   st.stuckFrom = lastLogged(x);
   // Edits outside the task's scope are put back whatever the step: left
   // there, the next attempt starts out of scope and trips D1 again.
+  // What the project's tools wrote by themselves stays (ADR-056): never a build's output.
   if (drift.code === "D1") {
-    const scope = x.scope();
-    const outside = (await x.ws.tree.changedSince(x.scopeBase)).filter(
-      (p) => !oraknidOwn(p) && !inScope(p, scope),
-    );
+    const outside = outsideScope(await x.ws.tree.changedSince(x.scopeBase), {
+      ...o,
+      scope: x.scope(),
+    });
     x.ws.tree.restorePaths(x.scopeBase, outside, x.ws.trash);
   }
 }

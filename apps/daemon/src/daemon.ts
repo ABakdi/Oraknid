@@ -153,6 +153,8 @@ export interface DaemonOptions {
   /** Opens a folder on this machine; tests replace it. */
   openPath?: (path: string) => void;
   stallCheckMs?: number;
+  /** How long the drift judge may take (tests); 30 s otherwise (ADR-056). */
+  driftJudgeMs?: number;
   budgetIntervalMs?: number;
   emailDelayMs?: number;
   /** Leg adapters by kind (tests replace them). */
@@ -563,6 +565,7 @@ export async function startDaemon(options: DaemonOptions) {
         tmpDir: join(paths.dataDir, "tmp"),
         now,
         ...(options.stallCheckMs ? { stallCheckMs: options.stallCheckMs } : {}),
+        ...(options.driftJudgeMs ? { driftJudgeMs: options.driftJudgeMs } : {}),
       }),
   });
   // The Oraknid helper: what I ask in words, through Oraknid's own services (ADR-024).

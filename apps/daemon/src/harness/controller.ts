@@ -80,6 +80,8 @@ export function stateOf(o: Outcome): ControllerState {
       return "Done";
     case "Continue":
       return "Running";
+    case "Confirm":
+      return "Deciding";
     case "Verify":
       return "Verifying";
     case "RepairChecks":

@@ -3,6 +3,8 @@ export * from "./backups.ts";
 export * from "./budgets.ts";
 export * from "./cloud.ts";
 export * from "./drift.ts";
+export * from "./harness/conventions.ts";
+export * from "./harness/drift-judge.ts";
 export * from "./harness/escalation.ts";
 export * from "./harness/gate.ts";
 export * from "./harness/monitors.ts";

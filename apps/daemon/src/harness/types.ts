@@ -47,6 +47,8 @@ export interface AttemptDeps {
   rotateAt?: number;
   /** How often to look for a stall while waiting for a Leg. */
   stallCheckMs?: number;
+  /** How long the drift judge may take, both stages (ADR-056); 30 s unless a test says. */
+  driftJudgeMs?: number;
   maxTurns?: number;
 }
 
