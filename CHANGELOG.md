@@ -3,6 +3,10 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## Unreleased
+
+- **Licensed under AGPL-3.0** (`AGPL-3.0-only`): the LICENSE file, every package's `license`, and the README.
+
 ## 0.5.1 — 2026-10-08 (pre-release)
 
 The web UI no longer freezes the browser. Measured with a job streaming, on data shaped like a real install: long tasks went from up to 4.2 s lost per minute to none on the Overview, a project's Eye chat and Activity.
