@@ -1,3 +1,5 @@
+import { byProductOf } from "./harness/conventions.ts";
+
 // A harness for any model (ADR-052, Phase 15): what the jobs of 2026-10-06
 // taught. Agents read in their own words (a quota until its reset, a model
 // deprecated for another), checks told broken from failing, Oraknid's own
@@ -135,23 +137,15 @@ export function oraknidOwn(path: string): boolean {
 }
 
 /**
- * What a build, a test run or an install writes by itself: installed
- * dependencies, build output, caches and lockfiles. Never scope drift: a task
- * that runs `pnpm install` and `pnpm build` makes them doing its job (a
- * scaffold killed and rolled back for its own `dist/` and `node_modules/`,
- * 2026-10-08).
+ * What a build, a test run or an install writes by itself, in any ecosystem
+ * the conventions know (`harness/conventions.ts`): installed dependencies,
+ * build output, caches and lockfiles. Never scope drift: a task that runs
+ * `pnpm install` and `pnpm build` makes them doing its job (a scaffold
+ * killed and rolled back for its own `dist/` and `node_modules/`,
+ * 2026-10-08). The monitors read the project's own ecosystems instead.
  */
 export function generatedFile(path: string): boolean {
-  const p = path.replace(/^\.\//, "");
-  return (
-    /(?:^|\/)(?:node_modules|\.pnpm-store|dist|build|out|\.next|\.nuxt|\.svelte-kit|\.output|coverage|\.turbo|\.vite|\.cache|\.parcel-cache|target|__pycache__|\.venv|venv|\.tox|\.gradle|\.pytest_cache|\.mypy_cache|\.ruff_cache)\//.test(
-      p,
-    ) ||
-    /(?:^|\/)(?:pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?|npm-shrinkwrap\.json|Cargo\.lock|poetry\.lock|uv\.lock|Pipfile\.lock|go\.sum|composer\.lock|Gemfile\.lock)$/.test(
-      p,
-    ) ||
-    /\.tsbuildinfo$/.test(p)
-  );
+  return byProductOf(path) !== null;
 }
 
 // ── Checks tested before they judge (ADR-052 §2) ─────────────────────

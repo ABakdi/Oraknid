@@ -2,7 +2,7 @@ import { claimsDone, type Escalation, nextEscalation, worstDrift } from "../drif
 import { deprecationOf, saysCheckBroken, usageLimitOf } from "../harness.ts";
 import { type ProviderFailure, providerFailure } from "../provider-failures.ts";
 import { fence } from "../scrub.ts";
-import { type Drift, driftOf, type Signal } from "./monitors.ts";
+import { type Drift, driftOf, isSuspicion, type Signal, signalKey } from "./monitors.ts";
 
 // The only place an attempt's turn is decided (ADR-056 §6): pure, from the
 // facts the attempt gathered — how the turn stopped, the checks' verdict,
@@ -140,6 +140,26 @@ export function repairHintOf(
   return hint ? { command: bad.command, hint } : null;
 }
 
+/**
+ * A suspicion's verdict as the decision reads it (ADR-056 → Monitors
+ * suspect, a model confirms): a by-product of doing the task, drift, not
+ * sure (the agent is asked once), or not judged (the judge failed or was
+ * too slow: acted on at the gentlest step).
+ */
+export type Confirmation =
+  | { verdict: "expected"; reason: string }
+  | { verdict: "drift"; reason: string }
+  | { verdict: "unsure"; reason: string; question: string }
+  | { verdict: "unjudged"; reason: string };
+
+/** What the drift judge said so far in this attempt. */
+export interface Confirming {
+  /** Verdicts by the suspicion's `signalKey`. */
+  judged: Record<string, Confirmation>;
+  /** The codes the agent was already asked about: unsure again, it is acted on gently. */
+  asked: string[];
+}
+
 /** Everything a turn's end is decided from. */
 export interface OutcomeInput {
   stop: { reason: StopReason; text: string };
@@ -158,6 +178,11 @@ export interface OutcomeInput {
   /** What the agent says it needs of me (`key`: the command or its words), and whether I was asked. */
   agentNeeds: { said: string; asked: boolean } | null;
   signals: Signal[];
+  /**
+   * The drift judge's verdicts on the suspicions (D1–D6, stuck). Null or
+   * left out: there is no judge, and every signal acts as it did before.
+   */
+  confirm?: Confirming | null;
   /**
    * Actions a restart left uncertain whose effect only the agent can look
    * at (ADR-056 §1): how many are open, whether it was asked already, and
@@ -184,8 +209,10 @@ export type Outcome =
   /** Go on in this session, with these words (none: keep watching). */
   | {
       kind: "Continue";
-      why: "guidance" | "self-prompt" | "owner" | "wait" | "watch" | "reconcile";
+      why: "guidance" | "self-prompt" | "owner" | "wait" | "watch" | "reconcile" | "confirm";
       feedback: string | null;
+      /** The suspicion the judge is unsure of, asked of the agent once (`why: "confirm"`). */
+      confirming?: { key: string; code: string };
       /** The context is nearly full: a fresh session with a handoff once this turn ends. */
       rotate?: boolean;
       /** I let this command run once. */
@@ -195,6 +222,8 @@ export type Outcome =
     }
   /** The turn's work is to be verified: its checks, or The Eye's review. */
   | { kind: "Verify" }
+  /** The drift judge is to look at these suspicions before anything acts on them; then decide again. */
+  | { kind: "Confirm"; signals: Signal[] }
   | { kind: "RepairChecks"; command: string; hint: string }
   | { kind: "AskOwner"; question: "agent-needs"; said: string }
   | {
@@ -215,7 +244,15 @@ export type Outcome =
       legId?: string | null;
     }
   | { kind: "Climb"; to: { legName: string; model: string }; failure: string }
-  | { kind: "Escalate"; step: LadderStep; level: number; drift: Drift; failure: string }
+  | {
+      kind: "Escalate";
+      step: LadderStep;
+      level: number;
+      drift: Drift;
+      failure: string;
+      /** Not confirmed by the judge (it failed, or stayed unsure): the gentlest step, never more. */
+      gentle?: true;
+    }
   | { kind: "Unavailable"; cause: "limit" | "error" }
   | { kind: "Fail"; why: "strayed" | "error"; reason: string }
   /** Mine to do: the job waits for me. */
@@ -253,13 +290,36 @@ const SECURITY = new Set(["D7", "D8", "D1"]);
  *
  * With no turn's end yet: waiting on me is no stall; any drift goes to
  * the ladder.
+ *
+ * Wherever drift would act (7, 10, 12's nudge, and with no turn's end),
+ * its suspicions are resolved first when there is a judge (`confirm`):
+ * `Confirm` the ones not judged, ask the agent once about one the judge is
+ * unsure of, drop the expected ones; only confirmed drift, D7 and D8 reach
+ * the ladder, and what couldn't be judged is corrected, never more.
  */
 export function decideOutcome(i: OutcomeInput): Outcome {
   const failure = i.verdict?.failure ?? "";
-  const drifts = i.signals.map(driftOf).filter((d): d is Drift => d !== null);
-  const ladder = (pool: Drift[], fail: string): Outcome | null => {
-    const drift = worstDrift(pool);
+  const drifts: Pool = i.signals.flatMap((signal) => {
+    const drift = driftOf(signal);
+    return drift ? [{ signal, drift }] : [];
+  });
+  const sifted = (pool: Pool) => sift(pool, i.confirm ?? null);
+  const ladder = (pool: Pool, fail: string): Outcome | null => {
+    // Suspicions are confirmed before anything acts on them (ADR-056 → Monitors suspect).
+    const s = sifted(pool);
+    if ("outcome" in s) return s.outcome;
+    const drift = worstDrift(s.acting.map((p) => p.drift));
     if (!drift) return null;
+    // Not confirmed (the judge failed, or stayed unsure): corrected, never more.
+    if (s.gentle.has(drift))
+      return {
+        kind: "Escalate",
+        step: "correct",
+        level: Math.max(i.history.level, 1),
+        drift,
+        failure: fail,
+        gentle: true,
+      };
     const next = nextEscalation(i.history.level, drift.code);
     if (next.step === "ask")
       return {
@@ -290,7 +350,15 @@ export function decideOutcome(i: OutcomeInput): Outcome {
     if (i.history.turns >= i.policy.maxTurns)
       return (
         ladder(
-          [{ code: "D6", evidence: `took ${i.history.turns} turns without finishing one` }],
+          [
+            {
+              signal: null,
+              drift: {
+                code: "D6",
+                evidence: `took ${i.history.turns} turns without finishing one`,
+              },
+            },
+          ],
           "",
         ) ?? unreachable()
       );
@@ -316,7 +384,10 @@ export function decideOutcome(i: OutcomeInput): Outcome {
 
   // 7. Security and scope first, before any climb (bug 13) and when the checks pass too: a
   // forbidden action or a refused gate tried again is never "done" (the worst drift is theirs).
-  if (drifts.some((d) => SECURITY.has(d.code))) return ladder(drifts, failure) ?? unreachable();
+  // Scope (D1) only once the judge confirms it; D7 and D8 at once.
+  const security = drifts.filter((p) => SECURITY.has(p.drift.code));
+  const guarded = security.length ? ladder(security, failure) : null;
+  if (guarded) return guarded;
 
   // 7b. What a restart left uncertain and only the agent can look at (ADR-056 §1): asked once,
   // to look and never run it again, before the work is done or climbs.
@@ -332,23 +403,39 @@ export function decideOutcome(i: OutcomeInput): Outcome {
 
   // 10. The other drifts (D2–D6), on the rung where it is; going round in circles after a
   // nudge is a repetition (D2).
-  const stuck = i.signals.find((s) => s.kind === "stuck");
-  const circling =
-    stuck && i.history.nudged ? [{ code: "D2" as const, evidence: stuck.evidence }] : [];
-  const step = ladder([...drifts, ...circling], failure);
+  const seen = i.signals.find((s) => s.kind === "stuck");
+  const circling: Pool =
+    seen && i.history.nudged
+      ? [{ signal: seen, drift: { code: "D2", evidence: seen.evidence } }]
+      : [];
+  const step = ladder([...drifts.filter((p) => !SECURITY.has(p.drift.code)), ...circling], failure);
   if (step) return step;
 
   // 11. The turns spent.
   if (i.history.turns >= i.policy.maxTurns)
     return (
       ladder(
-        [{ code: "D6", evidence: `took ${i.history.turns} turns without passing verification` }],
+        [
+          {
+            signal: null,
+            drift: {
+              code: "D6",
+              evidence: `took ${i.history.turns} turns without passing verification`,
+            },
+          },
+        ],
         "",
       ) ?? unreachable()
     );
 
   // 12. Self-prompting: the exact failure goes back (The-Eye → Self-prompting); going round in
-  // circles, it is nudged once.
+  // circles (confirmed by the judge when there is one), it is nudged once.
+  let stuck: Signal | undefined;
+  if (seen) {
+    const s = sifted([{ signal: seen, drift: { code: "D2", evidence: seen.evidence } }]);
+    if ("outcome" in s) return s.outcome;
+    if (s.acting.length) stuck = seen;
+  }
   const feedback = cutShort
     ? `Your turn reached its limit of steps before you finished.${i.verdict.failed ? ` Oraknid ran the checks and the task is not done yet:\n${failure}\n` : " "}Go on with the task, then say DONE.`
     : `Oraknid ran the checks and the task is not done yet.\n${failure}\nFix it, then say DONE.`;
@@ -359,6 +446,53 @@ export function decideOutcome(i: OutcomeInput): Outcome {
     rotate: shouldRotate(i.usage, i.policy.rotateAt),
     ...(stuck ? { nudge: stuck } : {}),
   };
+}
+
+/** Drifts the ladder may act on, each with the signal it came from (none: a limit of the attempt's). */
+type Pool = { signal: Signal | null; drift: Drift }[];
+
+/**
+ * The suspicions among drifts resolved before the ladder acts (ADR-056 →
+ * Monitors suspect, a model confirms): any not judged yet are to be
+ * confirmed; one the judge is unsure of is asked of the agent once; those
+ * judged expected are dropped; drift acts, and what couldn't be judged acts
+ * gently. D7, D8 and the attempt's limits always act. With no judge, all act.
+ */
+function sift(
+  pool: Pool,
+  c: Confirming | null,
+): { outcome: Outcome } | { acting: Pool; gentle: Set<Drift> } {
+  const gentle = new Set<Drift>();
+  if (!c) return { acting: pool, gentle };
+  // A hard rule (D7, D8, a limit) acts at once; the suspicions wait their turn.
+  const hard = pool.filter((p) => !p.signal || !isSuspicion(p.signal));
+  if (hard.length) return { acting: hard, gentle };
+  const suspected = pool.filter(
+    (p): p is { signal: Signal; drift: Drift } => !!p.signal && isSuspicion(p.signal),
+  );
+  const pending = suspected.filter((p) => !c.judged[signalKey(p.signal)]).map((p) => p.signal);
+  if (pending.length) return { outcome: { kind: "Confirm", signals: [...new Set(pending)] } };
+  for (const p of suspected) {
+    const key = signalKey(p.signal);
+    const v = c.judged[key];
+    if (v?.verdict === "unsure" && !c.asked.includes(p.signal.code))
+      return {
+        outcome: {
+          kind: "Continue",
+          why: "confirm",
+          feedback: v.question,
+          confirming: { key, code: p.signal.code },
+        },
+      };
+  }
+  const acting = pool.filter((p) => {
+    if (!p.signal || !isSuspicion(p.signal)) return true;
+    const v = c.judged[signalKey(p.signal)];
+    if (v?.verdict === "expected") return false;
+    if (v?.verdict !== "drift") gentle.add(p.drift);
+    return true;
+  });
+  return { acting, gentle };
 }
 
 /** The nudge for a stuck pattern, said once before the ladder acts on it. */

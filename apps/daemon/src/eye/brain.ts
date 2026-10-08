@@ -58,6 +58,18 @@ export interface EyeBrain {
     stage: 1 | 2;
     prompt: string;
   }): Promise<JudgeAnswer>;
+  /**
+   * The drift judge (ADR-056 → Monitors suspect, a model confirms): what a
+   * monitor suspects, confirmed or not; the prompt is core's
+   * `driftJudgePrompt`, filled. Stage 1 on the quick model, stage 2 on the
+   * strongest allowed. Optional: without it the monitors act as before.
+   */
+  judgeDrift?(input: {
+    jobId: string;
+    cwd: string;
+    stage: 1 | 2;
+    prompt: string;
+  }): Promise<DriftAnswer>;
   /** A second look at a task with no verify command (research, plan): is it really done? */
   evaluate(input: {
     jobId: string;
@@ -255,6 +267,14 @@ export const JudgeAnswer = z.object({
 });
 export type JudgeAnswer = z.infer<typeof JudgeAnswer>;
 
+/** The drift judge's verdict on a suspicion, and the by-products it saw (globs). */
+export const DriftAnswer = z.object({
+  verdict: z.enum(["expected", "drift", "unsure"]),
+  reason: z.string(),
+  byProducts: z.array(z.string()).default([]),
+});
+export type DriftAnswer = z.infer<typeof DriftAnswer>;
+
 export const Evaluation = z.object({
   accepted: z.boolean(),
   /** One sentence: why it is done, or what is wrong. */
@@ -422,6 +442,8 @@ const KIND_OF: Record<string, DecisionKind> = {
   classify: "quick",
   "judge-fast": "quick",
   "judge-strong": "judging",
+  "drift-fast": "quick",
+  "drift-strong": "judging",
   "pick-skill": "quick",
   helper: "quick",
   "server-state": "judging",
@@ -690,6 +712,28 @@ Set "done" to true when nothing left blocks planning; list in "open" only what s
       JudgeAnswer,
       i.prompt,
       "judge-strong",
+      () => [],
+      undefined,
+      true,
+    );
+    return r.value;
+  }
+
+  async judgeDrift(i: {
+    jobId: string;
+    cwd: string;
+    stage: 1 | 2;
+    prompt: string;
+  }): Promise<DriftAnswer> {
+    // Quiet, like auto mode's judge: not The Eye's thinking in the conversation (ADR-056).
+    const r = await this.#run(
+      i.jobId,
+      i.cwd,
+      i.stage === 1 ? "low" : "high",
+      [i.stage === 1 ? "classify" : "review"],
+      DriftAnswer,
+      i.prompt,
+      i.stage === 1 ? "drift-fast" : "drift-strong",
       () => [],
       undefined,
       true,
@@ -1180,10 +1224,12 @@ Answer with "text": the rewritten text only.`;
         "You are The Eye's reasoning step in Oraknid. You may read files in the workspace, but you change nothing: every edit or command will be refused. Answer with one JSON object only.",
       prompt: `${prompt}\n\nReply with a single \`\`\`json fenced block containing an object that matches this JSON Schema, and nothing else:\n${jsonSchema}`,
       // The classifier judges the command alone: files a Leg planted can't talk to it (Audit 1 → S1-08).
-      // The judge is reasoning-blind (ADR-053): it reads nothing either.
+      // The judge is reasoning-blind (ADR-053): it reads nothing either; nor does the drift
+      // judge, which decides from what it is given, fast (ADR-056).
       onPermission: async (r) =>
         call !== "classify" &&
         !call.startsWith("judge") &&
+        !call.startsWith("drift") &&
         ["Read", "Glob", "Grep", "LS", "read_file", "list_dir", "search"].includes(r.tool)
           ? { allow: true }
           : { allow: false, message: "The Eye's reasoning step only reads; it changes nothing." },

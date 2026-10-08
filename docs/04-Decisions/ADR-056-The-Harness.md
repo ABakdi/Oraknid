@@ -497,6 +497,108 @@ commit and a test each).
   Leg SDK); transitions are steps in the attempt log, not rows of the job's
   step journal (the attempt is one journal step, as before).
 
+## Monitors suspect, a model confirms (2026-10-08)
+**Context.** My "keys" job: a scaffold task ran `pnpm install` and
+`pnpm build`, and D1 saw `dist/` and `node_modules/` as edits outside
+its scope `src/**`. The ladder acted four times on an agent that was
+right (correct → reset → reassign → kill and roll back); the rollback
+then failed and the job blocked. A hard-coded list of what builds write
+fixed that case, but no list covers every tool, and "is this a
+by-product of doing the task?" is a judgement, which is what a model is
+for. My words: "we hardcode obvious cases for known programming
+languages and libraries, then we add an agent to the mix; all of this
+should happen seamlessly without the user ever noticing anything wrong."
+
+**Decision.**
+1. **Known conventions, hard-coded and broad: the fast path**
+   (`packages/core/src/harness/conventions.ts`). A table of what each
+   common ecosystem writes by itself: JS/TS (npm, pnpm, yarn, bun; Vite,
+   Next, Nuxt, SvelteKit, Astro, Remix, Angular, Turbo, Parcel; Jest,
+   Vitest, Playwright reports; Storybook), Python (pip, uv, poetry, venvs,
+   caches, pytest, mypy, ruff, wheels, egg-info), Rust, Go, Java/Kotlin
+   (Gradle, Maven), .NET, Ruby, PHP, Elixir, Dart/Flutter, Swift, C/C++
+   (CMake), Terraform, and for every project coverage, IDE folders and OS
+   junk. An ecosystem applies when its marker files are in the project
+   (`package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `*.csproj`…:
+   at its top, two folders down, or among the changed files), so a Go
+   project's `build/` that isn't Go's output is still its own source.
+   What the project's own ignore rules ignore (`git check-ignore
+   --no-index`) counts too, and so do the by-products learned before (4).
+   Such paths are never a suspicion, and no model is called for them.
+2. **Monitors suspect.** The signals of D1–D6 and the stuck patterns are
+   *suspicions*: written to the attempt log, never acted on directly.
+   D7 (a forbidden action) and D8 (a refused action tried again) stay hard
+   rules and act at once (security); so does the attempt's turn limit.
+3. **A drift judge confirms** (`EyeBrain.judgeDrift`; core's
+   `driftJudgePrompt`). When `decideOutcome` reaches a rule that would act
+   on a suspicion not judged yet, it returns `Confirm{signals}`; the
+   attempt asks the judge and decides again, so a suspicion that wouldn't
+   act (a verified turn's loop, a failure that climbs) costs no call. The
+   judge sees the task's goal, title, instructions, kind and scope; the
+   suspicion (its code, evidence and paths); what the agent ran,
+   condensed; its last message, as data; the project's conventions and
+   what was learned. Stage 1, on the quick model, answers `expected` (a
+   by-product of doing the task, or legitimate), `drift` (with a reason)
+   or `unsure`; `drift` and `unsure` go to stage 2 on the strongest model
+   allowed, whose answer stands. Verdicts are cached per task (by the
+   suspicion's code and evidence). Only `drift` reaches the ladder.
+   `unsure` asks the agent once, in its session, a neutral question ("you
+   changed X outside the task's listed scope: is it part of the task?");
+   its answer goes to the judge for the final verdict (unsure still: acted
+   on gently). A judge that fails or doesn't answer in time (30 s) falls
+   back to the old rule at its gentlest: the suspicion is corrected (step
+   1) at the level the task stands at, never reset, reassigned or killed.
+   With no judge (no brain) the monitors act as before.
+   Not a security boundary: the judge reads the agent's words (as JSON
+   strings, data), so it could be talked round; what it can let through is
+   scope, a loop or a stall, never a forbidden action or a refused one,
+   and the checks still judge the work.
+4. **Learned, seamless.** The judge names the by-products it saw (globs of
+   what tools write by themselves, never files written by hand); each is
+   kept for the project (setting `project.byProducts.<project>`) and is
+   fast path from then on, for every job of the project. A pattern that
+   matches everything (`**`, `*`), climbs out (`..`) or is absolute is
+   not kept. Nothing of this is shown to me as a problem: no chat line,
+   no inbox item, no notification for a suspicion or an expected verdict;
+   only the attempt log (`Judged`, `SuspicionAsked`) and a
+   `task.suspicion` line in the job's activity. I hear of drift only when
+   a confirmed drift escalates, as before.
+5. **Precedence kept.** §6's rules are unchanged; at each rule that acts
+   on drift its suspicions are resolved first (judged, or asked of the
+   agent), and only the confirmed ones, with D7 and D8, go to the ladder.
+   Counting is unchanged: an expected suspicion costs nothing. The D1
+   step puts back what is outside the scope minus the same by-products
+   (conventions, ignored, learned), never a build's output.
+
+**As built (2026-10-08).** Core: `harness/conventions.ts` (the table,
+`ecosystemsOf`, `byProductOf`, `conventionsSaid`; `generatedFile` reads
+the whole table), `harness/monitors.ts` (`Observed`'s `ecosystems`,
+`ignored`, `learned`; `outsideScope`, what D1 suspects and a D1 step puts
+back; D1's signal carries its paths; `isSuspicion`, `signalKey`),
+`harness/drift-judge.ts` (`driftJudgePrompt`, `readDriftAnswer`,
+`learnable`, `suspicionQuestion`, `condensed`), `harness/outcome.ts`
+(`OutcomeInput.confirm`, the `Confirm` outcome, `Continue{why: confirm}`,
+`Escalate{gentle}`; the suspicions sifted at rule 7, rule 10, the nudge
+and with no turn's end; a hard rule in the same pool acts first). Daemon:
+`harness/confirm.ts` (the fast path's facts after each turn: marker files
+at the top and two folders down and among the changes, `git check-ignore
+--no-index`, the project's learned by-products; the judge's two stages
+within one 30 s limit, cached per task and forgotten when it settles; the
+agent's answer heard at its next turn's end), `apply.ts` (`Confirm`
+applied, the question asked, the D1 put-back), `facts.ts`, the
+controller's `Confirm → Deciding`, `eye/brain.ts` (`judgeDrift` on the
+quick and the judging model, reading nothing), the attempt log's
+`Judged`, `SuspicionAsked`, `SuspicionAnswered`. Tests: core
+`conventions.test.ts`, `confirm.test.ts`; daemon `harness/confirm.test.ts`
+(Phase 15 → M15.10).
+**Limits.** Ignore rules are read in the job's folder alone (a project of
+several repos has its conventions and learned by-products only); the
+judge sees the commands the attempt observed (shell commands, not file
+tools); D1's paths are judged together, one verdict; a learned by-product
+stays until its setting is cleared; a stall or a token burn the judge
+found expected is judged again when its evidence changes (the minutes, the
+tokens), from the task's cache when it is the same.
+
 ### The harness's shape (after stage 5)
 One attempt is a state machine that decides nothing (`controller.ts`). It
 routes through `route.ts`, runs the agent through a session opened by
