@@ -132,3 +132,22 @@ describe("stuck (OpenHands' patterns over the log)", () => {
     expect(stuck(steps).map((s) => s.code)).toEqual(codes);
   });
 });
+
+describe("what installs and builds write is never scope drift (2026-10-08)", () => {
+  it("ignores dependencies, build output and lockfiles, and still flags real out-of-scope edits", () => {
+    const after = (changedPaths: string[]) =>
+      drift(seen({ scope: ["src/**", "package.json"], changedPaths }));
+    expect(
+      after([
+        "dist/index.html",
+        "dist/assets/index-8X3w3G_X.js",
+        "node_modules/.bin/vite",
+        "pnpm-lock.yaml",
+        "tsconfig.tsbuildinfo",
+        "apps/web/.next/cache/x",
+        "src/app.tsx",
+      ]),
+    ).toEqual([]);
+    expect(after(["README.md", "dist/index.html"]).map((s) => s.code)).toEqual(["D1"]);
+  });
+});

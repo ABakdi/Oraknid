@@ -1,4 +1,4 @@
-import { oraknidOwn } from "../harness.ts";
+import { generatedFile, oraknidOwn } from "../harness.ts";
 import { inScope } from "../web.ts";
 
 // The monitors (ADR-056 §5): pure functions over what an attempt did — its
@@ -70,8 +70,11 @@ export type Signal =
 /** Scope, repetition, the same failure, a false claim, forbidden actions, a refused gate tried again. */
 export function drift(o: Observed, t: DriftThresholds = DEFAULT_THRESHOLDS): Signal[] {
   const found: Signal[] = [];
-  // Oraknid's own files (its folder, the handoff note it asked for) are never drift (ADR-052).
-  const outside = o.changedPaths.filter((p) => !oraknidOwn(p) && !inScope(p, o.scope));
+  // Oraknid's own files (its folder, the handoff note it asked for) are never drift (ADR-052),
+  // nor what installs and builds write by themselves (dependencies, build output, lockfiles).
+  const outside = o.changedPaths.filter(
+    (p) => !oraknidOwn(p) && !generatedFile(p) && !inScope(p, o.scope),
+  );
   if (outside.length)
     found.push({
       kind: "drift",
