@@ -3,8 +3,16 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
-## Unreleased
+## 0.5.2 — 2026-10-08 (pre-release)
 
+- **Projects is a full-width list:** each card shows the job at work, its progress, branches, servers, CI and last activity. A card opens the project as its own page.
+- **A work bar on every project page:**
+  - each unfinished job's progress, the tasks being worked on now and elapsed time;
+  - Start, Pause, Resume, Cancel and Open job, right there;
+  - a blocked job's reason and what to do;
+  - a question answered in place.
+
+  On a phone it stays at the top. You no longer need the Overview to start or follow a project's work.
 - **Licensed under AGPL-3.0** (`AGPL-3.0-only`): the LICENSE file, every package's `license`, and the README.
 
 ## 0.5.1 — 2026-10-08 (pre-release)
