@@ -10,9 +10,9 @@ the piano job's last push check, mine to resume, M13.12's SQLite files
 and sizes inside containers, and [[Audit-2]] S2-02 (fixed in part).
 Phase 15, agents that deliver, is in progress before Phase 14: M15.1 to
 M15.6 built (the harness's first fixes, auto mode, whole goals and the
-ladder, Oraknid's own agent, local models, the terminal app), M15.8's
-stages 1 and 2 done (scenarios and fifteen fixes; the Gate), its stage
-3 (the Verifier and the attempt log) under way, a Codex Leg built
+ladder, Oraknid's own agent, local models, the terminal app), the
+harness taken apart (M15.8: the Gate, the Verifier, the attempt log, one
+decision, the task controller; 2026-10-08), a Codex Leg built
 ([[ADR-057-Codex-Adapter]], not yet run on a real job), and M15.7's
 proof not run yet. Released: v0.1.0 to v0.2.4
 ([[ADR-047-Releases]]).
@@ -68,7 +68,7 @@ proof not run yet. Released: v0.1.0 to v0.2.4
 - [[Phase-11-Workspace]] — built: pages in tabs, terminal workspace, device rights, a public Nest, the app's own look and the product site; both Nests deployed; the mark kept, its pupil made vertical and gently wavy (2026-10-03)
 - [[Phase-12-Email]] — built: the Mail page, IMAP and POP3, agents' drafts; my Gmail syncs; an approved agent draft and an IMAP account to try
 - [[Phase-13-Projects-First]] — built on `dev` through M13.26: projects first, Nest pages by mode, the one-script install, questions with options, Workflow, GitHub per project, Repos, Docs and the helper, several repos and servers, server insight, backups, The Eye speaks up, cloud storage, job names; setup fixes, updates, the planner and agents fixed, archive and delete, a chat and jobs on each server, The Eye thinking out loud, parallel by default
-- [[Phase-15-Agents-That-Deliver]] — in progress, before Phase 14: M15.1–M15.6 built (a harness for any model, auto mode, Oraknid's own agent, local models, the terminal app), M15.8 stages 1–2 done (the Gate), a Codex Leg (M15.9), the Verifier and attempt log to come, the proof (M15.7) not run
+- [[Phase-15-Agents-That-Deliver]] — in progress, before Phase 14: M15.1–M15.6 built (a harness for any model, auto mode, Oraknid's own agent, local models, the terminal app), M15.8 done (the Gate, the Verifier, the attempt log, one decision, the task controller), a Codex Leg (M15.9), the proof (M15.7) not run
 - [[Phase-14-Oraknid-Over-MCP]] — planned: Oraknid as an MCP server, a command center for any agent
 - Later: containers per job, teams
 
@@ -109,7 +109,7 @@ proof not run yet. Released: v0.1.0 to v0.2.4
 - [[ADR-053-Auto-Mode]] — a safety layer instead of approvals per command: open-source rules, a model judge on doubt, me only for what I might not want
 - [[ADR-054-Local-Models]] — download, run and manage local models; roles like translation and OCR as tools for every agent
 - [[ADR-055-Terminal-App]] — `oraknid` in the terminal with slash commands; an install without the web UI
-- [[ADR-056-The-Harness]] — the task harness taken apart: one attempt log, one gate for every action, one verifier, one place that decides an attempt's end, a controller (stages 1–2 built: scenarios and fixes, the Gate)
+- [[ADR-056-The-Harness]] — the task harness taken apart: one attempt log, one gate for every action, one verifier, one place that decides an attempt's end, a controller (built in five stages, 2026-10-07/08)
 - [[ADR-057-Codex-Adapter]] — OpenAI's Codex CLI as a Leg: `codex exec --json` per turn in Oraknid's sandbox, its own sandbox off, every action through Oraknid's policy by its PreToolUse hook, a CODEX_HOME per Leg
 - [[ADR-059-Project-Secrets]] — a project's `.env` values per environment (dev, testing, production) in the keychain, never shown after save, given to its jobs' sandboxes and, through Oraknid, to a server's env file (0600)
 - [[ADR-060-Sites-Domains-And-Uptime]] — every site my servers' proxies serve: where its domain points, when its certificate ends, and uptime checks from this computer with a notification when one goes down and comes back
