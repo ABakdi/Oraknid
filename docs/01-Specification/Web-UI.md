@@ -833,25 +833,32 @@ endpoint, its models (empty: all it lists) and a key
 
 `/models` in the sidebar after Legs (More on a phone), `g e`. Two
 columns, one on a phone:
-- **On this computer**: each model with its kinds, runner, quantisation,
-  size, state and roles; a download's progress bar with Pause or Resume
+- **On this computer**: **Refresh** (top right; *Refreshing…* while it
+  reads the models folder, Ollama's models, what is loaded and their
+  speed again); each model with its kinds, runner, quantisation, size and
+  state; the roles it holds as badges and those suggested to it as
+  *suggested*, and **Roles** (or *Give a role*) opening the roles its kind
+  can do as toggles: a model may hold several, a role is one model's at a
+  time, so picking one held elsewhere moves it and says *was on X*;
+  a download's progress bar with Pause or Resume
   download; a loaded model's measured speed, VRAM, memory, context and
   GPU layers; Load, Unload, Settings (keep loaded, idle minutes, context
   and GPU layers, automatic when empty) and Remove (asked first; a model
   in Ollama stays in Ollama).
-- **Find a model**: a search, where (everywhere, Hugging Face, Ollama's
-  library), the kind, and **Fits this computer** (on by default). Each
-  result shows its kinds, licence and downloads, and each file its
-  quantisation, size and fit (fits the GPU, GPU and memory, CPU slow, too
+- **Find a model**: a search, the kind, and **Fits this computer** (on
+  by default); both sources are always asked. Above the results: **All**,
+  **Ollama** and **Hugging Face** with each one's count (All interleaves
+  them, the model named as asked first, then each source in turn), and
+  **Refresh** asking the sources again instead of their last ten minutes'
+  answer. Each result shows its source, kinds, licence and downloads, and
+  its files (an Ollama model's sizes, a Hugging Face model's
+  quantisations), each with its size and fit (fits the GPU, GPU and memory, CPU slow, too
   big, with the reason as a tooltip); **Download** shows the licence,
   size and fit before it starts, and is off for one that doesn't fit.
 - **This computer**: each GPU's memory, free memory, what the models
   take, free disk (red under the floor), and whether llama-server, Ollama
   and whisper.cpp are found, with `install.sh --local-models` when
   llama-server isn't.
-- **Roles**: one choice per role among the models of its kind,
-  *Suggested* by default, and what each role is for.
-
 The page follows `model.*` events (progress, state, roles).
 
 ### Skills

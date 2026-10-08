@@ -18,7 +18,7 @@ Speech to text uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp), whic
 
 ## Finding a model
 
-**Find a model** searches Hugging Face's GGUF models and Ollama's library. Each result shows what it is good at (text, vision, speech, embedding), its licence and how often it is downloaded, and each of its files with its quantisation (Q4_K_M, Q8_0 …), its size, and whether it **fits this computer**:
+**Find a model** searches Ollama's library and Hugging Face's GGUF models together. **All** shows both, the model named as you typed it first, then one from each in turn, so neither crowds out the other; **Ollama** and **Hugging Face** show one of them, each with how many it found. An Ollama model lists its sizes (`8b`, `70b` …), a Hugging Face model its quantisations. Typing an Ollama model's exact name (`qwen2.5`, `llama3.2:3b`) finds it even when ollama.com's search doesn't. What the sources answered is kept for ten minutes; **Refresh** above the results asks them again. Each result shows what it is good at (text, vision, speech, embedding), its licence and how often it is downloaded, and each of its files with its quantisation (Q4_K_M, Q8_0 …), its size, and whether it **fits this computer**:
 
 - **fits the GPU**: the whole model on your graphics card, the fastest;
 - **GPU and memory**: part on the GPU, the rest in memory, slower;
@@ -39,9 +39,13 @@ Speech to text uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp), whic
 
 Each loaded chat model becomes a model of the **Local** Leg, Oraknid's own agent: The Eye can hand it tasks like any other Leg, and Chats can talk to it. Loading tests whether the model calls tools; one that can't does only text work (summarising, sorting, translating). See [Legs](legs.html#oraknids-own-agent).
 
+## Refreshing the list
+
+**Refresh** at the top of **On this computer** reads everything again: the files in the models folder and their sizes (a model whose files were deleted is marked failed, and ready again once they are back), the models in Ollama (new ones appear; one removed with `ollama rm` is marked), whether each loaded model's server still answers, and the loaded models' speed.
+
 ## Roles
 
-**Roles** says which model does what: *translate*, *OCR / vision*, *speech to text*, *embeddings*, *mail*, *simple code* and *general*. Until you choose, Oraknid suggests one for each among your models. Every agent, Claude included, can then call them through the **local-models** tool: `translate`, `summarize`, `ocr` (an image in the job's project), `transcribe` (an audio file in the job's project) and `embed`. A role's model loads by itself when the tool needs it.
+Roles say which model does what: *translate*, *OCR / vision*, *speech to text*, *embeddings*, *mail*, *simple code* and *general*. You give them on each model's card: **Give a role** (or **Roles**) shows the roles that model can do (a speech model only speech to text, an embedding model only embeddings, a vision model OCR and the text roles). A model can hold several roles, and each role belongs to one model at a time: picking it on another card moves it there, and the card says which model had it. The roles a model holds show on its card; until you choose, Oraknid suggests one model for each role among yours, shown as *suggested*. Every agent, Claude included, can then call them through the **local-models** tool: `translate`, `summarize`, `ocr` (an image in the job's project), `transcribe` (an audio file in the job's project) and `embed`. A role's model loads by itself when the tool needs it.
 
 ## Removing a model
 

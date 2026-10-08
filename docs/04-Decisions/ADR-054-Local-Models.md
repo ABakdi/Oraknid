@@ -45,9 +45,23 @@ up myself outside Oraknid (an OpenAI-compatible URL).
   files with sizes and SHA-256 from `?blobs=true`; split GGUFs grouped;
   a vision repository's `mmproj` projector kept apart and downloaded with
   it; whisper.cpp's `ggml-*.bin` as speech models) and Ollama's library
-  (ollama.com's search page read by its `x-test-*` markers: there is no
-  public search API; each size's manifest and licence from
-  `registry.ollama.ai`). `fit.ts` says *fits the GPU*, *GPU and memory*,
+  (ollama.com's search page: there is no public search API, ollama.com's
+  `/api/tags` lists only its cloud models; each size's manifest and
+  licence from `registry.ollama.ai`). **2026-10-08**: the page had lost
+  the `x-test-*` markers the parser read, so every Ollama search came back
+  empty and only Hugging Face's results showed. It is now read by its
+  structure (each model a link to `/library/<name>`, its description the
+  paragraph after it, its capabilities and sizes the labels before its
+  `title="N downloads"` count), the markers still read when present,
+  tested against recordings of the real page
+  (`apps/daemon/src/testing/fixtures/ollama-search-*.html`). When the page
+  finds nothing or fails and the query is a model's name (`qwen2.5`,
+  `llama3.2:3b`), the registry is asked for it directly. A search asks
+  both sources for up to `limit` each and interleaves them by relevance
+  (named exactly, name starts with the query, has its words, the rest;
+  within that each source in turn, Ollama's first), with each source's
+  count; what the sources answer (search pages, repositories' records,
+  manifests) is kept ten minutes, `fresh` asks again. `fit.ts` says *fits the GPU*, *GPU and memory*,
   *CPU* or *too big* from the GPUs (nvidia-smi through the metrics), the
   memory and the models folder's disk, and plans the GPU layers and
   context (whole on the GPU: all layers and up to 32k context; split:
@@ -78,13 +92,27 @@ up myself outside Oraknid (an OpenAI-compatible URL).
   the first loaded chat model; its `endpoints` (each model's address,
   context and tool calling) follow what is loaded, so each loaded chat
   model is one of its models, one session per model at once.
-- **Roles** in the setting `models.roles`, else suggested (loaded first,
-  then the fastest, then the smallest of the right kind). The built-in
+- **Roles** in the setting `models.roles` (role → model: a model may hold
+  several, a role is one model's at a time), else suggested (loaded
+  first, then the fastest, then the smallest of the right kind); each
+  model's view says the roles given it and those suggested to it. On the
+  page (2026-10-08) roles are picked on each model's card among those its
+  kind can do (a speech model only speech to text, an embedding model
+  only embeddings, a vision model OCR and the text roles); picking one
+  held by another model moves it, saying where it was. The separate Roles
+  panel is gone. The built-in
   tool `local-models` (`translate`, `summarize`, `ocr`, `transcribe`,
   `embed`) appears once a model is downloaded and is given to every job,
   like the github tool; a role's model loads on demand; `ocr` and
   `transcribe` read only files of the job's project.
-- **API** `models.*` (status, list, search, details, download, pause,
+- **Refresh** (`models.refresh`, 2026-10-08): the models folder read
+  again (each model's files and size, its GGUF context when missing; one
+  whose files are gone is marked failed, ready again once they are back),
+  Ollama's own models (new ones listed, one gone from Ollama marked
+  failed), each loaded model's server checked (`/health`, Ollama's
+  `/api/ps`; one that no longer answers is no longer loaded), and the
+  loaded chat models' speed measured again unless a session uses them.
+- **API** `models.*` (status, list, refresh, search, details, download, pause,
   resume, remove, load, unload, settings, setRole) for the Models page and
   the terminal's `/models`. **install.sh `--local-models`**: llama.cpp's
   latest release, the build for this GPU (CUDA, ROCm, Vulkan, then CPU

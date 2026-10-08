@@ -78,9 +78,27 @@ export const ModelSearch = z.object({
   kind: ModelKind.optional(),
   /** Only what fits this computer. */
   fitsOnly: z.boolean().default(false),
+  /** Results from each source (both when "all"). */
   limit: z.number().int().min(1).max(50).default(20),
+  /** Asks the sources again instead of the few minutes' cache (Refresh). */
+  fresh: z.boolean().default(false),
 });
 export type ModelSearch = z.infer<typeof ModelSearch>;
+
+/**
+ * What a search found: with "all", both sources interleaved by relevance
+ * (a model named as asked first, then each source's best in turn), so
+ * neither fills the list; how many each gave; what failed.
+ */
+export const ModelSearchResult = z.object({
+  entries: z.array(CatalogEntry),
+  counts: z.object({
+    huggingface: z.number().int().nonnegative(),
+    ollama: z.number().int().nonnegative(),
+  }),
+  problems: z.array(z.string()),
+});
+export type ModelSearchResult = z.infer<typeof ModelSearchResult>;
 
 export const ModelDownload = z.object({
   source: ModelSource,
@@ -154,7 +172,10 @@ export const LocalModelView = z.object({
   tokensPerSec: z.number().nonnegative().nullable(),
   toolCalls: ToolCalling.nullable(),
   settings: ModelRunSettings,
+  /** The roles I gave it (a role is one model's at a time). */
   roles: z.array(ModelRole),
+  /** Roles nobody was given that fall to it, as suggested for this computer. */
+  suggestedRoles: z.array(ModelRole).default([]),
   lastUsedAt: Timestamp.nullable(),
   createdAt: Timestamp,
 });

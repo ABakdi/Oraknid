@@ -5,6 +5,7 @@ import {
   ModelDownload,
   ModelRole,
   ModelSearch,
+  ModelSearchResult,
   ModelSettingsPatch,
   ModelSource,
   ModelsStatus,
@@ -44,10 +45,20 @@ export const modelsRouter = {
   status: base.output(ModelsStatus).handler(({ context: c }) => guard(() => c.models.status())),
   /** The models downloaded or downloading, loaded or not. */
   list: base.output(z.array(LocalModelView)).handler(({ context: c }) => c.models.list()),
-  /** Hugging Face GGUF repositories and Ollama's library, each file's fit to this computer. */
+  /**
+   * Reads everything again: the models folder's files and sizes, Ollama's
+   * own models, whether each loaded model's server answers, their speed.
+   */
+  refresh: base
+    .output(z.array(LocalModelView))
+    .handler(({ context: c }) => guard(() => c.models.refresh())),
+  /**
+   * Hugging Face GGUF repositories and Ollama's library, each file's fit to
+   * this computer; both interleaved by relevance, with each one's count.
+   */
   search: base
     .input(ModelSearch)
-    .output(z.object({ entries: z.array(CatalogEntry), problems: z.array(z.string()) }))
+    .output(ModelSearchResult)
     .handler(({ context: c, input }) => guard(() => c.models.search(input))),
   /** One model's files, sizes, fit and licence, before a download. */
   details: base

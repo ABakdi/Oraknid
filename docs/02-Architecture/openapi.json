@@ -21966,6 +21966,413 @@
                           "type": "string"
                         }
                       },
+                      "suggestedRoles": {
+                        "type": "array",
+                        "items": {
+                          "enum": [
+                            "translate",
+                            "ocr",
+                            "transcribe",
+                            "embed",
+                            "mail",
+                            "code",
+                            "general"
+                          ],
+                          "type": "string"
+                        },
+                        "default": []
+                      },
+                      "lastUsedAt": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "createdAt": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "source",
+                      "repo",
+                      "file",
+                      "name",
+                      "runner",
+                      "state",
+                      "error",
+                      "sizeBytes",
+                      "quant",
+                      "kinds",
+                      "license",
+                      "contextLength",
+                      "download",
+                      "loaded",
+                      "tokensPerSec",
+                      "toolCalls",
+                      "settings",
+                      "roles",
+                      "lastUsedAt",
+                      "createdAt"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/models/refresh": {
+      "post": {
+        "operationId": "models.refresh",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                      },
+                      "source": {
+                        "enum": [
+                          "huggingface",
+                          "ollama"
+                        ],
+                        "type": "string"
+                      },
+                      "repo": {
+                        "type": "string"
+                      },
+                      "file": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "runner": {
+                        "enum": [
+                          "llama.cpp",
+                          "ollama"
+                        ],
+                        "type": "string"
+                      },
+                      "state": {
+                        "enum": [
+                          "downloading",
+                          "paused",
+                          "ready",
+                          "loading",
+                          "loaded",
+                          "failed"
+                        ],
+                        "type": "string"
+                      },
+                      "error": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "sizeBytes": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "quant": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "kinds": {
+                        "type": "array",
+                        "items": {
+                          "enum": [
+                            "text",
+                            "vision",
+                            "speech",
+                            "embedding"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "license": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "contextLength": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "exclusiveMinimum": 0
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "download": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "doneBytes": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "totalBytes": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "bytesPerSec": {
+                                "type": "number",
+                                "minimum": 0
+                              }
+                            },
+                            "required": [
+                              "doneBytes",
+                              "totalBytes",
+                              "bytesPerSec"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "loaded": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "baseUrl": {
+                                "type": "string"
+                              },
+                              "port": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "pid": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "contextSize": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "gpuLayers": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "vramBytes": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "rssBytes": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "since": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "baseUrl",
+                              "port",
+                              "pid",
+                              "contextSize",
+                              "gpuLayers",
+                              "vramBytes",
+                              "rssBytes",
+                              "since"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "tokensPerSec": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "toolCalls": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "native",
+                              "json",
+                              "none"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "settings": {
+                        "type": "object",
+                        "properties": {
+                          "keepLoaded": {
+                            "type": "boolean",
+                            "default": false
+                          },
+                          "idleMinutes": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 1440,
+                            "default": 15
+                          },
+                          "contextSize": {
+                            "anyOf": [
+                              {
+                                "const": "auto"
+                              },
+                              {
+                                "type": "integer",
+                                "minimum": 512,
+                                "maximum": 1048576
+                              }
+                            ],
+                            "default": "auto"
+                          },
+                          "gpuLayers": {
+                            "anyOf": [
+                              {
+                                "const": "auto"
+                              },
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 999
+                              }
+                            ],
+                            "default": "auto"
+                          }
+                        }
+                      },
+                      "roles": {
+                        "type": "array",
+                        "items": {
+                          "enum": [
+                            "translate",
+                            "ocr",
+                            "transcribe",
+                            "embed",
+                            "mail",
+                            "code",
+                            "general"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "suggestedRoles": {
+                        "type": "array",
+                        "items": {
+                          "enum": [
+                            "translate",
+                            "ocr",
+                            "transcribe",
+                            "embed",
+                            "mail",
+                            "code",
+                            "general"
+                          ],
+                          "type": "string"
+                        },
+                        "default": []
+                      },
                       "lastUsedAt": {
                         "anyOf": [
                           {
@@ -22057,6 +22464,10 @@
                     "minimum": 1,
                     "maximum": 50,
                     "default": 20
+                  },
+                  "fresh": {
+                    "type": "boolean",
+                    "default": false
                   }
                 }
               }
@@ -22281,6 +22692,25 @@
                         ]
                       }
                     },
+                    "counts": {
+                      "type": "object",
+                      "properties": {
+                        "huggingface": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "ollama": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "huggingface",
+                        "ollama"
+                      ]
+                    },
                     "problems": {
                       "type": "array",
                       "items": {
@@ -22290,6 +22720,7 @@
                   },
                   "required": [
                     "entries",
+                    "counts",
                     "problems"
                   ]
                 }
@@ -22906,6 +23337,22 @@
                         "type": "string"
                       }
                     },
+                    "suggestedRoles": {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "translate",
+                          "ocr",
+                          "transcribe",
+                          "embed",
+                          "mail",
+                          "code",
+                          "general"
+                        ],
+                        "type": "string"
+                      },
+                      "default": []
+                    },
                     "lastUsedAt": {
                       "anyOf": [
                         {
@@ -23337,6 +23784,22 @@
                         ],
                         "type": "string"
                       }
+                    },
+                    "suggestedRoles": {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "translate",
+                          "ocr",
+                          "transcribe",
+                          "embed",
+                          "mail",
+                          "code",
+                          "general"
+                        ],
+                        "type": "string"
+                      },
+                      "default": []
                     },
                     "lastUsedAt": {
                       "anyOf": [
@@ -23770,6 +24233,22 @@
                         "type": "string"
                       }
                     },
+                    "suggestedRoles": {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "translate",
+                          "ocr",
+                          "transcribe",
+                          "embed",
+                          "mail",
+                          "code",
+                          "general"
+                        ],
+                        "type": "string"
+                      },
+                      "default": []
+                    },
                     "lastUsedAt": {
                       "anyOf": [
                         {
@@ -24160,6 +24639,22 @@
                         ],
                         "type": "string"
                       }
+                    },
+                    "suggestedRoles": {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "translate",
+                          "ocr",
+                          "transcribe",
+                          "embed",
+                          "mail",
+                          "code",
+                          "general"
+                        ],
+                        "type": "string"
+                      },
+                      "default": []
                     },
                     "lastUsedAt": {
                       "anyOf": [
@@ -24587,6 +25082,22 @@
                         ],
                         "type": "string"
                       }
+                    },
+                    "suggestedRoles": {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "translate",
+                          "ocr",
+                          "transcribe",
+                          "embed",
+                          "mail",
+                          "code",
+                          "general"
+                        ],
+                        "type": "string"
+                      },
+                      "default": []
                     },
                     "lastUsedAt": {
                       "anyOf": [
