@@ -158,6 +158,12 @@ export interface OutcomeInput {
   /** What the agent says it needs of me (`key`: the command or its words), and whether I was asked. */
   agentNeeds: { said: string; asked: boolean } | null;
   signals: Signal[];
+  /**
+   * Actions a restart left uncertain whose effect only the agent can look
+   * at (ADR-056 §1): how many are open, whether it was asked already, and
+   * the question. Null (or none open) when there is nothing to reconcile.
+   */
+  uncertain?: { open: number; asked: boolean; question: string } | null;
   rung: { higher: { legName: string; model: string } | null };
   history: {
     turns: number;
@@ -178,7 +184,7 @@ export type Outcome =
   /** Go on in this session, with these words (none: keep watching). */
   | {
       kind: "Continue";
-      why: "guidance" | "self-prompt" | "owner" | "wait" | "watch";
+      why: "guidance" | "self-prompt" | "owner" | "wait" | "watch" | "reconcile";
       feedback: string | null;
       /** The context is nearly full: a fresh session with a handoff once this turn ends. */
       rotate?: boolean;
@@ -235,6 +241,8 @@ const SECURITY = new Set(["D7", "D8", "D1"]);
  *  6. what the agent says it needs of me is asked before any ladder;
  *  7. security and scope (D7, D8, D1) go to the drift ladder, before any
  *     climb and whether the checks pass or not;
+ *  7b. what a restart left uncertain and only the agent can look at is
+ *     asked of it once, to look and never run it again (stage 5);
  *  8. done, when verified;
  *  9. a real failure climbs a rung when a higher one exists (ADR-052 §3;
  *     not a turn stopped at its limit of steps);
@@ -309,6 +317,11 @@ export function decideOutcome(i: OutcomeInput): Outcome {
   // 7. Security and scope first, before any climb (bug 13) and when the checks pass too: a
   // forbidden action or a refused gate tried again is never "done" (the worst drift is theirs).
   if (drifts.some((d) => SECURITY.has(d.code))) return ladder(drifts, failure) ?? unreachable();
+
+  // 7b. What a restart left uncertain and only the agent can look at (ADR-056 §1): asked once,
+  // to look and never run it again, before the work is done or climbs.
+  if (i.uncertain && i.uncertain.open > 0 && !i.uncertain.asked)
+    return { kind: "Continue", why: "reconcile", feedback: i.uncertain.question };
 
   // 8. Done.
   if (i.verdict.verified) return { kind: "Done" };

@@ -13,6 +13,7 @@ import { type AttemptCtx, type AttemptState, beginTurn, factsOf } from "./facts.
 import { createGate } from "./gate.ts";
 import { AttemptLog } from "./log.ts";
 import { scopeOf } from "./pack.ts";
+import { heard, reconcile, reconciledText, unresolved } from "./reconcile.ts";
 import { takeOver } from "./record.ts";
 import { pickRoute } from "./route.ts";
 import { createSessionManager, legServers, safeDiffStat } from "./sessions.ts";
@@ -241,6 +242,7 @@ export async function runController(
     stuckFrom: 0,
     nudged: false,
     signalled: new Set(),
+    reconcileAsked: false,
   };
   const observed = st.observed;
   const event = (type: string, payload: Record<string, unknown>) =>
@@ -450,6 +452,33 @@ export async function runController(
   };
 
   try {
+    // What the attempt before left uncertain, looked at before anything runs (ADR-056 §1).
+    if (before) {
+      const uncertain = attemptLog.attempt(before.id, { kinds: ["ActionUncertain"], limit: 1 });
+      if (uncertain.length) {
+        await servers.prepare();
+        const found = await reconcile(attemptLog, trail, {
+          taskId,
+          before: before.id,
+          ws,
+          since: ws.tree.hasRef(prevCkpt) ? prevCkpt : scopeBase,
+          aliases: servers.list.map((s) => s.alias),
+        });
+        if (found.length) {
+          event("task.actions-reconciled", {
+            actions: found.map((e) => ({ input: e.data.input, finding: e.data.finding })),
+          });
+          d.silk.add({
+            jobId: job.id,
+            taskId,
+            kind: "issue",
+            title: `Reconciled after a restart: ${task.title}`,
+            body: reconciledText(found),
+            authoredBy: "eye",
+          });
+        }
+      }
+    }
     // Checks tested before they judge (ADR-052 §2): run once before the work, a broken one is
     // repaired before any agent can be failed by it.
     await checks.tryFirst();
@@ -464,6 +493,9 @@ export async function runController(
       if (end) {
         st.turns++;
         move("Deciding", `the turn ended (${end.reason})`);
+        // The agent was asked to look at what a restart left uncertain: its words are the finding.
+        const open = st.reconcileAsked ? unresolved(attemptLog, attemptId) : [];
+        if (open.length) heard(trail, open, end.text);
       }
       // ── Deciding ⇄ Verifying | Repairing | AwaitingOwner ────────
       const turn = beginTurn(x, end, end ? checks.takeStopRun() : null, () => safeStrayed(ws.tree));
@@ -544,7 +576,8 @@ function lastStop(
         e.taskId === task.id &&
         e.createdAt >= before.startedAt &&
         (e.kind === "handoff" || e.kind === "issue") &&
-        !e.title.startsWith("Uncertain after a restart"),
+        !e.title.startsWith("Uncertain after a restart") &&
+        !e.title.startsWith("Reconciled after a restart"),
     )
     .sort((a, b) => a.createdAt - b.createdAt)
     .at(-1);

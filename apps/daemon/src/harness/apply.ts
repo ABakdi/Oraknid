@@ -222,6 +222,12 @@ async function carryOn(
       return "turn";
     case "watch":
       return "turn";
+    case "reconcile":
+      // What a restart left uncertain: the agent looks, never runs it again (ADR-056 §1).
+      x.st.reconcileAsked = true;
+      x.event("task.reconciling", {});
+      if (o.feedback) await send(o.feedback);
+      return "turn";
     case "guidance":
       // My messages to The Eye for the work now (Talking to The Eye).
       x.st.guidanceSeen = t.guidance.mark;

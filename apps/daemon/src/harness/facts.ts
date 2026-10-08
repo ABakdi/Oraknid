@@ -23,6 +23,7 @@ import type { Supervised } from "../legs/supervisor.ts";
 import { parseSsh } from "../servers/remote.ts";
 import type { Gate } from "./gate.ts";
 import type { AttemptLog } from "./log.ts";
+import { reconcileQuestion, unresolved } from "./reconcile.ts";
 import { stepsOf } from "./record.ts";
 import type { AttemptDeps, AttemptJob, AttemptWhere, TaskRow } from "./types.ts";
 import type { CheckReport, RunOptions } from "./verifier.ts";
@@ -55,6 +56,8 @@ export interface AttemptState {
   nudged: boolean;
   /** Signals written to the log since the last ladder step, by what they say. */
   signalled: Set<string>;
+  /** The agent was asked to look at what a restart left uncertain (ADR-056 §1). */
+  reconcileAsked: boolean;
 }
 
 /** One turn's end (or none, when looking for a stall), as it is decided. */
@@ -202,6 +205,13 @@ export function ownerNeedOf(
   return { command, blocked, key: command ? x.gate.plain(command) : "" };
 }
 
+/** What a restart left uncertain and only the agent can look at (ADR-056 §1), for the decision. */
+function uncertainOf(x: AttemptCtx): OutcomeInput["uncertain"] {
+  const open = unresolved(x.log, x.attemptId);
+  if (!open.length) return null;
+  return { open: open.length, asked: x.st.reconcileAsked, question: reconcileQuestion(open) };
+}
+
 /** Everything the turn's end is decided from (ADR-056 §6). */
 export function factsOf(x: AttemptCtx, t: Turn): OutcomeInput {
   const { st, d } = x;
@@ -252,6 +262,7 @@ export function factsOf(x: AttemptCtx, t: Turn): OutcomeInput {
     repair: t.report && !t.repaired && d.brain ? repairHintOf(t.report, t.text) : null,
     agentNeeds: t.need ? { said: t.need.said, asked: st.ownerAsked.has(t.need.key) } : null,
     signals: t.signals,
+    uncertain: uncertainOf(x),
     rung: { higher: v && !v.verified && !t.cutShort ? x.higher() : null },
     history: { turns: st.turns, level: st.level, nudged: st.nudged },
     policy: { maxTurns: d.maxTurns ?? 25, rotateAt: d.rotateAt ?? 0.6 },

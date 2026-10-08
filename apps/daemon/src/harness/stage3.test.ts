@@ -230,8 +230,11 @@ describe("the attempt log (ADR-056 §1)", () => {
       );
       expect(said).toHaveLength(1);
       expect(said[0]?.body).toContain(`sleep 20; touch ${marker}`);
-      // Nothing ran it again: the new session was never given it.
-      expect(again.log.map((t) => t.message).join("\n")).not.toContain("sleep 20");
+      // Nothing ran it again: the new session was given it only to look at (stage 5's
+      // reconciliation, ADR-056 §1), never as something to do.
+      const naming = again.log.map((t) => t.message).filter((m) => m.includes("sleep 20"));
+      expect(naming.length).toBeLessThanOrEqual(1);
+      for (const m of naming) expect(m).toMatch(/without running it again/);
     } finally {
       await rig?.close();
       rig = undefined;

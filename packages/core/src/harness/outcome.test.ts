@@ -116,6 +116,11 @@ const RULES: Rule[] = [
     (i) => i.signals.push(sig("D1")),
     (o) => o.kind === "Escalate" && o.drift.code === "D1",
   ],
+  [
+    "what a restart left uncertain, not asked yet (stage 5)",
+    (i) => (i.uncertain = { open: 1, asked: false, question: "Look whether `x` took effect." }),
+    (o) => o.kind === "Continue" && o.why === "reconcile" && /took effect/.test(o.feedback ?? ""),
+  ],
   ["done", (i) => (i.verdict = passing), (o) => o.kind === "Done"],
   ["a higher rung", (i) => (i.rung.higher = higher), (o) => o.kind === "Climb"],
   [
@@ -148,6 +153,27 @@ describe("decideOutcome: the precedence of a turn's end", () => {
     hi[1](i);
     const o = decideOutcome(i);
     expect(hi[2](o), JSON.stringify(o)).toBe(true);
+  });
+});
+
+describe("decideOutcome: what a restart left uncertain (ADR-056 §1, stage 5)", () => {
+  const open = { open: 2, asked: false, question: "Look, don't run them again." };
+
+  it("is asked of the agent once; asked, the turn's end is decided as before", () => {
+    const i = { ...base(), verdict: passing, uncertain: open };
+    expect(decideOutcome(i)).toMatchObject({ kind: "Continue", why: "reconcile" });
+    expect(decideOutcome({ ...i, uncertain: { ...open, asked: true } })).toEqual({ kind: "Done" });
+    expect(decideOutcome({ ...i, uncertain: { ...open, open: 0 } })).toEqual({ kind: "Done" });
+    expect(decideOutcome({ ...i, uncertain: null })).toEqual({ kind: "Done" });
+  });
+
+  it("is asked before a climb, never while no turn ended", () => {
+    const i = { ...base(), rung: { higher }, uncertain: open };
+    expect(decideOutcome(i)).toMatchObject({ kind: "Continue", why: "reconcile" });
+    expect(decideOutcome({ ...i, stop: { reason: "none" as const, text: "" } })).toMatchObject({
+      kind: "Continue",
+      why: "watch",
+    });
   });
 });
 

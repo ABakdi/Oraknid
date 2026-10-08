@@ -78,6 +78,19 @@ export interface AttemptEventData {
    * checkpoint its commit is measured from).
    */
   Transition: { from: string; to: string; why: string; key: string; ckpt?: string };
+  /**
+   * What became of an action a restart left uncertain (ADR-056 §1), never
+   * re-run to find out: the tree looked at (a file changed, a commit made),
+   * or the agent asked to look (a command on a server, a command whose
+   * effect the tree doesn't show), then what it said.
+   */
+  Reconciled: {
+    actionId: string;
+    tool: string;
+    input: string;
+    finding: "happened" | "not-happened" | "ask-agent" | "agent-said";
+    detail: string;
+  };
   HandoffWritten: { silkId: string; failed: string | null };
   AttemptEnded: { reason: string };
   /** The task settled, or its job ended: what the Gate remembered of it is forgotten. */

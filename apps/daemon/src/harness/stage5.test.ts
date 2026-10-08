@@ -1,8 +1,11 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { WebPlan } from "@oraknid/contracts";
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import { attempts } from "../db/schema.ts";
-import { type Harness, harness } from "../testing/harness-rig.ts";
+import { type Harness, harness, waitFor } from "../testing/harness-rig.ts";
 import { scriptedLeg } from "../testing/scripted-leg.ts";
 import { type ControllerState, TRANSITIONS } from "./controller.ts";
 import { AttemptLog } from "./log.ts";
@@ -217,5 +220,65 @@ describe("the TaskController: each transition a step in the log (ADR-056 §8)", 
     );
     expect(to.slice(0, 3)).toEqual(["Running", "AwaitingOwner", "Running"]);
     expect(to.at(-1)).toBe("Done");
+  }, 60_000);
+});
+
+describe("what a restart left uncertain, reconciled (ADR-056 §1)", () => {
+  it("asks the agent once to look at a command whose effect the tree can't show, records what it said, never runs it", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "oraknid-reconcile-"));
+    const db = join(dir, "o.db");
+    const crashed = await harness({
+      legs: [
+        {
+          kind: "claude-code",
+          name: "Claude A",
+          leg: scriptedLeg(() => [{ run: "sleep 20; echo deployed" }]),
+        },
+      ],
+      plan: PLAN,
+      dataDir: dir,
+      dbFile: db,
+    });
+    try {
+      const { id } = await crashed.repoJob("A parser");
+      await waitFor("the command asked for", () => {
+        const a = attemptsOf(crashed, id)[0];
+        return a &&
+          new AttemptLog(crashed.d.db)
+            .attempt(a.id, { kinds: ["ActionRequested"] })
+            .some((e) => e.kind === "ActionRequested" && e.data.input.startsWith("sleep 20"))
+          ? a
+          : undefined;
+      });
+      const again = scriptedLeg((t) =>
+        t.turn === 1
+          ? [{ write: "parser.js", content: "x\n" }, { say: "DONE" }]
+          : [{ say: "I looked: nothing was deployed. DONE" }],
+      );
+      rig = await harness({
+        legs: [{ kind: "claude-code", name: "Claude A", leg: again }],
+        plan: PLAN,
+        dataDir: dir,
+        dbFile: db,
+        again: true,
+      });
+      expect((await rig.ended(id)).state).toBe("completed");
+      const second = attemptsOf(rig, id).at(-1);
+      const found = new AttemptLog(rig.d.db).attempt(second?.id as string, {
+        kinds: ["Reconciled"],
+      });
+      expect(found.map((e) => e.data.finding)).toEqual(["ask-agent", "agent-said"]);
+      expect(found[1]?.data.detail).toMatch(/nothing was deployed/);
+      // Asked once, to look; never given it to do.
+      const naming = again.log.map((t) => t.message).filter((m) => m.includes("sleep 20"));
+      expect(naming).toHaveLength(1);
+      expect(naming[0]).toMatch(/without running it again/);
+      expect(rig.events(id, "task.reconciling")).toHaveLength(1);
+      expect(rig.events(id, "task.actions-reconciled")).toHaveLength(1);
+    } finally {
+      await rig?.close();
+      rig = undefined;
+      await crashed.close();
+    }
   }, 60_000);
 });
