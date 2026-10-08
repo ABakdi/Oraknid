@@ -70,6 +70,25 @@ export interface AttemptEventData {
     code: string | null;
     evidence: string;
   };
+  /**
+   * A suspicion judged (ADR-056 → Monitors suspect, a model confirms): its
+   * verdict, by the judge's stage, from the task's cache, or not judged
+   * (the judge failed: acted on gently); the by-products learned for the
+   * project from it.
+   */
+  Judged: {
+    key: string;
+    code: string;
+    evidence: string;
+    verdict: "expected" | "drift" | "unsure" | "unjudged";
+    reason: string;
+    stage: 1 | 2 | null;
+    cached: boolean;
+    learned: string[];
+  };
+  /** The judge was unsure: the agent asked once, in its session; then what it answered. */
+  SuspicionAsked: { key: string; code: string; question: string };
+  SuspicionAnswered: { key: string; code: string; answer: string };
   Outcome: { kind: string; reason: string | null };
   /**
    * The controller moved (ADR-056 §8): from a state to the next, why (the

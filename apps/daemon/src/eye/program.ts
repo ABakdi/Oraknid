@@ -31,6 +31,7 @@ import type { SideEffects } from "../engine/effects.ts";
 import { AwaitingOwner } from "../engine/effects.ts";
 import type { JobContext, JobProgram } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
+import { forgetDriftVerdicts } from "../harness/confirm.ts";
 import { runController } from "../harness/controller.ts";
 import { checkRefusal } from "../harness/gate.ts";
 import type { AttemptJob, AttemptOutcome } from "../harness/types.ts";
@@ -122,6 +123,7 @@ export interface EyeDeps {
   tmpDir: string;
   now: () => number;
   stallCheckMs?: number;
+  driftJudgeMs?: number;
   /** Attempts per task before The Eye stops and asks me. */
   maxAttempts?: number;
 }
@@ -881,6 +883,7 @@ async function runTask(
           ...(d.servers ? { servers: d.servers } : {}),
           ...(d.github ? { github: d.github } : {}),
           ...(d.stallCheckMs ? { stallCheckMs: d.stallCheckMs } : {}),
+          ...(d.driftJudgeMs ? { driftJudgeMs: d.driftJudgeMs } : {}),
         },
         attemptJob,
         task.id,
@@ -977,6 +980,7 @@ interface Applying {
  */
 const forget = (d: EyeDeps, jobId: string, taskId: string) => {
   forgetTaskVerdicts(jobId, taskId);
+  forgetDriftVerdicts(jobId, taskId);
   forgetTaskMemory(d.db, jobId, taskId, "the task settled");
 };
 

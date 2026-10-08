@@ -21,6 +21,7 @@ import type { LegEvent, UsageSnapshot } from "@oraknid/leg-sdk";
 import { takeGuidance } from "../eye/talk.ts";
 import type { Supervised } from "../legs/supervisor.ts";
 import { parseSsh } from "../servers/remote.ts";
+import { type ConfirmState, confirming } from "./confirm.ts";
 import type { Gate } from "./gate.ts";
 import type { AttemptLog } from "./log.ts";
 import { reconcileQuestion, unresolved } from "./reconcile.ts";
@@ -58,6 +59,8 @@ export interface AttemptState {
   signalled: Set<string>;
   /** The agent was asked to look at what a restart left uncertain (ADR-056 §1). */
   reconcileAsked: boolean;
+  /** What the drift judge said of the suspicions, and what the agent was asked (confirm.ts). */
+  confirm?: ConfirmState;
 }
 
 /** One turn's end (or none, when looking for a stall), as it is decided. */
@@ -262,6 +265,8 @@ export function factsOf(x: AttemptCtx, t: Turn): OutcomeInput {
     repair: t.report && !t.repaired && d.brain ? repairHintOf(t.report, t.text) : null,
     agentNeeds: t.need ? { said: t.need.said, asked: st.ownerAsked.has(t.need.key) } : null,
     signals: t.signals,
+    // Suspicions are confirmed by the drift judge before they act (ADR-056); none: as before.
+    confirm: confirming(x, t),
     uncertain: uncertainOf(x),
     rung: { higher: v && !v.verified && !t.cutShort ? x.higher() : null },
     history: { turns: st.turns, level: st.level, nudged: st.nudged },

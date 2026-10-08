@@ -185,6 +185,21 @@ so similar tasks start lower next time. The Eye's own reasoning calls
 follow the same rule: planning gets a strong model, while summarising
 and classifying get a cheap one.
 
+**Drift is confirmed before it is acted on** ([[ADR-056-The-Harness]] →
+Monitors suspect, a model confirms; [[Drift-Control]]). What the drift
+monitors catch is a suspicion. What the project's tools write by
+themselves (its ecosystems' by-products, its ignore rules, what was
+learned for it) never is. A suspicion the ladder would act on goes to
+The Eye's **drift judge** first, a quick call (`judgeDrift`, the quick
+model, then the strongest allowed on "drift" or "unsure"), which sees the
+task, the suspicion, what the agent ran and its last words: "expected"
+drops it, "drift" goes to the ladder, "unsure" asks the agent once in
+its session and the judge decides on its answer. By-products it names
+are learned for the project. None of this reaches me: no message,
+question or notification, only the attempt log; a forbidden action or a
+refused one tried again still acts at once, and a judge that fails only
+corrects.
+
 **Fallback.** When a Leg becomes rate-limited, fails or runs out of
 quota mid-task, The Eye writes a handoff to Silk and reassigns the task
 to the next-best Leg. When none is left, the job goes `blocked` until

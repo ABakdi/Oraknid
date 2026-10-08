@@ -1,5 +1,6 @@
-import { generatedFile, oraknidOwn } from "../harness.ts";
+import { oraknidOwn } from "../harness.ts";
 import { inScope } from "../web.ts";
+import { byProductOf } from "./conventions.ts";
 
 // The monitors (ADR-056 §5): pure functions over what an attempt did — its
 // log's actions, results and words, and what The Eye observed of its work —
@@ -53,6 +54,15 @@ export interface Observed {
   forbidden: string[];
   gateBypass: string[];
   local: boolean;
+  /**
+   * The project's ecosystems (`ecosystemsOf`), whose by-products are never
+   * drift; left out, every convention the table knows.
+   */
+  ecosystems?: string[];
+  /** Changed paths the project's own ignore rules ignore. */
+  ignored?: string[];
+  /** By-products learned for the project (globs), from the drift judge's verdicts. */
+  learned?: string[];
 }
 
 /** Stuck's patterns, after OpenHands' stuck detector. */
@@ -60,26 +70,45 @@ export type StuckPattern = "repeat" | "error" | "talk" | "alternate";
 
 /** What a monitor saw. `code`: the drift (D1–D8), the stuck pattern, or "turns" for the turn budget. */
 export type Signal =
-  | { kind: "drift"; code: DriftCode; evidence: string }
+  | { kind: "drift"; code: DriftCode; evidence: string; paths?: string[] }
   | { kind: "stall"; code: "D5"; evidence: string }
   | { kind: "budget"; code: "D6" | "turns"; evidence: string }
   | { kind: "stuck"; code: StuckPattern; evidence: string };
 
 // ── Drift: D1–D4, D7, D8 ─────────────────────────────────────────────
 
+/**
+ * The changed paths outside a task's scope that are its own doing: not
+ * Oraknid's own files (its folder, the handoff note it asked for, ADR-052),
+ * nor what the project's tools write by themselves (its conventions, what
+ * its ignore rules ignore, the by-products learned for it). What D1
+ * suspects, and what a D1 step puts back.
+ */
+export function outsideScope(
+  paths: readonly string[],
+  o: Pick<Observed, "scope" | "ecosystems" | "ignored" | "learned">,
+): string[] {
+  const ignored = new Set(o.ignored ?? []);
+  return paths.filter(
+    (p) =>
+      !oraknidOwn(p) &&
+      !inScope(p, o.scope) &&
+      !ignored.has(p) &&
+      !byProductOf(p, o.ecosystems) &&
+      !(o.learned?.length && inScope(p, o.learned)),
+  );
+}
+
 /** Scope, repetition, the same failure, a false claim, forbidden actions, a refused gate tried again. */
 export function drift(o: Observed, t: DriftThresholds = DEFAULT_THRESHOLDS): Signal[] {
   const found: Signal[] = [];
-  // Oraknid's own files (its folder, the handoff note it asked for) are never drift (ADR-052),
-  // nor what installs and builds write by themselves (dependencies, build output, lockfiles).
-  const outside = o.changedPaths.filter(
-    (p) => !oraknidOwn(p) && !generatedFile(p) && !inScope(p, o.scope),
-  );
+  const outside = outsideScope(o.changedPaths, o);
   if (outside.length)
     found.push({
       kind: "drift",
       code: "D1",
-      evidence: `changed files outside its scope: ${outside.slice(0, 5).join(", ")}`,
+      evidence: `changed files outside its scope: ${outside.slice(0, 5).join(", ")}${outside.length > 5 ? ` and ${outside.length - 5} more` : ""}`,
+      paths: outside.slice(0, 50),
     });
 
   const recent = o.commands.slice(-t.repeatWindow);
@@ -245,6 +274,21 @@ export function stuck(steps: Step[], t: StuckThresholds = STUCK_THRESHOLDS): Sig
 }
 
 // ── Together ─────────────────────────────────────────────────────────
+
+/**
+ * Whether a signal is a suspicion, which a model confirms before anything
+ * is done about it (ADR-056 → Monitors suspect, a model confirms): drift
+ * D1–D6 and the stuck patterns. A forbidden action (D7) and a refused one
+ * tried again (D8) are hard rules and act at once; the turn budget acts on
+ * nothing by itself.
+ */
+export function isSuspicion(s: Signal): boolean {
+  if (s.kind === "drift") return s.code !== "D7" && s.code !== "D8";
+  return s.code !== "turns";
+}
+
+/** A signal's identity: the same suspicion is judged once, the same signal logged once. */
+export const signalKey = (s: Signal) => `${s.kind}:${s.code}:${s.evidence}`;
 
 /** The drift a signal stands for on the ladder (Drift-Control); none for the turn budget or stuck. */
 export function driftOf(s: Signal): Drift | null {
