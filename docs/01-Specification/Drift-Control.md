@@ -10,16 +10,16 @@ works. Verification judges the result.
 Each detector runs on the session's event stream, the workspace diff
 and usage samples. Thresholds are defaults, editable in Settings.
 
-| #   | Drift                           | Detected when                                                                                                         | Default threshold                                 |
-| :-- | :------------------------------ | :-------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------ |
-| D1  | **Out-of-scope edit**           | A changed path is outside the task's scope (its `scope` globs and what its checks name, below).                       | Any file.                                         |
+| #   | Drift                           | Detected when                                                                                                                                                                               | Default threshold                                 |
+| :-- | :------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :------------------------------------------------ |
+| D1  | **Out-of-scope edit**           | A changed path is outside the task's scope (its `scope` globs and what its checks name, below).                                                                                             | Any file.                                         |
 | D2  | **Loop / oscillation**          | The same file region is edited back and forth, or the same command runs with the same result repeatedly; or the stuck monitor sees it going round in circles again after one nudge (below). | 3 repeats in 10 turns.                            |
-| D3  | **Repeated failure**            | Verification fails with the same error signature.                                                                     | 3 times.                                          |
-| D4  | **Fake progress claim**         | The Leg says "done", "tests pass" or similar, but verification fails, or the claimed command never ran in the stream. | 1 time.                                           |
-| D5  | **Stall**                       | No output, no file change and no tool call.                                                                           | 5 min (local: 10 min).                            |
-| D6  | **Token burn without progress** | Tokens spent since the last verified progress (a passing verify, a new passing test, a checkpoint) exceed the limit.  | 30% of the task budget, or 150k tokens.           |
-| D7  | **Forbidden command**           | A command matches the deny list, or isn't on the allow list.                                                          | Any. Always blocked first, then counted as drift. |
-| D8  | **Gate bypass attempt**         | The Leg tries again a gated action I refused (e.g. `git push`).                                                       | Any. Blocked, then escalated straight to step 4.  |
+| D3  | **Repeated failure**            | Verification fails with the same error signature.                                                                                                                                           | 3 times.                                          |
+| D4  | **Fake progress claim**         | The Leg says "done", "tests pass" or similar, but verification fails, or the claimed command never ran in the stream.                                                                       | 1 time.                                           |
+| D5  | **Stall**                       | No output, no file change and no tool call.                                                                                                                                                 | 5 min (local: 10 min).                            |
+| D6  | **Token burn without progress** | Tokens spent since the last verified progress (a passing verify, a new passing test, a checkpoint) exceed the limit.                                                                        | 30% of the task budget, or 150k tokens.           |
+| D7  | **Forbidden command**           | A command matches the deny list, or isn't on the allow list.                                                                                                                                | Any. Always blocked first, then counted as drift. |
+| D8  | **Gate bypass attempt**         | The Leg tries again a gated action I refused (e.g. `git push`).                                                                                                                             | Any. Blocked, then escalated straight to step 4.  |
 
 Cheap Legs can help with classification (e.g. "is this message a done
 claim?"). The thresholds and the final decision stay deterministic.
@@ -117,12 +117,21 @@ log, with the evidence attached.
 - Before each attempt at a task, The Eye records a git checkpoint: a
   commit on a private ref `refs/oraknid/<job>/<task>/<attempt>`, made
   through a temporary index, so my branch, HEAD and index are never
-  touched. Oraknid's own `.oraknid/` folder is never in a checkpoint.
+  touched. Oraknid's own `.oraknid/` folder is never in a checkpoint, and
+  neither are installed dependencies and caches (`node_modules/`,
+  `.pnpm-store/`, `__pycache__/`, `.venv/`, `.tox/`, `.gradle/`), even
+  before the project has a `.gitignore`; Oraknid never commits them
+  either. pnpm's store lives in the job's home, not the project
+  (2026-10-08).
 - A verified task becomes a commit on the job branch
   (`<kind prefix>: <task title>`).
 - Rolling back restores the worktree to a checkpoint. Untracked files
   created since then are moved to `.oraknid/trash/<timestamp>/`, not
-  deleted.
+  deleted. Any number of paths is restored (they go to git on stdin,
+  never on a command line); a failure is said in a line, never the
+  command's arguments (2026-10-08: a rollback of a scaffold's
+  `node_modules` overflowed the command line and its 3 MB error became
+  the job's blocked reason).
 - I can roll back any task to any of its checkpoints from the UI.
 
 Related: [[The-Eye]] · [[Silk]] · [[Sandboxing]] · [[Business-Rules]]

@@ -45,7 +45,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { WebGraph } from "@/components/web-graph";
 import { api } from "@/lib/api";
-import { ago, tokens } from "@/lib/format";
+import { ago, clip, tokens } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { act, projectHref } from "@/lib/links";
 import { useLive } from "@/lib/live";
@@ -257,8 +257,8 @@ export function JobDetail({ id, sub }: { id: string; sub?: string }) {
         </div>
       ) : null}
       {j.blockedReason || j.pauseReason ? (
-        <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm [overflow-wrap:anywhere]">
-          {j.blockedReason ?? j.pauseReason}
+        <div className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm [overflow-wrap:anywhere]">
+          {clip(j.blockedReason ?? j.pauseReason ?? "", 1200)}
         </div>
       ) : null}
     </div>

@@ -29,7 +29,10 @@ export class JobStore {
    * Moves a job to `to`. Pausing or waiting remembers the active state to
    * return to; leaving pause or wait clears it.
    */
-  transition(id: string, to: JobState, reason: string | null = null): JobRow {
+  transition(id: string, to: JobState, why: string | null = null): JobRow {
+    // A reason is said in a line or two wherever it shows (the chat, Work, the inbox); a tool's
+    // whole output never becomes one (3 MB of paths, 2026-10-08).
+    const reason = why && why.length > 600 ? `${why.slice(0, 600).trimEnd()}… (cut short)` : why;
     return this.bus.atomically(() => {
       const job = this.require(id);
       const from = job.state as JobState;

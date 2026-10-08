@@ -36,3 +36,12 @@ export function until(at: number, now = Date.now()): string {
 
 export const clock = (at: number) =>
   new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+/**
+ * A long text said briefly: its start, and how much more there is. A reason or a
+ * message is never shown whole when a tool's output became it (3 MB, 2026-10-08).
+ */
+export function clip(text: string, max = 400): string {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max).trimEnd()}… (${(text.length - max).toLocaleString()} more characters)`;
+}

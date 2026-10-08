@@ -117,6 +117,9 @@ export function sandboxPlan(
       PATH: process.env.PATH ?? "/usr/bin",
       LANG: process.env.LANG ?? "C.UTF-8",
       TERM: "dumb",
+      // pnpm keeps its package store in the job's home, not inside the project, where it
+      // landed beside the code and filled its checkpoints (2026-10-08).
+      npm_config_store_dir: join(home, ".local", "share", "pnpm", "store"),
     },
   };
 }

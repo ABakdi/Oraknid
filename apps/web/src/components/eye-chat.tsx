@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { api, message } from "@/lib/api";
-import { ago } from "@/lib/format";
+import { ago, clip } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { jobHref, jobIdHref, projectHref } from "@/lib/links";
 import { useLive } from "@/lib/live";
@@ -350,14 +350,14 @@ export function EyeChat({
           {m.answers ? (
             <Markdown text={m.text} className="font-normal" />
           ) : (
-            <div className="whitespace-pre-wrap">{m.text}</div>
+            <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{clip(m.text, 6000)}</div>
           )}
         </PromptLine>
       );
     const touched = m.action?.jobId && m.action.jobId !== m.jobId ? m.action.jobId : null;
     return (
-      <div data-testid="reply" className="min-w-0 pl-4 text-sm">
-        <Markdown text={m.text} />
+      <div data-testid="reply" className="min-w-0 pl-4 text-sm [overflow-wrap:anywhere]">
+        <Markdown text={clip(m.text, 4000)} />
         <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
           {m.action ? (
             <>

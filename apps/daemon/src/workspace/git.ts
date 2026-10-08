@@ -51,16 +51,47 @@ const SAFE = [
   "core.fsyncMethod=batch",
 ];
 
-export function git(g: Git, args: string[], env: Record<string, string> = {}): string {
+export function git(
+  g: Git,
+  args: string[],
+  env: Record<string, string> = {},
+  /** Given on stdin: a long list of paths goes here, never on the command line. */
+  input?: string,
+): string {
   const r = spawnSync("git", [...SAFE, ...g.base, ...args], {
     cwd: g.cwd,
     encoding: "utf8",
     env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...env },
     maxBuffer: 64 * 1024 * 1024,
+    ...(input === undefined ? {} : { input }),
   });
-  if (r.status !== 0)
-    throw new GitError(`git ${args.join(" ")} failed: ${(r.stderr || r.stdout || "").trim()}`);
+  if (r.status !== 0 || r.error)
+    throw new GitError(
+      `${said(args)} failed: ${brief(r.stderr || r.stdout || r.error?.message || "")}`,
+    );
   return r.stdout;
+}
+
+/** A git command as said in an error: its first words, never thousands of paths. */
+function said(args: string[]): string {
+  const words = args.slice(0, 6).join(" ");
+  return `git ${words.length > 160 ? `${words.slice(0, 160)}…` : words}${args.length > 6 ? ` … (+${args.length - 6} more)` : ""}`;
+}
+
+/** Git's own words, the first lines, cut short. */
+function brief(text: string): string {
+  const t = text.trim();
+  return t.length > 400 ? `${t.slice(0, 400)}…` : t;
+}
+
+/** Paths given to git through stdin (NUL-separated), for any number of them. */
+function withPaths(g: Git, args: string[], paths: string[]): string {
+  return git(
+    g,
+    [...args, "--pathspec-from-file=-", "--pathspec-file-nul"],
+    {},
+    `${paths.join("\0")}\0`,
+  );
 }
 
 /**
@@ -90,7 +121,7 @@ export function gitAsync(
       else
         reject(
           new GitError(
-            `git ${args.join(" ")} failed: ${(Buffer.concat(err).toString("utf8") || stdout).trim()}`,
+            `${said(args)} failed: ${brief(Buffer.concat(err).toString("utf8") || stdout)}`,
           ),
         );
     });
@@ -125,7 +156,19 @@ export function excludeOraknid(g: Git, gitDir: string) {
   const file = join(gitDir, "info", "exclude");
   mkdirSync(dirname(file), { recursive: true });
   const text = existsSync(file) ? readFileSync(file, "utf8") : "";
-  const lines = ["/.oraknid/*", "!/.oraknid/silk/", "/.oraknid/silk/*.tmp"];
+  // Installed dependencies and caches are never checkpointed or committed by Oraknid, even
+  // before the project has a .gitignore (a scaffold's first `pnpm install`, 2026-10-08).
+  const lines = [
+    "/.oraknid/*",
+    "!/.oraknid/silk/",
+    "/.oraknid/silk/*.tmp",
+    "node_modules/",
+    ".pnpm-store/",
+    "__pycache__/",
+    ".venv/",
+    ".tox/",
+    ".gradle/",
+  ];
   const missing = lines.filter((l) => !text.split("\n").includes(l));
   if (!missing.length) return;
   appendFileSync(
@@ -415,9 +458,10 @@ export async function rollback(
     } else restored.push(path);
   }
   if (restored.length) {
-    git(g, ["checkout", ref, "--", ...restored]);
+    // Any number of paths, through stdin: a list on the command line overflowed it (2026-10-08).
+    withPaths(g, ["checkout", ref], restored);
     // Leave the index as HEAD had it: rollback is about files, not staging.
-    if (ok(g, ["rev-parse", "--verify", "HEAD"])) git(g, ["reset", "-q", "--", ...restored]);
+    if (ok(g, ["rev-parse", "--verify", "HEAD"])) withPaths(g, ["reset", "-q"], restored);
   }
   return { restored, trashed };
 }
@@ -461,8 +505,8 @@ export function restorePaths(g: Git, ref: string, paths: string[], trashRoot: st
     }
   }
   if (restore.length) {
-    git(g, ["checkout", ref, "--", ...restore]);
-    if (ok(g, ["rev-parse", "--verify", "HEAD"])) git(g, ["reset", "-q", "--", ...restore]);
+    withPaths(g, ["checkout", ref], restore);
+    if (ok(g, ["rev-parse", "--verify", "HEAD"])) withPaths(g, ["reset", "-q"], restore);
   }
 }
 

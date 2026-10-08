@@ -3,6 +3,15 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.4.4 — 2026-10-08 (pre-release)
+
+- **Rolling a task back no longer breaks on large folders:** the files to restore go to git on stdin, not on one command line that a scaffold's thousands of files overflowed.
+- **Installed dependencies are never checkpointed or committed by Oraknid:** `node_modules`, the pnpm store, Python virtualenvs and caches stay out, even before the project has a `.gitignore`. pnpm keeps its store in the job's home, not inside the project.
+- **Errors said briefly:**
+  - a failing git command is reported by its first words and git's own message;
+  - a job's blocked or paused reason is cut to a few lines;
+  - the chat, Work, the job page and the Overview clip long text and wrap it, so the layout holds.
+
 ## 0.4.3 — 2026-10-08 (pre-release)
 
 - **The Eye skips an agent that turns out to be out of quota:** when its own call (the interview, a plan, a review) hits a usage limit, for example an agent just signed in on an account already used up, it marks that agent limited until its reset and carries on with the next one. Before, the job stopped there.

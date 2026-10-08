@@ -19,7 +19,7 @@ import { Progress } from "@/components/ui/progress";
 import { UpdateNotice } from "@/components/updates";
 import { api } from "@/lib/api";
 import { describe, isProblem } from "@/lib/events";
-import { ago, tokens } from "@/lib/format";
+import { ago, clip, tokens } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { jobHref, jobIdHref } from "@/lib/links";
 import { useEvents, useLive, useMetrics } from "@/lib/live";
@@ -294,7 +294,7 @@ function RunningNow({ jobs, names }: { jobs: JobView[]; names: Map<string, strin
                   <div className="truncate text-xs text-muted-foreground">
                     {names.get(j.projectId) ?? t("a project")}
                     {j.blockedReason || j.pauseReason
-                      ? ` · ${j.blockedReason ?? j.pauseReason}`
+                      ? ` · ${clip(j.blockedReason ?? j.pauseReason ?? "", 160)}`
                       : j.startedAt
                         ? ` · ${t("started {when}", { when: ago(j.startedAt) })}`
                         : ""}

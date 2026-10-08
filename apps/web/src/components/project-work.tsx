@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { type FlowJob, WebGraph } from "@/components/web-graph";
 import { api } from "@/lib/api";
-import { ago, tokens } from "@/lib/format";
+import { ago, clip, tokens } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { act, jobHref, projectHref } from "@/lib/links";
 import { cn } from "@/lib/utils";
@@ -327,9 +327,9 @@ export function WorkRow({ job: j }: { job: JobView }) {
         {j.blockedReason || j.pauseReason ? (
           <div
             className="truncate text-xs text-warning"
-            title={j.blockedReason ?? j.pauseReason ?? ""}
+            title={clip(j.blockedReason ?? j.pauseReason ?? "", 600)}
           >
-            {j.blockedReason ?? j.pauseReason}
+            {clip(j.blockedReason ?? j.pauseReason ?? "", 200)}
           </div>
         ) : null}
       </div>

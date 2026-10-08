@@ -17,6 +17,7 @@ import {
   commitAll,
   createWorktree,
   detectBranches,
+  excludeOraknid,
   git,
   restoreWorktree,
   rollback,
@@ -111,6 +112,51 @@ describe("checkpoints", () => {
     expect(await changedSince(g, "refs/oraknid/j/t/1", tmp)).toEqual([]);
     // Only the trash is new (this test repo does not exclude .oraknid); a.txt is back as it was.
     expect(sh(r, "status", "--porcelain")).toBe("?? .oraknid/");
+  });
+
+  it("rolls back more files than a command line holds, and says a failure briefly (2026-10-08)", async () => {
+    const r = repo();
+    const g = { cwd: r, base: [] };
+    const tmp = join(r, ".git", "oraknid-tmp");
+    // 22,000 paths of ~100 characters: over 2 MB, past a Linux command line's limit.
+    const dir = join(r, "generated", "x".repeat(60));
+    mkdirSync(dir, { recursive: true });
+    const names = Array.from(
+      { length: 22_000 },
+      (_, i) => `file-number-${String(i).padStart(6, "0")}.txt`,
+    );
+    for (const n of names) writeFileSync(join(dir, n), "v1\n");
+    await checkpoint(g, "refs/oraknid/j/t/1", "c1", tmp);
+    for (const n of names) writeFileSync(join(dir, n), "v2\n");
+    const result = await rollback(g, "refs/oraknid/j/t/1", tmp, join(r, ".oraknid", "trash"));
+    expect(result.restored).toHaveLength(22_000);
+    expect(readFileSync(join(dir, names[21_999] as string), "utf8")).toBe("v1\n");
+    // A failing git command is said in its first words and git's own, never all its arguments.
+    let said = "";
+    try {
+      git(g, ["checkout", "no-such-ref", "--", ...names.slice(0, 5000)]);
+    } catch (e) {
+      said = (e as Error).message;
+    }
+    expect(said).toMatch(/^git checkout no-such-ref -- file-number-000000\.txt/);
+    expect(said.length).toBeLessThan(800);
+  }, 180_000);
+
+  it("never checkpoints installed dependencies, even before the project has a .gitignore", async () => {
+    const r = repo();
+    const g = { cwd: r, base: [] };
+    excludeOraknid(g, join(r, ".git"));
+    mkdirSync(join(r, "node_modules", "left-pad"), { recursive: true });
+    writeFileSync(join(r, "node_modules", "left-pad", "index.js"), "x");
+    mkdirSync(join(r, ".pnpm-store", "v11"), { recursive: true });
+    writeFileSync(join(r, ".pnpm-store", "v11", "f"), "x");
+    writeFileSync(join(r, "app.ts"), "x");
+    await checkpoint(g, "refs/oraknid/j/t/1", "c1", join(r, ".git", "oraknid-tmp"));
+    const files = sh(r, "ls-tree", "-r", "--name-only", "refs/oraknid/j/t/1").split("\n");
+    expect(files).toContain("app.ts");
+    expect(files.some((f) => f.startsWith("node_modules/") || f.startsWith(".pnpm-store/"))).toBe(
+      false,
+    );
   });
 
   it("commits a task's verified work on the job branch", async () => {
