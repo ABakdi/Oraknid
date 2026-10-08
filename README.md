@@ -148,6 +148,13 @@ packages/legs/        the Leg SDK and adapters: claude-code, codex, opencode, an
 docs/                 the canon
 ```
 
+## License
+
+Oraknid is free software, licensed under the [GNU Affero General Public License v3.0](LICENSE)
+(`AGPL-3.0-only`). You may use, study, change and share it; if you run a changed version
+for others over a network (a Nest, a hosted Oraknid), you must offer them its source.
+Third-party parts keep their own licences (for example `packages/guard/rulebooks/`, MIT).
+
 ## Contact
 
 Built by Abderrahmane Bakdi: [a.bakdi@abakdi.com](mailto:a.bakdi@abakdi.com) ·
