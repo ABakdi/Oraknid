@@ -255,12 +255,30 @@ As built (2026-10-03, `stats.charts`):
 
 ### Projects
 
-A list with totals, and the project open beside it: **the place I
-work** ([[ADR-034-Projects-First]], 2026-10-03). Each card in the list
-has a **…** menu (Archive or Unarchive, Delete); archived projects are
-in their own **Archived projects** section at the bottom, closed until
-I open it or one of them is open (2026-10-04). The project's header has
-an "Archived" mark when it is, and the same **…** menu after New work.
+`/projects` is the list of projects, full width; a click opens one as a
+page of its own, `/projects/<id>`: **the place I work**
+([[ADR-034-Projects-First]], 2026-10-03; a list then a page since
+2026-10-08, ADR-034 → Changed). The list's header says how many projects
+there are and how many work now, with **New project**; under it **Find a
+project** narrows the list by words in a project's name, folder or repos.
+The projects are cards in a grid (one column on a phone, two, then three
+on a wide screen), the newest activity first, each with: its name and
+**…** menu (Archive or Unarchive, Delete); **what it does now**: its
+job most at work (working, then waiting, blocked, paused, a draft last), its state badge and
+title, "queued" when it waits for a slot, a small progress bar with
+"3/8" while it has tasks, "and 2 more not ended" when there are others,
+or "Nothing running now."; its branches (or "N repos", "no git"), its
+servers' count, its CI badge; and "active 5 min ago" (its jobs' newest
+event, else when it was made), its jobs' count and its folder. The list
+reloads on a project's, a job's or a task's change, at most once a
+second (`projects.list` carries each project's `now`, its jobs not
+ended with tasks done and all, at most five, and `lastActivityAt`).
+Archived projects are in their own **Archived projects** section at the
+bottom, closed until I open it (2026-10-04), or open while a search finds
+some of them. An unknown project's address says "No such project" with
+**All projects**. The project's header starts with **‹ Projects** back to
+the list (an arrow alone on a phone), then its name; it has an "Archived"
+mark when it is, and the same **…** menu after New work.
 After its name, a **CI badge** (2026-10-07, [[ADR-058-CI-In-Oraknid]]):
 its first linked repo's release branch (else its work branch) passing,
 failing or running, opening the CI tab; nothing without a linked repo
@@ -403,14 +421,40 @@ Its page is in tabs, in the address (`/projects/<id>/<tab>`):
   the lines it skipped, by number, never by value. Changing them away
   from home needs a device with full rights.
 
+**The work bar** (2026-10-08, `components/project-now.tsx`): under the
+project's header, at the top of its page whatever the tab (the page
+never scrolls, its tabs do, so it stays in sight on a phone too), every
+job of the project that hasn't ended: working first, then waiting for
+me, blocked, paused, its drafts last, newest first in each. Each says its state badge and title (a link to
+the job, a draft's to New work), its state in words ("Running", "The
+Eye is planning the work", "Waiting for you", "Queued: starts when a
+slot frees"…), a progress bar with "3/8 tasks", "for 12 min" since it
+started (kept current every 30 s while seen), and "Now: <the tasks worked
+on>" (or "Next: <task>, <why it waits>", ADR-050). Its controls are
+right there: **Start** for a draft, **Pause** while it goes, **Resume**
+when paused or blocked, **Cancel** (asked first, as the chat's Cancel:
+"Cancel “<title>”? The work so far stays in its folder.", Keep it
+focused) and **Open job** (labels hidden on a phone, 44 px touch
+targets). Blocked, paused or asking me something, a warning line says
+why, cut to 160 characters (the whole, to 600, on hover): "It asks you:
+<question>" with **Answer**, which opens the question's card (an
+interview round too) in place; else "Fix what it says, then Resume." or
+"Resume when you're ready.". Several jobs: a line "5 jobs not ended · 2 working" over a compact list, each row with
+its own controls, scrolling inside past about two rows on a phone; the
+line folds and opens the list (folded at first on a phone with a job
+open, so the job keeps the room).
+Nothing going: one muted line, "Nothing running. Last: <job> <state>
+<when>"; no job yet: nothing. So nothing needs the Overview to start or
+follow a project's work. It is drawn alone (memoized) from the page's
+jobs and inbox, which reload paced like any (Performance, below).
+
 **Open folder** and **Terminal here** in its header (2026-10-04): the
 project's folder in this computer's file manager, to look at or test the
 work by hand (away from home, its path is copied instead), and a terminal
 on this computer started in that folder (`/terminal/project:<id>`: the
 terminal takes the project's id, never a path, ADR-028). **New work** in its header opens its Eye tab. Its Servers tab adds a
 server or sets one up in place, its Skills tab shows which tools a
-skill still needs. With a job open, the list of projects steps aside
-below 1280 px.
+skill still needs.
 
 ### New work
 
@@ -988,7 +1032,8 @@ and port, headless Chromium, long tasks, heap, DOM, requests per page).
   of samples. A session's log shows its newest 2,000 lines and says how
   many earlier ones are not shown.
 - **Reloads are paced.** A burst of live events folds into one reload of
-  a piece of data at most every 500 ms (`useLive`); a stream's list is
+  a piece of data at most every 500 ms (`useLive`; the Projects list, which
+  follows every job's and task's change, once a second); a stream's list is
   drawn at most twice a second, resources once a second. A page out of
   sight (`document.visibilityState`) reloads and draws nothing; it catches
   up once when seen again. `reload()` after my own action is at once.

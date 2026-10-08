@@ -140,6 +140,7 @@ vi.mock("@/lib/api", () => ({
 }));
 
 vi.mock("@/lib/live", () => ({ useEvents: () => [] }));
+vi.mock("@/components/ci-badge", () => ({ ProjectCiBadge: () => null }));
 
 const { ProjectRemovalDialog, confirmWord } = await import("./project-removal");
 const { ProjectList } = await import("./project-list");
@@ -339,13 +340,14 @@ describe("the Archived projects section", () => {
     expect(screen.getByRole("button", { name: "Actions for Site" })).toBeTruthy();
   });
 
-  it("is open when the project shown is archived", () => {
-    const { hook } = memoryLocation({ path: "/projects/P2" });
+  it("shows the archived ones a search finds", () => {
+    const { hook } = memoryLocation({ path: "/projects" });
     render(
       <Router hook={hook}>
-        <ProjectList projects={[SITE, OLD]} shownId="P2" onOpen={() => {}} />
+        <ProjectList projects={[OLD]} searching onOpen={() => {}} />
       </Router>,
     );
     expect(screen.getByText("Old blog")).toBeTruthy();
+    expect(screen.queryByText("Every project is archived.")).toBeNull();
   });
 });

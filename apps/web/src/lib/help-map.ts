@@ -74,7 +74,7 @@ export const PAGES: HelpPage[] = [
     path: "/projects/{item}/{tab}",
     item: "a project's id",
     name: "Projects",
-    does: "The list of projects, and one open beside it, in tabs: the place I work.",
+    does: "The list of projects, full width, each saying what it does now (its current job, state and progress), its last activity, repos, servers and CI; a click opens the project as a page of its own, in tabs, with its current work and controls at the top: the place I work.",
     tabs: [
       {
         id: "eye",
@@ -532,6 +532,30 @@ export const CONTROLS: HelpControl[] = [
     name: "New project",
     does: "Adds a project: its name, then where it comes from (New: a folder Oraknid makes, a folder on this computer, or GitHub), each folder chosen with the folder picker, and a sentence saying what will happen.",
     where: "Projects, above the list",
+  },
+  {
+    id: "projects.search",
+    page: "projects",
+    name: "Find a project",
+    does: "Narrows the list to the projects whose name, folder or repos have the words typed; archived ones it finds are shown too.",
+    where: "Projects, above the list",
+    field: true,
+  },
+  {
+    id: "project.back",
+    page: "projects",
+    needsItem: true,
+    name: "All projects",
+    does: "Goes back from a project's page to the list of projects.",
+    where: "A project's header, before its name",
+  },
+  {
+    id: "project.work-bar",
+    page: "projects",
+    needsItem: true,
+    name: "The project's current work",
+    does: "Its jobs that haven't ended: each one's state in words, its progress (tasks done of all, the ones worked on now), how long it has run, why it is blocked or waiting and what to do (Answer opens what it asks, in place), and Start (a draft), Pause, Resume, Cancel (asked first) and Open job. Nothing going: its last job in one line.",
+    where: "A project's page, under its header, staying at the top",
   },
   {
     id: "projects.archived",

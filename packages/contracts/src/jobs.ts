@@ -226,10 +226,31 @@ export const JobView = Job.extend({
 });
 export type JobView = z.infer<typeof JobView>;
 
+/**
+ * A job of a project that hasn't ended (a draft too), as the Projects list
+ * says what the project is doing now (Web-UI → Projects).
+ */
+export const ProjectNowJob = z.object({
+  id: Id,
+  title: z.string(),
+  state: JobState,
+  /** Its tasks done (or skipped), and all of them. */
+  done: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+  /** Waiting for a free slot under the running-jobs limit (ADR-016). */
+  queued: z.boolean(),
+  startedAt: z.number().nullable(),
+});
+export type ProjectNowJob = z.infer<typeof ProjectNowJob>;
+
 export const ProjectView = Project.extend({
   jobCount: z.number().int().nonnegative(),
   /** Not a git repo: checkpoints live in a shadow repo and the folder is left alone. */
   shadow: z.boolean(),
+  /** When one of its jobs last did something (its newest event); null before any. */
+  lastActivityAt: z.number().nullable().optional(),
+  /** Its jobs that haven't ended, drafts too, newest first, at most five. */
+  now: z.array(ProjectNowJob).optional(),
 });
 export type ProjectView = z.infer<typeof ProjectView>;
 

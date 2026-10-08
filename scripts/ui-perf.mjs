@@ -10,7 +10,7 @@
  *   worst main-thread stall seen by a 100 ms timer.
  *
  *   pnpm --filter @oraknid/web exec vite build   # the UI the daemon serves
- *   node scripts/ui-perf.mjs [--seconds 60] [--port 7517] [--only overview,eye] [--json out.json] [--shots dir] [--cpu] [--web dir] [--keep-oversized] [--hidden]
+ *   node scripts/ui-perf.mjs [--seconds 60] [--port 7517] [--only overview,eye] [--json out.json] [--shots dir] [--cpu] [--web dir] [--keep-oversized] [--hidden] [--viewport 375x812]
  *
  * Needs playwright-core (a dev dependency) and a Chromium: --chromium /path,
  * else /usr/bin/chromium or Playwright's own. Never uses 7417 or the
@@ -73,6 +73,7 @@ process.on("exit", stopDaemon);
 
 const pages = [
   ["overview", "/"],
+  ["projects", "/projects"],
   ["eye", `/projects/${info.projectId}/eye`],
   ["work", `/projects/${info.projectId}/work/${info.jobId}`],
   ["workflow", `/projects/${info.projectId}/workflow/${info.jobId}`],
@@ -91,7 +92,8 @@ const pages = [
 const executablePath =
   arg("chromium", "") || (existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined);
 const browser = await chromium.launch({ executablePath, args: ["--enable-precise-memory-info"] });
-const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+const [width, height] = (arg("viewport", "1440x900") ?? "1440x900").split("x").map(Number);
+const context = await browser.newContext({ viewport: { width, height } });
 await context.addInitScript(
   ({ token, session }) => {
     localStorage.setItem("oraknid.token", token);

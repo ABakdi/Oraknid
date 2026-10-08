@@ -1,5 +1,14 @@
 import type { ProjectView } from "@oraknid/contracts";
-import { Archive, ArchiveRestore, FolderOpen, Plus, SquareTerminal, Trash2 } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  ChevronLeft,
+  FolderOpen,
+  Plus,
+  Search,
+  SquareTerminal,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Link, Redirect, useLocation } from "wouter";
@@ -7,14 +16,15 @@ import { ActivityFeed } from "@/components/activity-feed";
 import { LegComparison, TokensChart } from "@/components/charts";
 import { ProjectCiBadge } from "@/components/ci-badge";
 import { ProjectCiTab } from "@/components/ci-panel";
-import { BackButton, Empty, ErrorNote, Loading, PageHeader, Stat } from "@/components/common";
+import { Empty, ErrorNote, Loading, PageHeader, Stat } from "@/components/common";
 import { EyeChat } from "@/components/eye-chat";
 import { ProjectBudgetCard } from "@/components/job-budget";
 import { CloneAgainButton, ExportRecordsButton } from "@/components/moving";
 import { NewProjectDialog } from "@/components/new-project";
 import { type PageTab, PageTabs } from "@/components/page-tabs";
-import { ProjectList } from "@/components/project-list";
+import { matchProjects, ProjectList } from "@/components/project-list";
 import { ProjectNetworkCard } from "@/components/project-network";
+import { nowRank, ProjectWorkBar } from "@/components/project-now";
 import { ProjectMenu, ProjectRemovalDialog, type RemovalKind } from "@/components/project-removal";
 import { isSeveral, ProjectReposCard, ProjectRepoTab } from "@/components/project-repo";
 import { ProjectSecretsCard } from "@/components/project-secrets";
@@ -26,15 +36,19 @@ import { ProjectSilk } from "@/components/silk-list";
 import { StatsCharts } from "@/components/stats-charts";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { api, message } from "@/lib/api";
 import { tokens } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { currentProjectPath } from "@/lib/links";
 import { useLive } from "@/lib/live";
 import { remote } from "@/lib/remote";
-import { cn } from "@/lib/utils";
 import { InboxItemCard } from "@/pages/inbox";
 
+/**
+ * Projects (Web-UI → Projects): `/projects` is the list of projects, full
+ * width; `/projects/<id>/<tab>…` is one project as a page of its own.
+ */
 export function ProjectsPage({
   id,
   tab,
@@ -46,15 +60,26 @@ export function ProjectsPage({
   job?: string;
   sub?: string;
 }) {
-  const [, go] = useLocation();
-  // A server's own project opens here too, by its jobs' links; it is never listed (ADR-049).
-  const projects = useLive(() => api.projects.list({ servers: true }), {
-    topics: ["overview"],
-    refreshOn: (e) => e.type.startsWith("project.") || e.type === "job.created",
-  });
-  const [creating, setCreating] = useState(false);
   const moved = id ? currentProjectPath(id, tab, job, sub) : null;
   if (moved) return <Redirect to={moved} replace />;
+  return id ? <ProjectPage id={id} tab={tab} job={job} sub={sub} /> : <ProjectsList />;
+}
+
+/**
+ * The list: every project as a card saying what it is doing now, live
+ * (its jobs' and tasks' changes reload it, at most once a second), with
+ * search and New project; a card opens the project's page.
+ */
+function ProjectsList() {
+  const [, go] = useLocation();
+  const projects = useLive(() => api.projects.list(), {
+    topics: ["overview"],
+    refreshOn: (e) =>
+      e.type.startsWith("project.") || e.type.startsWith("job.") || e.type === "task.state",
+    everyMs: 1000,
+  });
+  const [creating, setCreating] = useState(false);
+  const [q, setQ] = useState("");
   if (projects.error) return <ErrorNote error={projects.error} />;
   if (projects.loading) return <Loading />;
   const add = (
@@ -63,9 +88,16 @@ export function ProjectsPage({
       {t("New project")}
     </Button>
   );
-  const everything = projects.data ?? [];
-  const all = everything.filter((p) => !p.serverId);
-  if (all.length === 0 && !everything.some((p) => p.id === id))
+  const dialog = (
+    <NewProjectDialog
+      open={creating}
+      onOpenChange={setCreating}
+      onCreated={(pid) => go(`/projects/${pid}`)}
+    />
+  );
+  // A server's own project is never listed (ADR-049); its jobs' links open it.
+  const all = (projects.data ?? []).filter((p) => !p.serverId);
+  if (all.length === 0)
     return (
       <div className="space-y-4">
         <PageHeader title={t("Projects")} />
@@ -74,59 +106,94 @@ export function ProjectsPage({
             "A project is a folder or repo that jobs work in. Oraknid works in its own worktree and never on your branch.",
           )}
         </Empty>
-        <NewProjectDialog
-          open={creating}
-          onOpenChange={setCreating}
-          onCreated={(pid) => go(`/projects/${pid}`)}
-        />
+        {dialog}
       </div>
     );
-  const active = all.filter((p) => !p.archivedAt);
-  const archived = all.filter((p) => p.archivedAt);
-  // A project open: its id in the address; on a computer the first one by default.
-  const selected = everything.find((p) => p.id === id);
-  const shown =
-    selected ??
-    (typeof window !== "undefined" && window.innerWidth >= 768
-      ? (active[0] ?? archived[0])
-      : undefined);
+  const shown = matchProjects(all, q);
+  const working = all.filter((p) => !p.archivedAt && p.now?.some((j) => nowRank(j.state) === 0));
   return (
-    <div className="-mb-24 flex h-[calc(100dvh-7.5rem)] min-h-0 gap-4 md:-mb-8 md:h-[calc(100dvh-4.5rem)]">
-      <aside
-        className={cn(
-          "flex min-h-0 w-full shrink-0 flex-col gap-2 md:w-72",
-          selected && "hidden md:flex",
-          selected && job && "md:hidden xl:flex",
-        )}
-      >
-        <div className="flex items-center gap-2">
-          <h1 className="flex-1 text-lg font-semibold">{t("Projects")}</h1>
-          {add}
-        </div>
-        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
-          <ProjectList
-            projects={all}
-            shownId={shown?.id}
-            onOpen={(pid) => go(`/projects/${pid}`)}
-          />
-        </div>
-      </aside>
-      <section className={cn("min-h-0 min-w-0 flex-1", !selected && "hidden md:block")}>
-        {shown ? (
-          <ProjectDetail key={shown.id} project={shown} tab={tab} job={job} sub={sub} />
-        ) : null}
-      </section>
-      <NewProjectDialog
-        open={creating}
-        onOpenChange={setCreating}
-        onCreated={(pid) => go(`/projects/${pid}`)}
+    <div className="space-y-4 pb-6">
+      <PageHeader
+        title={t("Projects")}
+        sub={t("{n} project(s) · {w} working now", {
+          n: all.filter((p) => !p.archivedAt).length,
+          w: working.length,
+        })}
+        actions={add}
       />
+      <div className="relative max-w-md">
+        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          type="search"
+          data-help="projects.search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder={t("Find a project: its name, folder or repos")}
+          aria-label={t("Find a project")}
+          className="pl-8"
+        />
+      </div>
+      {shown.length ? (
+        <ProjectList
+          projects={shown}
+          searching={!!q.trim()}
+          onOpen={(pid) => go(`/projects/${pid}`)}
+        />
+      ) : (
+        <div className="px-1 py-2 text-sm text-muted-foreground">
+          {t("No project matches “{q}”.", { q: q.trim() })}
+        </div>
+      )}
+      {dialog}
     </div>
   );
 }
 
+/** One project as a page of its own, with a way back to the list. */
+function ProjectPage({
+  id,
+  tab,
+  job,
+  sub,
+}: {
+  id: string;
+  tab?: string;
+  job?: string;
+  sub?: string;
+}) {
+  // A server's own project opens here too, by its jobs' links (ADR-049).
+  const projects = useLive(() => api.projects.list({ servers: true }), {
+    topics: ["overview"],
+    refreshOn: (e) => e.type.startsWith("project."),
+  });
+  if (projects.error) return <ErrorNote error={projects.error} />;
+  if (projects.loading) return <Loading />;
+  const project = projects.data?.find((p) => p.id === id);
+  if (!project)
+    return (
+      <div className="space-y-4">
+        <PageHeader
+          title={t("Projects")}
+          back={{ fallback: "/projects", label: t("All projects") }}
+        />
+        <Empty
+          title={t("No such project")}
+          action={
+            <Button asChild size="sm" variant="secondary">
+              <Link href="/projects">{t("All projects")}</Link>
+            </Button>
+          }
+        >
+          {t("It may have been deleted.")}
+        </Empty>
+      </div>
+    );
+  return <ProjectDetail key={project.id} project={project} tab={tab} job={job} sub={sub} />;
+}
+
 /**
- * One project, the place I work (ADR-034): The Eye, the Workflow of its
+ * One project, the place I work (ADR-034): its current work at the top
+ * (the work bar, with its controls), then The Eye, the Workflow of its
  * jobs, Work (its jobs as a timeline, one opened in place), Inbox, Silk by
  * job, Activity, Budget & stats, Settings, Skills, Servers and Network, in
  * tabs in the address.
@@ -165,48 +232,67 @@ function ProjectDetail({
     deps: [id],
   });
   const header = (
-    <div className="flex shrink-0 items-center gap-2">
-      <BackButton fallback="/projects" label={t("All projects")} className="md:hidden" />
-      <h2 className="min-w-0 truncate text-lg font-semibold" title={project.name}>
-        {project.name}
-      </h2>
-      {/* Its linked repo's CI at a glance (ADR-058). */}
-      <ProjectCiBadge projectId={id} />
-      {project.archivedAt ? (
-        <span className="flex shrink-0 items-center gap-1 rounded border px-1.5 text-xs text-muted-foreground">
-          <Archive className="size-3" />
-          {t("Archived")}
-        </span>
-      ) : null}
-      {project.serverId ? (
-        // A server's own project (ADR-049): its place is the server's page.
+    <div className="flex shrink-0 flex-col gap-2">
+      <div className="flex min-w-0 items-center gap-2">
         <Link
-          href={`/servers/${project.serverId}/chat`}
-          className="shrink-0 text-xs text-primary underline-offset-2 hover:underline"
+          href="/projects"
+          data-help="project.back"
+          className="-ml-1 flex shrink-0 items-center gap-0.5 rounded-md px-1 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-foreground pointer-coarse:min-h-11"
+          aria-label={t("All projects")}
+          title={t("All projects")}
         >
-          {t("Its server")}
+          <ChevronLeft className="size-4" />
+          <span className="hidden sm:inline">{t("Projects")}</span>
         </Link>
-      ) : null}
-      <span
-        className="hidden min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground sm:inline"
-        title={project.workspacePath}
-      >
-        {project.workspacePath}
-      </span>
-      <span className="flex-1 sm:hidden" />
-      <ProjectFolderButtons id={id} path={project.workspacePath} />
-      <Button
-        data-help="project.new-work"
-        size="sm"
-        className="shrink-0 gap-1"
-        disabled={!!project.archivedAt}
-        title={t("Ask The Eye for work in this project")}
-        onClick={() => go(`/projects/${id}/eye`, { state: history.state })}
-      >
-        <Plus className="size-4" />
-        {t("New work")}
-      </Button>
-      <ProjectMenu project={project} help="project.menu" />
+        <h2 className="min-w-0 truncate text-lg font-semibold" title={project.name}>
+          {project.name}
+        </h2>
+        {/* Its linked repo's CI at a glance (ADR-058). */}
+        <ProjectCiBadge projectId={id} />
+        {project.archivedAt ? (
+          <span className="flex shrink-0 items-center gap-1 rounded border px-1.5 text-xs text-muted-foreground">
+            <Archive className="size-3" />
+            {t("Archived")}
+          </span>
+        ) : null}
+        {project.serverId ? (
+          // A server's own project (ADR-049): its place is the server's page.
+          <Link
+            href={`/servers/${project.serverId}/chat`}
+            className="shrink-0 text-xs text-primary underline-offset-2 hover:underline"
+          >
+            {t("Its server")}
+          </Link>
+        ) : null}
+        <span
+          className="hidden min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground sm:inline"
+          title={project.workspacePath}
+        >
+          {project.workspacePath}
+        </span>
+        <span className="flex-1 sm:hidden" />
+        <ProjectFolderButtons id={id} path={project.workspacePath} />
+        <Button
+          data-help="project.new-work"
+          size="sm"
+          className="shrink-0 gap-1"
+          disabled={!!project.archivedAt}
+          title={t("Ask The Eye for work in this project")}
+          aria-label={t("New work")}
+          onClick={() => go(`/projects/${id}/eye`, { state: history.state })}
+        >
+          <Plus className="size-4" />
+          <span className="hidden min-[420px]:inline">{t("New work")}</span>
+        </Button>
+        <ProjectMenu project={project} help="project.menu" />
+      </div>
+      {/* What it is doing now, with its controls: it stays at the top while the tabs scroll. */}
+      <ProjectWorkBar
+        jobs={list}
+        questions={inbox.data ?? []}
+        // A job open on a phone keeps the room: several jobs fold to one line.
+        defaultFolded={!!job && typeof window !== "undefined" && window.innerWidth < 768}
+      />
     </div>
   );
   if (jobs.error) return <ErrorNote error={jobs.error} />;

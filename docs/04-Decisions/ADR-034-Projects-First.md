@@ -118,6 +118,28 @@ and deleting a project):
   `projects.archive` and `projects.removalPreview` became home only for a
   standard device, like `delete`.
 
+## Changed (2026-10-08): The list, then the project as a page
+The project open beside the list left it narrow, and its page didn't say
+what its jobs were doing nor let me act on them: I went to the Overview
+to start a draft, to see progress, to pause or cancel. Now ([[Web-UI]] →
+Projects):
+- **`/projects` is the list**, full width: each project a card saying
+  what it does now (its current job, state and progress), when it last
+  did something, its repos, servers and CI; search; Archived projects
+  as before. A card opens **the project as a page of its own**, with
+  **‹ Projects** back. Every address (`/projects/<id>/<tab>/…`, the old
+  `/web`) opens as it did.
+- **The work bar**, at the top of the project's page whatever the tab:
+  each job not ended with its state in words, tasks done of all and the
+  ones worked on now, how long it has run, why it is blocked or what it
+  asks (answered in place), and Start (a draft), Pause, Resume, Cancel
+  (asked first) and Open job. The Overview's Running now stays, across
+  projects; nothing needs it to follow one.
+- As built: `projects.list`'s view gains `now` and `lastActivityAt`
+  (`workspace/projects.ts`), `components/project-list.tsx` (the cards),
+  `components/project-now.tsx` (`ProjectWorkBar`), `pages/projects.tsx`
+  (`ProjectsList`, `ProjectPage`).
+
 ## Consequences
 - Migration: `eye_messages` gains `project_id`, filled from each
   message's job; the project budget is a setting per project.
