@@ -9,7 +9,14 @@ import {
   TaskKind,
   WebPlan,
 } from "@oraknid/contracts";
-import { graphProblems, type Route, type RouteCandidate, route, validateWeb } from "@oraknid/core";
+import {
+  graphProblems,
+  type Route,
+  type RouteCandidate,
+  route,
+  usageLimitOf,
+  validateWeb,
+} from "@oraknid/core";
 import { z } from "zod";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor } from "../legs/supervisor.ts";
@@ -1095,19 +1102,15 @@ Answer with "text": the rewritten text only.`;
     // The Eye's own thinking, planning and judging alike (plans, checks repaired, reviews, the
     // interview, the auto-mode judge's second stage), runs on the strongest model allowed for it
     // (ADR-052 §5, ADR-053).
-    const pick = this.#choose(
-      difficulty,
-      capabilities,
-      pin,
-      !only,
-      kind === "planning" || kind === "judging",
-    );
+    const choose = () =>
+      this.#choose(difficulty, capabilities, pin, !only, kind === "planning" || kind === "judging");
+    let pick = choose();
     const started = Date.now();
     const shown = !quiet && jobId ? this.o.thinking : undefined;
     // What I added while The Eye was thinking, for this call (M13.25).
     const said = shown && READS_NOTES.has(call) ? shown.takeNotes(jobId) : [];
     // Stopped to think again with my words: a new session, its prompt with them (M13.25).
-    for (let again = 0; ; again++) {
+    for (let again = 0, moved = 0; ; again++) {
       try {
         return await this.#session(
           { jobId, cwd, schema, prompt, call, check, only, quiet, pick, started },
@@ -1116,6 +1119,25 @@ Answer with "text": the rewritten text only.`;
           shown,
         );
       } catch (error) {
+        // Out of quota where the registry still thought it healthy (a fresh sign-in on an account
+        // used up, 2026-10-08): that Leg is marked limited until its reset and the call goes to
+        // the next model at once, never the job stopping on it (ADR-052 §4).
+        const limit =
+          error instanceof BrainFailed && !only && moved < 3
+            ? usageLimitOf(error.message, Date.now())
+            : null;
+        if (limit) {
+          const until = limit.until ?? Date.now() + 15 * 60_000;
+          this.o.registry.setHealth(
+            pick.candidate.legId,
+            "rate-limited",
+            `Out of quota until ${new Date(until).toISOString()}: ${limit.reason}`,
+            until,
+          );
+          moved++;
+          pick = choose();
+          continue;
+        }
         if (!(error instanceof Rethink) || again >= 5) throw error;
         said.push(error.words);
       }

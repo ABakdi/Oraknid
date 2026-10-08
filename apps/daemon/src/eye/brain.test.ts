@@ -418,3 +418,62 @@ describe("The Eye's brain", () => {
     });
   });
 });
+
+describe("The Eye's own thinking when its first choice is out of quota (2026-10-08)", () => {
+  it("marks that Leg limited until its reset and thinks on the next one, the job never stopping on it", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "oraknid-brain-"));
+    // A fresh sign-in on an account already used up: healthy to the registry, out of quota at its first call.
+    const spent = scriptedLeg((): Action[] => [
+      {
+        fail: "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 25h35m43s.",
+      },
+    ]);
+    const next = scriptedLeg((): Action[] => [{ say: answer([task("a")]) }]);
+    daemon = await startDaemon({
+      paths: resolvePaths({ ORAKNID_DATA_DIR: dir, ORAKNID_CONFIG_DIR: dir }),
+      port: 0,
+      dbFile: ":memory:",
+      os: fakeOs({ keychain: true }).os,
+      adapters: { "claude-code": spent.adapter, opencode: next.adapter },
+    });
+    const first = await daemon.registry.create({
+      kind: "claude-code",
+      name: "Spent",
+      config: { binary: "claude" },
+    });
+    await daemon.registry.create({
+      kind: "opencode",
+      name: "Next",
+      config: {
+        binary: "opencode",
+        package: "@opencode/ai/providers/openai-compatible",
+        models: ["big-pickle"],
+      },
+    });
+    await daemon.health.checkAll();
+    // The Eye set to think on the spent Leg first, as Settings → The Eye can.
+    const spentModel =
+      daemon.registry.view(daemon.registry.require(first.id)).models[0]?.id ?? null;
+    const brain = new PoolLegBrain({
+      registry: daemon.registry,
+      supervisor: daemon.supervisor,
+      pinnedModelId: () => spentModel,
+      pins: () => ({}),
+      record: () => {},
+    });
+    const plan = await brain.plan({
+      jobId: "01J9Z3K8W2Q4V6X8Y0A1B2C3D4",
+      cwd: dir,
+      goal: "g",
+      skill: "",
+      silk: "",
+      digest: "",
+      verify: [],
+    });
+    expect(plan.tasks.map((t) => t.key)).toEqual(["a"]);
+    const leg = daemon.registry.require(first.id);
+    expect(leg.health).toBe("rate-limited");
+    // Its own words gave the reset: about 25 and a half hours from now.
+    expect((leg.limitedUntil ?? 0) - Date.now()).toBeGreaterThan(25 * 3600_000);
+  });
+});

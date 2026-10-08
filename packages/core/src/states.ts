@@ -5,12 +5,12 @@ import type { JobState, TaskState } from "@oraknid/contracts";
 
 const JOB: Record<JobState, readonly JobState[]> = {
   draft: ["interviewing", "planning", "cancelled"],
-  interviewing: ["planning", "paused", "waiting", "cancelled"],
+  interviewing: ["planning", "paused", "waiting", "blocked", "cancelled"],
   planning: ["running", "paused", "waiting", "blocked", "cancelled"],
   running: ["paused", "waiting", "blocked", "verifying", "cancelled"],
   waiting: ["running", "interviewing", "planning", "verifying", "paused", "cancelled"],
   paused: ["running", "interviewing", "planning", "verifying", "cancelled"],
-  blocked: ["running", "planning", "paused", "cancelled"],
+  blocked: ["running", "interviewing", "planning", "paused", "cancelled"],
   verifying: ["running", "completed", "paused", "waiting", "blocked", "cancelled"],
   completed: [],
   cancelled: [],

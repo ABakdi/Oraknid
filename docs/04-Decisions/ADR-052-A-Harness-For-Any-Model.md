@@ -200,3 +200,13 @@ cap of 3 otherwise).
   and labelled "estimated".
 - A job may use more of a strong model when it climbs; the Claude share
   and the plan's quota rules bound it.
+
+## The Eye's own calls on an agent out of quota (2026-10-08)
+A fresh sign-in on an account already used up looks healthy until its
+first call. When The Eye's own call (the interview, a plan, a review)
+ends on a usage limit, that Leg is marked limited until the reset its
+words give and the call goes at once to the next model allowed (up to
+three moves), as a task's does; the job never stops on it. A job can
+also go from interviewing to blocked (and back) when nothing can think
+for it, so it says why instead of sitting in "interviewing".
+

@@ -3,6 +3,11 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.4.3 — 2026-10-08 (pre-release)
+
+- **The Eye skips an agent that turns out to be out of quota:** when its own call (the interview, a plan, a review) hits a usage limit, for example an agent just signed in on an account already used up, it marks that agent limited until its reset and carries on with the next one. Before, the job stopped there.
+- **A job stuck in "interviewing" with nothing running:** a job can now be blocked from the interview with the reason said, instead of staying "interviewing" silently. Such a job resumes by itself once Oraknid restarts on this version.
+
 ## 0.4.2 — 2026-10-08 (pre-release)
 
 - **Antigravity sign-in:** after the code, agy's first-run theme picker is answered by Oraknid. Its sample text ("error: compilation failed") is no longer taken for a failure, and a sign-in that worked is no longer undone. A real failure is said in one short line.
