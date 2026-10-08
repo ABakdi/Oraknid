@@ -98,6 +98,17 @@ refused (asking again is a gate bypass, D8) and the stuck rule's count.
 Questions The Eye or a Leg raised for an attempt a crash cut short are
 withdrawn when the job starts again. Cleared when the task settles.
 
+**What a crash left uncertain, reconciled** (2026-10-08, [[ADR-056-The-Harness]]
+stage 5): an agent's action that started and whose result was never seen
+is looked at before the task's next attempt runs, never run again to find
+out. A file it wrote: the tree says whether it changed. A `git commit`:
+whether the branch moved. A command on a server, or anything else whose
+effect isn't a file: the agent in the next session is asked, once, to look
+(not to run it) and say; its answer is kept with the task. Oraknid's own
+commit at the end of a task is reconciled the same way: if Oraknid stopped
+after it, the task is done with that commit and nothing runs again
+([[Persistence-and-Recovery]] → Recovery sequence).
+
 **Paused for room** (2026-10-04, [[ADR-050-Parallel-By-Default]]): when
 the computer is in danger, Oraknid pauses one running task the same
 way, at a safe point with a checkpoint and a handoff, while its job

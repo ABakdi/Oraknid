@@ -37,6 +37,37 @@ never part of the answer, M13.25), `tool.called`,
 `rate-limited`). File changes are seen by The Eye through the worktree
 diff, not reported by adapters.
 
+**Capabilities** ([[ADR-056-The-Harness]] §2, as built 2026-10-08): each
+probe reports, beside `resume`, `tools`, `usage` and `quotaWindows`, what
+a session can do for the harness. The harness (`harness/sessions.ts`)
+reads them from the probe, never from a list of kinds; a Leg never
+probed, or probed by an older Oraknid, has none until its next probe.
+Each one it lacks has a declared fallback:
+
+| Capability | It has it | It lacks it (the fallback) |
+| :-- | :-- | :-- |
+| `inlineGate` | Every action that changes something is asked of Oraknid before it runs (its permission prompt or hook) | What it ran is read by the Gate's rules after the fact (an `audit` decision in the attempt log, never the judge, never asked or counted); what the rules refuse or would ask is a forbidden action for the drift ladder (D7) |
+| `preToolHook` | Its own auto mode, with Oraknid's hook before each tool (at Auto and Full) | Every prompt is Oraknid's (`ask`), at every autonomy |
+| `stopHook` | The checks hold its turn's end; what they ran stands for the turn | The checks run after the turn ends |
+| `resume` | The same model continues its native session | A fresh session with a handoff from the log |
+| `steer` | A message reaches it while a turn runs (not used yet) | My messages wait for the turn's end |
+
+| Adapter | inlineGate | preToolHook | stopHook | resume | steer |
+| :-- | :-- | :-- | :-- | :-- | :-- |
+| Claude Code | yes | yes | yes | yes | no |
+| Codex | yes | yes | yes | yes | no |
+| OpenCode | yes | no | no | yes | no |
+| Antigravity | **no** (headless agy runs what its settings allow) | no | no | yes | no |
+| Oraknid's own agent | yes | no | yes (runs the checks itself) | yes | no |
+| OpenAI-compatible | yes | no | no | no | no |
+
+**Tool names** live in the Leg SDK (`tools.ts`): each adapter's own names
+by what they do (`shell`, `read`, `write`), and the names permission asks
+are translated into (Claude Code's: `Bash`, `Read`, `Write`, `Edit`…).
+The Gate reads a tool's class (a shell command goes to layer 1; a read's
+allow isn't each in the audit log), and a call a Leg made without asking
+is read as the ask it would have been (`asRequest`).
+
 Every adapter passes the same **contract test kit** in
 `packages/legs/sdk`: start, follow-up, interrupt mid-turn, resume,
 kill, permission allow/deny, usage present, and a rate-limit fixture.

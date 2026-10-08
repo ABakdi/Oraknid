@@ -271,6 +271,11 @@ export function createClaudeCodeAdapter(deps: { query?: QueryFn } = {}): LegAdap
         tools: true,
         usage: "reported" as const,
         quotaWindows: true,
+        // Its permission prompt, its PreToolUse hook in auto mode, its Stop hook (ADR-056 §2).
+        inlineGate: true,
+        preToolHook: true,
+        stopHook: true,
+        steer: false,
       };
       if (!cfg.configDir) {
         return {

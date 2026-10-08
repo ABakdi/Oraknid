@@ -68,6 +68,11 @@ export function createOpenAICompatibleAdapter(
         tools: false,
         usage: "reported" as const,
         quotaWindows: false,
+        // What changes something is asked before it runs.
+        inlineGate: true,
+        preToolHook: false,
+        stopHook: false,
+        steer: false,
       };
       try {
         const res = await http(`${cfg.baseUrl}/models`, { signal: AbortSignal.timeout(5000) });

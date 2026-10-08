@@ -32,7 +32,8 @@ export interface AttemptEventData {
   ActionRequested: { id: string; tool: string; input: string };
   GateDecision: {
     actionId: string;
-    source: "prompt" | "hook" | "mcp" | "owner" | "leg";
+    /** `audit`: a Leg without an inline gate ran it, read after the fact (ADR-056 §2). */
+    source: "prompt" | "hook" | "mcp" | "owner" | "leg" | "audit";
     tool: string;
     /** The action in its plain form, short. */
     action: string;
@@ -70,6 +71,26 @@ export interface AttemptEventData {
     evidence: string;
   };
   Outcome: { kind: string; reason: string | null };
+  /**
+   * The controller moved (ADR-056 §8): from a state to the next, why (the
+   * outcome or the event), its idempotency key. A step with side effects
+   * carries what it needs to be reconciled after a crash (Done: the
+   * checkpoint its commit is measured from).
+   */
+  Transition: { from: string; to: string; why: string; key: string; ckpt?: string };
+  /**
+   * What became of an action a restart left uncertain (ADR-056 §1), never
+   * re-run to find out: the tree looked at (a file changed, a commit made),
+   * or the agent asked to look (a command on a server, a command whose
+   * effect the tree doesn't show), then what it said.
+   */
+  Reconciled: {
+    actionId: string;
+    tool: string;
+    input: string;
+    finding: "happened" | "not-happened" | "ask-agent" | "agent-said";
+    detail: string;
+  };
   HandoffWritten: { silkId: string; failed: string | null };
   AttemptEnded: { reason: string };
   /** The task settled, or its job ended: what the Gate remembered of it is forgotten. */

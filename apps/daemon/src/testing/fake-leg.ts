@@ -31,7 +31,16 @@ export function fakeLeg(o: { ok?: boolean; detail?: string; models?: ModelOffer[
         ok: state.ok,
         detail: state.detail,
         models: state.ok ? state.models : [],
-        features: { resume: true, tools: true, usage: "reported", quotaWindows: true },
+        features: {
+          resume: true,
+          tools: true,
+          usage: "reported",
+          quotaWindows: true,
+          inlineGate: true,
+          preToolHook: false,
+          stopHook: false,
+          steer: false,
+        },
       };
     },
     async start(s) {

@@ -73,14 +73,32 @@ flowchart TB
 | Contracts | `packages/contracts` | Zod schemas for every entity, API call, frame and event. |
 | Core rules | `packages/core` | Pure functions: job and task life cycles (M1.3); routing (the ladder's rungs, the Claude share), budget math, drift detectors, a task's scope, context-pack assembly, the command policy, the Gate's decision (`harness/gate.ts`, a table of source × rules × grants × judge × autonomy), the harness's readings of an agent's words (quota, deprecation, a broken check, "the owner must"), admission (`admission.ts`, [[ADR-050-Parallel-By-Default]]), backups, cloud and rclone helpers. Fully unit-tested, no I/O. |
 | Guard | `packages/guard` | Auto mode's layer 1 and the judge's shape ([[ADR-053-Auto-Mode]]): tree-sitter-bash parsing (`sh -c`, the far side of `ssh`), CC Safety Net and Oraknid's rules, the read-only list, secretlint for credentials going out, the judge's reasoning-blind prompt and cache, the stuck rule. |
-| Leg SDK | `packages/legs/sdk` | `LegAdapter` interface, the contract test kit. |
+| Leg SDK | `packages/legs/sdk` | `LegAdapter` interface, the contract test kit; what a session can do (`Capabilities`: inline gate, pre-tool hook, stop hook, resume, steer, from the probe) and each adapter's tool names by what they do (`tools.ts`: shell, read, write), so the harness never names a Leg kind or a tool. |
 | Adapters | `packages/legs/<kind>` | One per Leg kind: `claude-code`, `openai-compatible`, `opencode`, `antigravity`, `oraknid-agent` (Oraknid's own tool loop on the AI SDK, [[ADR-052-A-Harness-For-Any-Model]] §6), `codex` (OpenAI's Codex CLI headless, [[ADR-057-Codex-Adapter]]). |
 | OS | `packages/os` | `Inhibitor`, `SecretStore`, `Metrics`, `Notifier`, `Sandbox`, `ServiceManager`; `linux/` now, `windows/` later. |
-| Daemon | `apps/daemon` | Wiring: the step engine (`engine`), The Eye (`eye`: the program, attempts, talk and lookup, thinking, task memory, auto mode's daemon side), the Gate (`harness`, [[ADR-056-The-Harness]]), the supervisor and Leg registry (`legs`), the API (`api`), the event bus, recovery, the CLI and the terminal app (`cli.ts`, `tui`, Ink); and its services: the lock and devices (`auth`), the tools broker (`tools`), mail (`mail`), servers, oraknid-monitor and server jobs (`servers`), backups, cloud storage (`cloud`), local models (`models`), admission and the machine guard (`resources`), updates (`updates`), the terminal (`term`), chats, the helper, The Nest link (`nest`). |
+| Daemon | `apps/daemon` | Wiring: the step engine (`engine`), The Eye (`eye`: the program, talk and lookup, thinking, task memory, auto mode's daemon side), the task harness (`harness`, [[ADR-056-The-Harness]]: below), the supervisor and Leg registry (`legs`), the API (`api`), the event bus, recovery, the CLI and the terminal app (`cli.ts`, `tui`, Ink); and its services: the lock and devices (`auth`), the tools broker (`tools`), mail (`mail`), servers, oraknid-monitor and server jobs (`servers`), backups, cloud storage (`cloud`), local models (`models`), admission and the machine guard (`resources`), updates (`updates`), the terminal (`term`), chats, the helper, The Nest link (`nest`). |
 | Web | `apps/web` | The UI. |
 | Tunnel | `packages/tunnel` | The end-to-end tunnel between a device and the daemon (libsodium), used by the daemon and The Nest's loader ([[Nest-Protocol]]). |
 | Nest | `apps/nest` | The relay and its loader page at `/app/` (Phase 4; public mode Phase 11). |
 | Site | `apps/site` | The product site and guide, static, built into The Nest's root ([[ADR-033-Product-Site]]). |
+
+## The task harness
+
+One attempt at one task ([[ADR-056-The-Harness]], as built 2026-10-08),
+in `apps/daemon/src/harness/`, its pure parts in `packages/core/src/harness/`:
+
+| Module | Owns |
+| :-- | :-- |
+| `controller.ts` | The TaskController: `Preparing → Running ⇄ AwaitingOwner → Verifying → Deciding → {Running \| Repairing \| HandingOff → next attempt \| Done \| Failed \| Cancelled}`, each move a `Transition` in the attempt log with its key. Decides nothing. `runTask` (`eye/program.ts`) applies its result from a table. |
+| `route.ts` | Routing and admission: a paused Leg waited for, the ranked candidates, a busy Leg or machine waited for, why none can take it; the ladder's next rung. The provider family is core's (`providerFamily`). |
+| `sessions.ts` | The SessionManager: open, resume, hand off, rotate, close and stop a session through the supervisor, by the Leg's probed capabilities, each with its declared fallback; the session's events to the log, the Gate and the monitors. |
+| `gate.ts` | Every action, one path (core's `gateStep` decides); grants, refusals and the stuck count durable in the log; the after-the-fact audit for a Leg with no inline gate. |
+| `verifier.ts`, `checks.ts` | One runner for checks; the Stop hook's run, broken checks repaired, the checks tried before the work. |
+| `log.ts`, `record.ts` | The attempt log, what the agent did, the handoff from the log, uncertain actions marked. |
+| `reconcile.ts` | Uncertain actions reconciled after a restart; Oraknid's own commit found. |
+| `facts.ts`, `apply.ts` | The facts a turn's end is decided from (the monitors run there); what an outcome does. |
+| `pack.ts`, `tools.ts`, `types.ts` | The session's context pack; the job's tools through the broker; what an attempt works with. |
+| core `harness/` | `gateStep`, the monitors, `decideOutcome` and counting, the escalation policy: pure and table-tested. |
 
 ## Data flow of one task
 
@@ -106,8 +124,9 @@ flowchart TB
 Before step 1, admission ([[ADR-050-Parallel-By-Default]]) decides
 whether a ready task may start now; before the first attempt, each
 check is tried once ([[ADR-052-A-Harness-For-Any-Model]] §2).
-ADR-056 stage 3 (in progress) puts every attempt's facts in one attempt
-log and the checks behind one Verifier.
+Inside a task, steps 3 to 6 are the TaskController's (above): every
+attempt's facts in one attempt log, the checks behind one Verifier, the
+turn's end decided once by `decideOutcome`.
 
 ## Process model
 

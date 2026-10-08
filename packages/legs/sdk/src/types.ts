@@ -35,6 +35,47 @@ export interface ProbeResult {
     tools: boolean;
     usage: "reported" | "estimated";
     quotaWindows: boolean;
+  } & Partial<Capabilities>;
+}
+
+/**
+ * What a session of the Leg can do for the harness (ADR-056 §2), from its
+ * probe. Each one it lacks has a declared fallback in the harness, never
+ * an `else`: no inline gate → its actions are audited after the fact; no
+ * pre-tool hook → every prompt is Oraknid's (no auto mode of its own); no
+ * stop hook → the checks run after the turn ends; no resume → a fresh
+ * session with a handoff; no steer → my messages wait for the turn's end.
+ */
+export interface Capabilities {
+  /** Every action that changes something is asked of Oraknid before it runs. */
+  inlineGate: boolean;
+  /** Oraknid's hook runs before each tool in the agent's own auto mode (ADR-053). */
+  preToolHook: boolean;
+  /** The turn's end waits for Oraknid's checks (a Stop hook). */
+  stopHook: boolean;
+  /** A session can be continued by its native id (ADR-052 §1). */
+  resume: boolean;
+  /** A message reaches the agent while a turn runs. */
+  steer: boolean;
+}
+
+/** A Leg never probed, or probed before capabilities were reported, can do none of them. */
+export const NO_CAPABILITIES: Capabilities = {
+  inlineGate: false,
+  preToolHook: false,
+  stopHook: false,
+  resume: false,
+  steer: false,
+};
+
+/** The capabilities a probe reported, the missing ones off. */
+export function capabilitiesOf(features: Partial<Capabilities> | null | undefined): Capabilities {
+  return {
+    inlineGate: features?.inlineGate ?? false,
+    preToolHook: features?.preToolHook ?? false,
+    stopHook: features?.stopHook ?? false,
+    resume: features?.resume ?? false,
+    steer: features?.steer ?? false,
   };
 }
 

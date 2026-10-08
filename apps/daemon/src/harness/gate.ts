@@ -21,7 +21,13 @@ import {
   taskScope,
 } from "@oraknid/core";
 import type { Blocked } from "@oraknid/guard";
-import type { PermissionDecision, PermissionRequest, PreToolDecision } from "@oraknid/leg-sdk";
+import {
+  type PermissionDecision,
+  type PermissionRequest,
+  type PreToolDecision,
+  SHELL_TOOL,
+  toolClass,
+} from "@oraknid/leg-sdk";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
 import { jobs, tasks } from "../db/schema.ts";
@@ -75,19 +81,10 @@ export const KEEP_BLOCKED = "Keep it blocked";
 /** Letting one blocked command run, once: a change the plan names, what the agent needs (ADR-049). */
 export const ALLOW = "Allow";
 
-/** Shell tools, whose command layer 1 reads (ADR-053). */
-const SHELL_TOOLS = new Set(["Bash", "run_command"]);
-/** Tools that only read: their allows aren't each in the audit log. */
-const READS = new Set([
-  "Read",
-  "Glob",
-  "Grep",
-  "LS",
-  "read_file",
-  "list_dir",
-  "search",
-  "TodoWrite",
-]);
+/** A shell tool's command is read by layer 1 (ADR-053); the tools' names are the Leg SDK's. */
+const isShell = (tool: string) => toolClass(tool) === "shell";
+/** A tool that only reads: its allows aren't each in the audit log. */
+const isRead = (tool: string) => toolClass(tool) === "read";
 
 /** One action, from one source. */
 export interface GateAction {
@@ -149,6 +146,8 @@ export interface GateContext {
     forbidden: (what: string) => void;
     gateBypass: (what: string) => void;
     event: (type: string, payload: Record<string, unknown>) => void;
+    /** The attempt starts or stops waiting on my answer (the controller's AwaitingOwner). */
+    owner?: (waiting: boolean) => void;
   };
 }
 
@@ -179,7 +178,7 @@ export function createGate(c: GateContext) {
   const record = (r: PermissionRequest | null, d: Decided, action?: string) =>
     log.append("GateDecision", {
       actionId: `${c.attemptId ?? task.id}:g${++decisions}`,
-      tool: r?.tool ?? "Bash",
+      tool: r?.tool ?? SHELL_TOOL,
       action: (action ?? (r ? (r.command ? plain(r.command) : (r.path ?? r.tool)) : "")).slice(
         0,
         200,
@@ -258,6 +257,11 @@ export function createGate(c: GateContext) {
   /** A command in its plain form (`ssh <alias>` alone, ADR-049): how what I let run is matched. */
   const plain = (command: string) =>
     servers.length ? plainServerCheck(command.trim(), aliases()) : command.trim();
+  /** An action as the after-the-fact audit matches it to a decision made before it ran. */
+  const actionKey = (r: PermissionRequest) =>
+    r.command ? `$ ${plain(r.command)}` : `${r.path ?? r.tool}`;
+  /** What the Gate decided in this attempt before it ran: not audited again after. */
+  const decidedHere = new Set<string>();
 
   const markUntrusted = (reason: string) => {
     if (untrusted) return;
@@ -298,7 +302,7 @@ export function createGate(c: GateContext) {
       policy.mcp = declared;
     }
     // Layer 1: the guard reads the command as the shell does, before the policy (ADR-053).
-    if (r.command && SHELL_TOOLS.has(r.tool)) policy.layer1 = await layer1(r.command, guardCtx());
+    if (r.command && isShell(r.tool)) policy.layer1 = await layer1(r.command, guardCtx());
     // A command on one of the job's servers is judged as what runs there; production asks (ADR-049).
     const first =
       (r.command && servers.length ? serverVerdict(r.command, servers, policy) : null) ??
@@ -419,7 +423,7 @@ export function createGate(c: GateContext) {
     const waits = o.waits !== false;
     if (waits) {
       c.on.event("task.waiting", { itemId, reason: o.reason ?? "" });
-      waitingOnOwner++;
+      if (waitingOnOwner++ === 0) c.on.owner?.(true);
     }
     let answer: string | null;
     try {
@@ -428,7 +432,7 @@ export function createGate(c: GateContext) {
       if (o.throwOnStop) throw error;
       answer = null;
     } finally {
-      if (waits) waitingOnOwner--;
+      if (waits && --waitingOnOwner === 0) c.on.owner?.(false);
     }
     if (answer !== null) log.append("QuestionAnswered", { itemId, answer: answer.slice(0, 500) });
     if (waits && answer !== null) c.on.activity();
@@ -656,6 +660,7 @@ export function createGate(c: GateContext) {
   const decideAction = async (a: GateAction): Promise<GateDecision> => {
     const r = a.request;
     const hook = a.source === "hook";
+    decidedHere.add(actionKey(r));
     // The broker judges every call to a job's tool: the Leg's own ask for it passes (ADR-021).
     if (isBrokered(r.tool, brokered)) {
       record(r, {
@@ -747,7 +752,7 @@ export function createGate(c: GateContext) {
 
     if (step.verdict === "allow") {
       if (step.by === "grant" && step.scope === "once") return ranOnce(r, step);
-      if (step.log && (r.command || !READS.has(r.tool) || hook)) audit(r, step.log);
+      if (step.log && (r.command || !isRead(r.tool) || hook)) audit(r, step.log);
       record(r, {
         source: a.source,
         by: step.by,
@@ -930,7 +935,7 @@ export function createGate(c: GateContext) {
       );
       logDecision(bus, job.id, {
         taskId: task.id,
-        tool: "Bash",
+        tool: SHELL_TOOL,
         action: command,
         verdict: "allow",
         layer: "owner",
@@ -968,6 +973,34 @@ export function createGate(c: GateContext) {
     },
 
     /**
+     * An action the Leg ran without asking (it has no inline gate, ADR-056
+     * §2): read by the same rules after the fact — never the judge, never
+     * asked, never counted toward the stuck rule — and written to the log.
+     * What the rules would have refused or asked me is a forbidden action
+     * for the drift ladder (D7). A read, or what was decided before it ran,
+     * isn't audited again.
+     */
+    async afterTheFact(r: PermissionRequest): Promise<"allow" | "forbidden" | null> {
+      if (isRead(r.tool) || decidedHere.has(actionKey(r))) return null;
+      if (!r.command && !r.path) return null;
+      decidedHere.add(actionKey(r));
+      const { first } = await rulesOf(r);
+      const forbidden = first.verdict === "deny" || first.verdict === "ask";
+      const reason = forbidden
+        ? `ran without being asked: ${first.reason}`
+        : `ran without being asked; the rules ${first.verdict === "judge" ? "leave it to the judge" : "allow it"}: ${first.reason}`;
+      record(r, { source: "audit", by: "rule", verdict: forbidden ? "deny" : "allow", reason });
+      audit(r, { verdict: forbidden ? "block" : "allow", layer: "rules", reason });
+      if (!forbidden) return "allow";
+      c.on.forbidden(`ran \`${(r.command ?? r.path ?? r.tool).slice(0, 200)}\` (${first.reason})`);
+      c.on.event("task.audited", {
+        command: (r.command ?? r.path ?? r.tool).slice(0, 300),
+        reason: first.reason,
+      });
+      return "forbidden";
+    },
+
+    /**
      * An action's result came back (ADR-056 §1): one that ran ends the stuck
      * row, also when Claude Code's hook left it to its own classifier, whose
      * "allow" Oraknid only sees here (stage 2's limit). A failed result says
@@ -991,7 +1024,7 @@ export function checkRefusal(db: Db, jobId: string, cwd: string, servers: JobSer
     const rules =
       where === "server"
         ? serverVerdict(command, servers, policy)
-        : decide({ tool: "Bash", command, path: null }, policy);
+        : decide({ tool: SHELL_TOOL, command, path: null }, policy);
     if (!rules) return null;
     const step = gateStep({
       source: "check",

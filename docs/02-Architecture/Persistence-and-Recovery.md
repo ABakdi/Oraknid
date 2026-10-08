@@ -10,7 +10,7 @@ durable step engine runs on the same database ([[ADR-003-Job-Execution-Engine]])
 | `projects` | Workspaces, with their skills and servers (`skill_ids`, `server_ids`); a server's own project names it (`server_id`, migration 0037, [[ADR-049-Server-Chat-And-Server-Jobs]]). |
 | `jobs`, `tasks`, `task_edges` | The work. The Web's version is a number on the job (`web_version`), raised at every plan change. |
 | `attempts`, `sessions` | Who tried what, native session IDs, end reasons, usage totals. |
-| `attempt_events` | The attempt log ([[ADR-056-The-Harness]] §1, migration 0040): append-only, typed events per attempt (`kind`, JSON `data`), `seq` in order within the attempt, `id` across all: sessions opened, the agent's actions and their results, every Gate decision (by whom, the grant's scope, counted toward the stuck rule, a grant given or used, a refusal), my questions and answers, the Stop hook's requests, each check report, signals (stuck, drift, untrusted), the outcome, handoffs, the end; actions a crash left without a result marked uncertain. A task's grants, refusals, stuck count, untrusted mark and open questions are read from it (`eye/task-memory.ts`), from its last `Forgotten` mark on. Kept with its job, deleted with it. |
+| `attempt_events` | The attempt log ([[ADR-056-The-Harness]] §1, migration 0040): append-only, typed events per attempt (`kind`, JSON `data`), `seq` in order within the attempt, `id` across all: sessions opened, the agent's actions and their results, every Gate decision (by whom, the grant's scope, counted toward the stuck rule, a grant given or used, a refusal), my questions and answers, the Stop hook's requests, each check report, signals (stuck, drift, untrusted), the outcome, handoffs, the end; actions a crash left without a result marked uncertain and how each was reconciled (`Reconciled`); the task controller's moves (`Transition{from, to, why, key}`, the key `attempt:n:state`, Done with its checkpoint). A task's grants, refusals, stuck count, untrusted mark and open questions are read from it (`eye/task-memory.ts`), from its last `Forgotten` mark on. Kept with its job, deleted with it. |
 | `legs`, `leg_models` | The pool. Capability profiles and quota windows are JSON on `leg_models` (per model) and `legs` (account-wide), with `limited_until` on the Leg. |
 | `silk_entries` | Silk. |
 | `silk_mirror` | What Oraknid last wrote to each mirror file (hash), and the open import question. |
@@ -63,9 +63,26 @@ The order is set out in [[Durability]]. Implementation notes:
   action asked for with no result is marked `ActionUncertain`, said in the
   job's events (`task.actions-uncertain`) and to the next model (in the
   handoff built for a crashed attempt, or a Silk issue), never re-run by
-  Oraknid ([[ADR-056-The-Harness]] §1; reconciled by the task controller
-  in stage 5). What the Gate remembered of the task survives because it
-  is read back from the log.
+  Oraknid ([[ADR-056-The-Harness]] §1). What the Gate remembered of the
+  task survives because it is read back from the log.
+- **Reconciled** by the task controller as the next attempt prepares
+  (`harness/reconcile.ts`, a `Reconciled` event each, said in the job's
+  events as `task.actions-reconciled` and in a Silk issue): a file tool's
+  write is looked at in the tree since the checkpoint before that attempt
+  (changed: it happened; unchanged: it didn't); an agent's `git commit` by
+  whether the branch moved past that checkpoint; a command on one of the
+  job's servers, or any command whose effect the tree can't show, is asked
+  of the agent in the next session, once, to look and never run it again
+  (`decideOutcome`'s rule 7b), and what it says at that turn's end is the
+  finding. Nothing is run to find out.
+- **Oraknid's own commit**: the controller's move to Done is a
+  `Transition` carrying the checkpoint the commit is measured from, written
+  before the commit. If Oraknid stops after it (while committing, or before
+  the job's step for the attempt is written) and the branch moved past
+  that checkpoint, the next run of the task finds the commit, ends the
+  attempt `succeeded` and the task `done` with it, and runs nothing again.
+  A project of several repos isn't reconciled this way yet: its task runs
+  again, finds its work there and is done.
 - Recovery is tested by fault injection: a test harness kills the daemon
   (`SIGKILL`) at every step boundary in a scripted job, restarts it, and
   asserts that no step completed twice and that every side effect is at

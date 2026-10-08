@@ -410,6 +410,105 @@ test each).
   and the sessions stay in `attempt.ts` until the controller (stage 5);
   my answers are read by core but asked in `apply.ts`.
 
+## As built (stage 5, 2026-10-08)
+`runAttempt` is gone: an attempt is the TaskController, its sessions are
+opened by the Leg's capabilities, and what a restart left uncertain is
+reconciled. Code moved, behaviour kept, except the changes below (a
+commit and a test each).
+- **`AgentSession` by capability** (`harness/sessions.ts`, the
+  SessionManager): opens, resumes, hands off, rotates, closes and stops an
+  attempt's sessions for every kind of Leg through the supervisor, from the
+  Leg's probed `Capabilities {inlineGate, preToolHook, stopHook, resume,
+  steer}` (`@oraknid/leg-sdk`; each adapter's probe reports them; a Leg
+  never probed has none). Each one a Leg lacks has its declared fallback:
+  no inline gate → what it ran is audited after the fact (the Gate's
+  `afterTheFact`: the same rules, never the judge, never asked or counted,
+  an `audit` decision in the log) and what the rules refuse or would ask is
+  a forbidden action for drift (D7); no pre-tool hook → every prompt is
+  Oraknid's (`ask`); no stop hook → the session gets none and the checks
+  run after the turn; no resume → a fresh session with a handoff from the
+  log; no steer → my messages wait for the turn's end (steer isn't used
+  yet). The session's events go to the attempt log, the Gate (results end
+  the stuck row; the Leg's own refusals count) and the drift observations.
+- **Leg-specific names out of the harness**: tool names (`Bash`,
+  `run_command`, the reads) are each adapter's vocabulary in the Leg SDK
+  (`tools.ts`: `toolClass`, `asRequest`, `SHELL_TOOL`); the Claude share's
+  kind check is the routing layer's provider family (core's
+  `providerFamily`); Claude Code's hook bridge stays the Gate's `asPreTool`.
+- **The TaskController** (`harness/controller.ts`): `Preparing → Running ⇄
+  AwaitingOwner → Verifying → Deciding → {Running | Repairing | HandingOff
+  → next attempt | Done | Failed | Cancelled}` (`TRANSITIONS`, `stateOf`:
+  the state each outcome leads to). Preparing routes (`harness/route.ts`:
+  `pickRoute`, the paused Leg waited for, the busy Leg or machine, why none
+  can take it, the next rung), checkpoints, takes over from the attempt
+  before and reconciles it, tries the checks (`harness/checks.ts`: the
+  Stop hook's run, the repair loop, the checks tried first) and opens the
+  session. Running waits for the turn's end; the Gate holding the Leg's
+  prompt for my answer is AwaitingOwner. Deciding is stage 4's loop:
+  `decideOutcome(factsOf(…))` → `applyOutcome`, which tells the controller
+  each outcome it applies (`enter`) — my answers too. Each move is a
+  `Transition{from, to, why, key}` in the attempt log, the key
+  `attempt:n:state`; Done carries the checkpoint its commit is measured
+  from, written before the commit. The rest of the old function went to
+  `pack.ts` (the context pack), `tools.ts` (the job's tools through the
+  broker), `types.ts`. `eye/attempt.ts` is deleted (1,419 lines); the
+  controller is 622.
+- **Reconciled** (`harness/reconcile.ts`, §1): as the next attempt
+  prepares, each `ActionUncertain` the one before left is looked at, never
+  run: a file tool's write by the tree since that attempt's checkpoint
+  (happened / didn't); an agent's `git commit` by whether the branch moved;
+  a command on a server, or any command whose effect isn't a file, is asked
+  of the agent. A `Reconciled` event each, said in the job's events and a
+  Silk issue. `decideOutcome` sees what is open (`uncertain`): rule 7b,
+  after security and scope, before done or a climb, asks the agent once to
+  look without running it again (`Continue{why: reconcile}`); its words at
+  that turn's end are the finding.
+- **Ratchets** (`harness/architecture.test.ts`): `eye/attempt.ts` gone (or
+  a thin export under 150 lines); nothing calls `runAttempt`; the job's
+  program runs `runController`; the controller at most 625 lines, importing
+  no guard, judge, policy or task-memory module, none of the Gate's names,
+  none of the decision's parts (drift, the ladder, the monitors, the
+  agent's words, my answers), reading no turn's end reason and counting
+  nothing; no Leg kind (`LegKind`'s values) and no agent's tool name (the
+  SDK's vocabulary) anywhere under `harness/`, no Leg's kind compared there;
+  the sessions read capabilities from the probe.
+- **Changed** (a commit and a test each):
+  1. A Leg with no inline gate (Antigravity: headless agy runs what its
+     settings allow) ran actions Oraknid never read: recorded, never judged.
+     Audited after the fact now, and what the rules refuse is D7
+     (`harness/stage5.test.ts`, `harness/gate.test.ts`).
+  2. Uncertain actions were only said. Reconciled now: the tree looked at,
+     the agent asked once to look (`stage5.test.ts`, `reconcile.test.ts`,
+     core `outcome.test.ts`). Stage 3's crash test now lets the session
+     name the action once, in that question.
+  3. Oraknid stopping between its commit and the job's step ran the task
+     again on work already committed. The commit is found and the task is
+     done (`reconcile.test.ts`).
+  And the hooks follow the probe: a Leg whose probe has no pre-tool hook
+  runs in `ask` mode, one with no stop hook isn't given one (only Claude
+  Code and Codex honoured them before; a Leg whose stored probe predates
+  stage 5 is in `ask` mode until its next probe, a minute at most).
+- **Limits**: `steer` is declared, not used; the audit after the fact
+  reads a tool call's input by the SDK's field names (a call it can't read
+  is not audited); the Done reconciliation needs a single repo (a project
+  of several repos runs the task again, finds its work and is done); the
+  agent's words about a server action are recorded, not parsed; core's
+  policy still lists the asks' tool names itself (core doesn't depend on the
+  Leg SDK); transitions are steps in the attempt log, not rows of the job's
+  step journal (the attempt is one journal step, as before).
+
+### The harness's shape (after stage 5)
+One attempt is a state machine that decides nothing (`controller.ts`). It
+routes through `route.ts`, runs the agent through a session opened by
+capability (`sessions.ts`), every action through one Gate (`gate.ts`,
+core's `gateStep`), every check through one Verifier (`verifier.ts`,
+`checks.ts`), every fact into one attempt log (`log.ts`, `record.ts`,
+`reconcile.ts`). At a turn's end the facts are gathered (`facts.ts`, the
+monitors), one pure function decides (core's `decideOutcome`, with
+counting and the escalation policy), and `apply.ts` does what it says.
+`runTask` applies the attempt's result from a table. Policy lives in core
+and the Gate; Leg specifics live in the adapters and the Leg SDK.
+
 ## Consequences
 - More files, each small, each with its own tests; the bugs of the last
   two days become cases in a table.

@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { LegKind } from "@oraknid/contracts";
 import {
+  type Capabilities,
   Channel,
   emptyUsage,
   type LegAdapter,
@@ -30,7 +31,9 @@ export type Action =
   /** A command Claude Code's own auto mode refused before it ran, Oraknid never asked (ADR-053). */
   | { legDenies: { command: string; reason: string } }
   /** The turn ends unfinished: cut short, or at the Leg's own limit of steps in a turn. */
-  | { endTurn: "interrupted" | "max_turns" };
+  | { endTurn: "interrupted" | "max_turns" }
+  /** A command the Leg runs without asking, as headless agy runs what its settings allow (nothing really runs). */
+  | { runUnasked: string };
 
 export interface TurnContext {
   leg: string;
@@ -68,6 +71,8 @@ export function scriptedLeg(
     autoModeHooks?: boolean;
     /** Before a turn ends, Oraknid's Stop hook runs the checks, as Claude Code's does (ADR-052 §2). */
     stopHook?: boolean;
+    /** What its probe says it can do, where that differs from what it does (ADR-056 §2). */
+    declares?: Partial<Capabilities>;
   } = {},
 ) {
   const log: TurnContext[] = [];
@@ -104,7 +109,17 @@ export function scriptedLeg(
               },
               { model: "haiku", displayName: "Haiku", effortLevels: [], contextWindow: null },
             ],
-        features: { resume: !!o.resumable, tools: true, usage: "reported", quotaWindows: true },
+        features: {
+          resume: !!o.resumable,
+          tools: true,
+          usage: "reported",
+          quotaWindows: true,
+          inlineGate: true,
+          preToolHook: !!o.autoModeHooks,
+          stopHook: !!o.stopHook,
+          steer: false,
+          ...o.declares,
+        },
       };
     },
     async start(s: SessionStart) {
@@ -183,6 +198,16 @@ export function scriptedLeg(
               ok: r.status === 0,
               output: `${r.stdout}${r.stderr}`,
             });
+          } else if ("runUnasked" in a) {
+            // Headless agy's way (ADR-020): what its settings allow runs, Oraknid never asked.
+            const id = `u${Math.random()}`;
+            events.push({
+              type: "tool.called",
+              id,
+              tool: "run_command",
+              input: { CommandLine: a.runUnasked },
+            });
+            events.push({ type: "tool.result", id, ok: true, output: "" });
           } else if ("think" in a) {
             events.push({ type: "thinking.delta", text: a.think });
           } else if ("say" in a) {

@@ -151,7 +151,6 @@ import { runDoctor } from "../doctor.ts";
 import type { JobStore } from "../engine/jobs.ts";
 import type { JobRunner } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
-import { SAME_PROVIDER_FALLBACK } from "../eye/attempt.ts";
 import type { EyeBrain } from "../eye/brain.ts";
 import { jobTokens, projectBudgetView, setBudget, setProjectBudget } from "../eye/budgets.ts";
 import {
@@ -185,6 +184,7 @@ import {
   talkInProject,
 } from "../eye/talk.ts";
 import type { EyeThinking } from "../eye/thinking.ts";
+import { SAME_PROVIDER_FALLBACK } from "../harness/route.ts";
 import type { Helper } from "../helper/service.ts";
 import { currentRequestId } from "../http/request-id.ts";
 import type { InboxStore } from "../inbox/store.ts";

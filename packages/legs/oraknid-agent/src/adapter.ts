@@ -167,7 +167,17 @@ export function createOraknidAgentAdapter(deps: OraknidAgentDeps = {}): LegAdapt
 
     async probe(leg): Promise<ProbeResult> {
       const cfg = readConfig(leg);
-      const feats = { resume: true, tools: true, usage: "reported" as const, quotaWindows: false };
+      const feats = {
+        resume: true,
+        tools: true,
+        usage: "reported" as const,
+        quotaWindows: false,
+        // Its changes are asked before they run; it runs the checks before it ends a turn.
+        inlineGate: true,
+        preToolHook: false,
+        stopHook: true,
+        steer: false,
+      };
       const credential = (await deps.credentialOf?.(leg)) ?? null;
       if (cfg.local && !cfg.endpoints.length)
         return {

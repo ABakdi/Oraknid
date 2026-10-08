@@ -41,6 +41,11 @@ const LegFeatures = z.object({
   tools: z.boolean(),
   usage: z.enum(["reported", "estimated"]),
   quotaWindows: z.boolean(),
+  // What a session can do for the harness (ADR-056 §2); a probe of an older Oraknid has none.
+  inlineGate: z.boolean().optional(),
+  preToolHook: z.boolean().optional(),
+  stopHook: z.boolean().optional(),
+  steer: z.boolean().optional(),
 });
 const featuresKey = (legId: string) => `leg.features.${legId}`;
 

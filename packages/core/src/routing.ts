@@ -31,6 +31,14 @@ export interface RouteCandidate {
   legKind?: string;
 }
 
+/**
+ * The provider a Leg's kind draws on, for a job's Claude share (ADR-052 §3):
+ * the routing layer's to know, so the harness never names a kind.
+ */
+export function providerFamily(legKind: string | undefined): "claude" | "other" {
+  return legKind === "claude-code" ? "claude" : "other";
+}
+
 export interface RouteTask {
   kind: TaskKind;
   difficulty: Difficulty;
@@ -316,9 +324,10 @@ export function route(task: RouteTask, candidates: RouteCandidate[], o: RouteOpt
   // Past the job's Claude share, Claude takes a task only when nothing else can (ADR-052 §3).
   const share = o.claudeShare;
   if (share && share.used >= share.limit) {
-    const others = routes.filter((r) => r.candidate.legKind !== "claude-code");
+    const claude = (r: Route) => providerFamily(r.candidate.legKind) === "claude";
+    const others = routes.filter((r) => !claude(r));
     if (others.length && others.length < routes.length) {
-      for (const r of routes.filter((x) => x.candidate.legKind === "claude-code"))
+      for (const r of routes.filter(claude))
         excluded.push({
           legModelId: r.candidate.legModelId,
           why: `${r.candidate.legName} · ${r.candidate.model}: this job used its Claude share (${Math.round(share.limit * 100)}%).`,

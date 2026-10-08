@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Autonomy } from "@oraknid/contracts";
-import type { PermissionRequest } from "@oraknid/leg-sdk";
+import { asRequest, type PermissionRequest } from "@oraknid/leg-sdk";
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import { closeDatabase, type Db, openDatabase } from "../db/open.ts";
@@ -17,6 +17,7 @@ import { SilkStore } from "../silk/store.ts";
 import { SkillStore } from "../skills/store.ts";
 import { Projects } from "../workspace/projects.ts";
 import { asPermission, asPreTool, createGate, KEEP_BLOCKED, LET_IT_RUN } from "./gate.ts";
+import { AttemptLog } from "./log.ts";
 
 // The Gate on its own (ADR-056 §3): one path for every source, every block
 // counted in one stuck row, grants that survive a restart, my questions
@@ -60,6 +61,7 @@ async function setup(
     });
   }
   const events: { type: string; payload: Record<string, unknown> }[] = [];
+  const forbidden: string[] = [];
   const stop = new AbortController();
   const gate = (taskId = "task-1") =>
     createGate({
@@ -86,7 +88,7 @@ async function setup(
       signal: stop.signal,
       on: {
         activity: () => {},
-        forbidden: () => {},
+        forbidden: (what) => forbidden.push(what),
         gateBypass: () => {},
         event: (type, payload) => events.push({ type, payload }),
       },
@@ -100,7 +102,7 @@ async function setup(
     }
     throw new Error(`no open item ${title}`);
   };
-  return { db, inbox, jobId: jobId as string, cwd, events, stop, gate, item };
+  return { db, inbox, jobId: jobId as string, cwd, events, forbidden, stop, gate, item };
 }
 
 const write = (path: string): PermissionRequest => ({
@@ -374,5 +376,39 @@ describe("a check's command (ADR-056 §3)", () => {
     const job = s.db.select().from(jobs).where(eq(jobs.id, s.jobId)).get();
     expect(job?.state).toBe("draft");
     expect(readTaskMemory(s.db, "task-1").stuck).toBeNull();
+  });
+});
+
+describe("a Leg without an inline gate: its actions audited after the fact (ADR-056 §2, stage 5)", () => {
+  it("reads what it ran by the same rules, logs it, and feeds what they refuse to drift (D7)", async () => {
+    const s = await setup();
+    const gate = s.gate();
+    // Antigravity's own names, read through the Leg SDK.
+    const ran = asRequest("run_command", { CommandLine: "sudo rm -rf /etc/nginx" });
+    expect(await gate.afterTheFact(ran)).toBe("forbidden");
+    expect(s.forbidden).toHaveLength(1);
+    expect(s.forbidden[0]).toMatch(/sudo rm -rf \/etc\/nginx/);
+    expect(s.events.some((e) => e.type === "task.audited")).toBe(true);
+    // A write in its folder: allowed by the rules, logged, nothing for drift.
+    const wrote = asRequest("write_to_file", { TargetFile: join(s.cwd, "parser.js") });
+    expect(await gate.afterTheFact(wrote)).toBe("allow");
+    expect(s.forbidden).toHaveLength(1);
+    // A read isn't audited; nor what the Gate decided before it ran; nor the same action twice.
+    expect(await gate.afterTheFact(asRequest("view_file", { AbsolutePath: "/etc/hosts" }))).toBe(
+      null,
+    );
+    await gate.decide({ source: "prompt", request: bash("ls") });
+    expect(await gate.afterTheFact(asRequest("run_command", { CommandLine: "ls" }))).toBe(null);
+    expect(await gate.afterTheFact(ran)).toBe(null);
+    const logged = new AttemptLog(s.db)
+      .task("task-1", { kinds: ["GateDecision"] })
+      .filter((e) => e.data.source === "audit");
+    expect(logged.map((e) => [e.data.verdict, e.data.by])).toEqual([
+      ["deny", "rule"],
+      ["allow", "rule"],
+    ]);
+    // Never counted toward the stuck rule, never asked.
+    expect(logged.every((e) => e.data.counts === undefined)).toBe(true);
+    expect(s.inbox.list({ jobId: s.jobId, state: "open" })).toEqual([]);
   });
 });
