@@ -156,7 +156,7 @@ export function ErrorNote({ error, className }: { error: unknown; className?: st
     <div
       role="alert"
       className={cn(
-        "rounded-md border border-destructive/35 border-l-[3px] border-l-destructive bg-destructive/8 px-3 py-2 text-sm text-destructive",
+        "max-h-48 min-w-0 overflow-y-auto whitespace-pre-wrap rounded-md border border-destructive/35 border-l-[3px] border-l-destructive bg-destructive/8 px-3 py-2 text-sm text-destructive [overflow-wrap:anywhere]",
         className,
       )}
     >

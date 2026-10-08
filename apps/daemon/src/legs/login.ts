@@ -30,6 +30,27 @@ const HYPERLINK = /\x1b\]8;[^;]*;(https:\/\/[^\x07\x1b]+)/;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: these are the escapes being removed
 const ESCAPES = /\x1b\]8;[^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-9;]*[A-Za-z]/g;
 
+/** agy's first-run screens after signing in: a theme picker and the like, answered with Enter. */
+const FIRST_RUN = /theme|press enter|select an? |choose|continue\?|get started|tips? for|welcome/i;
+
+/**
+ * agy's own words that the sign-in failed: a line of its own, not one inside a
+ * box (│ … │) of a screen's preview, cut short for the popup.
+ */
+export function signInFailure(output: string): string | null {
+  const lines = output
+    .replace(ESCAPES, " ")
+    .split(/\r?\n|\r/)
+    .map((l) => l.trim())
+    .filter((l) => l && !/^[│|╭╰┃]/.test(l));
+  const bad = lines.findLast((l) =>
+    /(invalid|expired|incorrect|wrong)\s+(code|authori[sz]ation|grant|token)|authentication (failed|error)|sign[- ]?in (failed|error)|log[- ]?in (failed|error)|failed to (sign|log)[- ]?in|access denied/i.test(
+      l,
+    ),
+  );
+  return bad ? bad.slice(0, 200) : null;
+}
+
 interface Pending {
   child: ChildProcess;
   output: string;
@@ -383,24 +404,36 @@ export class LegLogins {
     };
   }
 
-  /** agy stays open after signing in: its own answer to "list models" says when it worked. */
+  /**
+   * agy stays open after signing in, and on a first sign-in goes on to its
+   * first-run screens (a theme picker that previews "error: compilation
+   * failed" as sample text, 2026-10-08). So: its own answer to "list models"
+   * says when it worked, checked first; a first-run screen is answered with
+   * Enter (its default); only agy's own words about the sign-in failing are a
+   * failure, never a word inside its screens' boxes.
+   */
   async #finishAgy(leg: LegRow, pending: Pending, before: number) {
-    const deadline = Date.now() + 45_000;
+    const deadline = Date.now() + 60_000;
+    let answered = 0;
+    let seen = before;
     for (;;) {
       await new Promise((r) => setTimeout(r, 2000));
-      const said = pending.output.slice(before).replace(ESCAPES, " ");
-      if (/invalid|error|failed/i.test(said)) {
-        this.cancel(leg.id);
-        const line = said
-          .split(/\r?\n|\r/)
-          .map((l) => l.trim())
-          .findLast((l) => /invalid|error|failed/i.test(l));
-        return { ok: false, detail: line ?? "The code was not accepted." };
-      }
       const status = this.status(leg);
       if (status.loggedIn) {
         this.cancel(leg.id, true);
         return { ok: true, detail: status.detail };
+      }
+      const fresh = pending.output.slice(seen).replace(ESCAPES, " ");
+      seen = pending.output.length;
+      if (answered < 8 && FIRST_RUN.test(fresh)) {
+        answered++;
+        pending.child.stdin?.write("\r");
+        continue;
+      }
+      const failed = signInFailure(pending.output.slice(before));
+      if (failed) {
+        this.cancel(leg.id);
+        return { ok: false, detail: failed };
       }
       if (Date.now() > deadline || pending.child.exitCode !== null) {
         this.cancel(leg.id);

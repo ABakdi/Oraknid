@@ -27,6 +27,12 @@ printf 'Select login method:\\n > 1. Google OAuth\\n'
 read -r choice
 echo "Open https://accounts.google.com/o/oauth2/auth?state=xyz and paste the code:"
 read -r code
+if [ "$code" = theme ]; then
+  # A first sign-in goes on to a theme picker whose preview shows sample errors (2026-10-08).
+  printf '? Choose a theme\n │ ✗ error: compilation failed │\n │ · dim: press Enter to continue │\n'
+  read -r pick
+fi
+if [ "$code" = bad ]; then echo "Error: invalid authorization code"; sleep 30; exit 1; fi
 mkdir -p "$(dirname "$token")"
 echo "new-$code" > "$token"
 echo "agy > "
@@ -68,6 +74,25 @@ describe("signing Antigravity in again", { timeout: 60_000 }, () => {
     expect(r.ok).toBe(true);
     expect(readFileSync(token, "utf8").trim()).toBe("new-c0de");
     expect(existsSync(`${token}.before-sign-in`)).toBe(false);
+  });
+
+  it("answers agy's first-run theme picker and isn't fooled by the sample error in it", async () => {
+    const { l, leg, token } = setup();
+    signedInBefore(token);
+    await l.start(leg);
+    const r = await l.finish(leg, "theme");
+    expect(r).toMatchObject({ ok: true });
+    expect(readFileSync(token, "utf8").trim()).toBe("new-theme");
+    expect(existsSync(`${token}.before-sign-in`)).toBe(false);
+  });
+
+  it("says agy's own failure briefly, and keeps the earlier sign-in", async () => {
+    const { l, leg, token } = setup();
+    signedInBefore(token);
+    await l.start(leg);
+    const r = await l.finish(leg, "bad");
+    expect(r).toEqual({ ok: false, detail: "Error: invalid authorization code" });
+    expect(readFileSync(token, "utf8")).toBe("old");
   });
 
   it("gives the earlier sign-in back when this one doesn't finish", async () => {

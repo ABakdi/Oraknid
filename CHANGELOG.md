@@ -3,6 +3,11 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.4.2 — 2026-10-08 (pre-release)
+
+- **Antigravity sign-in:** after the code, agy's first-run theme picker is answered by Oraknid. Its sample text ("error: compilation failed") is no longer taken for a failure, and a sign-in that worked is no longer undone. A real failure is said in one short line.
+- **Error messages in dialogs** wrap and scroll inside the dialog instead of stretching it.
+
 ## 0.4.1 — 2026-10-08 (pre-release)
 
 The harness, stage 5: the last of [ADR-056](docs/04-Decisions/ADR-056-The-Harness.md).

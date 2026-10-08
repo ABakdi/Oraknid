@@ -101,6 +101,13 @@ wins where the two differ.
   (`antigravity-oauth-token.before-sign-in`); a sign-in that finishes
   drops it, one cancelled or abandoned puts it back (2026-10-07: "Asking
   Antigravity for the link…" never ended).
+- **After the code** (2026-10-08): a first sign-in goes on to agy's
+  first-run screens, a theme picker whose preview shows sample lines such
+  as "✗ error: compilation failed". The sign-in is judged by agy's own
+  answer to `agy models`, checked first; a first-run screen is answered
+  with Enter; only agy's own words that the sign-in failed (not a line
+  inside a screen's box) count as a failure, cut to one short line. A
+  failure no longer replaced a sign-in that had in fact worked.
 - **Tool steps** come as `step_update` with `tool_name` and
   `tool_info.parameters` (a command is `CommandLine`, a file write
   `TargetFile`), `output` when done; no id (the step index is used).
