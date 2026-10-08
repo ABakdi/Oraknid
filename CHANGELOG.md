@@ -3,6 +3,24 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.5.1 — 2026-10-08 (pre-release)
+
+The web UI no longer freezes the browser. Measured with a job streaming, on data shaped like a real install: long tasks went from up to 4.2 s lost per minute to none on the Overview, a project's Eye chat and Activity.
+
+- **Reloads paced:**
+  - a list reloads at most twice a second, never on every streamed event;
+  - nothing reloads while the tab is hidden, and it catches up once when shown.
+- **Live data bounded:**
+  - the newest events kept in fixed buffers, long payloads cut;
+  - charts redrawn at most once a second;
+  - pages draw their parts separately, so one event no longer redraws everything.
+- **Less re-drawing:** messages and log lines are drawn once, not re-parsed on every update; a payload is drawn only when its line is opened.
+- **Less data:**
+  - a conversation loads its last 100 messages, with "Earlier messages" for the rest; a long message shows its start, with "Show all";
+  - a server's page asks for 240 readings, not a day's worth (12 MB → 100 KB).
+- **Size caps where data is written:** chat messages, event payloads, Silk notes and inbox details keep their start and end with "(cut short)". Silk's diff summaries list 60 files and a count.
+- **Old oversized rows** (such as a 3.2 MB error) are cut at the next start; each original is saved first to `~/.local/share/oraknid/archive/`.
+
 ## 0.5.0 — 2026-10-08 (pre-release)
 
 ### Monitors suspect, a model confirms ([ADR-056](docs/04-Decisions/ADR-056-The-Harness.md))
