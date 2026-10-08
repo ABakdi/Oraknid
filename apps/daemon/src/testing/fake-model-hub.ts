@@ -37,6 +37,10 @@ export interface FakeHub {
   ollamaCalls: { path: string; body: unknown }[];
   /** Models "in" the Ollama stand-in. */
   ollamaModels: { name: string; size: number; digest: string }[];
+  /** What ollama.com's search page answers (by default the page's older shape, with markers). */
+  ollamaSearch: (q: string) => { status: number; html: string };
+  /** The queries ollama.com's search was asked. */
+  searches: string[];
   close(): Promise<void>;
 }
 
@@ -110,6 +114,11 @@ export async function fakeHub(repos = defaultRepos()): Promise<FakeHub> {
   const ollamaModels: FakeHub["ollamaModels"] = [
     { name: "phi3:mini", size: 2_000_000_000, digest: "abc" },
   ];
+  const searches: string[] = [];
+  const loadedInOllama = new Set<string>();
+  const hub = {
+    ollamaSearch: (_q: string) => ({ status: 200, html: OLLAMA_SEARCH }),
+  };
   const blobDigest = `sha256:${sha(OLLAMA_BLOB)}`;
   const json = (res: ServerResponse, body: unknown, status = 200) => {
     res.writeHead(status, { "content-type": "application/json" });
@@ -198,10 +207,14 @@ export async function fakeHub(repos = defaultRepos()): Promise<FakeHub> {
       }
       // ollama.com and its registry
       if (path === "/search") {
-        res.writeHead(200, { "content-type": "text/html" });
-        return res.end(OLLAMA_SEARCH);
+        const q = url.searchParams.get("q") ?? "";
+        searches.push(q);
+        const page = hub.ollamaSearch(q);
+        res.writeHead(page.status, { "content-type": "text/html" });
+        return res.end(page.html);
       }
       const manifest = /^\/v2\/library\/([\w.-]+)\/manifests\/([\w.-]+)$/.exec(path);
+      if (manifest?.[1]?.startsWith("missing")) return json(res, { errors: ["unknown"] }, 404);
       if (manifest)
         return json(res, {
           layers: [
@@ -225,8 +238,16 @@ export async function fakeHub(repos = defaultRepos()): Promise<FakeHub> {
         ollamaCalls.push({ path, body });
         if (path === "/api/version") return json(res, { version: "0.9.0" });
         if (path === "/api/tags") return json(res, { models: ollamaModels });
-        if (path === "/api/ps") return json(res, { models: [] });
-        if (path === "/api/generate") return json(res, { done: true });
+        if (path === "/api/ps")
+          return json(res, {
+            models: [...loadedInOllama].map((name) => ({ name, size_vram: 1000 })),
+          });
+        if (path === "/api/generate") {
+          const b = body as { model?: string; keep_alive?: unknown };
+          if (b?.model)
+            b.keep_alive === 0 ? loadedInOllama.delete(b.model) : loadedInOllama.add(b.model);
+          return json(res, { done: true });
+        }
         if (path === "/api/pull") {
           res.writeHead(200, { "content-type": "application/x-ndjson" });
           res.write(`${JSON.stringify({ status: "pulling manifest" })}\n`);
@@ -256,6 +277,13 @@ export async function fakeHub(repos = defaultRepos()): Promise<FakeHub> {
     ranges,
     ollamaCalls,
     ollamaModels,
+    get ollamaSearch() {
+      return hub.ollamaSearch;
+    },
+    set ollamaSearch(f) {
+      hub.ollamaSearch = f;
+    },
+    searches,
     close: () =>
       new Promise<void>((r) => {
         server.closeAllConnections();

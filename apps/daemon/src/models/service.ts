@@ -178,10 +178,11 @@ export class LocalModels {
 
   list(): LocalModelView[] {
     const roles = this.roles();
-    return this.#rows().map((row) => this.view(row, roles));
+    const effective = this.effectiveRoles();
+    return this.#rows().map((row) => this.view(row, roles, effective));
   }
 
-  view(row: ModelRow, roles = this.roles()): LocalModelView {
+  view(row: ModelRow, roles = this.roles(), effective = this.effectiveRoles()): LocalModelView {
     const loaded = this.#loaded.get(row.id);
     const pending = this.#pending.get(row.id);
     const pid = loaded?.running?.child.pid ?? null;
@@ -228,6 +229,7 @@ export class LocalModels {
       toolCalls: (row.toolCalls as ToolCalling | null) ?? null,
       settings: this.settingsOf(row),
       roles: ModelRole.options.filter((r) => roles[r] === row.id),
+      suggestedRoles: ModelRole.options.filter((r) => !roles[r] && effective[r] === row.id),
       lastUsedAt: row.lastUsedAt,
       createdAt: row.createdAt,
     };
@@ -817,8 +819,23 @@ export class LocalModels {
   /** Models already in the Ollama here become models of Oraknid's own list (ADR-054). */
   async syncOllama() {
     if (!this.#ollama || !(await this.ollamaVersion())) return;
-    const have = new Set(this.#rows().map((r) => r.name));
-    for (const m of await this.#ollama.tags()) {
+    const rows = this.#rows();
+    const have = new Set(rows.map((r) => r.name));
+    const tags = await this.#ollama.tags();
+    const inOllama = new Map(tags.map((m) => [m.name, m]));
+    // Those already listed: their size now, or gone from Ollama (ollama rm), or back.
+    for (const row of rows) {
+      if (row.runner !== "ollama" || this.#pending.has(row.id)) continue;
+      const m = inOllama.get(row.name);
+      if (row.state === "ready" && !m) {
+        this.#set(row.id, {
+          state: "failed",
+          error: `${row.name} is no longer in Ollama: Remove it, or Resume download to pull it again.`,
+        });
+      } else if (m && (row.state === "ready" || /no longer in Ollama/.test(row.error ?? "")))
+        this.#set(row.id, { state: "ready", error: null, sizeBytes: m.size, doneBytes: m.size });
+    }
+    for (const m of tags) {
       if (have.has(m.name)) continue;
       const [repo = m.name, tag = "latest"] = m.name.split(":");
       const embedding = /embed|bge|minilm|nomic/i.test(m.name);
@@ -845,6 +862,78 @@ export class LocalModels {
         })
         .run();
     }
+  }
+
+  /**
+   * Reads everything again (the Models page's Refresh): each downloaded
+   * model's files in the models folder (their size; one whose files are
+   * gone is marked failed, and ready again when they are back), Ollama's
+   * own models, whether each loaded model's server still answers, and the
+   * speed of the loaded chat models no session is using.
+   */
+  async refresh(): Promise<LocalModelView[]> {
+    this.#ollamaSeen = { at: 0, version: null };
+    for (const row of this.#rows()) {
+      if (row.runner !== "llama.cpp" || !row.path || this.#pending.has(row.id)) continue;
+      const gone = /^Its file .* is gone/.test(row.error ?? "");
+      if (row.state !== "ready" && !(row.state === "failed" && gone)) continue;
+      const folder = row.path;
+      const files = row.parts.map((p) => join(folder, basename(p.name)));
+      const missing = files.find((f) => !existsSync(f));
+      if (missing) {
+        if (row.state === "ready" && !this.#loaded.has(row.id))
+          this.#set(row.id, {
+            state: "failed",
+            error: `Its file ${basename(missing)} is gone from ${folder}: Resume download fetches it again, or Remove it.`,
+          });
+        continue;
+      }
+      const size = files.reduce((n, f) => n + statSync(f).size, 0);
+      const patch: Partial<typeof localModels.$inferInsert> = {};
+      if (gone) Object.assign(patch, { state: "ready", error: null });
+      if (size !== row.sizeBytes || size !== row.doneBytes)
+        Object.assign(patch, { sizeBytes: size, doneBytes: size });
+      if (row.contextLength === null) {
+        const first = row.parts.find((p) => p.name !== row.projector);
+        const meta = first ? readGguf(join(folder, basename(first.name))) : null;
+        if (meta?.contextLength)
+          Object.assign(patch, { contextLength: meta.contextLength, layers: meta.layers ?? null });
+      }
+      if (Object.keys(patch).length) this.#set(row.id, patch);
+    }
+    await this.syncOllama().catch(() => {});
+    // What is loaded: a server that no longer answers isn't.
+    const inOllama = this.#ollama ? await this.#ollama.ps() : new Map<string, number>();
+    let changed = false;
+    for (const [id, l] of [...this.#loaded]) {
+      const row = this.o.db.select().from(localModels).where(eq(localModels.id, id)).get();
+      const alive = !row
+        ? false
+        : l.running
+          ? l.running.child.exitCode === null &&
+            (await this.#http(`${l.baseUrl.replace(/\/v1$/, "")}/health`, {
+              signal: AbortSignal.timeout(3000),
+            })
+              .then((r) => r.ok)
+              .catch(() => false))
+          : inOllama.has(row.name);
+      if (alive) continue;
+      this.#loaded.delete(id);
+      changed = true;
+      if (l.running) void l.running.stop().catch(() => {});
+      this.#event("model.state", { id, state: "ready", reason: "its server no longer answers" });
+    }
+    if (changed) await this.#syncLeg();
+    // The loaded chat models' speed, measured again unless a session uses them.
+    const busy = this.o.inUse?.() ?? new Set<string>();
+    for (const [id, l] of [...this.#loaded]) {
+      const row = this.o.db.select().from(localModels).where(eq(localModels.id, id)).get();
+      if (!row || busy.has(row.name) || !isChat(row.kinds as string[])) continue;
+      const tps = await measureSpeed(this.#http, l.baseUrl, row.name);
+      if (tps !== null) this.#set(id, { tokensPerSec: tps });
+    }
+    this.#event("model.refreshed", {});
+    return this.list();
   }
 
   // ── Roles ──────────────────────────────────────────────────────────

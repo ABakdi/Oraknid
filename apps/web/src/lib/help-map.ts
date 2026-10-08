@@ -1430,8 +1430,22 @@ export const CONTROLS: HelpControl[] = [
     id: "models.list",
     page: "models",
     name: "On this computer",
-    does: "The models downloaded or downloading: their kind, runner, quantisation and size, their state, their roles; loaded ones with their measured speed, VRAM, memory, context and GPU layers.",
+    does: "The models downloaded or downloading: their kind, runner, quantisation and size, their state, the roles they hold (and those suggested to them); loaded ones with their measured speed, VRAM, memory, context and GPU layers.",
     where: "Models, first card",
+  },
+  {
+    id: "models.refresh",
+    page: "models",
+    name: "Refresh the models",
+    does: "Reads everything again: the models folder's files and sizes (a model whose files are gone is marked failed), Ollama's own models (new ones added, removed ones said), whether each loaded model's server still answers, and the loaded models' speed.",
+    where: "Models → On this computer, top right",
+  },
+  {
+    id: "models.roles",
+    page: "models",
+    name: "A model's roles",
+    does: "Gives the model roles among those its kind can do: translate, OCR / vision, speech to text, embeddings, mail, simple code, general (a speech model only speech to text, an embedding model only embeddings). A model may hold several; a role is one model's at a time, so picking it here moves it from the other (saying where it was). Without a choice, Oraknid suggests one, shown as suggested. Every agent calls them through the local-models tool.",
+    where: "Models → On this computer, a model's Roles (or Give a role)",
   },
   {
     id: "models.progress",
@@ -1472,9 +1486,9 @@ export const CONTROLS: HelpControl[] = [
   {
     id: "models.source",
     page: "models",
-    name: "Where to search",
-    does: "Everywhere, Hugging Face only, or Ollama's library only.",
-    where: "Models → Find a model, beside the search",
+    name: "Results from",
+    does: "Shows all the results (both sources in turn, the model named as asked first), Ollama's library only, or Hugging Face only, each with how many it found.",
+    where: "Models → Find a model, above the results",
   },
   {
     id: "models.fits",
@@ -1487,8 +1501,15 @@ export const CONTROLS: HelpControl[] = [
     id: "models.results",
     page: "models",
     name: "Search results",
-    does: "Each model with its kinds, licence and downloads, and each file's quantisation, size and fit (fits the GPU, GPU and memory, CPU, too big).",
+    does: "Each model with its source, kinds, licence and downloads, and its files: an Ollama model's sizes (tags), a Hugging Face model's quantisations, each with its size and fit (fits the GPU, GPU and memory, CPU, too big).",
     where: "Models → Find a model, under the search",
+  },
+  {
+    id: "models.results-refresh",
+    page: "models",
+    name: "Refresh the results",
+    does: "Asks Ollama's library and Hugging Face again for the same search, instead of what they answered in the last ten minutes.",
+    where: "Models → Find a model, right of the source filter",
   },
   {
     id: "models.download",
@@ -1504,13 +1525,7 @@ export const CONTROLS: HelpControl[] = [
     does: "The GPUs' memory, free memory, what the models take, free disk, and whether llama-server, Ollama and whisper.cpp are found.",
     where: "Models, beside the list (below it on a phone)",
   },
-  {
-    id: "models.roles",
-    page: "models",
-    name: "Roles",
-    does: "Which model translates, reads images (OCR), turns speech into text, embeds, sorts mail, does simple code or the rest; Suggested picks one for this computer. Every agent calls them through the local-models tool.",
-    where: "Models, under This computer",
-  },
+
   // Cloud storage.
   {
     id: "storage.pool",

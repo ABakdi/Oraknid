@@ -13,6 +13,7 @@
       "!**/drizzle/meta",
       "!docs/.obsidian",
       "!docs/02-Architecture/openapi.json",
+      "!apps/daemon/src/testing/fixtures",
       "!.claude"
     ]
   },

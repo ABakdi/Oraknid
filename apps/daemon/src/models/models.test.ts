@@ -4,11 +4,13 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { CatalogEntry } from "@oraknid/contracts";
 import type { MachineReading } from "@oraknid/core";
 import { createOraknidAgentAdapter } from "@oraknid/leg-oraknid-agent";
 import { readUntil } from "@oraknid/leg-sdk/contract";
@@ -21,7 +23,7 @@ import { type Daemon, startDaemon } from "../daemon.ts";
 import { resolvePaths } from "../paths.ts";
 import { type FakeHub, fakeHub, OLLAMA_SEARCH } from "../testing/fake-model-hub.ts";
 import { fakeOs } from "../testing/fake-os.ts";
-import { kindsOf, parseOllamaSearch, quantOf } from "./catalog.ts";
+import { interleave, kindsOf, parseOllamaSearch, quantOf, relevance } from "./catalog.ts";
 import { download } from "./download.ts";
 import { fitOf, type MachineRoom, runPlan } from "./fit.ts";
 import { ggufBytes, readGguf } from "./gguf.ts";
@@ -34,6 +36,7 @@ const FAKE_LLAMA = join(
   dirname(fileURLToPath(import.meta.url)),
   "../testing/fake-llama-server.mjs",
 );
+const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "../testing/fixtures");
 beforeAll(() => chmodSync(FAKE_LLAMA, 0o755));
 
 const machine = (o: Partial<MachineRoom> = {}): MachineRoom => ({
@@ -73,6 +76,85 @@ describe("finding models", () => {
       },
     ]);
     expect(modelName("Qwen2.5-7B-Instruct-GGUF", "Q4_K_M")).toBe("qwen2.5-7b-instruct:q4_k_m");
+  });
+
+  it("reads ollama.com's search page as it is now: no markers, each model a /library link", () => {
+    const llama = parseOllamaSearch(
+      readFileSync(join(FIXTURES, "ollama-search-llama.html"), "utf8"),
+    );
+    expect(llama.map((m) => m.name)).toEqual([
+      "llama3.1",
+      "llama3.2",
+      "llama3",
+      "llama3.2-vision",
+      "llama3.3",
+      "llama2",
+      "llama4",
+      "llama2-uncensored",
+    ]);
+    expect(llama[0]).toEqual({
+      name: "llama3.1",
+      description:
+        "Llama 3.1 is a new state-of-the-art model from Meta available in 8B, 70B and 405B parameter sizes.",
+      capabilities: ["tools"],
+      sizes: ["8b", "70b", "405b"],
+      pulls: 120_138_678,
+    });
+    expect(llama[1]?.description).toBe("Meta's Llama 3.2 goes small with 1B and 3B models.");
+    expect(llama[3]).toMatchObject({ capabilities: ["vision"], sizes: ["11b", "90b"] });
+    expect(llama[6]).toMatchObject({
+      capabilities: ["vision", "tools"],
+      sizes: ["16x17b", "128x17b"],
+    });
+    const embed = parseOllamaSearch(
+      readFileSync(join(FIXTURES, "ollama-search-embed.html"), "utf8"),
+    );
+    expect(embed.find((m) => m.name === "nomic-embed-text")).toMatchObject({
+      capabilities: ["embedding"],
+      sizes: [],
+      pulls: 88_432_768,
+    });
+    expect(embed.find((m) => m.name === "snowflake-arctic-embed")?.sizes).toEqual([
+      "22m",
+      "33m",
+      "110m",
+      "137m",
+      "335m",
+    ]);
+    // A page with nothing to read gives nothing, not an error.
+    expect(parseOllamaSearch("<html><body>Maintenance</body></html>")).toEqual([]);
+  });
+
+  it("ranks by the name asked for and takes each source in turn", () => {
+    expect(relevance("llama3.2", "llama 3.2")).toBe(0);
+    expect(relevance("bartowski/Llama-3.2-3B-Instruct-GGUF", "llama 3.2")).toBe(1);
+    expect(relevance("Meta-Llama-3.1-8B-GGUF", "llama 8b")).toBe(2);
+    expect(relevance("Qwen2.5-7B", "llama")).toBe(3);
+    const entry = (source: "ollama" | "huggingface", name: string) =>
+      ({ source, id: name, name, files: [] }) as unknown as CatalogEntry;
+    const hf = [
+      entry("huggingface", "Llama-3.2-1B-Instruct-GGUF"),
+      entry("huggingface", "Llama-3.2-3B-Instruct-GGUF"),
+      entry("huggingface", "Llama-3.3-70B-GGUF"),
+      entry("huggingface", "Some-Merge-GGUF"),
+    ];
+    const ollama = [entry("ollama", "llama3.2"), entry("ollama", "llama3.2-vision")];
+    // Named exactly first; then the rest by relevance, each source in turn.
+    expect(interleave("llama3.2", ollama, hf).map((e) => e.name)).toEqual([
+      "llama3.2",
+      "Llama-3.2-1B-Instruct-GGUF",
+      "llama3.2-vision",
+      "Llama-3.2-3B-Instruct-GGUF",
+      "Llama-3.3-70B-GGUF",
+      "Some-Merge-GGUF",
+    ]);
+    // Equally relevant: one of each in turn, Ollama's first.
+    expect(interleave("", ollama, hf.slice(0, 2)).map((e) => e.source)).toEqual([
+      "ollama",
+      "huggingface",
+      "ollama",
+      "huggingface",
+    ]);
   });
 
   it("says whether a file fits: the GPU, split, the CPU, or not at all", () => {
@@ -503,6 +585,98 @@ describe("local models through the daemon", () => {
     expect(hub.ollamaCalls.filter((c) => c.path === "/api/generate").at(-1)?.body).toMatchObject({
       keep_alive: 0,
     });
+  });
+
+  it("searches both sources fairly, keeps what they answer briefly, and finds a model by its name", async () => {
+    const { api, hub } = await start();
+    hub.ollamaSearch = () => ({
+      status: 200,
+      html: readFileSync(join(FIXTURES, "ollama-search-llama.html"), "utf8"),
+    });
+    const found = await api.models.search({ query: "tiny", limit: 5 });
+    // Ollama's page gave 8, cut to the limit; Hugging Face its matches.
+    expect(found.counts).toEqual({ ollama: 5, huggingface: 3 });
+    expect(found.entries.map((e) => e.source).slice(0, 4)).toEqual([
+      "huggingface",
+      "huggingface",
+      "huggingface",
+      "ollama",
+    ]);
+    const llama31 = found.entries.find((e) => e.id === "llama3.1");
+    expect(llama31?.files.map((f) => f.name)).toEqual(["8b", "70b", "405b"]);
+    expect(llama31?.downloads).toBe(120_138_678);
+    // Asked again within minutes: from the cache; Refresh asks again.
+    await api.models.search({ query: "tiny", limit: 5 });
+    expect(hub.searches.filter((q) => q === "tiny")).toHaveLength(1);
+    await api.models.search({ query: "tiny", limit: 5, fresh: true });
+    expect(hub.searches.filter((q) => q === "tiny")).toHaveLength(2);
+    // The page down or empty: a model's own name still finds it in the registry.
+    hub.ollamaSearch = () => ({ status: 503, html: "" });
+    const named = await api.models.search({ query: "qwen2.5:7b", source: "ollama" });
+    expect(named.problems).toEqual([]);
+    expect(named.entries.map((e) => [e.id, e.files.map((f) => f.name)])).toEqual([
+      ["qwen2.5", ["7b"]],
+    ]);
+    const nothing = await api.models.search({ query: "missing-model", source: "ollama" });
+    expect(nothing.problems).toEqual(["Ollama: ollama.com answered 503"]);
+  });
+
+  it("refreshes: the models folder's files, Ollama's own models, and what is still loaded", async () => {
+    const { api, dir } = await start();
+    const m = await downloaded(api, "acme/Tiny-Chat-GGUF", "tiny-chat-Q4_K_M.gguf");
+    const file = join(dir, "models", m.id, "tiny-chat-Q4_K_M.gguf");
+    // Its file deleted behind Oraknid's back: failed, saying so.
+    const bytes = readFileSync(file);
+    rmSync(file);
+    let after = (await api.models.refresh()).find((x) => x.id === m.id);
+    expect(after).toMatchObject({ state: "failed" });
+    expect(after?.error).toMatch(/is gone from/);
+    // Back again (and bigger): ready, with its size read from the disk.
+    writeFileSync(file, Buffer.concat([bytes, Buffer.alloc(100)]));
+    after = (await api.models.refresh()).find((x) => x.id === m.id);
+    expect(after).toMatchObject({ state: "ready", error: null, sizeBytes: bytes.length + 100 });
+    // A loaded model whose server stopped answering isn't loaded any more.
+    await api.models.load({ id: m.id });
+    const pid = (await api.models.list()).find((x) => x.id === m.id)?.loaded?.pid;
+    expect(pid).toBeTruthy();
+    process.kill(pid as number, "SIGKILL");
+    await until(async () => {
+      const x = (await api.models.refresh()).find((y) => y.id === m.id);
+      return x?.state === "ready";
+    });
+  });
+
+  it("refreshes Ollama's own models: new ones listed, removed ones said", async () => {
+    const { api, hub } = await start({ llama: false, ollama: true });
+    await until(async () => (await api.models.list()).some((m) => m.name === "phi3:mini"));
+    hub.ollamaModels.push({ name: "gemma3:4b", size: 3_000_000_000, digest: "g" });
+    hub.ollamaModels.splice(0, 1);
+    const list = await api.models.refresh();
+    expect(list.find((m) => m.name === "gemma3:4b")).toMatchObject({
+      state: "ready",
+      kinds: ["text", "vision"],
+    });
+    expect(list.find((m) => m.name === "phi3:mini")?.error).toMatch(/no longer in Ollama/);
+  });
+
+  it("says each model's roles, given or suggested, and a role moves from one model to another", async () => {
+    const { api } = await start();
+    const chat = await downloaded(api, "acme/Tiny-Chat-GGUF", "tiny-chat-Q4_K_M.gguf");
+    const vision = await downloaded(api, "acme/Tiny-Vision-GGUF", "tiny-vision-Q4_K_M.gguf");
+    let list = await api.models.list();
+    const of = (id: string) => list.find((m) => m.id === id);
+    expect(of(chat.id)).toMatchObject({ roles: [] });
+    expect(of(chat.id)?.suggestedRoles).toEqual(["translate", "mail", "code", "general"]);
+    expect(of(vision.id)?.suggestedRoles).toEqual(["ocr"]);
+    await api.models.setRole({ role: "translate", id: vision.id });
+    await api.models.setRole({ role: "general", id: vision.id });
+    list = await api.models.list();
+    expect(of(vision.id)).toMatchObject({ roles: ["translate", "general"] });
+    expect(of(chat.id)?.suggestedRoles).toEqual(["mail", "code"]);
+    await api.models.setRole({ role: "translate", id: chat.id });
+    list = await api.models.list();
+    expect(of(vision.id)?.roles).toEqual(["general"]);
+    expect(of(chat.id)?.roles).toEqual(["translate"]);
   });
 
   it("says plainly when llama-server isn't installed", async () => {

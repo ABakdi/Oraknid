@@ -4,9 +4,21 @@ import type {
   LocalModelView,
   ModelKind,
   ModelRole,
+  ModelSearch,
+  ModelSearchResult,
   ModelsStatus,
 } from "@oraknid/contracts";
-import { Cpu, Download, Pause, Play, Power, PowerOff, Search, Trash2 } from "lucide-react";
+import {
+  Cpu,
+  Download,
+  Pause,
+  Play,
+  Power,
+  PowerOff,
+  RefreshCw,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { toast } from "sonner";
 import { ErrorNote, Loading, PageHeader, Stat } from "@/components/common";
@@ -29,6 +41,7 @@ import { api, message } from "@/lib/api";
 import { bytes } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { useLive } from "@/lib/live";
+import { cn } from "@/lib/utils";
 
 const ROLES: { role: ModelRole; label: string; does: string }[] = [
   { role: "translate", label: "Translate", does: "the translate tool" },
@@ -40,15 +53,28 @@ const ROLES: { role: ModelRole; label: string; does: string }[] = [
   { role: "general", label: "General", does: "everything else" },
 ];
 
-const ROLE_KIND: Record<ModelRole, ModelKind> = {
-  translate: "text",
-  ocr: "vision",
-  transcribe: "speech",
-  embed: "embedding",
-  mail: "text",
-  code: "text",
-  general: "text",
-};
+const ROLE_LABEL = Object.fromEntries(ROLES.map((r) => [r.role, r.label])) as Record<
+  ModelRole,
+  string
+>;
+
+/**
+ * The roles a model of these kinds can take (as the daemon checks them): a
+ * speech model only speech to text, an embedding model only embeddings, a
+ * vision model OCR and every text role, a text model the text roles.
+ */
+export function rolesFor(kinds: ModelKind[]): ModelRole[] {
+  const chat = kinds.includes("text") || kinds.includes("vision");
+  return ROLES.map((r) => r.role).filter((r) =>
+    r === "ocr"
+      ? kinds.includes("vision")
+      : r === "transcribe"
+        ? kinds.includes("speech")
+        : r === "embed"
+          ? kinds.includes("embedding")
+          : chat,
+  );
+}
 
 const KIND_LABEL: Record<ModelKind, string> = {
   text: "text",
@@ -61,8 +87,8 @@ const isModelEvent = (e: { type: string }) => e.type.startsWith("model.");
 
 /**
  * Local models (ADR-054, Web-UI → Models): what is on this computer and
- * running, finding and downloading more, and the roles every agent's
- * tools use. Nothing leaves the machine.
+ * running, with each model's roles, and finding and downloading more.
+ * Nothing leaves the machine.
  */
 export function ModelsPage() {
   const status = useLive(() => api.models.status(), {
@@ -82,14 +108,20 @@ export function ModelsPage() {
         )}
       />
       {list.error ? <ErrorNote error={list.error} className="mb-4" /> : null}
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="min-w-0 space-y-4">
-          <InstalledCard models={list.data} status={status.data} />
+          <InstalledCard
+            models={list.data}
+            status={status.data}
+            reload={() => {
+              list.reload();
+              status.reload();
+            }}
+          />
           <FindCard />
         </div>
         <div className="space-y-4">
           <MachineCard status={status.data} />
-          <RolesCard status={status.data} models={list.data ?? []} />
         </div>
       </div>
     </div>
@@ -99,17 +131,39 @@ export function ModelsPage() {
 function InstalledCard({
   models,
   status,
+  reload,
 }: {
   models: LocalModelView[] | undefined;
   status: ModelsStatus | undefined;
+  reload: () => void;
 }) {
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      await api.models.refresh();
+    } catch (error) {
+      toast.error(message(error));
+    } finally {
+      setRefreshing(false);
+      reload();
+    }
+  };
   return (
     <Card data-help="models.list">
       <CardHeader>
-        <CardTitle>{t("On this computer")}</CardTitle>
+        <div className="flex items-start justify-between gap-2">
+          <CardTitle>{t("On this computer")}</CardTitle>
+          <RefreshButton
+            help="models.refresh"
+            label={t("Refresh the models on this computer")}
+            busy={refreshing}
+            onClick={refresh}
+          />
+        </div>
         <CardDescription>
           {t(
-            "Each loaded chat model is a model of the Local Leg, so The Eye can hand it work. Loading waits for room: the GPU stays under 90% and memory keeps its floor.",
+            "Each loaded chat model is a model of the Local Leg, so The Eye can hand it work. Loading waits for room: the GPU stays under 90% and memory keeps its floor. Roles say which model every agent's local-models tool uses: a role is one model's at a time.",
           )}
         </CardDescription>
       </CardHeader>
@@ -121,14 +175,148 @@ function InstalledCard({
             {t("No models yet: find one below and download it.")}
           </div>
         ) : (
-          models.map((m) => <ModelRow key={m.id} m={m} status={status} />)
+          models.map((m) => <ModelRow key={m.id} m={m} models={models} status={status} />)
         )}
       </CardContent>
     </Card>
   );
 }
 
-function ModelRow({ m, status }: { m: LocalModelView; status: ModelsStatus | undefined }) {
+function RefreshButton({
+  help,
+  label,
+  busy,
+  disabled,
+  onClick,
+}: {
+  help: string;
+  label: string;
+  busy: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      className="gap-1 text-muted-foreground"
+      data-help={help}
+      aria-label={label}
+      title={label}
+      disabled={busy || disabled}
+      onClick={onClick}
+    >
+      <RefreshCw className={cn("size-3.5", busy && "animate-spin motion-reduce:animate-none")} />
+      {busy ? t("Refreshing…") : t("Refresh")}
+    </Button>
+  );
+}
+
+/** The roles a model holds, and a picker for those its kind can do (ADR-054 → Roles). */
+function ModelRoles({ m, models }: { m: LocalModelView; models: LocalModelView[] }) {
+  const [open, setOpen] = useState(false);
+  const [moved, setMoved] = useState<{ role: ModelRole; from: string }[]>([]);
+  const [busy, setBusy] = useState<ModelRole | null>(null);
+  const can = rolesFor(m.kinds);
+  const pickable = m.state === "ready" || m.state === "loaded" || m.state === "loading";
+  const toggle = async (role: ModelRole) => {
+    const held = m.roles.includes(role);
+    const other = held ? null : models.find((x) => x.id !== m.id && x.roles.includes(role));
+    setBusy(role);
+    try {
+      await api.models.setRole({ role, id: held ? null : m.id });
+      setMoved((all) => [
+        ...all.filter((x) => x.role !== role),
+        ...(other ? [{ role, from: other.name }] : []),
+      ]);
+    } catch (error) {
+      toast.error(message(error));
+    } finally {
+      setBusy(null);
+    }
+  };
+  if (!can.length) return null;
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {m.roles.map((r) => (
+          <Badge key={r} data-testid="role-badge">
+            {t(ROLE_LABEL[r])}
+          </Badge>
+        ))}
+        {m.suggestedRoles.map((r) => (
+          <Badge
+            key={r}
+            variant="outline"
+            className="text-muted-foreground"
+            data-testid="role-suggested"
+            title={t("No model was given this role: this one is suggested for it.")}
+          >
+            {t("{role} · suggested", { role: t(ROLE_LABEL[r]) })}
+          </Badge>
+        ))}
+        {pickable ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-xs"
+            data-help="models.roles"
+            aria-expanded={open}
+            onClick={() => setOpen((o) => !o)}
+          >
+            {m.roles.length ? t("Roles") : t("Give a role")}
+          </Button>
+        ) : null}
+      </div>
+      {open && pickable ? (
+        <fieldset className="flex flex-wrap gap-1.5 rounded-md border bg-muted/30 p-2">
+          <legend className="sr-only">{t("Roles of {name}", { name: m.name })}</legend>
+          {can.map((role) => {
+            const on = m.roles.includes(role);
+            const holder = on ? null : models.find((x) => x.id !== m.id && x.roles.includes(role));
+            const does = ROLES.find((r) => r.role === role)?.does ?? "";
+            return (
+              <Button
+                key={role}
+                size="sm"
+                variant={on ? "default" : "outline"}
+                className="h-7 text-xs"
+                aria-pressed={on}
+                disabled={busy !== null}
+                title={
+                  holder
+                    ? t("{does}. Now on {name}: picking it here moves it.", {
+                        does: t(does),
+                        name: holder.name,
+                      })
+                    : t(does)
+                }
+                onClick={() => toggle(role)}
+              >
+                {t(ROLE_LABEL[role])}
+              </Button>
+            );
+          })}
+        </fieldset>
+      ) : null}
+      {moved.map((x) => (
+        <div key={x.role} className="text-xs text-muted-foreground">
+          {t("{role} was on {name}.", { role: t(ROLE_LABEL[x.role]), name: x.from })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ModelRow({
+  m,
+  models,
+  status,
+}: {
+  m: LocalModelView;
+  models: LocalModelView[];
+  status: ModelsStatus | undefined;
+}) {
   const { confirm, dialog } = useConfirm();
   const [busy, setBusy] = useState(false);
   const run = async (what: () => Promise<unknown>, done?: string) => {
@@ -166,12 +354,8 @@ function ModelRow({ m, status }: { m: LocalModelView; status: ModelsStatus | und
         <span className="text-xs text-muted-foreground">
           {[m.runner, m.quant, bytes(m.sizeBytes)].filter(Boolean).join(" · ")}
         </span>
-        {m.roles.length ? (
-          <span className="text-xs text-muted-foreground">
-            {t("Roles: {r}", { r: m.roles.join(", ") })}
-          </span>
-        ) : null}
       </div>
+      <ModelRoles m={m} models={models} />
       {m.error ? <div className="text-xs text-destructive">{m.error}</div> : null}
       {d ? (
         <div className="space-y-1" data-help="models.progress">
@@ -372,41 +556,57 @@ function RunSettings({ m }: { m: LocalModelView }) {
   );
 }
 
+type Source = "all" | "ollama" | "huggingface";
+
 function FindCard() {
   const [query, setQuery] = useState("");
-  const [source, setSource] = useState<"all" | "huggingface" | "ollama">("all");
+  const [source, setSource] = useState<Source>("all");
   const [kind, setKind] = useState<ModelKind | "any">("any");
   const [fitsOnly, setFitsOnly] = useState(true);
-  const [found, setFound] = useState<{ entries: CatalogEntry[]; problems: string[] } | null>(null);
+  const [found, setFound] = useState<ModelSearchResult | null>(null);
+  const [asked, setAsked] = useState<ModelSearch | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const [searching, setSearching] = useState(false);
-  const search = async (e?: FormEvent) => {
-    e?.preventDefault();
-    setSearching(true);
+  const [searching, setSearching] = useState<"search" | "refresh" | null>(null);
+  // Both sources are always asked; the filter only shows one of them.
+  const ask = async (q: ModelSearch, how: "search" | "refresh") => {
+    setSearching(how);
     setError(null);
     try {
-      setFound(
-        await api.models.search({
-          query,
-          source,
-          fitsOnly,
-          limit: 20,
-          ...(kind === "any" ? {} : { kind }),
-        }),
-      );
+      setFound(await api.models.search(q));
+      setAsked(q);
     } catch (err) {
       setError(err);
     } finally {
-      setSearching(false);
+      setSearching(null);
     }
   };
+  const search = (e?: FormEvent) => {
+    e?.preventDefault();
+    void ask(
+      {
+        query,
+        source: "all",
+        fitsOnly,
+        limit: 20,
+        fresh: false,
+        ...(kind === "any" ? {} : { kind }),
+      },
+      "search",
+    );
+  };
+  const shown = found?.entries.filter((e) => source === "all" || e.source === source) ?? [];
+  const SOURCES: { id: Source; label: string; n: number | null }[] = [
+    { id: "all", label: t("All"), n: found ? found.entries.length : null },
+    { id: "ollama", label: t("Ollama"), n: found ? found.counts.ollama : null },
+    { id: "huggingface", label: t("Hugging Face"), n: found ? found.counts.huggingface : null },
+  ];
   return (
     <Card>
       <CardHeader>
         <CardTitle>{t("Find a model")}</CardTitle>
         <CardDescription>
           {t(
-            "Hugging Face's GGUF models and Ollama's library, each file with its size, quantisation and whether it fits this computer.",
+            "Ollama's library and Hugging Face's GGUF models, asked together and shown in turn: each Ollama model with its sizes, each Hugging Face one with its quantisations, every file with its size and whether it fits this computer.",
           )}
         </CardDescription>
       </CardHeader>
@@ -421,16 +621,6 @@ function FindCard() {
               onChange={(e) => setQuery(e.target.value)}
             />
           </div>
-          <Select value={source} onValueChange={(v) => setSource(v as typeof source)}>
-            <SelectTrigger className="w-40" data-help="models.source" aria-label={t("Where")}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t("Everywhere")}</SelectItem>
-              <SelectItem value="huggingface">{t("Hugging Face")}</SelectItem>
-              <SelectItem value="ollama">{t("Ollama library")}</SelectItem>
-            </SelectContent>
-          </Select>
           <Select value={kind} onValueChange={(v) => setKind(v as typeof kind)}>
             <SelectTrigger className="w-36" aria-label={t("Good at")}>
               <SelectValue />
@@ -452,22 +642,58 @@ function FindCard() {
             />
             <Label htmlFor="fits-only">{t("Fits this computer")}</Label>
           </div>
-          <Button type="submit" className="gap-1" disabled={searching}>
+          <Button type="submit" className="gap-1" disabled={searching !== null}>
             <Search className="size-3.5" />
-            {searching ? t("Searching…") : t("Search")}
+            {searching === "search" ? t("Searching…") : t("Search")}
           </Button>
         </form>
         <ErrorNote error={error} />
+        {found ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <fieldset className="flex flex-wrap gap-1.5" data-help="models.source">
+              <legend className="sr-only">{t("Show results from")}</legend>
+              {SOURCES.map((s) => (
+                <Button
+                  key={s.id}
+                  type="button"
+                  size="sm"
+                  variant={source === s.id ? "secondary" : "ghost"}
+                  className="h-7 gap-1.5 text-xs"
+                  aria-pressed={source === s.id}
+                  onClick={() => setSource(s.id)}
+                >
+                  {s.label}
+                  <span className="tabular-nums text-muted-foreground">{s.n}</span>
+                </Button>
+              ))}
+            </fieldset>
+            <div className="ml-auto">
+              <RefreshButton
+                help="models.results-refresh"
+                label={t("Search again, asking both sources afresh")}
+                busy={searching === "refresh"}
+                disabled={searching !== null || !asked}
+                onClick={() => asked && ask({ ...asked, fresh: true }, "refresh")}
+              />
+            </div>
+          </div>
+        ) : null}
         {found?.problems.map((p) => (
           <div key={p} className="text-xs text-muted-foreground">
             {p}
           </div>
         ))}
-        {found && found.entries.length === 0 ? (
-          <div className="text-sm text-muted-foreground">{t("Nothing found.")}</div>
+        {found && shown.length === 0 ? (
+          <div className="text-sm text-muted-foreground">
+            {source === "all"
+              ? t("Nothing found.")
+              : t("Nothing from {source} for this search.", {
+                  source: source === "ollama" ? "Ollama" : "Hugging Face",
+                })}
+          </div>
         ) : null}
         <div className="space-y-3" data-help="models.results">
-          {found?.entries.map((e) => (
+          {shown.map((e) => (
             <EntryRow key={`${e.source}:${e.id}`} e={e} />
           ))}
         </div>
@@ -527,6 +753,9 @@ function EntryRow({ e }: { e: CatalogEntry }) {
       </div>
       {e.description ? <div className="text-xs text-muted-foreground">{e.description}</div> : null}
       <div className="space-y-1">
+        <div className="text-xs text-muted-foreground">
+          {e.source === "ollama" ? t("Sizes (tags)") : t("Quantisations")}
+        </div>
         {e.files.map((f) => (
           <div key={f.name} className="flex flex-wrap items-center gap-2 text-xs">
             <span className="font-mono">{f.quant ?? f.name}</span>
@@ -639,70 +868,5 @@ function Runtime({ name, at }: { name: string; at: string | null }) {
         {at ? t("found") : t("not installed")}
       </span>
     </div>
-  );
-}
-
-function RolesCard({
-  status,
-  models,
-}: {
-  status: ModelsStatus | undefined;
-  models: LocalModelView[];
-}) {
-  if (!status) return null;
-  const set = async (role: ModelRole, id: string | null) => {
-    try {
-      await api.models.setRole({ role, id });
-    } catch (error) {
-      toast.error(message(error));
-    }
-  };
-  return (
-    <Card data-help="models.roles">
-      <CardHeader>
-        <CardTitle>{t("Roles")}</CardTitle>
-        <CardDescription>
-          {t(
-            "Which model does what. Every agent may call these through the local-models tool, so Claude can hand OCR or a translation to a model here.",
-          )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {ROLES.map(({ role, label, does }) => {
-          const kind = ROLE_KIND[role];
-          const fit = models.filter(
-            (m) =>
-              (m.state === "ready" || m.state === "loaded") &&
-              (m.kinds.includes(kind) || (kind === "text" && m.kinds.includes("vision"))),
-          );
-          const current = status.roles[role];
-          return (
-            <div key={role} className="space-y-1">
-              <Label>{t(label)}</Label>
-              <Select
-                value={current ?? "none"}
-                onValueChange={(v) => set(role, v === "none" ? null : v)}
-                disabled={!fit.length}
-              >
-                <SelectTrigger className="w-full" aria-label={t(label)}>
-                  <SelectValue placeholder={t("No model yet")} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">
-                    {fit.length ? t("Suggested") : t("No model yet")}
-                  </SelectItem>
-                  {fit.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="text-xs text-muted-foreground">{t(does)}</div>
-            </div>
-          );
-        })}
-      </CardContent>
-    </Card>
   );
 }
