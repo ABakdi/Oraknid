@@ -18,11 +18,12 @@ import {
   type NewProject,
   type NewProjectRepo,
   type ProjectArchivedWith,
+  type ProjectNowJob,
   type ProjectRepo,
   type ProjectRepoPatch,
   ServerRole,
 } from "@oraknid/contracts";
-import { count, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
 import {
   attemptEvents,
@@ -179,7 +180,65 @@ export class Projects {
         ...viewOf(p),
         jobCount:
           this.db.select({ n: count() }).from(jobs).where(eq(jobs.projectId, p.id)).get()?.n ?? 0,
+        ...this.#now(p.id),
       }));
+  }
+
+  /**
+   * What a project is doing now, for the Projects list (Web-UI → Projects):
+   * its jobs that haven't ended (drafts too), newest first, with their
+   * tasks done, and when one of its jobs last did something. Cheap with
+   * months of events: one index lookup per job for its newest event.
+   */
+  #now(projectId: string): { now: ProjectNowJob[]; lastActivityAt: number | null } {
+    const going = this.db
+      .select({
+        id: jobs.id,
+        title: jobs.title,
+        state: jobs.state,
+        queuedAt: jobs.queuedAt,
+        startedAt: jobs.startedAt,
+      })
+      .from(jobs)
+      .where(and(eq(jobs.projectId, projectId), notInArray(jobs.state, ["completed", "cancelled"])))
+      .orderBy(desc(jobs.id))
+      .limit(5)
+      .all();
+    const counts = new Map(
+      going.length
+        ? this.db
+            .select({
+              jobId: tasks.jobId,
+              total: count(),
+              done: sql<number>`sum(case when ${tasks.state} in ('done', 'skipped') then 1 else 0 end)`,
+            })
+            .from(tasks)
+            .where(
+              inArray(
+                tasks.jobId,
+                going.map((j) => j.id),
+              ),
+            )
+            .groupBy(tasks.jobId)
+            .all()
+            .map((r) => [r.jobId, r])
+        : [],
+    );
+    const newest = this.db.get<{ at: number | null }>(
+      sql`select at from ${events} where seq = (select max((select max(e.seq) from ${events} e where e.job_id = j.id)) from ${jobs} j where j.project_id = ${projectId})`,
+    );
+    return {
+      now: going.map((j) => ({
+        id: j.id,
+        title: j.title,
+        state: j.state as ProjectNowJob["state"],
+        done: Number(counts.get(j.id)?.done ?? 0),
+        total: counts.get(j.id)?.total ?? 0,
+        queued: j.queuedAt !== null,
+        startedAt: j.startedAt,
+      })),
+      lastActivityAt: newest?.at ?? null,
+    };
   }
 
   #saveRepos(id: string, repos: ProjectRepo[], by: "owner" | "eye" = "owner") {
