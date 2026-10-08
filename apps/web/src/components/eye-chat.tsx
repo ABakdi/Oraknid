@@ -1,7 +1,7 @@
 import type { EyeMessage, EyeThought, JobView, QuestionAnswer } from "@oraknid/contracts";
 import { correctsThinking } from "@oraknid/core";
 import { ChevronDown, CircleX, Eye, SendHorizontal, Square } from "lucide-react";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import { Markdown } from "@/components/common";
@@ -22,10 +22,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { api, message } from "@/lib/api";
-import { ago, clip } from "@/lib/format";
+import { ago } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { jobHref, jobIdHref, projectHref } from "@/lib/links";
 import { useLive } from "@/lib/live";
+import { CONVERSATION_PAGE, useEarlierPages } from "@/lib/pages";
 import { cn } from "@/lib/utils";
 
 /** A job that hasn't ended: running, waiting on me, blocked or paused (anything but a draft or an end). */
@@ -36,6 +37,54 @@ const ENDED = new Set(["draft", "completed", "cancelled", "failed"]);
  * job it is about, whatever it is doing, after a short confirm; with
  * several going, a small menu picks which first.
  */
+/**
+ * A message's text, its start when it is long, and all of it on demand: a
+ * conversation's page carries only the start of a long one (Web-UI → Performance).
+ */
+function LongText({
+  message: m,
+  max,
+  markdown,
+}: {
+  message: EyeMessage;
+  max: number;
+  markdown?: boolean;
+}) {
+  const [whole, setWhole] = useState<string | null>(null);
+  const [reading, setReading] = useState(false);
+  const length = m.fullLength ?? m.text.length;
+  const text = whole ?? (length > max ? `${m.text.slice(0, max).trimEnd()}…` : m.text);
+  const readAll = async () => {
+    setReading(true);
+    try {
+      setWhole((await api.projects.message({ id: m.projectId, messageId: m.id })).text);
+    } catch (e) {
+      toast.error(message(e));
+    } finally {
+      setReading(false);
+    }
+  };
+  return (
+    <>
+      {markdown ? (
+        <Markdown text={text} />
+      ) : (
+        <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{text}</div>
+      )}
+      {length > max && whole === null ? (
+        <button
+          type="button"
+          className="text-xs font-normal text-primary underline-offset-2 hover:underline"
+          disabled={reading}
+          onClick={readAll}
+        >
+          {t("Show all ({n} characters)", { n: length.toLocaleString() })}
+        </button>
+      ) : null}
+    </>
+  );
+}
+
 function CancelJob({ going, disabled }: { going: JobView[]; disabled?: boolean }) {
   const { confirm, dialog } = useConfirm();
   const [menu, setMenu] = useState(false);
@@ -189,11 +238,12 @@ export function EyeChat({
 }) {
   const ids = jobs.map((j) => j.id);
   const topics = ["overview", ...ids.map((id) => `job:${id}`)];
+  // The last page, live; earlier ones read when I scroll back (Web-UI → Performance).
   const messages = useLive(
     () =>
       server
-        ? api.servers.conversation({ id: server.id })
-        : api.projects.conversation({ id: projectId as string }),
+        ? api.servers.conversation({ id: server.id, limit: CONVERSATION_PAGE })
+        : api.projects.conversation({ id: projectId as string, limit: CONVERSATION_PAGE }),
     {
       topics,
       refreshOn: (e) =>
@@ -224,7 +274,12 @@ export function EyeChat({
   const [picked, setPicked] = useState<"redo" | "context" | null>(null);
   const [answering, setAnswering] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
-  const list = messages.data ?? [];
+  const earlier = useEarlierPages(messages.data, `${projectId}:${server?.id}`, (before) =>
+    server
+      ? api.servers.conversation({ id: server.id, limit: CONVERSATION_PAGE, before })
+      : api.projects.conversation({ id: projectId as string, limit: CONVERSATION_PAGE, before }),
+  );
+  const list = earlier.list;
   const thoughts = thinking.data ?? [];
   const items = transcript(list, thoughts);
   // The questions I answered already: my answer names the message it answers (ADR-037).
@@ -249,10 +304,33 @@ export function EyeChat({
     jumpTo(id);
   };
 
+  // Follow the newest row as it arrives; earlier pages read above it don't move me.
+  const newest = items.length;
+  const last = items.at(-1);
+  const lastKey = !last
+    ? ""
+    : last.kind === "message"
+      ? last.message.id
+      : last.kind === "thought"
+        ? last.thought.id
+        : `g-${last.thoughts.length}`;
   // biome-ignore lint/correctness/useExhaustiveDependencies: follow the newest row as it arrives
   useEffect(() => {
     if (box.current) box.current.scrollTop = box.current.scrollHeight;
-  }, [items.length]);
+  }, [lastKey, newest > 0]);
+  // Earlier messages put above: what I was reading stays where it was.
+  const fromBottom = useRef<number | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when an earlier page arrives
+  useLayoutEffect(() => {
+    const b = box.current;
+    if (b && fromBottom.current !== null) b.scrollTop = b.scrollHeight - fromBottom.current;
+    fromBottom.current = null;
+  }, [earlier.older]);
+  const readEarlier = () => {
+    const b = box.current;
+    if (b) fromBottom.current = b.scrollHeight - b.scrollTop;
+    earlier.more().catch((e) => toast.error(message(e)));
+  };
 
   const send = async () => {
     const value = text.trim();
@@ -350,14 +428,14 @@ export function EyeChat({
           {m.answers ? (
             <Markdown text={m.text} className="font-normal" />
           ) : (
-            <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{clip(m.text, 6000)}</div>
+            <LongText message={m} max={6000} />
           )}
         </PromptLine>
       );
     const touched = m.action?.jobId && m.action.jobId !== m.jobId ? m.action.jobId : null;
     return (
       <div data-testid="reply" className="min-w-0 pl-4 text-sm [overflow-wrap:anywhere]">
-        <Markdown text={clip(m.text, 4000)} />
+        <LongText message={m} max={4000} markdown />
         <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
           {m.action ? (
             <>
@@ -440,6 +518,19 @@ export function EyeChat({
               data-testid="transcript"
               className="min-h-0 min-w-0 flex-1 space-y-2.5 overflow-y-auto pr-1"
             >
+              {earlier.hasMore ? (
+                <div className="flex justify-center">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs text-muted-foreground"
+                    disabled={earlier.reading}
+                    onClick={readEarlier}
+                  >
+                    {earlier.reading ? t("Reading…") : t("Earlier messages")}
+                  </Button>
+                </div>
+              ) : null}
               {items.map((item, i) => {
                 const jobOf = (x: TranscriptItem) =>
                   x.kind === "message"

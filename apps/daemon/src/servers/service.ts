@@ -10,7 +10,7 @@ import {
   type ServerTestResult,
   type ServerView,
 } from "@oraknid/contracts";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gte } from "drizzle-orm";
 import ssh2, { type Client } from "ssh2";
 import type { Db } from "../db/open.ts";
 import { jobs, projects, serverSamples, serverStates, servers } from "../db/schema.ts";
@@ -795,15 +795,16 @@ export class Servers {
       .run(this.#now() - DAY);
   }
 
-  samples(id: string, since: number): ServerSample[] {
-    return this.o.db
+  /** Its readings since `since`; with `points`, thinned to about that many (thinSamples). */
+  samples(id: string, since: number, points?: number): ServerSample[] {
+    const all = this.o.db
       .select()
       .from(serverSamples)
-      .where(and(eq(serverSamples.serverId, id)))
+      .where(and(eq(serverSamples.serverId, id), gte(serverSamples.at, since)))
       .orderBy(asc(serverSamples.at))
       .all()
-      .filter((s) => s.at >= since)
       .map((s) => s.sample as ServerSample);
+    return points ? thinSamples(all, points) : all;
   }
 
   start() {
@@ -831,3 +832,31 @@ export const aliasOf = (r: { id: string; name: string }) =>
 
 /** The heading of what a job changed, in a state document (ADR-049). */
 export const changesHeading = (title: string) => `Changes by job “${title}”`;
+
+/**
+ * A day of readings for a screen (Web-UI → Performance): about `points` of
+ * them, each the last of its stretch with that stretch's highest CPU, load
+ * and connections, so a peak stays seen. Only the newest keeps its services
+ * and ports, the only ones shown. A day every 15 s is 5,760 readings (5 to
+ * 9 MB with their lists): one reload of them froze the page.
+ */
+export function thinSamples(all: ServerSample[], points: number): ServerSample[] {
+  const last = all.at(-1);
+  if (!last) return [];
+  const step = Math.max(1, Math.ceil((all.length - 1) / Math.max(1, points - 1)));
+  const out: ServerSample[] = [];
+  for (let i = 0; i < all.length - 1; i += step) {
+    const stretch = all.slice(i, Math.min(i + step, all.length - 1));
+    const end = stretch.at(-1) as ServerSample;
+    out.push({
+      ...end,
+      cpuPercent: Math.max(...stretch.map((s) => s.cpuPercent)),
+      load1: Math.max(...stretch.map((s) => s.load1)),
+      connections: Math.max(...stretch.map((s) => s.connections)),
+      services: [],
+      ports: [],
+    });
+  }
+  out.push(last);
+  return out;
+}

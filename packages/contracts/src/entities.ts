@@ -603,5 +603,19 @@ export const EyeMessage = z.object({
   /** The message whose questions mine answers. */
   replyTo: Id.nullable().default(null),
   createdAt: Timestamp,
+  /**
+   * In a conversation's page, a long text is its start only: this is the
+   * whole text's length, read with `projects.message` (Web-UI → Performance).
+   */
+  fullLength: z.number().int().nonnegative().optional(),
 });
 export type EyeMessage = z.infer<typeof EyeMessage>;
+
+/** A page of a conversation: its last messages, or the ones before one (Web-UI → Performance). */
+export const ConversationPage = z.object({
+  /** At most this many messages, the newest. */
+  limit: z.number().int().min(1).max(1000).optional(),
+  /** Only messages before this one (the oldest shown), to read further back. */
+  before: z.string().optional(),
+});
+export type ConversationPage = z.infer<typeof ConversationPage>;

@@ -1,5 +1,6 @@
 import type { TalkMode } from "@oraknid/contracts";
 import {
+  type ConversationPage,
   chosenOption,
   completeAnswers,
   type EyeMessage,
@@ -14,6 +15,7 @@ import {
 } from "@oraknid/contracts";
 import { correctsThinking, endsInterview } from "@oraknid/core";
 import { and, asc, desc, eq } from "drizzle-orm";
+import { cutShort, EYE_MESSAGE_MAX } from "../db/caps.ts";
 import type { Db } from "../db/open.ts";
 import {
   eyeMessages,
@@ -154,6 +156,43 @@ export function conversation(db: Db, jobId: string): EyeMessage[] {
     .where(eq(eyeMessages.jobId, jobId))
     .orderBy(asc(eyeMessages.createdAt), asc(eyeMessages.id))
     .all() as EyeMessage[];
+}
+
+/** The most of one message a conversation's page carries; the rest on demand (Web-UI → Performance). */
+export const PAGE_TEXT_MAX = 8_000;
+
+/**
+ * A page of a conversation for the screen (Web-UI → Performance): the last
+ * `limit` messages before `before` (all of them without a limit), each
+ * long text its start only, with its whole length said.
+ */
+export function conversationPage(all: EyeMessage[], o: ConversationPage = {}): EyeMessage[] {
+  let end = all.length;
+  if (o.before) {
+    const i = all.findIndex((m) => m.id === o.before);
+    if (i >= 0) end = i;
+  }
+  const page = all.slice(o.limit ? Math.max(0, end - o.limit) : 0, end);
+  return page.map((m) =>
+    m.text.length > PAGE_TEXT_MAX
+      ? { ...m, text: m.text.slice(0, PAGE_TEXT_MAX), fullLength: m.text.length }
+      : m,
+  );
+}
+
+/** One message of a project's conversation, whole. */
+export function conversationMessage(
+  db: Db,
+  projectId: string,
+  messageId: string,
+): EyeMessage | null {
+  return (
+    (db
+      .select()
+      .from(eyeMessages)
+      .where(and(eq(eyeMessages.id, messageId), eq(eyeMessages.projectId, projectId)))
+      .get() as EyeMessage | undefined) ?? null
+  );
 }
 
 /**
@@ -1242,7 +1281,8 @@ function add(
         jobId,
         projectId,
         author,
-        text,
+        // A message is never a tool's whole output: a blocked reason once was (3 MB; Size caps).
+        text: cutShort(text, EYE_MESSAGE_MAX),
         action,
         questions: extras.questions?.length ? extras.questions : null,
         itemId: extras.itemId ?? null,

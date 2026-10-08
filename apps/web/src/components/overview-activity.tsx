@@ -1,5 +1,5 @@
 import type { Event } from "@oraknid/contracts";
-import { useState } from "react";
+import { memo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   condense,
@@ -11,7 +11,7 @@ import {
   isLegOutput,
   legOf,
 } from "@/lib/events";
-import { clock } from "@/lib/format";
+import { clip, clock } from "@/lib/format";
 import { t } from "@/lib/i18n";
 
 export interface ActivityFilter {
@@ -115,9 +115,23 @@ export function OverviewActivity({
   );
 }
 
-function ActivityLine({ e, job, leg }: { e: Event; job: string | null; leg: string | null }) {
-  const text = describe(e);
-  const short = isLegOutput(e) ? condense(text) : null;
+/** The most of one event's text the stream shows, opened (Web-UI → Performance). */
+export const LINE_OPEN_MAX = 20_000;
+
+// Drawn again only when its event changes: the stream redraws twice a second at most.
+const ActivityLine = memo(function ActivityLine({
+  e,
+  job,
+  leg,
+}: {
+  e: Event;
+  job: string | null;
+  leg: string | null;
+}) {
+  const full = describe(e);
+  // A reason that was a tool's whole output (3 MB, 2026-10-08) is a line that opens, cut short.
+  const text = clip(full, LINE_OPEN_MAX);
+  const short = isLegOutput(e) || full.length > 600 ? condense(text) : null;
   const head = (
     <>
       <span className="shrink-0 font-mono text-muted-foreground">{clock(e.at)}</span>
@@ -154,4 +168,4 @@ function ActivityLine({ e, job, leg }: { e: Event; job: string | null; leg: stri
       </span>
     </div>
   );
-}
+});

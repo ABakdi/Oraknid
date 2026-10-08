@@ -1,5 +1,7 @@
-import { useState } from "react";
+import type { Event } from "@oraknid/contracts";
+import { memo, useState } from "react";
 import { toast } from "sonner";
+import { EventPayload } from "@/components/activity-feed";
 import { ErrorNote, Loading, PageHeader } from "@/components/common";
 import { type PageTab, PageTabs } from "@/components/page-tabs";
 import { Button } from "@/components/ui/button";
@@ -14,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { api, message } from "@/lib/api";
 import { describe } from "@/lib/events";
+import { clip } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { useLive } from "@/lib/live";
 
@@ -43,7 +46,12 @@ async function exportAudit(q: Record<string, unknown>) {
   const all: unknown[] = [];
   let beforeSeq: number | undefined;
   for (let page = 0; page < 100; page++) {
-    const batch = await api.audit.search({ ...q, limit: 500, ...(beforeSeq ? { beforeSeq } : {}) });
+    const batch = await api.audit.search({
+      ...q,
+      limit: 500,
+      whole: true,
+      ...(beforeSeq ? { beforeSeq } : {}),
+    });
     all.push(...batch);
     if (batch.length < 500) break;
     beforeSeq = batch.at(-1)?.seq;
@@ -58,6 +66,25 @@ async function exportAudit(q: Record<string, unknown>) {
   URL.revokeObjectURL(a.href);
   return all.length;
 }
+
+/** One event of the audit log: its line, and its whole payload once opened. */
+const AuditLine = memo(function AuditLine({ e }: { e: Event }) {
+  const [open, setOpen] = useState(false);
+  const said = clip(describe(e), 300);
+  return (
+    <details onToggle={(x) => setOpen(x.currentTarget.open)}>
+      <summary className="flex cursor-pointer flex-wrap gap-x-2 marker:content-['']">
+        <span className="text-muted-foreground">{new Date(e.at).toLocaleString()}</span>
+        <span className="text-eye">{e.actor}</span>
+        <span className="text-primary">{e.type}</span>
+        <span className="min-w-0 flex-1 truncate text-muted-foreground" title={said}>
+          {said}
+        </span>
+      </summary>
+      {open ? <EventPayload e={e} /> : null}
+    </details>
+  );
+});
 
 /** The daemon's own log, its last lines, refreshed on demand. */
 function DaemonLog() {
@@ -165,19 +192,7 @@ function AuditLog() {
       <Card>
         <CardContent className="space-y-1 pt-4 font-mono text-xs">
           {(events.data ?? []).map((e) => (
-            <details key={e.seq}>
-              <summary className="flex cursor-pointer flex-wrap gap-x-2 marker:content-['']">
-                <span className="text-muted-foreground">{new Date(e.at).toLocaleString()}</span>
-                <span className="text-eye">{e.actor}</span>
-                <span className="text-primary">{e.type}</span>
-                <span className="min-w-0 flex-1 truncate text-muted-foreground" title={describe(e)}>
-                  {describe(e)}
-                </span>
-              </summary>
-              <pre className="mt-1 overflow-x-auto rounded bg-muted p-2">
-                {JSON.stringify(e.payload, null, 2)}
-              </pre>
-            </details>
+            <AuditLine key={e.seq} e={e} />
           ))}
           {!events.loading && (events.data ?? []).length === 0 ? (
             <div className="font-sans text-sm text-muted-foreground">

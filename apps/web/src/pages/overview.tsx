@@ -1,6 +1,6 @@
-import type { JobView } from "@oraknid/contracts";
+import type { JobView, LegView } from "@oraknid/contracts";
 import { AlertTriangle } from "lucide-react";
-import type { ReactNode } from "react";
+import { memo, type ReactNode, useMemo } from "react";
 import { Link } from "wouter";
 import { TokensChart } from "@/components/charts";
 import { Empty, ErrorNote, Loading, PageHeader, Stat, StateBadge } from "@/components/common";
@@ -49,16 +49,9 @@ export function OverviewPage() {
     refreshOn: (e) => e.type.startsWith("session."),
   });
   const inbox = useLive(() => api.inbox.list({ state: "open" }), { topics: ["inbox"] });
-  const seed = useLive(() => api.audit.search({ limit: 60 }), { topics: [] });
   const activeJobs = (jobs.data ?? []).filter(
     (j) => !["completed", "cancelled", "draft"].includes(j.state),
   );
-  const stream = useEvents(
-    ["overview", "inbox", ...activeJobs.map((j) => `job:${j.id}`)],
-    150,
-    seed.data ?? [],
-  );
-  const metrics = useMetrics(() => api.metrics.recent({ since: Date.now() - 10 * 60_000 }));
 
   if (legs.error) return <ErrorNote error={legs.error} />;
   if (legs.loading) return <Loading rows={6} />;
@@ -79,7 +72,6 @@ export function OverviewPage() {
   // A job's id to its project, for links straight to it (ADR-034).
   const where = new Map((jobs.data ?? []).map((j) => [j.id, j.projectId]));
   const names = new Map((projects.data ?? []).map((p) => [p.id, p.name]));
-  const problems = stream.filter(isProblem).slice(0, 8);
 
   return (
     <div className="space-y-4">
@@ -180,72 +172,131 @@ export function OverviewPage() {
         </div>
       </section>
 
-      {/* min-w-0: a grid cell may shrink below its content, so nothing pushes past a phone's width. */}
-      <div className="grid gap-4 xl:grid-cols-3">
-        <OverviewActivity
-          events={stream}
-          jobs={(jobs.data ?? []).filter((j) => j.state !== "draft")}
-          legs={legs.data ?? []}
-        />
-        <div className="min-w-0 space-y-4">
-          <MachineHealthCard />
-          <Card data-help="overview.problems">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-sm">
-                <AlertTriangle className="size-4" />
-                {t("Problems")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-1.5 text-sm">
-              {problems.length === 0 ? (
-                <div className="text-muted-foreground">{t("None.")}</div>
-              ) : null}
-              {problems.map((e) => (
+      <OverviewLive
+        activeJobIds={activeJobs.map((j) => j.id).join(",")}
+        jobs={jobs.data}
+        legs={legs.data}
+        sessions={activity.data}
+      />
+
+      <TokensToday buckets={today.data} />
+
+      <TwoWeeks />
+    </div>
+  );
+}
+
+const NONE: never[] = [];
+
+type SessionActivity = { sessionId: string; legId: string };
+type TokenBucket = { t: number; series: string; tokens: number };
+
+/**
+ * What changes by the second (Web-UI → Performance): the activity stream,
+ * the problems in it and the resources, drawn here so the rest of the
+ * Overview isn't drawn again with them.
+ */
+const OverviewLive = memo(function OverviewLive({
+  activeJobIds,
+  jobs = NONE,
+  legs = NONE,
+  sessions = NONE,
+}: {
+  /** The jobs going, comma-separated: their topics are followed. */
+  activeJobIds: string;
+  jobs?: JobView[];
+  legs?: LegView[];
+  sessions?: SessionActivity[];
+}) {
+  const seed = useLive(() => api.audit.search({ limit: 60 }), { topics: [] });
+  const stream = useEvents(
+    ["overview", "inbox", ...(activeJobIds ? activeJobIds.split(",") : []).map((j) => `job:${j}`)],
+    150,
+    seed.data ?? NONE,
+  );
+  const where = useMemo(() => new Map(jobs.map((j) => [j.id, j.projectId])), [jobs]);
+  const started = useMemo(() => jobs.filter((j) => j.state !== "draft"), [jobs]);
+  const problems = stream.filter(isProblem).slice(0, 8);
+  return (
+    // min-w-0: a grid cell may shrink below its content, so nothing pushes past a phone's width.
+    <div className="grid gap-4 xl:grid-cols-3">
+      <OverviewActivity events={stream} jobs={started} legs={legs} />
+      <div className="min-w-0 space-y-4">
+        <MachineHealthCard />
+        <Card data-help="overview.problems">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <AlertTriangle className="size-4" />
+              {t("Problems")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1.5 text-sm">
+            {problems.length === 0 ? (
+              <div className="text-muted-foreground">{t("None.")}</div>
+            ) : null}
+            {problems.map((e) => {
+              // A reason that was a tool's whole output is said briefly (2026-10-08).
+              const said = clip(describe(e), 300);
+              return (
                 <Link
                   key={e.seq}
                   href={e.jobId ? jobIdHref(e.jobId, where) : "/logs"}
                   className="block rounded px-1 hover:bg-accent"
                 >
-                  <div className="truncate" title={describe(e)}>
-                    {describe(e) || e.type}
+                  <div className="truncate" title={said}>
+                    {said || e.type}
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {e.type} · {ago(e.at)}
                   </div>
                 </Link>
-              ))}
-            </CardContent>
-          </Card>
-          <ResourcesCard samples={metrics} sessions={activity.data ?? []} legs={legs.data ?? []} />
-        </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+        <LiveResources sessions={sessions} legs={legs} />
       </div>
-
-      <Card className="min-w-0">
-        <CardHeader>
-          <CardTitle className="text-sm">{t("Tokens today, by Leg")}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {(today.data ?? []).length ? (
-            <TokensChart buckets={today.data ?? []} />
-          ) : (
-            <div className="text-sm text-muted-foreground">{t("No tokens used today.")}</div>
-          )}
-        </CardContent>
-      </Card>
-
-      <section aria-label={t("The last two weeks")}>
-        <h2 className="mb-2 text-sm font-medium text-muted-foreground">
-          {t("The last two weeks")}
-        </h2>
-        <StatsCharts
-          since={Date.now() - 14 * 86400_000}
-          bucketMs={86400_000}
-          topics={["overview"]}
-        />
-      </section>
     </div>
   );
-}
+});
+
+/** The resources card with its own live samples: drawn once a second, alone. */
+const LiveResources = memo(function LiveResources({
+  sessions,
+  legs,
+}: {
+  sessions: SessionActivity[];
+  legs: LegView[];
+}) {
+  const metrics = useMetrics(() => api.metrics.recent({ since: Date.now() - 10 * 60_000 }));
+  return <ResourcesCard samples={metrics} sessions={sessions} legs={legs} />;
+});
+
+const TokensToday = memo(function TokensToday({ buckets = NONE }: { buckets?: TokenBucket[] }) {
+  return (
+    <Card className="min-w-0">
+      <CardHeader>
+        <CardTitle className="text-sm">{t("Tokens today, by Leg")}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {buckets.length ? (
+          <TokensChart buckets={buckets} />
+        ) : (
+          <div className="text-sm text-muted-foreground">{t("No tokens used today.")}</div>
+        )}
+      </CardContent>
+    </Card>
+  );
+});
+
+const TwoWeeks = memo(function TwoWeeks() {
+  return (
+    <section aria-label={t("The last two weeks")}>
+      <h2 className="mb-2 text-sm font-medium text-muted-foreground">{t("The last two weeks")}</h2>
+      <StatsCharts since={Date.now() - 14 * 86400_000} bucketMs={86400_000} topics={["overview"]} />
+    </section>
+  );
+});
 
 /**
  * Running now (ADR-034): every job going or waiting, across projects,

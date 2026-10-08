@@ -38,6 +38,7 @@ import { Cloud } from "./cloud/service.ts";
 import { STORAGE_TOOL, storageServer } from "./cloud/tool.ts";
 import { closeDatabase, openDatabase, startIdleCheckpoint } from "./db/open.ts";
 import { jobs as jobsTable, projects as projectsTable, tasks as tasksTable } from "./db/schema.ts";
+import { clipOversizedRows } from "./db/upkeep.ts";
 import { SideEffects } from "./engine/effects.ts";
 import { JobStore } from "./engine/jobs.ts";
 import { StepJournal } from "./engine/journal.ts";
@@ -224,6 +225,14 @@ export async function startDaemon(options: DaemonOptions) {
   // An archive imported from another computer waits here for this start (ADR-061).
   const imported = options.dbFile ? false : await applyPendingImport(paths);
   const db = await openDatabase({ file: options.dbFile ?? paths.db, backupsDir: paths.backups });
+  // Rows from before the size caps cut short once, their originals archived (migration 0043).
+  const clipped = clipOversizedRows(db, join(paths.dataDir, "archive"), now);
+  if (clipped?.archive)
+    console.log(
+      `Cut short oversized rows (${Object.entries(clipped.cut)
+        .map(([k, n]) => `${k}: ${n}`)
+        .join(", ")}); the originals are in ${clipped.archive}`,
+    );
   // The keychain entries of before belong to the default data folder alone (Audit 2, S2-23).
   const secrets = new Secrets(paths.dataDir, os.keychain, {
     ownsLegacy: isDefaultDataDir(paths.dataDir),

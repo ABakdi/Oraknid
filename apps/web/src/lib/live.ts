@@ -1,8 +1,10 @@
 import type { CloudTransfer, Event, MetricsSample, ServerFrame } from "@oraknid/contracts";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { auth } from "./api";
+import { lightEvent } from "./events";
 import { checkFresh, watchFresh } from "./fresh";
 import { unlock } from "./lock";
+import { Coalescer, onPageVisible, RingBuffer } from "./pace";
 import { RemoteSocket, remote } from "./remote";
 
 export type LiveStatus = "live" | "reconnecting" | "offline";
@@ -180,14 +182,25 @@ export function useLiveStatus(): LiveStatus {
   );
 }
 
+/** At most one reload of a piece of data in this many milliseconds (Web-UI → Performance). */
+export const RELOAD_EVERY_MS = 500;
+
 /**
- * Data that stays current: loads once, then reloads (debounced) whenever
- * a live event on `topics` matches `refreshOn`. On reconnect gaps the
- * server's snapshot request reloads it too.
+ * Data that stays current: loads once, then reloads whenever a live event
+ * on `topics` matches `refreshOn`, a burst of them folded into one reload
+ * at most every `everyMs` (500 ms), none while the page is out of sight
+ * (one when it is seen again). On reconnect gaps the server's snapshot
+ * request reloads it too; `reload()` is at once.
  */
 export function useLive<T>(
   load: () => Promise<T>,
-  o: { topics: string[]; refreshOn?: (e: Event) => boolean; deps?: unknown[] },
+  o: {
+    topics: string[];
+    refreshOn?: (e: Event) => boolean;
+    deps?: unknown[];
+    /** At most one live reload in this many milliseconds. */
+    everyMs?: number;
+  },
 ): { data: T | undefined; error: unknown; loading: boolean; reload: () => void } {
   const [data, setData] = useState<T>();
   const [error, setError] = useState<unknown>();
@@ -226,60 +239,115 @@ export function useLive<T>(
   // biome-ignore lint/correctness/useExhaustiveDependencies: topics identify the subscription
   useEffect(() => {
     const off = live.subscribe(o.topics);
-    let t: ReturnType<typeof setTimeout> | undefined;
+    const reloads = new Coalescer(() => setTick((n) => n + 1), {
+      everyMs: o.everyMs ?? RELOAD_EVERY_MS,
+    });
     const offEvents = live.on((e) => {
       if (!o.topics.includes(e.topic)) return;
       if (o.refreshOn && !o.refreshOn(e)) return;
-      clearTimeout(t);
-      t = setTimeout(() => setTick((n) => n + 1), 150);
+      reloads.request();
     });
+    const offVisible = onPageVisible(() => reloads.visible());
     return () => {
       off();
       offEvents();
-      clearTimeout(t);
+      offVisible();
+      reloads.stop();
     };
   }, [o.topics.join(",")]);
 
   return { data, error, loading, reload: () => setTick((n) => n + 1) };
 }
 
-/** The latest events on some topics, newest first, kept in memory (activity streams). */
+/** How often a live stream's list is drawn again, at most (Web-UI → Performance). */
+export const STREAM_EVERY_MS = 500;
+
+/**
+ * The latest `limit` events of `seed` and `fresh`, newest first, each once:
+ * a stream's list from what it was seeded with and what came since.
+ */
+export function newestEvents(seed: Event[], fresh: Event[], limit: number): Event[] {
+  const bySeq = new Map<number, Event>();
+  for (const e of seed) bySeq.set(e.seq, e);
+  for (const e of fresh) bySeq.set(e.seq, e);
+  return [...bySeq.values()].sort((a, b) => b.seq - a.seq).slice(0, limit);
+}
+
+/**
+ * The latest events on some topics, newest first, kept in memory (activity
+ * streams): at most `limit` of them in a ring buffer, the list drawn again
+ * at most twice a second, and not while the page is out of sight.
+ */
 export function useEvents(topics: string[], limit = 200, seed: Event[] = []): Event[] {
-  const [events, setEvents] = useState<Event[]>(seed);
+  const [events, setEvents] = useState<Event[]>([]);
+  const ring = useRef<RingBuffer<Event> | null>(null);
+  ring.current ??= new RingBuffer<Event>(limit);
+  const seeded = useRef<Event[]>([]);
+  const draw = useRef<Coalescer | null>(null);
+  draw.current ??= new Coalescer(
+    () => setEvents(newestEvents(seeded.current, ring.current?.toArray() ?? [], limit)),
+    { everyMs: STREAM_EVERY_MS, settleMs: 50 },
+  );
   // biome-ignore lint/correctness/useExhaustiveDependencies: seed only matters when it arrives
   useEffect(() => {
     // The audit log holds every topic's copy of an event: keep only the ones this stream shows.
-    if (seed.length) setEvents(seed.filter((e) => topics.includes(e.topic)));
+    if (!seed.length) return;
+    seeded.current = seed.filter((e) => topics.includes(e.topic));
+    setEvents(newestEvents(seeded.current, ring.current?.toArray() ?? [], limit));
   }, [seed.length]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: topics identify the subscription
   useEffect(() => {
     const off = live.subscribe(topics);
     const offEvents = live.on((e) => {
-      if (topics.includes(e.topic))
-        setEvents((xs) => [e, ...xs.filter((x) => x.seq !== e.seq)].slice(0, limit));
+      if (!topics.includes(e.topic)) return;
+      // One brought again (a replay) is drawn once: newestEvents keeps each seq once.
+      ring.current?.push(lightEvent(e));
+      draw.current?.request();
     });
+    const offVisible = onPageVisible(() => draw.current?.visible());
     return () => {
       off();
       offEvents();
+      offVisible();
     };
   }, [topics.join(",")]);
+  useEffect(() => () => draw.current?.stop(), []);
   return events;
 }
 
-/** The last hour of resource samples, then live at 1/s. */
+/** Resource samples kept for the charts: ten minutes at 1/s. */
+export const METRICS_KEPT = 600;
+
+/** The last ten minutes of resource samples, then live at 1/s; not drawn while out of sight. */
 export function useMetrics(seed: () => Promise<MetricsSample[]>): MetricsSample[] {
   const [samples, setSamples] = useState<MetricsSample[]>([]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: loads once
   useEffect(() => {
-    seed().then(
-      (s) => setSamples(s.slice(-600)),
-      () => {},
-    );
+    const ring = new RingBuffer<MetricsSample>(METRICS_KEPT);
+    const draw = new Coalescer(() => setSamples(ring.toArray()), { everyMs: 1000, settleMs: 0 });
+    let seeded = false;
+    const done = (first: MetricsSample[]) => {
+      // Live samples that came before the seed stay after it.
+      const came = ring.toArray();
+      const last = first.at(-1)?.at ?? 0;
+      ring.clear();
+      for (const x of first.slice(-METRICS_KEPT)) ring.push(x);
+      for (const x of came) if (x.at > last) ring.push(x);
+      seeded = true;
+      setSamples(ring.toArray());
+    };
+    seed().then(done, () => done([]));
     const off = live.subscribe(["metrics"]);
-    const offM = live.onMetrics((m) => setSamples((xs) => [...xs.slice(-599), m]));
+    const offM = live.onMetrics((m) => {
+      ring.push(m);
+      if (seeded) draw.request();
+    });
+    const offVisible = onPageVisible(() => draw.visible());
     return () => {
       off();
       offM();
+      offVisible();
+      draw.stop();
     };
   }, []);
   return samples;

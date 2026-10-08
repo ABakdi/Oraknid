@@ -1,5 +1,5 @@
 import { ChevronLeft } from "lucide-react";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { message } from "@/lib/api";
+import { clip } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { useBack } from "@/lib/nav";
 import { cn } from "@/lib/utils";
@@ -179,13 +180,18 @@ export function Loading({ rows = 3 }: { rows?: number }) {
 const keyed = <T,>(xs: T[], prefix: string) =>
   xs.map((value, n) => ({ value, key: `${prefix}${n}` }));
 
+/** The most of one text drawn as Markdown; the rest is said in a line (Web-UI → Performance). */
+export const MARKDOWN_MAX = 60_000;
+const PLUGINS = [remarkGfm, remarkBreaks];
+
 /**
  * Markdown for everything a Leg, The Eye or I write (Web-UI → Markdown):
  * GitHub-flavoured (tables, task lists, strikethrough). Raw HTML is never
  * rendered, links open in a new tab, and long lines wrap or scroll inside
- * their block, never past it.
+ * their block, never past it. Parsed again only when its text changes: a
+ * transcript drawn again doesn't parse every message again.
  */
-export function Markdown({
+export const Markdown = memo(function Markdown({
   text,
   className,
   components,
@@ -212,7 +218,7 @@ export function Markdown({
     >
       <ReactMarkdown
         // A line break is kept: Oraknid and the Legs write line by line.
-        remarkPlugins={[remarkGfm, remarkBreaks]}
+        remarkPlugins={PLUGINS}
         components={{
           // A page of Oraknid's own (the helper's links to the guide) opens here, not in a new tab.
           a: ({ node: _n, href, ...props }) =>
@@ -231,11 +237,11 @@ export function Markdown({
           ...components,
         }}
       >
-        {text}
+        {text.length > MARKDOWN_MAX ? clip(text, MARKDOWN_MAX) : text}
       </ReactMarkdown>
     </div>
   );
-}
+});
 
 export function Stat({
   label,

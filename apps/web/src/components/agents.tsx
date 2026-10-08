@@ -1,5 +1,5 @@
 import type { SessionLogEntry, SessionView } from "@oraknid/contracts";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Empty, ErrorNote, Loading, Markdown } from "@/components/common";
 import { LegAvatar, type LegLook, useLegLooks } from "@/components/leg-avatar";
 import { Badge } from "@/components/ui/badge";
@@ -7,7 +7,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { ago, clock, tokens } from "@/lib/format";
 import { t } from "@/lib/i18n";
-import { live, useLive } from "@/lib/live";
+import { live, RELOAD_EVERY_MS, useLive } from "@/lib/live";
+import { Coalescer, onPageVisible } from "@/lib/pace";
 import { cn } from "@/lib/utils";
 
 /**
@@ -116,7 +117,7 @@ function SessionLog({
   compact?: boolean;
   look?: LegLook;
 }) {
-  const [entries, setEntries] = useState<SessionLogEntry[]>([]);
+  const [{ entries, dropped }, setLog] = useState<ShownLog>({ entries: [], dropped: 0 });
   const [error, setError] = useState<unknown>();
   const [follow, setFollow] = useState(true);
   const next = useRef(0);
@@ -137,7 +138,7 @@ function SessionLog({
           const page = await api.sessions.log({ id: session.id, after: next.current });
           if (gone) return;
           next.current = page.next;
-          if (page.entries.length) setEntries((xs) => join(xs, page.entries));
+          if (page.entries.length) setLog((l) => keepNewest(l, page.entries));
           if (!page.entries.length && !again.current) break;
           again.current = false;
         }
@@ -149,18 +150,20 @@ function SessionLog({
     };
     void read();
     const off = live.subscribe([`job:${jobId}`]);
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Its new lines read at most twice a second, not while the page is out of sight.
+    const reads = new Coalescer(() => void read(), { everyMs: RELOAD_EVERY_MS });
     const offEvents = live.on((e) => {
       if (e.topic !== `job:${jobId}`) return;
       if ((e.payload as { sessionId?: string } | null)?.sessionId !== session.id) return;
-      clearTimeout(timer);
-      timer = setTimeout(read, 200);
+      reads.request();
     });
+    const offVisible = onPageVisible(() => reads.visible());
     return () => {
       gone = true;
       off();
       offEvents();
-      clearTimeout(timer);
+      offVisible();
+      reads.stop();
     };
   }, [jobId, session.id]);
 
@@ -206,9 +209,19 @@ function SessionLog({
           {entries.length === 0 ? (
             <div className="text-muted-foreground">{t("Nothing yet…")}</div>
           ) : null}
+          {dropped ? (
+            <div className="text-muted-foreground">
+              {t(
+                "{n} earlier lines are not shown here; the whole log is kept in Oraknid's logs folder.",
+                {
+                  n: dropped.toLocaleString(),
+                },
+              )}
+            </div>
+          ) : null}
           {entries.map((e, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: the log only grows at its end, so an index never moves
-            <Line key={`${e.at}-${i}`} e={e} />
+            // biome-ignore lint/suspicious/noArrayIndexKey: dropped lines shift no key: the count is part of it
+            <Line key={`${e.at}-${dropped + i}`} e={e} />
           ))}
         </div>
       </CardContent>
@@ -216,7 +229,8 @@ function SessionLog({
   );
 }
 
-function Line({ e }: { e: SessionLogEntry }) {
+// Drawn again only when its line changes: a log read twice a second redraws its last line alone.
+const Line = memo(function Line({ e }: { e: SessionLogEntry }) {
   const time = <span className="mr-2 select-none text-muted-foreground">{clock(e.at)}</span>;
   switch (e.kind) {
     case "text":
@@ -275,6 +289,28 @@ function Line({ e }: { e: SessionLogEntry }) {
         </div>
       );
   }
+});
+
+/** The lines of a session's log shown at most: its newest (Web-UI → Performance). */
+export const LOG_LINES_SHOWN = 2_000;
+
+export interface ShownLog {
+  entries: SessionLogEntry[];
+  /** Lines dropped from its start to keep the page light. */
+  dropped: number;
+}
+
+/** The log with `more` read, its newest LOG_LINES_SHOWN lines only. */
+export function keepNewest(
+  log: ShownLog,
+  more: SessionLogEntry[],
+  max = LOG_LINES_SHOWN,
+): ShownLog {
+  const all = join(log.entries, more);
+  const over = all.length - max;
+  return over <= 0
+    ? { ...log, entries: all }
+    : { entries: all.slice(over), dropped: log.dropped + over };
 }
 
 /** Streamed text may be split across reads: join it to the line before. */

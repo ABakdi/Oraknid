@@ -392,7 +392,27 @@ export async function changedSince(g: Git, ref: string, tmpDir: string): Promise
 
 export async function diffStatSince(g: Git, ref: string, tmpDir: string): Promise<string> {
   const tree = await snapshotTree(g, tmpDir);
-  return gitAsync(g, ["diff", "--stat", `${ref}^{tree}`, tree]);
+  return briefStat(await gitAsync(g, ["diff", "--stat", `${ref}^{tree}`, tree]));
+}
+
+/** The file lines a diff stat keeps, at most (Silk's "Done" and handoffs). */
+export const STAT_FILES_MAX = 60;
+
+/**
+ * A diff stat said briefly: its first file lines, how many more, and git's
+ * summary line. A package store committed by a task once listed thousands
+ * of files, and its Silk entry was 1.5 MB (2026-10-08).
+ */
+export function briefStat(stat: string, max = STAT_FILES_MAX): string {
+  const lines = stat.replace(/\n+$/, "").split("\n");
+  const summary = /^\s*\d+ files? changed/.test(lines.at(-1) ?? "") ? lines.pop() : undefined;
+  if (lines.length <= max) return stat;
+  const more = lines.length - max;
+  return [
+    ...lines.slice(0, max),
+    ` … and ${more.toLocaleString("en-US")} more file${more === 1 ? "" : "s"}`,
+    ...(summary ? [summary] : []),
+  ].join("\n");
 }
 
 /** Paths shown under a repo's folder in the project (ADR-042), or as they are. */

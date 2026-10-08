@@ -219,6 +219,24 @@ describe("mirror", () => {
 });
 
 describe("rebuilt handoff", () => {
+  it("lists the last commands only, each on one line (2026-10-08: a 1.5 MB handoff)", () => {
+    const h = reconstructHandoff({
+      goal: "Scaffold",
+      diffStat: "",
+      commands: Array.from({ length: 3000 }, (_, i) => ({
+        command: i === 2999 ? `cat > big.ts <<'EOF'\n${"x".repeat(50_000)}\nEOF` : `pnpm test ${i}`,
+        ok: i % 2 === 0,
+      })),
+      lastText: "",
+      verifyOutput: null,
+    });
+    expect(h).toContain(`Commands run (the last 40 of 3000)`);
+    expect(h).toContain("pnpm test 2998");
+    expect(h).not.toContain("pnpm test 10\n");
+    expect(h).toContain("cat > big.ts <<'EOF'…");
+    expect(h.length).toBeLessThan(5000);
+  });
+
   it("has the handoff's headings, the diff, the failed commands as traps, and says it was rebuilt", () => {
     const h = reconstructHandoff({
       goal: "Add login",

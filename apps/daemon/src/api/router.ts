@@ -7,6 +7,7 @@ import {
   ChannelTestResult,
   ChatMessage,
   ChatView,
+  ConversationPage,
   DoctorCheck,
   DraftPatch,
   EmailSettings,
@@ -130,7 +131,7 @@ import {
 import { ORPCError, os } from "@orpc/server";
 import { asc, desc, eq } from "drizzle-orm";
 import { z } from "zod";
-import { AuditQuery, searchAudit } from "../audit/audit.ts";
+import { AuditQuery, auditEvent, searchAudit } from "../audit/audit.ts";
 import type { Devices } from "../auth/devices.ts";
 import { type AppLock, IDLE_CHOICES, Pin } from "../auth/lock.ts";
 import type { Backups } from "../backups/service.ts";
@@ -178,6 +179,8 @@ import { polishText } from "../eye/polish.ts";
 import {
   answerInProject,
   conversation,
+  conversationMessage,
+  conversationPage,
   projectConversation,
   stopThinking,
   talk,
@@ -1023,12 +1026,25 @@ export const router = {
      * every job, in order. Each names the job it was about.
      */
     conversation: base
-      .input(z.object({ id: z.string() }))
+      .input(z.object({ id: z.string() }).extend(ConversationPage.shape))
       .output(z.array(EyeMessage))
       .handler(({ context: c, input }) =>
         guard(() => {
           c.projects.require(input.id);
-          return projectConversation(c.jobs.db, input.id);
+          // A page, each long text its start (Web-UI → Performance); all of it without a limit.
+          return conversationPage(projectConversation(c.jobs.db, input.id), input);
+        }),
+      ),
+    /** One message of the project's conversation, whole: what a page carried the start of. */
+    message: base
+      .input(z.object({ id: z.string(), messageId: z.string() }))
+      .output(EyeMessage)
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          c.projects.require(input.id);
+          const m = conversationMessage(c.jobs.db, input.id, input.messageId);
+          if (!m) throw new Error("That message is not in this project's conversation.");
+          return m;
         }),
       ),
     /**
@@ -1291,9 +1307,18 @@ export const router = {
       .output(ServerState)
       .handler(({ context: c, input }) => guard(() => c.servers.editState(input.id, input.body))),
     samples: base
-      .input(z.object({ id: z.string(), since: z.number() }))
+      .input(
+        z.object({
+          id: z.string(),
+          since: z.number(),
+          /** About this many readings, for a chart; all of them without it (Web-UI → Performance). */
+          points: z.number().int().min(2).max(2000).optional(),
+        }),
+      )
       .output(z.array(ServerSample))
-      .handler(({ context: c, input }) => guard(() => c.servers.samples(input.id, input.since))),
+      .handler(({ context: c, input }) =>
+        guard(() => c.servers.samples(input.id, input.since, input.points)),
+      ),
     remove: base
       .input(z.object({ id: z.string() }))
       .output(z.object({ cleaned: z.boolean() }))
@@ -1315,12 +1340,12 @@ export const router = {
      * questions answered without a job and its jobs' messages, in order.
      */
     conversation: base
-      .input(z.object({ id: z.string() }))
+      .input(z.object({ id: z.string() }).extend(ConversationPage.shape))
       .output(z.array(EyeMessage))
       .handler(({ context: c, input }) =>
         guard(() => {
           c.servers.row(input.id);
-          return serverConversation(c.jobs.db, input.id);
+          return conversationPage(serverConversation(c.jobs.db, input.id), input);
         }),
       ),
     /**
@@ -2113,6 +2138,17 @@ export const router = {
       .input(AuditQuery)
       .output(z.array(Event))
       .handler(({ context: c, input }) => searchAudit(c.jobs.db, input)),
+    /** One event whole: a list carries each long payload string's start and end only. */
+    event: base
+      .input(z.object({ seq: z.number().int().positive() }))
+      .output(Event)
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          const e = auditEvent(c.jobs.db, input.seq);
+          if (!e) throw new Error("There is no such event.");
+          return e;
+        }),
+      ),
   },
   policies: {
     get: base.output(GlobalPolicy).handler(({ context: c }) => readGlobalPolicy(c.jobs.db)),

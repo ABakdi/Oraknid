@@ -6,7 +6,7 @@ import { type Daemon, startDaemon } from "../daemon.ts";
 import { resolvePaths } from "../paths.ts";
 import { fakeOs } from "../testing/fake-os.ts";
 import { seedJob } from "../testing/fixtures.ts";
-import { exportAudit, searchAudit } from "./audit.ts";
+import { auditEvent, exportAudit, LISTED_STRING_MAX, searchAudit } from "./audit.ts";
 
 let daemon: Daemon | undefined;
 afterEach(async () => {
@@ -81,5 +81,28 @@ describe("audit log (BR-16)", () => {
     expect(lines).toHaveLength(first + 1);
     expect(lines.at(-1)).toMatchObject({ type: "test.more", actor: "oraknid" });
     expect(existsSync(out)).toBe(true);
+  });
+});
+
+describe("lists of events (Web-UI → Performance)", () => {
+  it("carry each long payload string's start and end, and one event reads whole", async () => {
+    const { d } = await start();
+    const output = `first line\n${"o".repeat(30_000)}\nthe error at the end`;
+    const e = d.bus.publish({
+      type: "session.tool.result",
+      topic: "overview",
+      jobId: null,
+      payload: { sessionId: "s", ok: false, output },
+    });
+    const [listed] = searchAudit(d.db, { type: "session.tool.result", limit: 1 });
+    const p = listed?.payload as { output: string; ok: boolean };
+    expect(p.ok).toBe(false);
+    expect(p.output.length).toBeLessThanOrEqual(LISTED_STRING_MAX);
+    expect(p.output).toMatch(/^first line/);
+    expect(p.output).toMatch(/the error at the end$/);
+    expect(p.output).toContain("(cut short; 30,032 characters)");
+    expect(auditEvent(d.db, e.seq)?.payload).toEqual({ sessionId: "s", ok: false, output });
+    const [whole] = searchAudit(d.db, { type: "session.tool.result", limit: 1, whole: true });
+    expect(whole?.payload).toEqual({ sessionId: "s", ok: false, output });
   });
 });
