@@ -3,6 +3,19 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.4.1 — 2026-10-08 (pre-release)
+
+The harness, stage 5: the last of [ADR-056](docs/04-Decisions/ADR-056-The-Harness.md).
+
+- **The old task function is gone:** the 2,300-line function that ran a task is now a task controller, a state machine whose every step is recorded, built from small modules: routing, sessions, checks, the Gate, the Verifier, the decision, applying it.
+- **Agents are handled by what they can do,** as each one's probe reports it (inline approvals, pre-tool and stop hooks, resume), with a declared fallback for what one can't; no agent is named in the harness.
+- **An agent without inline approvals** (Antigravity) has what it ran audited after the fact; a refused action is corrected as a scope drift.
+- **After a restart:**
+  - an action left uncertain is checked, not re-run: a file in the tree, a commit by its branch, a server command by asking the agent to look;
+  - a task whose commit Oraknid made just before stopping ends done instead of running again.
+
+Known limit: right after updating, until each agent is probed again (about a minute), agents run asking for each action and without a stop hook.
+
 ## 0.4.0 — 2026-10-08 (pre-release)
 
 ### GitHub Actions inside Oraknid ([ADR-058](docs/04-Decisions/ADR-058-CI-In-Oraknid.md))
