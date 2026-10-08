@@ -3,6 +3,20 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.5.0 — 2026-10-08 (pre-release)
+
+### Monitors suspect, a model confirms ([ADR-056](docs/04-Decisions/ADR-056-The-Harness.md))
+- **What a project's own tools write is never questioned:** known conventions for each ecosystem (JavaScript/TypeScript and their bundlers, Python, Rust, Go, Java/Kotlin/Scala, .NET, Ruby, PHP, Elixir, Flutter, Swift, C/C++, Haskell, Zig, Terraform, Nix), chosen by the project's own marker files; also what its `.gitignore` excludes and what was learned for it before. No model call.
+- **The rules only suspect** (scope, repetition, the same failure, stalls, token burn, going round in circles). A drift judge, a fast model then a strong one when it says drift, confirms before anything is corrected. When unsure, the agent is asked once, neutrally. A judge that doesn't answer leads to a gentle correction at most, never a restart, reassignment or kill.
+- **Forbidden actions and retries of a refused action** still act at once.
+- **Learned per project, silently:** a pattern judged to be tool output is never asked about again. None of this shows in the chat or the inbox; you hear about drift only when it's confirmed.
+- **Fixed:** a scaffold that installs and builds (`node_modules/`, `dist/`) was corrected, restarted, reassigned and killed for its own output.
+
+### The Models page
+- **Refresh** for the list and for search results: files and sizes, Ollama's own models, whether a loaded model still answers, and its speed.
+- **Roles are given on each model's card,** only the roles that model can do; a role moved from another model says so. The side panel is gone.
+- **Ollama's library is found again:** ollama.com's page changed and every Ollama search came back empty. Results from both sources are interleaved by relevance, with an All / Ollama / Hugging Face filter and counts.
+
 ## 0.4.4 — 2026-10-08 (pre-release)
 
 - **Rolling a task back no longer breaks on large folders:** the files to restore go to git on stdin, not on one command line that a scaffold's thousands of files overflowed.
