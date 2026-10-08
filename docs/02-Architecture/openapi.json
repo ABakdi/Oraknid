@@ -1,7 +1,7 @@
 {
   "info": {
     "title": "Oraknid",
-    "version": "0.4.0",
+    "version": "0.4.1",
     "description": "Oraknid's API: every procedure's input and output, from the contracts in packages/contracts.\nThe wire is oRPC's RPC protocol: POST /api/<path> with the body {\"json\": <input>} (a procedure without input takes {}), answered with {\"json\": <output>}; an error is {\"json\": {\"code\", \"status\", \"message\", \"data\"}}.\nEvery call carries a paired device's token (Authorization: Bearer <token>) and, when the app lock is on, the unlock session (x-oraknid-unlock). Realtime events come on the /live WebSocket, not here."
   },
   "servers": [
