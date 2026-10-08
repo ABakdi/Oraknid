@@ -280,13 +280,24 @@ export interface HandoffFacts {
   verifyOutput: string | null;
 }
 
+/** The commands a rebuilt handoff lists, at most: the last ones. */
+export const HANDOFF_COMMANDS_MAX = 40;
+
 /**
  * A handoff rebuilt from the event log and the diff, for when the
  * outgoing Leg cannot write one (it crashed, was killed, or ran out of
  * quota). Same shape as the one a Leg is asked for.
  */
 export function reconstructHandoff(f: HandoffFacts): string {
-  const failed = f.commands.filter((c) => !c.ok);
+  // The last commands, each one line: a long session's every command (a heredoc
+  // of a whole file among them) is no handoff (Persistence-and-Recovery → Size caps).
+  const brief = (c: string) => {
+    const line = c.split("\n")[0] ?? "";
+    return line.length > 200 || line !== c ? `${line.slice(0, 200)}…` : line;
+  };
+  const skipped = Math.max(0, f.commands.length - HANDOFF_COMMANDS_MAX);
+  const commands = f.commands.slice(skipped).map((c) => ({ ...c, command: brief(c.command) }));
+  const failed = commands.filter((c) => !c.ok);
   return [
     "## Goal of the task",
     f.goal,
@@ -294,8 +305,8 @@ export function reconstructHandoff(f: HandoffFacts): string {
     f.diffStat.trim()
       ? `Changed files:\n\`\`\`\n${f.diffStat.trim()}\n\`\`\``
       : "No files changed yet.",
-    f.commands.length
-      ? `Commands run:\n${f.commands.map((c) => `- \`${c.command}\`${c.ok ? "" : " (failed)"}`).join("\n")}`
+    commands.length
+      ? `Commands run${skipped ? ` (the last ${commands.length} of ${f.commands.length})` : ""}:\n${commands.map((c) => `- \`${c.command}\`${c.ok ? "" : " (failed)"}`).join("\n")}`
       : "",
     "## Current state",
     f.verifyOutput

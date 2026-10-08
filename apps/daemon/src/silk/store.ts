@@ -5,6 +5,7 @@ import type { Actor, SilkByJob, SilkEntry, SilkKind } from "@oraknid/contracts";
 import { choiceQuestion } from "@oraknid/contracts";
 import { current, parseMirrorEdits, renderMirror } from "@oraknid/core";
 import { and, asc, desc, eq, lt } from "drizzle-orm";
+import { cutShort, SILK_BODY_MAX } from "../db/caps.ts";
 import type { Db } from "../db/open.ts";
 import { jobs, projects, silkEntries, silkMirror } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
@@ -51,7 +52,8 @@ export class SilkStore {
       kind: e.kind,
       // Secrets never reach Silk, its mirror or later prompts (BR-13; Audit 1 → S1-13).
       title: this.bus.scrub(e.title.trim()),
-      body: this.bus.scrub(e.body),
+      // At most 64 KB: a diff stat of thousands of files once made one 1.5 MB (Size caps).
+      body: cutShort(this.bus.scrub(e.body), SILK_BODY_MAX),
       supersedes: e.supersedes ?? null,
       covers: e.covers ?? [],
       authoredBy: e.authoredBy,

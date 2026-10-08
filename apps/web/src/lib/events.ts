@@ -209,6 +209,38 @@ export function describe(e: Event): string {
   return "";
 }
 
+/** The most of each payload string an event kept in a live stream carries (Web-UI → Performance). */
+export const KEPT_STRING_MAX = 2_000;
+
+const cutString = (s: string, max: number) => {
+  if (s.length <= max) return s;
+  const note = `(cut short; ${s.length.toLocaleString("en-US")} characters)`;
+  const room = Math.max(0, max - note.length - 8);
+  const head = Math.ceil(room * 0.6);
+  return `${s.slice(0, head).trimEnd()}\n… ${note} …\n${s.slice(s.length - (room - head)).trimStart()}`;
+};
+
+const cutDeep = (v: unknown, max: number): unknown => {
+  if (typeof v === "string") return cutString(v, max);
+  if (Array.isArray(v)) return v.map((x) => cutDeep(x, max));
+  if (v && typeof v === "object")
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, cutDeep(x, max)]));
+  return v;
+};
+
+/**
+ * An event as a live stream keeps it: each long payload string its start and
+ * end, as the daemon's lists carry them; opened, it is read whole (`audit.event`).
+ */
+export function lightEvent(e: Event, max = KEPT_STRING_MAX): Event {
+  return JSON.stringify(e.payload ?? null).length <= max
+    ? e
+    : { ...e, payload: cutDeep(e.payload, max) };
+}
+
+/** Whether an event's payload was cut short for a list: opened, it is read whole. */
+export const wasCut = (e: Event) => JSON.stringify(e.payload ?? null).includes("(cut short; ");
+
 /** A long output condensed to its first line, cut at `max`; null when it is short already. */
 export function condense(text: string, max = 140): string | null {
   const first = text.trimStart().split("\n")[0] ?? "";

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { Event } from "@oraknid/contracts";
 import { and, desc, eq, gt, inArray, like, lt, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
+import { cutStrings } from "../db/caps.ts";
 import type { Db } from "../db/open.ts";
 import { events, jobs } from "../db/schema.ts";
 import { readSetting, writeSetting } from "../settings.ts";
@@ -21,6 +22,11 @@ export const AuditQuery = z.object({
   text: z.string().optional(),
   beforeSeq: z.number().int().positive().optional(),
   limit: z.number().int().positive().max(500).default(100),
+  /**
+   * Each payload whole. Without it, a list's payloads carry each long string's
+   * start and end only (Web-UI → Performance); `audit.event` reads one whole.
+   */
+  whole: z.boolean().optional(),
 });
 export type AuditQuery = z.infer<typeof AuditQuery>;
 
@@ -53,9 +59,27 @@ export function searchAudit(db: Db, q: AuditQuery): Event[] {
       type: r.type,
       topic: r.topic,
       jobId: r.jobId,
-      payload: r.payload ?? null,
+      payload: q.whole ? (r.payload ?? null) : cutStrings(r.payload ?? null, LISTED_STRING_MAX),
       actor: r.actor,
     }));
+}
+
+/** The most of each payload string a list of events carries (Web-UI → Performance). */
+export const LISTED_STRING_MAX = 2_000;
+
+/** One event, whole: what a list carried the start and end of. */
+export function auditEvent(db: Db, seq: number): Event | null {
+  const r = db.select().from(events).where(eq(events.seq, seq)).get();
+  if (!r) return null;
+  return {
+    seq: r.seq,
+    at: r.at,
+    type: r.type,
+    topic: r.topic,
+    jobId: r.jobId,
+    payload: r.payload ?? null,
+    actor: r.actor,
+  };
 }
 
 const LAST = "audit.exportedSeq";

@@ -11,6 +11,7 @@ import {
   renderAnswers,
 } from "@oraknid/contracts";
 import { and, desc, eq, type SQL } from "drizzle-orm";
+import { cutShort, INBOX_DETAIL_MAX } from "../db/caps.ts";
 import type { Db } from "../db/open.ts";
 import { inboxItems, jobs, projects, tasks } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
@@ -52,7 +53,7 @@ export class InboxStore {
           taskId: item.taskId ?? null,
           raisedBy: item.raisedBy,
           title: this.bus.scrub(item.title),
-          detail: this.bus.scrub(item.detail),
+          detail: cutShort(this.bus.scrub(item.detail), INBOX_DETAIL_MAX),
           options: item.options,
           defaultOption: item.defaultOption ?? null,
           questions: item.questions?.length ? normalizeQuestions(item.questions) : null,

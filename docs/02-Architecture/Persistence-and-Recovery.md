@@ -3,7 +3,7 @@
 SQLite with better-sqlite3 and Drizzle ([[ADR-002-Persistence]]). The
 durable step engine runs on the same database ([[ADR-003-Job-Execution-Engine]]).
 
-## Tables (as built, 2026-10-07; migrations 0000 to 0039)
+## Tables (as built, 2026-10-07; migrations 0000 to 0039; 0043 below)
 
 | Table | Holds |
 | :-- | :-- |
@@ -50,6 +50,35 @@ let an `eye_messages` row have none); 0039 renamed the autonomy levels
   `events` as condensed summaries every 250 ms.
 - `synchronous=FULL`; WAL checkpointed when idle (every 5 minutes while
   no job is active, `wal_checkpoint(TRUNCATE)`, 2026-10-07).
+
+## Size caps (2026-10-08, migration 0043)
+
+A blocked reason that was a tool's whole output (3.2 MB, in a job, its
+`job.state` and `job.error` events and an Eye message) and a Silk entry
+holding a diff stat of thousands of files (1.5 MB) froze every screen
+that read them. What one row may hold (`apps/daemon/src/db/caps.ts`):
+
+| Where | Cap | Kept |
+| :-- | :-- | :-- |
+| `eye_messages.text` | 20,000 characters | start and end |
+| each string of `events.payload` (the bus) | 32,000 | start and end |
+| `silk_entries.body` | 64,000 | start and end |
+| `inbox_items.detail` | 20,000 | start and end |
+| `jobs.blocked_reason`, `pause_reason` | 600 | start |
+
+A text cut short says so: `(cut short; N characters)`. The writers of
+the 1.5 MB entry are bounded at the source: a diff stat in Silk lists 60
+files, how many more and git's summary (`briefStat`); a rebuilt handoff
+lists the last 40 commands, one line each.
+
+Migration 0043 marks the rows of before for cutting (`upkeep.clipOversizedRows`
+in `settings`); SQL can't write files, so the daemon does it at its next
+start (`db/upkeep.ts`): each original goes first, whole, to
+`<data>/archive/oversized-rows-<time>.ndjson` (0600 in 0700, one line per
+row: table, key, column, original, synced to disk), then the rows are
+cut in one transaction and the mark removed. Nothing is lost; a crash
+before the end runs it again. The database file keeps its size until a
+`VACUUM`.
 
 ## Recovery sequence
 

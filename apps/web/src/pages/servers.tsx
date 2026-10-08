@@ -435,12 +435,19 @@ function Spark({ values, max }: { values: number[]; max: number }) {
   );
 }
 
+/** Readings a sparkline draws: a day thinned to this many. */
+const SPARK_POINTS = 240;
+
 function Readings({ id, latest }: { id: string; latest: ServerSample | null }) {
-  const samples = useLive(() => api.servers.samples({ id, since: Date.now() - 24 * 3600_000 }), {
-    topics: ["overview"],
-    refreshOn: (e) => e.type.startsWith("server."),
-    deps: [id],
-  });
+  // A day thinned to a chart's worth: 5,760 readings with their lists were megabytes (Web-UI → Performance).
+  const samples = useLive(
+    () => api.servers.samples({ id, since: Date.now() - 24 * 3600_000, points: SPARK_POINTS }),
+    {
+      topics: ["overview"],
+      refreshOn: (e) => e.type.startsWith("server."),
+      deps: [id],
+    },
+  );
   const all = samples.data ?? [];
   const l = latest ?? all.at(-1) ?? null;
   if (!l)

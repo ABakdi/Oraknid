@@ -8,6 +8,7 @@ import {
 } from "@oraknid/contracts";
 import { endsInterview, freshQuestions, skillExcerpt } from "@oraknid/core";
 import { asc, eq } from "drizzle-orm";
+import { cutShort, EYE_MESSAGE_MAX } from "../db/caps.ts";
 import type { Db } from "../db/open.ts";
 import { eyeMessages, jobs, projects } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
@@ -70,7 +71,8 @@ function say(
         jobId,
         projectId,
         author,
-        text,
+        // A message is never a tool's whole output (Size caps).
+        text: cutShort(text, EYE_MESSAGE_MAX),
         action: null,
         questions: extras.questions?.length ? extras.questions : null,
         answers: extras.answers ?? null,

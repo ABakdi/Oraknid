@@ -976,6 +976,38 @@ With the PIN set, a device opens on a PIN pad (digits big enough for a
 thumb) until it is unlocked; idle, it locks again. A wrong PIN says how
 many tries are left before the device is unpaired.
 
+## Performance (2026-10-08)
+
+The page stays responsive with a job streaming and months of data
+(measured with `scripts/ui-perf.mjs`: a seeded daemon on its own folder
+and port, headless Chromium, long tasks, heap, DOM, requests per page).
+
+- **Live data is bounded.** A stream of events keeps its newest N in a
+  ring buffer (`lib/pace.ts`; the Overview 150, a project's Activity 400),
+  each payload string cut to 2,000 characters; resources keep ten minutes
+  of samples. A session's log shows its newest 2,000 lines and says how
+  many earlier ones are not shown.
+- **Reloads are paced.** A burst of live events folds into one reload of
+  a piece of data at most every 500 ms (`useLive`); a stream's list is
+  drawn at most twice a second, resources once a second. A page out of
+  sight (`document.visibilityState`) reloads and draws nothing; it catches
+  up once when seen again. `reload()` after my own action is at once.
+- **What changes by the second is drawn alone.** The Overview's stream,
+  problems and resources are components of their own; charts, Markdown
+  (parsed again only when its text changes), activity lines and log
+  lines are memoized. A payload is drawn only once its line is opened.
+- **Long lists come in pages.** The Eye's conversation (a project's or a
+  server's) loads its last 100 messages; "Earlier messages" reads the 100
+  before. A server's day of readings comes thinned to 240 points (each
+  stretch's peak kept, services and ports only on the newest).
+- **Long texts come in part.** A conversation's page carries each
+  message's first 8,000 characters with its whole length ("Show all"
+  reads it, `projects.message`); lists of events carry each payload
+  string's start and end (2,000 characters), an opened event is read
+  whole (`audit.event`), the export takes everything. Markdown draws at
+  most 60,000 characters. What is stored is capped too
+  ([[Persistence-and-Recovery]] → Size caps).
+
 ## Empty, loading and error states
 
 - No Legs yet → the Overview shows a single "Add your first Leg" card

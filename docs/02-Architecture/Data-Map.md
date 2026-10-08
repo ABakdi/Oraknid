@@ -13,7 +13,8 @@ Where each piece of data lives, and who can read it.
 | Secrets | OS keychain, under this data folder's own service `oraknid:<id>` (the id in `keychain-id`, 0600; [[Audit-2]] S2-23), or `secrets.json` (encrypted, 0600) when there's none | Daemon, at process start only | Only to the service they are for. |
 | Resource metrics | Memory only (last hour) | Daemon, paired devices | No. |
 | Provider logins | Each Leg's own config dir, managed by the official binary | That Leg's process | Only to that provider. |
-| Audit log | SQLite + daily JSONL | Me | No. |
+| Audit log | SQLite + daily JSONL (each payload string at most 32,000 characters since 2026-10-08, [[Persistence-and-Recovery]] → Size caps) | Me | No. |
+| Oversized rows of before (2026-10-08, migration 0043) | `<data>/archive/oversized-rows-<time>.ndjson` (0600 in 0700): the whole original of each row the size caps cut short (an Eye message, an event's payload, a Silk body, an inbox detail, a job's reason) | Daemon, me | No. |
 | Device keys | SQLite (public), device (private) | — | No. |
 | Push subscriptions | SQLite | Daemon | The push service (browser vendor) receives encrypted notifications. |
 | Email notifications | — | — | Via my SMTP server, to my address. |

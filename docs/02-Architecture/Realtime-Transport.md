@@ -41,4 +41,10 @@ name or description changing (`job.named`, 2026-10-04) also
 reach `overview` subscribers as a hint to reload, at most 4/s per
 client, never stored or replayed ([[Audit-1]] Q1-05).
 
+**In the browser** (2026-10-08, [[Web-UI]] → Performance): subscriptions
+are unchanged; what the UI does with them is paced. Events that ask a
+piece of data to reload fold into one reload at most every 500 ms, none
+while the page is out of sight; streams keep their newest events in ring
+buffers and are drawn at most twice a second; metrics once a second.
+
 Related: [[ADR-004-Realtime-Transport]] · [[Web-UI]] · [[API-Contract]]

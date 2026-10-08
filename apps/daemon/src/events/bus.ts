@@ -1,6 +1,7 @@
 import type { Event, NewEvent } from "@oraknid/contracts";
 import { scrubDeep } from "@oraknid/core";
 import { and, asc, count, desc, gt, inArray } from "drizzle-orm";
+import { cutStrings, EVENT_STRING_MAX } from "../db/caps.ts";
 import type { Db } from "../db/open.ts";
 import { events } from "../db/schema.ts";
 
@@ -55,8 +56,12 @@ export class EventBus {
         payload:
           event.payload === undefined || event.payload === null
             ? null
-            : // Round-tripped first: what is stored is plain JSON, as before.
-              scrubDeep(JSON.parse(JSON.stringify(event.payload)), (s) => this.scrub(s)),
+            : // Round-tripped first: what is stored is plain JSON, as before. Each string
+              // scrubbed, then cut to its cap: a tool's whole output is no event's (Size caps).
+              cutStrings(
+                scrubDeep(JSON.parse(JSON.stringify(event.payload)), (s) => this.scrub(s)),
+                EVENT_STRING_MAX,
+              ),
         actor: event.actor ?? "oraknid",
       })
       .returning()

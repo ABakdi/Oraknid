@@ -2908,6 +2908,14 @@
                 "properties": {
                   "id": {
                     "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000
+                  },
+                  "before": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -3291,6 +3299,11 @@
                         "type": "integer",
                         "minimum": 0,
                         "maximum": 9007199254740991
+                      },
+                      "fullLength": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
                       }
                     },
                     "required": [
@@ -3303,6 +3316,426 @@
                       "createdAt"
                     ]
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/message": {
+      "post": {
+        "operationId": "projects.message",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "messageId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "messageId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    },
+                    "jobId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "projectId": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    },
+                    "author": {
+                      "enum": [
+                        "owner",
+                        "eye"
+                      ],
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "action": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "intent": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "instruction",
+                                    "task",
+                                    "context",
+                                    "later",
+                                    "stop",
+                                    "question"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "report"
+                                }
+                              ]
+                            },
+                            "report": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "task-done",
+                                        "task-left-out",
+                                        "job-done",
+                                        "blocked",
+                                        "waiting",
+                                        "denied",
+                                        "cancelled",
+                                        "folder-restored"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "taskId": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "default": null
+                                    },
+                                    "facts": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          },
+                                          "href": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ],
+                                            "default": null
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      },
+                                      "default": []
+                                    },
+                                    "todo": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      },
+                                      "default": []
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "did": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "silkIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                              },
+                              "default": []
+                            },
+                            "taskIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                              },
+                              "default": []
+                            },
+                            "jobId": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "default": null
+                            },
+                            "place": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "server",
+                                        "project"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "projectId": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "default": null
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "id",
+                                    "name"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "intent",
+                            "did"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "questions": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 80
+                              },
+                              "shape": {
+                                "enum": [
+                                  "single",
+                                  "multi",
+                                  "text",
+                                  "confirm"
+                                ],
+                                "type": "string"
+                              },
+                              "prompt": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 2000
+                              },
+                              "options": {
+                                "type": "array",
+                                "maxItems": 9,
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 80
+                                    },
+                                    "label": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 200
+                                    },
+                                    "detail": {
+                                      "type": "string",
+                                      "maxLength": 600
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "label"
+                                  ]
+                                },
+                                "default": []
+                              },
+                              "recommended": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "default": null
+                              },
+                              "allowOther": {
+                                "type": "boolean",
+                                "default": true
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "shape",
+                              "prompt"
+                            ]
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "itemId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "answers": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "questionId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 80
+                              },
+                              "options": {
+                                "type": "array",
+                                "maxItems": 9,
+                                "items": {
+                                  "type": "string",
+                                  "maxLength": 80
+                                },
+                                "default": []
+                              },
+                              "text": {
+                                "type": "string",
+                                "maxLength": 8000,
+                                "default": ""
+                              }
+                            },
+                            "required": [
+                              "questionId"
+                            ]
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "replyTo": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "createdAt": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "fullLength": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "jobId",
+                    "projectId",
+                    "author",
+                    "text",
+                    "action",
+                    "createdAt"
+                  ]
                 }
               }
             }
@@ -7464,6 +7897,11 @@
                   },
                   "since": {
                     "type": "number"
+                  },
+                  "points": {
+                    "type": "integer",
+                    "minimum": 2,
+                    "maximum": 2000
                   }
                 },
                 "required": [
@@ -7960,6 +8398,14 @@
                 "properties": {
                   "id": {
                     "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000
+                  },
+                  "before": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -8340,6 +8786,11 @@
                         "default": null
                       },
                       "createdAt": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "fullLength": {
                         "type": "integer",
                         "minimum": 0,
                         "maximum": 9007199254740991
@@ -37051,6 +37502,9 @@
                     "maximum": 500,
                     "exclusiveMinimum": 0,
                     "default": 100
+                  },
+                  "whole": {
+                    "type": "boolean"
                   }
                 }
               }
@@ -37111,6 +37565,88 @@
                       "actor"
                     ]
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/audit/event": {
+      "post": {
+        "operationId": "audit.event",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991,
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "seq"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "seq": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "exclusiveMinimum": 0
+                    },
+                    "at": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "type": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "topic": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "jobId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "payload": {},
+                    "actor": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "seq",
+                    "at",
+                    "type",
+                    "topic",
+                    "jobId",
+                    "actor"
+                  ]
                 }
               }
             }
@@ -41761,6 +42297,11 @@
                             "type": "integer",
                             "minimum": 0,
                             "maximum": 9007199254740991
+                          },
+                          "fullLength": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
                           }
                         },
                         "required": [
@@ -43145,6 +43686,11 @@
                         "default": null
                       },
                       "createdAt": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "fullLength": {
                         "type": "integer",
                         "minimum": 0,
                         "maximum": 9007199254740991
