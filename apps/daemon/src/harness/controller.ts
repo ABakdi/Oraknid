@@ -13,7 +13,7 @@ import { type AttemptCtx, type AttemptState, beginTurn, factsOf } from "./facts.
 import { createGate } from "./gate.ts";
 import { AttemptLog } from "./log.ts";
 import { scopeOf } from "./pack.ts";
-import { heard, reconcile, reconciledText, unresolved } from "./reconcile.ts";
+import { committedBeforeCrash, heard, reconcile, reconciledText, unresolved } from "./reconcile.ts";
 import { takeOver } from "./record.ts";
 import { pickRoute } from "./route.ts";
 import { createSessionManager, legServers, safeDiffStat } from "./sessions.ts";
@@ -129,6 +129,11 @@ export async function runController(
       .get() ?? null;
 
   // ── Preparing ───────────────────────────────────────────────────
+  // The attempt before was deciding Done when Oraknid stopped: its commit, if made, stands.
+  const committed = before
+    ? committedBeforeCrash(d, attemptLog, job.id, task, before, ws.tree)
+    : null;
+  if (committed) return committed;
   const routed = await pickRoute(d, job, task, signal);
   if ("kind" in routed) return routed;
   const { pick, leg, work } = routed;

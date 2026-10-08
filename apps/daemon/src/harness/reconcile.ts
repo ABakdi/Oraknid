@@ -1,9 +1,11 @@
 import { isAbsolute, relative } from "node:path";
 import { toolClass } from "@oraknid/leg-sdk";
+import { eq } from "drizzle-orm";
+import { attempts } from "../db/schema.ts";
 import { parseSsh } from "../servers/remote.ts";
 import { git } from "../workspace/git.ts";
 import type { AttemptEvent, AttemptLog } from "./log.ts";
-import type { AttemptWhere } from "./types.ts";
+import type { AttemptDeps, AttemptOutcome, AttemptWhere, TaskRow } from "./types.ts";
 
 // Uncertain actions reconciled after a restart (ADR-056 §1): an action an
 // attempt asked for and never saw the result of is never re-run to find
@@ -108,6 +110,69 @@ async function findingOf(
 export function headMoved(g: Parameters<typeof git>[0], ckpt: string): boolean | null {
   try {
     return git(g, ["rev-parse", "HEAD"]).trim() !== git(g, ["rev-parse", `${ckpt}^`]).trim();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Oraknid's own commit, reconciled (ADR-056 §1, §8): the attempt before
+ * entered Done — a `Transition` carrying the checkpoint its commit is
+ * measured from — and its outcome was never applied to the task (Oraknid
+ * stopped while committing, or after, before the job's step was written).
+ * If the commit is there (the branch moved past the checkpoint), the task
+ * is done with it and nothing runs again; the attempt is recorded as it
+ * ended. Null when there is nothing to reconcile or git can't tell (a
+ * project of several repos).
+ */
+export function committedBeforeCrash(
+  d: Pick<AttemptDeps, "db" | "silk" | "now">,
+  log: AttemptLog,
+  jobId: string,
+  task: Pick<TaskRow, "id" | "title" | "attemptCount" | "settledAttempt">,
+  before: { id: string; outcome: string | null; startedAt: number },
+  tree: AttemptWhere["tree"],
+): Extract<AttemptOutcome, { kind: "done" }> | null {
+  if (task.attemptCount <= task.settledAttempt) return null;
+  if (before.outcome !== null && before.outcome !== "abandoned" && before.outcome !== "succeeded")
+    return null;
+  const last = log.attempt(before.id, { kinds: ["Transition"], limit: 1 })[0];
+  if (last?.data.to !== "Done" || !last.data.ckpt) return null;
+  if (!tree.single || !tree.hasRef(last.data.ckpt)) return null;
+  if (headMoved(tree.single, last.data.ckpt) !== true) return null;
+  const sha = headSha(tree.single);
+  const trail = log.at({ jobId, taskId: task.id, attemptId: before.id });
+  trail.append("Reconciled", {
+    actionId: last.data.key,
+    tool: "commit",
+    input: `the task's commit after ${last.data.ckpt}`,
+    finding: "happened",
+    detail: `Oraknid stopped after it committed the work${sha ? ` (${sha.slice(0, 10)})` : ""}: the task is done, nothing runs again`,
+  });
+  if (before.outcome !== "succeeded") {
+    trail.append("Outcome", { kind: "succeeded", reason: "its commit was made before a restart" });
+    trail.append("AttemptEnded", { reason: "succeeded" });
+    d.db
+      .update(attempts)
+      .set({ endedAt: d.now(), outcome: "succeeded" })
+      .where(eq(attempts.id, before.id))
+      .run();
+    d.silk.add({
+      jobId,
+      taskId: task.id,
+      kind: "progress",
+      title: `Done: ${task.title}`,
+      body: `Committed before a restart${sha ? ` (${sha.slice(0, 10)})` : ""}; Oraknid found the commit on the job's branch and didn't run the task again.`,
+      authoredBy: "eye",
+    });
+  }
+  return { kind: "done", commit: sha, commits: [] };
+}
+
+/** The branch's head, or null when git can't say. */
+export function headSha(g: Parameters<typeof git>[0]): string | null {
+  try {
+    return git(g, ["rev-parse", "HEAD"]).trim();
   } catch {
     return null;
   }

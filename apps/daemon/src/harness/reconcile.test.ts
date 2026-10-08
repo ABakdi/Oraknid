@@ -10,7 +10,7 @@ import { SilkStore } from "../silk/store.ts";
 import { seedJob } from "../testing/fixtures.ts";
 import { singleTree } from "../workspace/tree.ts";
 import { AttemptLog } from "./log.ts";
-import { reconcile, unresolved } from "./reconcile.ts";
+import { committedBeforeCrash, reconcile, unresolved } from "./reconcile.ts";
 
 // Uncertain actions reconciled (ADR-056 §1): the tree looked at — did the
 // file change, is the commit there — and what it can't show asked of the
@@ -96,5 +96,64 @@ describe("reconciling what a restart left uncertain (ADR-056 §1)", () => {
         aliases: [],
       }),
     ).toEqual([]);
+  });
+
+  it("Oraknid's own commit, made as the attempt before entered Done: the task is done, nothing runs again", async () => {
+    const s = await setup();
+    const at = { jobId: s.jobId, taskId: "t", attemptId: "a1" };
+    s.log.append(at, "Transition", {
+      from: "Deciding",
+      to: "Done",
+      why: "Done",
+      key: "a1:5:Done",
+      ckpt: s.ref,
+    });
+    writeFileSync(join(s.cwd, "a.txt"), "the work\n");
+    sh(s.cwd, "commit", "-q", "-am", "feat: the work");
+    const head = sh(s.cwd, "rev-parse", "HEAD");
+    const task = { id: "t", title: "Build it", attemptCount: 1, settledAttempt: 0 };
+    const d = { db: s.db, silk: s.silk, now: Date.now };
+    const crashed = { id: "a1", outcome: "abandoned", startedAt: 0 };
+    expect(committedBeforeCrash(d, s.log, s.jobId, task, crashed, s.tree)).toEqual({
+      kind: "done",
+      commit: head,
+      commits: [],
+    });
+    expect(s.log.attempt("a1").map((e) => e.kind)).toEqual([
+      "Transition",
+      "Reconciled",
+      "Outcome",
+      "AttemptEnded",
+    ]);
+    expect(s.silk.all(s.jobId).map((e) => e.title)).toEqual(["Done: Build it"]);
+  });
+
+  it("not when the commit isn't there, the outcome was applied, or the attempt ended otherwise", async () => {
+    const s = await setup();
+    const at = { jobId: s.jobId, taskId: "t", attemptId: "a1" };
+    s.log.append(at, "Transition", {
+      from: "Deciding",
+      to: "Done",
+      why: "Done",
+      key: "k",
+      ckpt: s.ref,
+    });
+    const d = { db: s.db, silk: s.silk, now: Date.now };
+    const task = { id: "t", title: "Build it", attemptCount: 1, settledAttempt: 0 };
+    const crashed = { id: "a1", outcome: "abandoned", startedAt: 0 };
+    // Stopped before it committed: the branch hasn't moved.
+    expect(committedBeforeCrash(d, s.log, s.jobId, task, crashed, s.tree)).toBeNull();
+    sh(s.cwd, "commit", "-q", "--allow-empty", "-m", "the work");
+    expect(
+      committedBeforeCrash(d, s.log, s.jobId, { ...task, settledAttempt: 1 }, crashed, s.tree),
+    ).toBeNull();
+    expect(
+      committedBeforeCrash(d, s.log, s.jobId, task, { ...crashed, outcome: "failed" }, s.tree),
+    ).toBeNull();
+    // Ended succeeded, but the job's step wasn't written: done again, the attempt left as it is.
+    expect(
+      committedBeforeCrash(d, s.log, s.jobId, task, { ...crashed, outcome: "succeeded" }, s.tree),
+    ).toMatchObject({ kind: "done" });
+    expect(s.log.attempt("a1").map((e) => e.kind)).toEqual(["Transition", "Reconciled"]);
   });
 });
