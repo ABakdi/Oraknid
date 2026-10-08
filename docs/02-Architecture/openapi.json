@@ -1573,6 +1573,78 @@
                     },
                     "shadow": {
                       "type": "boolean"
+                    },
+                    "lastActivityAt": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "now": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "enum": [
+                              "draft",
+                              "interviewing",
+                              "planning",
+                              "running",
+                              "waiting",
+                              "paused",
+                              "blocked",
+                              "verifying",
+                              "completed",
+                              "cancelled"
+                            ],
+                            "type": "string"
+                          },
+                          "done": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "total": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "queued": {
+                            "type": "boolean"
+                          },
+                          "startedAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "title",
+                          "state",
+                          "done",
+                          "total",
+                          "queued",
+                          "startedAt"
+                        ]
+                      }
                     }
                   },
                   "required": [
@@ -2031,6 +2103,78 @@
                     },
                     "shadow": {
                       "type": "boolean"
+                    },
+                    "lastActivityAt": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "now": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "enum": [
+                              "draft",
+                              "interviewing",
+                              "planning",
+                              "running",
+                              "waiting",
+                              "paused",
+                              "blocked",
+                              "verifying",
+                              "completed",
+                              "cancelled"
+                            ],
+                            "type": "string"
+                          },
+                          "done": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "total": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "queued": {
+                            "type": "boolean"
+                          },
+                          "startedAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "title",
+                          "state",
+                          "done",
+                          "total",
+                          "queued",
+                          "startedAt"
+                        ]
+                      }
                     }
                   },
                   "required": [
@@ -2360,6 +2504,78 @@
                       },
                       "shadow": {
                         "type": "boolean"
+                      },
+                      "lastActivityAt": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "now": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "state": {
+                              "enum": [
+                                "draft",
+                                "interviewing",
+                                "planning",
+                                "running",
+                                "waiting",
+                                "paused",
+                                "blocked",
+                                "verifying",
+                                "completed",
+                                "cancelled"
+                              ],
+                              "type": "string"
+                            },
+                            "done": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "total": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "queued": {
+                              "type": "boolean"
+                            },
+                            "startedAt": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "title",
+                            "state",
+                            "done",
+                            "total",
+                            "queued",
+                            "startedAt"
+                          ]
+                        }
                       }
                     },
                     "required": [
@@ -2691,6 +2907,78 @@
                     },
                     "shadow": {
                       "type": "boolean"
+                    },
+                    "lastActivityAt": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "now": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "enum": [
+                              "draft",
+                              "interviewing",
+                              "planning",
+                              "running",
+                              "waiting",
+                              "paused",
+                              "blocked",
+                              "verifying",
+                              "completed",
+                              "cancelled"
+                            ],
+                            "type": "string"
+                          },
+                          "done": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "total": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "queued": {
+                            "type": "boolean"
+                          },
+                          "startedAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "title",
+                          "state",
+                          "done",
+                          "total",
+                          "queued",
+                          "startedAt"
+                        ]
+                      }
                     }
                   },
                   "required": [
@@ -4736,6 +5024,78 @@
                     },
                     "shadow": {
                       "type": "boolean"
+                    },
+                    "lastActivityAt": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "now": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "enum": [
+                              "draft",
+                              "interviewing",
+                              "planning",
+                              "running",
+                              "waiting",
+                              "paused",
+                              "blocked",
+                              "verifying",
+                              "completed",
+                              "cancelled"
+                            ],
+                            "type": "string"
+                          },
+                          "done": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "total": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "queued": {
+                            "type": "boolean"
+                          },
+                          "startedAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "title",
+                          "state",
+                          "done",
+                          "total",
+                          "queued",
+                          "startedAt"
+                        ]
+                      }
                     }
                   },
                   "required": [
@@ -5086,6 +5446,78 @@
                     },
                     "shadow": {
                       "type": "boolean"
+                    },
+                    "lastActivityAt": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "now": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "enum": [
+                              "draft",
+                              "interviewing",
+                              "planning",
+                              "running",
+                              "waiting",
+                              "paused",
+                              "blocked",
+                              "verifying",
+                              "completed",
+                              "cancelled"
+                            ],
+                            "type": "string"
+                          },
+                          "done": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "total": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "queued": {
+                            "type": "boolean"
+                          },
+                          "startedAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "title",
+                          "state",
+                          "done",
+                          "total",
+                          "queued",
+                          "startedAt"
+                        ]
+                      }
                     }
                   },
                   "required": [
@@ -5420,6 +5852,78 @@
                     },
                     "shadow": {
                       "type": "boolean"
+                    },
+                    "lastActivityAt": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "now": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "enum": [
+                              "draft",
+                              "interviewing",
+                              "planning",
+                              "running",
+                              "waiting",
+                              "paused",
+                              "blocked",
+                              "verifying",
+                              "completed",
+                              "cancelled"
+                            ],
+                            "type": "string"
+                          },
+                          "done": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "total": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "queued": {
+                            "type": "boolean"
+                          },
+                          "startedAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "title",
+                          "state",
+                          "done",
+                          "total",
+                          "queued",
+                          "startedAt"
+                        ]
+                      }
                     }
                   },
                   "required": [
