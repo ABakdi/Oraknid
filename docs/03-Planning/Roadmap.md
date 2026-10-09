@@ -19,7 +19,8 @@ flowchart LR
     P11 --> P12[Phase 12<br/>Email]
     P12 --> P13[Phase 13<br/>Projects first]
     P13 --> P15[Phase 15<br/>Agents that deliver]
-    P15 --> P14[Phase 14<br/>Oraknid over MCP]
+    P15 --> P16[Phase 16<br/>Approval by experience]
+    P16 --> P14[Phase 14<br/>Oraknid over MCP]
     P14 --> L[Later<br/>containers · teams]
     L --> W[Final phase<br/>Windows]
 ```
@@ -40,6 +41,7 @@ flowchart LR
 | [[Phase-12-Email]] · built (IMAP and POP3, app passwords; OAuth back 2026-10-07, [[ADR-063-Mail-OAuth]]); my Gmail syncs (app password, 2026-10-03); an approved agent draft sent from it, and an IMAP account, to try | An email client in Oraknid, several accounts, agents that read, sort and draft, nothing sent without me ([[ADR-032-Email]]). | Gmail and an IMAP account end to end; an agent drafts a reply I approve and send. |
 | [[Phase-13-Projects-First]] · built through M13.26 (2026-10-06: setup fixes, updates, the planner and agents fixed, archive and delete, server chat, The Eye thinking out loud, parallel by default within the machine's limits); the piano job's last push check (mine to resume) and M13.12's SQLite files and in-container sizes left | The project is the place, jobs its history ([[ADR-034-Projects-First]]); what a public and a private Nest show ([[ADR-035-Nest-Pages-By-Mode]]); the one-script install ([[ADR-036-One-Script-Install]]); questions with options ([[ADR-037-Questions-With-Options]]); a project's GitHub repo and servers ([[ADR-038-Project-Accounts]]); plan usage in view ([[ADR-039-Plan-Usage-In-View]]); Repos ([[ADR-040-Repos-Page]]); Docs and a guiding helper ([[ADR-041-Docs-And-A-Guiding-Helper]]); several repos and servers ([[ADR-042-Several-Repos-And-Servers]]); server insight ([[ADR-043-Server-Insight]]); backups ([[ADR-044-Backups]]); The Eye speaks up ([[ADR-045-The-Eye-Speaks-Up]]); cloud storage ([[ADR-046-Cloud-Storage]]); jobs named by what they are (M13.17). | I ask for new work on a project from its Eye tab and follow it there to the end; nothing on my private Nest is found. |
 | [[Phase-15-Agents-That-Deliver]] · in progress (2026-10-07), before Phase 14: M15.1–M15.6 built (released in v0.2.0), with cancel from the chat, The Eye looking up what it doesn't know, an approved plan's own removals and the agent's need asked as itself after (v0.2.1–v0.2.3); M15.8 done (scenarios from my real jobs and fifteen fixes, v0.2.4; the Gate, the Verifier and the attempt log, one decision, the task controller, 2026-10-08); a Codex Leg built (M15.9, [[ADR-057-Codex-Adapter]]), not yet on a real job; M15.7's proof not run | A harness for any model: whole goals, checks in the loop, a ladder up when a model fails, only usable agents chosen ([[ADR-052-A-Harness-For-Any-Model]]); auto mode instead of approvals per command ([[ADR-053-Auto-Mode]]); local models downloaded, run and managed in Oraknid ([[ADR-054-Local-Models]]); the terminal app and a terminal-only install ([[ADR-055-Terminal-App]]); the harness taken apart: one attempt log, one Gate, one Verifier ([[ADR-056-The-Harness]]); a Codex Leg ([[ADR-057-Codex-Adapter]]). | My piano project built from its spec in under 30 minutes; a server job in minutes with one approval; the same from the terminal app on a machine without the web UI. |
+| [[Phase-16-Approval-By-Experience]] · in progress (2026-10-09), before Phase 14 | Evaluation steps in the plan; a review page in a new tab where I annotate the design, then the running app, per device; notes become work; designs, logo and a visual check; The Eye picks skills and tools; a ladder that never stalls ([[ADR-064-Design-And-Approval-By-Experience]]). | The Keys spec run again ships the instrument I meant, reviewed and approved on phone and desktop without leaving Oraknid. |
 | [[Phase-14-Oraknid-Over-MCP]] · planned (2026-10-04), not started | Oraknid as an MCP server ([[ADR-051-Oraknid-Over-MCP]]): any agent (Claude Code, Claude Desktop, OpenCode…) starts, follows and steers long jobs, gets digests and answers questions in its own conversation, and uses my GitHub, mail and servers through Oraknid without holding a secret; connected clients paired with rights I give, approvals still mine. | From Claude Code in another repo I hand Oraknid a spec, keep working, get digests, steer it once, answer its question there, and receive the PR; the client never held a token; revoking it stops it at once. |
 | Later | Containers per job, teams and roles. | Planned when they come up. |
 | Final phase — Windows | Windows service, inhibitor, Credential Manager, metrics, sandbox equivalent. | The Phase 1 exit criterion passes on Windows. |
@@ -63,6 +65,10 @@ raised for each batch of features and the patch for fixes, until I say
 Phase notes for Later and the Windows phase are written when their turn comes.
 
 ## Changes of order
+
+**2026-10-09 — Phase 16, Approval by experience, before Phase 14.** The
+Keys job passed every test and still missed what I meant. Verification
+by me, inside the work, comes before MCP.
 
 **2026-10-07 — Phase 15, Agents that deliver, before Phase 14.** Two
 simple jobs failed inside Oraknid that the same models finish on their

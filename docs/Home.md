@@ -69,6 +69,7 @@ proof not run yet. Released: v0.1.0 to v0.2.4
 - [[Phase-12-Email]] — built: the Mail page, IMAP and POP3, agents' drafts; my Gmail syncs; an approved agent draft and an IMAP account to try
 - [[Phase-13-Projects-First]] — built on `dev` through M13.26: projects first, Nest pages by mode, the one-script install, questions with options, Workflow, GitHub per project, Repos, Docs and the helper, several repos and servers, server insight, backups, The Eye speaks up, cloud storage, job names; setup fixes, updates, the planner and agents fixed, archive and delete, a chat and jobs on each server, The Eye thinking out loud, parallel by default
 - [[Phase-15-Agents-That-Deliver]] — in progress, before Phase 14: M15.1–M15.6 built (a harness for any model, auto mode, Oraknid's own agent, local models, the terminal app), M15.8 done (the Gate, the Verifier, the attempt log, one decision, the task controller), a Codex Leg (M15.9), the proof (M15.7) not run
+- [[Phase-16-Approval-By-Experience]] — in progress: reviews in the plan, a review page to annotate designs and the running app, designs and logos, a visual check
 - [[Phase-14-Oraknid-Over-MCP]] — planned: Oraknid as an MCP server, a command center for any agent
 - Later: containers per job, teams
 
@@ -116,6 +117,7 @@ proof not run yet. Released: v0.1.0 to v0.2.4
 - [[ADR-061-Moving-Oraknid]] — a job or a project as a zip and back; the whole Oraknid (database, config, keychain) as one archive encrypted to a passphrase, restored on another computer
 - [[ADR-062-Git-Hosts]] — GitLab, Gitea and Forgejo beside GitHub: accounts by token, one GitHost interface GitHub's client fills too, read in Repos, linked, cloned and pushed to by Oraknid
 - [[ADR-063-Mail-OAuth]] — Gmail and Outlook sign in with Google or Microsoft again, through an app I register: the browser with PKCE or Microsoft's code, XOAUTH2, tokens in the keychain
+- [[ADR-064-Design-And-Approval-By-Experience]] — evaluation steps in the plan; a review page for designs and the running app with select-and-note per device; designs, logos, a visual check; The Eye picks skills and tools
 - [[ADR-048-Updates]] — updates from inside Oraknid: install.sh records what it installed; Oraknid checks GitHub on its channel (dev: pre-releases and new work on dev; stable: releases) and updates in one click, the database copied first, a failed update rolled back
 - [[ADR-049-Server-Chat-And-Server-Jobs]] — a chat on each server: The Eye answers from its state document or sends an agent into it as a server job (the server's own hidden project), says what will change first, runs its checks on the server, asks before any change on production, and writes the job's changes into the state document
 - [[ADR-043-Server-Insight]] · [[ADR-044-Backups]] — Phase 13: Docker, databases, the proxy, traffic and logs of a server; scheduled, encrypted database backups
