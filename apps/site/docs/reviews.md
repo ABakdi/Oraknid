@@ -4,7 +4,7 @@ Tests passing is not the same as getting what you meant. For anything you will s
 
 ## When a review opens
 
-When a design or the app is ready, Oraknid opens the **review page in a new tab**. If your browser blocks the tab (browsers do when nothing was clicked), you get a notification and a message with **Open**, the project's page shows **A design is ready for your review — Open** under its current work, and the [inbox](inbox.html) has an item with **Open the review**.
+When a design or the app is ready, Oraknid opens the **review page in a new tab**. If your browser blocks the tab (browsers do when nothing was clicked), you get a notification and a message with **Open**, the project's page shows **A design is ready for your review** with **Open** under its current work, and the [inbox](inbox.html) has an item with **Open the review**.
 
 ## The review page
 

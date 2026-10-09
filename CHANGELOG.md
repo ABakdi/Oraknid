@@ -3,6 +3,11 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.6.1 — 2026-10-09 (pre-release)
+
+- **Fixed: a fresh install or an update to 0.6.0 failed while building the guide** (a punctuation rule of the product site, broken by the new reviews page). An update that hit it rolled back by itself.
+- **CI builds everything,** as an install does, so a break like this is caught before a release.
+
 ## 0.6.0 — 2026-10-09 (pre-release)
 
 Design and approval by experience ([ADR-064](docs/04-Decisions/ADR-064-Design-And-Approval-By-Experience.md), Phase 16).

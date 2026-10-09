@@ -867,7 +867,7 @@ new tab when a review opens: every page of mine hears `review.opened`
 and one of them (claimed across tabs, only within a minute of the
 event) calls `window.open`; a browser that blocks a tab not opened by a
 click gets a toast with **Open**, and the project's page shows "A
-design is ready for your review — Open" under its work bar (one line per
+design is ready for your review" with "Open" under its work bar (one line per
 open review, its round and notes). The desktop notification opens it
 too. Lazy-loaded: the rest of the UI doesn't carry it.
 

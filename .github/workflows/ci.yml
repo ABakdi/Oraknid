@@ -46,6 +46,11 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      # The whole build, as an install runs it: a site page that breaks the guide's rules
+      # failed every fresh install of v0.6.0 while the tests passed.
+      - name: Build
+        run: pnpm build
+
       - name: Tests
         run: pnpm exec turbo run test --continue --concurrency=2
 
