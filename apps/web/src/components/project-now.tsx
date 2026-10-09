@@ -3,6 +3,7 @@ import {
   ChevronRight,
   CircleX,
   ExternalLink,
+  Eye,
   MessageCircleQuestion,
   Pause,
   Play,
@@ -13,6 +14,7 @@ import { toast } from "sonner";
 import { Link } from "wouter";
 import { StateBadge } from "@/components/common";
 import { useConfirm } from "@/components/confirm";
+import { ReviewLink } from "@/components/review-link";
 import { ACTIVE } from "@/components/task-drawer";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -20,6 +22,7 @@ import { api, message } from "@/lib/api";
 import { ago, clip } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { act, jobHref } from "@/lib/links";
+import { useLive } from "@/lib/live";
 import { cn } from "@/lib/utils";
 import { InboxItemCard } from "@/pages/inbox";
 
@@ -425,3 +428,37 @@ function WorkItem({
     </div>
   );
 }
+
+/**
+ * Reviews waiting for me in this project (ADR-064): "A design is ready for
+ * your review — Open", for when the browser kept the new tab from opening.
+ */
+export const ReviewsWaiting = memo(function ReviewsWaiting({ projectId }: { projectId: string }) {
+  const list = useLive(() => api.reviews.list({ projectId, state: "open" }), {
+    topics: ["inbox"],
+    refreshOn: (e) => e.type.startsWith("review.") || e.type.startsWith("inbox."),
+    deps: [projectId],
+  });
+  const open = list.data ?? [];
+  if (!open.length) return null;
+  return (
+    <div data-help="project.reviews" className="flex shrink-0 flex-col gap-1">
+      {open.map((r) => (
+        <div
+          key={r.id}
+          className="flex min-w-0 items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 px-3 py-1.5 text-sm"
+        >
+          <Eye className="size-4 shrink-0 text-primary" />
+          <span className="min-w-0 flex-1 truncate">
+            {r.kind === "design"
+              ? t("A design is ready for your review")
+              : t("The app is ready for your review")}
+            {r.round > 1 ? ` · ${t("round {n}", { n: r.round })}` : ""}
+            {r.noteCount ? ` · ${t("{n} notes", { n: r.noteCount })}` : ""}
+          </span>
+          <ReviewLink id={r.id} />
+        </div>
+      ))}
+    </div>
+  );
+});

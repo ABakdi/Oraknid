@@ -17,7 +17,7 @@ function named(bullet: string): Set<string> {
 }
 
 const asName = (path: string) =>
-  path.endsWith("/") ? `${path.slice(1, -1)}.*` : path.slice(1).replace("/", ".");
+  path.endsWith("/") ? `${path.slice(1, -1)}.*` : path.slice(1).replaceAll("/", ".");
 
 describe("API-Contract names every call refused away from home (lock.ts)", () => {
   const doc = readFileSync(

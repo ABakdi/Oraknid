@@ -109,3 +109,79 @@ the person the work is for, as part of the work.
   job's own local port.
 - Vision-capable models are needed for the visual check; without one
   it is skipped and says so.
+
+## As built (M16.1, 2026-10-09)
+- **Where**: `apps/daemon/src/reviews/` — `service.ts` (the `Reviews`
+  service: open, rounds, notes, Send notes, Approve, withdraw, the chat's
+  notes), `frame.ts` (the frame's origin: the design served, the app
+  proxied, the overlay added), `overlay.ts` (the script in the frame),
+  `snapshot.ts` (a page inlined for away from home), `feedback.ts` (does
+  a chat message read as feedback); `api/reviews.ts`; the review page
+  `apps/web/src/pages/review.tsx` with `lib/review.ts`. Migration
+  `0044_reviews.sql`: `reviews`, `review_notes`.
+- **The frame's own origin, not a path.** A review's frame is served at
+  `http://rv-<key>.localhost:<port>/` — the daemon's port, a name every
+  browser resolves to this computer, `<key>` 32 random hex characters
+  per review. Decided over `/review/<id>/frame/` (the plan's first
+  idea) for two reasons: an app's absolute paths (`/@vite/client`,
+  `/src/main.tsx`, `/api/...`) work as they do on its own port, which a
+  path prefix breaks; and the pages under review (written by agents)
+  run on an origin of their own, so they can't read Oraknid's storage
+  (the device token, the unlocked session) nor call its API as me. The
+  review page and the frame talk only by `postMessage`. Only the review
+  page may frame it (`frame-ancestors`), the key is the only way in, a
+  withdrawn review serves nothing, nothing of Oraknid's is served there
+  but the overlay (`/__oraknid/overlay.js`).
+- **The design**: the folder the harness names (absolute, or relative
+  to the job's worktree), inside the project's folder or the job's
+  worktree, symlinks resolved — checked when opened and again at every
+  request; GET and HEAD only; no `..`, no dot files; a folder gives its
+  `index.html`. Its pages' policy: their own files, inline styles and
+  scripts, nothing from elsewhere (a design is self-contained).
+- **The app**: its port on 127.0.0.1 only, never Oraknid's own nor one
+  below 1024; HTTP (Host and Origin rewritten to the app's, gzip,
+  deflate or brotli HTML decoded to add the overlay) and websockets (its
+  HMR). The app's `X-Frame-Options` is dropped and a `frame-ancestors`
+  policy added; its own policy stays. Down, the frame says so and
+  retries every 3 s.
+- **The overlay** (added first in `<head>` of HTML responses only):
+  select mode (hover outlines, a click selects; the app's own clicks
+  are held back meanwhile), a selector that finds the element again
+  (id, `data-testid`, or a path of `:nth-of-type`), its text, tag and
+  box, a picture of the part drawn in the page itself (its styles
+  inlined into an SVG, onto a canvas, JPEG; best effort: fonts and CSS
+  background images may not show, a failure leaves the note without a
+  picture), the pins drawn in the frame on a layer of their own, the
+  app's console errors and warnings and failed fetch/XHR (the last 50),
+  an app's route changes.
+- **Opening a tab**: `review.opened` on `inbox` (with the URL); every
+  page of mine listens and one opens `/review/<id>` (`window.open`,
+  claimed across tabs in local storage, only within a minute of the
+  event). A browser blocks a tab not opened by a click: then a toast
+  with **Open**, and the project's page shows "A design is ready for
+  your review — Open" above its tabs; the inbox item has **Open the
+  review**; the desktop notification (a question, `review-<id>`) opens
+  it too.
+- **Rounds**: `reviews.open` for the same step (task) after Send notes
+  opens the next round of the same review; while it is open, the same
+  review comes back (its target updated). A job's end withdraws its
+  reviews.
+- **The chat**: in `talkInProject`, a message with words about how it
+  looks or feels (`readsAsFeedback`), no order to the job, while
+  exactly one review is open in the project, becomes a general note
+  (`source: "chat"`) and The Eye says so; nothing else of triage
+  changed. An answer to the review's inbox item in words is a general
+  note too.
+- **Away from home**: reading works for any device; notes, Send notes,
+  Approve and the frame need full rights (ADR-030). The frame can't load
+  from this computer through The Nest, so `reviews.frame` returns the
+  page inlined (its stylesheets, scripts and images as data, the
+  overlay in it), shown in a sandboxed frame; a link asks for the next
+  page. A module script that imports others can't run so: a Vite app
+  under development shows its HTML only, said in the page's footer.
+- **The API the harness calls** (M16.2): `reviews.open({jobId, taskId?,
+  kind, target, entry?, title?})` → `{id, url, round}` (or the service's
+  `open` in-process, `EyeDeps.reviews`); then wait for
+  `review.notes-sent` (payload `{reviewId, taskId, round, notes}`) or
+  `review.approved` on `job:<id>`; `Reviews.notes(id, round?)` reads a
+  round's notes whole; `withdraw(id)` when the step is dropped.

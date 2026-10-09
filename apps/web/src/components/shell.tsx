@@ -46,6 +46,7 @@ import { api } from "@/lib/api";
 import { goPrefix } from "@/lib/go-prefix";
 import { t } from "@/lib/i18n";
 import { useLive, useLiveStatus } from "@/lib/live";
+import { useReviewOpener } from "@/lib/review";
 import { store } from "@/lib/store";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -162,6 +163,8 @@ export function Shell({ children }: { children: ReactNode }) {
     }
   };
   const status = useLiveStatus();
+  // A review ready for me opens in a new tab (ADR-064).
+  useReviewOpener();
   const { resolved, set } = useTheme();
   const inbox = useLive(() => api.inbox.list({ state: "open" }), { topics: ["inbox"] });
   const system = useLive(() => api.system.status(), {

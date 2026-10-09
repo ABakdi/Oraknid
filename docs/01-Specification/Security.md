@@ -356,6 +356,24 @@ sandbox limits damage, but it doesn't make that safe.
 - Every response carries a content policy: no framing by another site,
   scripts and images only from Oraknid itself; a request another site
   made my browser send, other than opening a page, is refused.
+- **A review's frame** (2026-10-09, [[ADR-064-Design-And-Approval-By-Experience]]):
+  what I review is served on an origin of its own, `rv-<key>.localhost`
+  on the daemon's port (`<key>` 128 random bits per review), so a page
+  an agent wrote runs apart from Oraknid's: it can't read the device's
+  token or unlocked session, and its calls to `/api` aren't Oraknid's
+  (there is no API on that origin). It answers only from this machine,
+  only to a review's key that is not withdrawn, and may be framed only
+  by Oraknid's own page (`frame-ancestors`); the review page talks to
+  it only by `postMessage` and the frame has no top navigation. A
+  design is served read-only from its folder, which must be inside the
+  project's folder or the job's worktree: no `..` (plain or encoded), no
+  dot file (`.git`, `.env`), symlinks resolved and checked again at
+  every request; its pages may load nothing from elsewhere. An app is
+  proxied to its own port on 127.0.0.1 and no other (never Oraknid's
+  port, none below 1024; an absolute-form request can't name another).
+  The overlay is added to HTML responses only; nothing is written into
+  the project. Away from home a page comes inlined through the API, in a
+  frame sandboxed without same-origin.
 - Oraknid assumes a computer that is mine alone: software running as me
   can read its data, and another user could take its port while it is
   down ([[Audit-2]]).

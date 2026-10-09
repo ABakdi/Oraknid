@@ -41,6 +41,7 @@ import { sandboxPlan } from "../legs/plan.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor } from "../legs/supervisor.ts";
 import { Work } from "../resources/work.ts";
+import type { Reviews } from "../reviews/service.ts";
 import { jobHasServers } from "../secrets/tool.ts";
 import { jobServers, serverDigest, serverPlanApproval } from "../servers/server-jobs.ts";
 import type { Servers } from "../servers/service.ts";
@@ -97,6 +98,11 @@ import { storeWeb, taskRows } from "./web-store.ts";
 
 export interface EyeDeps {
   db: Db;
+  /**
+   * Reviews (ADR-064): an evaluation step opens one (`reviews.open`) and
+   * waits for `review.approved` or `review.notes-sent` on the job's topic.
+   */
+  reviews?: Reviews;
   bus: EventBus;
   silk: SilkStore;
   inbox: InboxStore;

@@ -25,6 +25,8 @@ export function startNotificationRouter(o: {
   inbox: InboxStore;
   notifications: Notifications;
   uiUrl: () => string;
+  /** The review an inbox item tells me about (ADR-064): its notification opens the review. */
+  reviewOf?: (itemId: string) => { id: string; kind: "design" | "app" } | null;
   now?: () => Date;
   emailDelayMs?: number;
   flushMs?: number;
@@ -97,6 +99,26 @@ export function startNotificationRouter(o: {
           ? o.db.select({ title: jobs.title }).from(jobs).where(eq(jobs.id, item.jobId)).get()
               ?.title
           : undefined;
+        // A review waiting (ADR-064): its own words, and it opens the review page.
+        const review = o.reviewOf?.(item.id) ?? null;
+        if (review)
+          return {
+            p: {
+              event: "question",
+              jobId: item.jobId,
+              n: {
+                title:
+                  review.kind === "design"
+                    ? "A design is ready for your review"
+                    : "The app is ready for your review",
+                body: jobTitle ? `${item.title} — ${jobTitle}` : item.title,
+                url: url(`/review/${review.id}`),
+                urgency: "normal",
+                tag: `review-${review.id}`,
+              },
+            },
+            itemId: item.id,
+          };
         const body =
           open > 1
             ? `${open} ${item.kind === "approval" ? "approvals" : "questions"} waiting. Latest: ${item.title}`

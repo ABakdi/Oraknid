@@ -13,7 +13,7 @@ import {
 import { and, desc, eq, type SQL } from "drizzle-orm";
 import { cutShort, INBOX_DETAIL_MAX } from "../db/caps.ts";
 import type { Db } from "../db/open.ts";
-import { inboxItems, jobs, projects, tasks } from "../db/schema.ts";
+import { inboxItems, jobs, projects, reviews, tasks } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 
@@ -92,11 +92,14 @@ export class InboxStore {
         projectId: jobs.projectId,
         projectName: projects.name,
         taskTitle: tasks.title,
+        reviewId: reviews.id,
       })
       .from(inboxItems)
       .innerJoin(jobs, eq(jobs.id, inboxItems.jobId))
       .innerJoin(projects, eq(projects.id, jobs.projectId))
       .leftJoin(tasks, eq(tasks.id, inboxItems.taskId))
+      // A review waiting for me (ADR-064): the item opens its page.
+      .leftJoin(reviews, eq(reviews.inboxItemId, inboxItems.id))
       .where(where.length ? and(...where) : undefined)
       .orderBy(desc(inboxItems.id))
       .all()
@@ -107,6 +110,7 @@ export class InboxStore {
         projectId: r.projectId,
         projectName: r.projectName,
         taskTitle: r.taskTitle,
+        reviewId: r.reviewId,
       }));
     const words = (f.q ?? "").toLowerCase().split(/\s+/).filter(Boolean);
     if (words.length) {

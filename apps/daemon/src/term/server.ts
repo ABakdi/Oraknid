@@ -95,7 +95,12 @@ export function attachTerminal(o: {
   });
   o.server.on("upgrade", (req, socket, head) => {
     const url = new URL(req.url ?? "/", "http://localhost");
-    if (url.pathname !== "/term") return;
+    // A review frame's own /term is its app's (ADR-064).
+    if (
+      url.pathname !== "/term" ||
+      /^rv-[0-9a-f]{32}\.localhost(:\d+)?$/i.test(req.headers.host ?? "")
+    )
+      return;
     const device = o.device(req);
     if (!device || !o.enabled()) {
       socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");

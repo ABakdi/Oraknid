@@ -78,6 +78,7 @@ vi.mock("@/lib/api", () => ({
     projects: { list: () => [PIANO, BLOG, OLD] },
     jobs: { list: ({ projectId }: { projectId: string }) => (projectId === "P1" ? [JOB] : []) },
     inbox: { list: () => [] },
+    reviews: { list: async () => [] },
   },
   message: (e: unknown) => String(e),
 }));

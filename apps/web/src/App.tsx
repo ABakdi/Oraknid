@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Redirect, Route, Router, Switch } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { LockScreen } from "@/components/lock-screen";
@@ -28,6 +28,9 @@ import { SkillsPage } from "@/pages/skills";
 import { StoragePage } from "@/pages/storage";
 import { TerminalPage } from "@/pages/terminal";
 import { WorkPage } from "@/pages/work";
+
+// The review page (ADR-064): its own full-screen layout, loaded when one is opened.
+const ReviewPage = lazy(() => import("@/pages/review").then((m) => ({ default: m.ReviewPage })));
 
 export function App() {
   const [paired, setPaired] = useState(() => !!auth.token());
@@ -114,56 +117,69 @@ export function App() {
           {paired && lock.state === "checking" ? null : paired && lock.state === "locked" ? (
             <LockScreen pinSet={lock.pinSet} remote={lock.remote} onUnlocked={check} />
           ) : paired ? (
-            <Shell>
-              <Switch>
-                <Route path="/" component={OverviewPage} />
-                {/* No Jobs page and no job page (ADR-034): running work is on the Overview, a job in its project. */}
-                <Route path="/jobs">
-                  <Redirect to="/" replace />
-                </Route>
-                <Route path="/jobs/new">{() => <WorkPage />}</Route>
-                <Route path="/new">{() => <WorkPage />}</Route>
-                <Route path="/new/:id">{(p) => <WorkPage key={p.id} draftId={p.id} />}</Route>
-                <Route path="/jobs/:id/:tab?">
-                  {(p) => <JobRedirect key={p.id} id={p.id} tab={p.tab} />}
-                </Route>
-                <Route path="/projects/:id?/:tab?/:job?/:sub?">
-                  {(p) => <ProjectsPage id={p.id} tab={p.tab} job={p.job} sub={p.sub} />}
-                </Route>
-                <Route path="/repos/:owner?/:name?/:tab?/*?">
-                  {(p) => <ReposPage owner={p.owner} name={p.name} tab={p.tab} rest={p["*"]} />}
-                </Route>
-                <Route path="/inbox">{() => <InboxPage />}</Route>
-                <Route path="/inbox/:id">{(p) => <InboxPage focus={p.id} />}</Route>
-                <Route path="/legs">{() => <LegsPage />}</Route>
-                <Route path="/legs/:id">{(p) => <LegsPage focus={p.id} />}</Route>
-                {/* Local models (ADR-054). */}
-                <Route path="/models">{() => <ModelsPage />}</Route>
-                <Route path="/skills/:id?">{(p) => <SkillsPage id={p.id} />}</Route>
-                <Route path="/chats">{() => <ChatsPage />}</Route>
-                <Route path="/servers/:id?/:tab?">
-                  {(p) => <ServersPage id={p.id} tab={p.tab} />}
-                </Route>
-                {/* One route: moving between folders and threads keeps the page (and its list) mounted. */}
-                <Route path="/mail/:account?/:folder?/:thread?">
-                  {(p) => <MailPage account={p.account} folder={p.folder} thread={p.thread} />}
-                </Route>
-                {/* Cloud storage (ADR-046): the folder of the pool I'm in follows /storage/. */}
-                <Route path="/storage/*?">{(p) => <StoragePage path={p["*"]} />}</Route>
-                <Route path="/terminal">{() => <TerminalPage />}</Route>
-                <Route path="/terminal/:target">{(p) => <TerminalPage target={p.target} />}</Route>
-                <Route path="/chats/:id">{(p) => <ChatsPage id={p.id} />}</Route>
-                <Route path="/logs/:tab?">{(p) => <LogsPage tab={p.tab} />}</Route>
-                {/* The guide (ADR-041): a page, and a heading in it. */}
-                <Route path="/docs/:page?/:section?">
-                  {(p) => <DocsPage page={p.page} section={p.section} />}
-                </Route>
-                <Route path="/settings/:tab?">{(p) => <SettingsPage tab={p.tab} />}</Route>
-                <Route>
-                  <OverviewPage />
-                </Route>
-              </Switch>
-            </Shell>
+            <Switch>
+              <Route path="/review/:id">
+                {(p) => (
+                  <Suspense fallback={null}>
+                    <ReviewPage key={p.id} id={p.id} />
+                  </Suspense>
+                )}
+              </Route>
+              <Route>
+                <Shell>
+                  <Switch>
+                    <Route path="/" component={OverviewPage} />
+                    {/* No Jobs page and no job page (ADR-034): running work is on the Overview, a job in its project. */}
+                    <Route path="/jobs">
+                      <Redirect to="/" replace />
+                    </Route>
+                    <Route path="/jobs/new">{() => <WorkPage />}</Route>
+                    <Route path="/new">{() => <WorkPage />}</Route>
+                    <Route path="/new/:id">{(p) => <WorkPage key={p.id} draftId={p.id} />}</Route>
+                    <Route path="/jobs/:id/:tab?">
+                      {(p) => <JobRedirect key={p.id} id={p.id} tab={p.tab} />}
+                    </Route>
+                    <Route path="/projects/:id?/:tab?/:job?/:sub?">
+                      {(p) => <ProjectsPage id={p.id} tab={p.tab} job={p.job} sub={p.sub} />}
+                    </Route>
+                    <Route path="/repos/:owner?/:name?/:tab?/*?">
+                      {(p) => <ReposPage owner={p.owner} name={p.name} tab={p.tab} rest={p["*"]} />}
+                    </Route>
+                    <Route path="/inbox">{() => <InboxPage />}</Route>
+                    <Route path="/inbox/:id">{(p) => <InboxPage focus={p.id} />}</Route>
+                    <Route path="/legs">{() => <LegsPage />}</Route>
+                    <Route path="/legs/:id">{(p) => <LegsPage focus={p.id} />}</Route>
+                    {/* Local models (ADR-054). */}
+                    <Route path="/models">{() => <ModelsPage />}</Route>
+                    <Route path="/skills/:id?">{(p) => <SkillsPage id={p.id} />}</Route>
+                    <Route path="/chats">{() => <ChatsPage />}</Route>
+                    <Route path="/servers/:id?/:tab?">
+                      {(p) => <ServersPage id={p.id} tab={p.tab} />}
+                    </Route>
+                    {/* One route: moving between folders and threads keeps the page (and its list) mounted. */}
+                    <Route path="/mail/:account?/:folder?/:thread?">
+                      {(p) => <MailPage account={p.account} folder={p.folder} thread={p.thread} />}
+                    </Route>
+                    {/* Cloud storage (ADR-046): the folder of the pool I'm in follows /storage/. */}
+                    <Route path="/storage/*?">{(p) => <StoragePage path={p["*"]} />}</Route>
+                    <Route path="/terminal">{() => <TerminalPage />}</Route>
+                    <Route path="/terminal/:target">
+                      {(p) => <TerminalPage target={p.target} />}
+                    </Route>
+                    <Route path="/chats/:id">{(p) => <ChatsPage id={p.id} />}</Route>
+                    <Route path="/logs/:tab?">{(p) => <LogsPage tab={p.tab} />}</Route>
+                    {/* The guide (ADR-041): a page, and a heading in it. */}
+                    <Route path="/docs/:page?/:section?">
+                      {(p) => <DocsPage page={p.page} section={p.section} />}
+                    </Route>
+                    <Route path="/settings/:tab?">{(p) => <SettingsPage tab={p.tab} />}</Route>
+                    <Route>
+                      <OverviewPage />
+                    </Route>
+                  </Switch>
+                </Shell>
+              </Route>
+            </Switch>
           ) : (
             <PairPage onPaired={() => setPaired(true)} />
           )}

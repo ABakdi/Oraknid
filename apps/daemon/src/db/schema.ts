@@ -990,3 +990,83 @@ export const siteChecks = sqliteTable(
   },
   (t) => [index("site_checks_site").on(t.siteId, t.at)],
 );
+
+/**
+ * Reviews (ADR-064, M16.1): a design or the job's running app opened for me
+ * to annotate, per evaluation step, in rounds. `frameKey` names the frame's
+ * own origin (rv-<key>.localhost): only who has it can load the frame.
+ */
+export const reviews = sqliteTable(
+  "reviews",
+  {
+    id: text("id").primaryKey(),
+    jobId: text("job_id")
+      .notNull()
+      .references(() => jobs.id),
+    /** The evaluation step (a task of the plan), when the plan has one. */
+    taskId: text("task_id"),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id),
+    kind: text("kind", { enum: ["design", "app"] }).notNull(),
+    title: text("title").notNull(),
+    /** A design's folder (absolute, checked inside the project) or the app's port. */
+    target: text("target").notNull(),
+    entry: text("entry").notNull().default("/"),
+    round: integer("round").notNull().default(1),
+    state: text("state", { enum: ["open", "notes-sent", "approved", "withdrawn"] }).notNull(),
+    frameKey: text("frame_key").notNull().unique(),
+    /** The inbox item that tells me it waits; withdrawn when the round ends. */
+    inboxItemId: text("inbox_item_id"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    endedAt: integer("ended_at"),
+  },
+  (t) => [index("reviews_job").on(t.jobId), index("reviews_project").on(t.projectId, t.state)],
+);
+
+/** My notes on a review (ADR-064): per round and device, on an element or general. */
+export const reviewNotes = sqliteTable(
+  "review_notes",
+  {
+    id: text("id").primaryKey(),
+    reviewId: text("review_id")
+      .notNull()
+      .references(() => reviews.id),
+    round: integer("round").notNull(),
+    kind: text("kind", { enum: ["keep", "change", "problem", "general"] }).notNull(),
+    text: text("text").notNull(),
+    device: json<{
+      name: string;
+      width: number;
+      height: number;
+      orientation: "portrait" | "landscape";
+    }>("device"),
+    element: json<{
+      selector: string;
+      text: string;
+      tag: string;
+      box: { x: number; y: number; width: number; height: number };
+    }>("element"),
+    page: text("page"),
+    /** Its screenshot's file name under <data>/reviews/<review id>/, if one was taken. */
+    screenshot: text("screenshot"),
+    console: json<{ level: "error" | "warn"; text: string; at: number }[]>("console")
+      .notNull()
+      .default([]),
+    requests: json<
+      { method: string; url: string; status: number | null; error: string | null; at: number }[]
+    >("requests")
+      .notNull()
+      .default([]),
+    source: text("source", { enum: ["page", "chat"] })
+      .notNull()
+      .default("page"),
+    /** The device that wrote it; null for the CLI or the chat. */
+    authorDeviceId: text("author_device_id"),
+    createdAt: integer("created_at").notNull(),
+    editedAt: integer("edited_at"),
+    deletedAt: integer("deleted_at"),
+  },
+  (t) => [index("review_notes_review").on(t.reviewId, t.round)],
+);

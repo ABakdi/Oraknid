@@ -20,6 +20,7 @@ export * from "./plan.ts";
 export * from "./profiles.ts";
 export * from "./questions.ts";
 export * from "./resources.ts";
+export * from "./reviews.ts";
 export * from "./secrets.ts";
 export * from "./sensitive.ts";
 export * from "./server-insight.ts";

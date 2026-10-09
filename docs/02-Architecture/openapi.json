@@ -29003,6 +29003,1801 @@
         }
       }
     },
+    "/reviews/open": {
+      "post": {
+        "operationId": "reviews.open",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "jobId": {
+                    "type": "string",
+                    "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                  },
+                  "taskId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "kind": {
+                    "enum": [
+                      "design",
+                      "app"
+                    ],
+                    "type": "string"
+                  },
+                  "target": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 65535
+                      }
+                    ]
+                  },
+                  "entry": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "jobId",
+                  "kind",
+                  "target"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "round": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "url",
+                    "round"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reviews/get": {
+      "post": {
+        "operationId": "reviews.get",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    },
+                    "jobId": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    },
+                    "taskId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "projectId": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    },
+                    "projectName": {
+                      "type": "string"
+                    },
+                    "jobTitle": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "design",
+                        "app"
+                      ],
+                      "type": "string"
+                    },
+                    "target": {
+                      "type": "string"
+                    },
+                    "entry": {
+                      "type": "string"
+                    },
+                    "round": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "state": {
+                      "enum": [
+                        "open",
+                        "notes-sent",
+                        "approved",
+                        "withdrawn"
+                      ],
+                      "type": "string"
+                    },
+                    "frameUrl": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "noteCount": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "createdAt": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "updatedAt": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "endedAt": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                          },
+                          "reviewId": {
+                            "type": "string",
+                            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                          },
+                          "round": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          "kind": {
+                            "enum": [
+                              "keep",
+                              "change",
+                              "problem",
+                              "general"
+                            ],
+                            "type": "string"
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "device": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 60
+                                  },
+                                  "width": {
+                                    "type": "integer",
+                                    "minimum": 120,
+                                    "maximum": 8000
+                                  },
+                                  "height": {
+                                    "type": "integer",
+                                    "minimum": 120,
+                                    "maximum": 8000
+                                  },
+                                  "orientation": {
+                                    "enum": [
+                                      "portrait",
+                                      "landscape"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "width",
+                                  "height",
+                                  "orientation"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "element": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "selector": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 2000
+                                  },
+                                  "text": {
+                                    "type": "string",
+                                    "maxLength": 2000
+                                  },
+                                  "tag": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 40
+                                  },
+                                  "box": {
+                                    "type": "object",
+                                    "properties": {
+                                      "x": {
+                                        "type": "number"
+                                      },
+                                      "y": {
+                                        "type": "number"
+                                      },
+                                      "width": {
+                                        "type": "number",
+                                        "minimum": 0
+                                      },
+                                      "height": {
+                                        "type": "number",
+                                        "minimum": 0
+                                      }
+                                    },
+                                    "required": [
+                                      "x",
+                                      "y",
+                                      "width",
+                                      "height"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "selector",
+                                  "text",
+                                  "tag",
+                                  "box"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "page": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hasScreenshot": {
+                            "type": "boolean"
+                          },
+                          "console": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "level": {
+                                  "enum": [
+                                    "error",
+                                    "warn"
+                                  ],
+                                  "type": "string"
+                                },
+                                "text": {
+                                  "type": "string",
+                                  "maxLength": 2000
+                                },
+                                "at": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "level",
+                                "text",
+                                "at"
+                              ]
+                            }
+                          },
+                          "requests": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "method": {
+                                  "type": "string",
+                                  "maxLength": 10
+                                },
+                                "url": {
+                                  "type": "string",
+                                  "maxLength": 2000
+                                },
+                                "status": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "error": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "maxLength": 500
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "at": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "method",
+                                "url",
+                                "status",
+                                "error",
+                                "at"
+                              ]
+                            }
+                          },
+                          "source": {
+                            "enum": [
+                              "page",
+                              "chat"
+                            ],
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "editedAt": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "reviewId",
+                          "round",
+                          "kind",
+                          "text",
+                          "device",
+                          "element",
+                          "page",
+                          "hasScreenshot",
+                          "console",
+                          "requests",
+                          "source",
+                          "createdAt",
+                          "editedAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "jobId",
+                    "taskId",
+                    "projectId",
+                    "projectName",
+                    "jobTitle",
+                    "title",
+                    "kind",
+                    "target",
+                    "entry",
+                    "round",
+                    "state",
+                    "frameUrl",
+                    "noteCount",
+                    "createdAt",
+                    "updatedAt",
+                    "endedAt",
+                    "notes"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reviews/list": {
+      "post": {
+        "operationId": "reviews.list",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "projectId": {
+                    "type": "string",
+                    "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                  },
+                  "jobId": {
+                    "type": "string",
+                    "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                  },
+                  "state": {
+                    "enum": [
+                      "open",
+                      "notes-sent",
+                      "approved",
+                      "withdrawn"
+                    ],
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                      },
+                      "jobId": {
+                        "type": "string",
+                        "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                      },
+                      "taskId": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "projectId": {
+                        "type": "string",
+                        "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                      },
+                      "projectName": {
+                        "type": "string"
+                      },
+                      "jobTitle": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "design",
+                          "app"
+                        ],
+                        "type": "string"
+                      },
+                      "target": {
+                        "type": "string"
+                      },
+                      "entry": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      "state": {
+                        "enum": [
+                          "open",
+                          "notes-sent",
+                          "approved",
+                          "withdrawn"
+                        ],
+                        "type": "string"
+                      },
+                      "frameUrl": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "noteCount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "createdAt": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "updatedAt": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "endedAt": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "jobId",
+                      "taskId",
+                      "projectId",
+                      "projectName",
+                      "jobTitle",
+                      "title",
+                      "kind",
+                      "target",
+                      "entry",
+                      "round",
+                      "state",
+                      "frameUrl",
+                      "noteCount",
+                      "createdAt",
+                      "updatedAt",
+                      "endedAt"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reviews/notes/add": {
+      "post": {
+        "operationId": "reviews.notes.add",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reviewId": {
+                    "type": "string",
+                    "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                  },
+                  "kind": {
+                    "enum": [
+                      "keep",
+                      "change",
+                      "problem",
+                      "general"
+                    ],
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  },
+                  "device": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 60
+                          },
+                          "width": {
+                            "type": "integer",
+                            "minimum": 120,
+                            "maximum": 8000
+                          },
+                          "height": {
+                            "type": "integer",
+                            "minimum": 120,
+                            "maximum": 8000
+                          },
+                          "orientation": {
+                            "enum": [
+                              "portrait",
+                              "landscape"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "width",
+                          "height",
+                          "orientation"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "element": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "selector": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2000
+                          },
+                          "text": {
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          "tag": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 40
+                          },
+                          "box": {
+                            "type": "object",
+                            "properties": {
+                              "x": {
+                                "type": "number"
+                              },
+                              "y": {
+                                "type": "number"
+                              },
+                              "width": {
+                                "type": "number",
+                                "minimum": 0
+                              },
+                              "height": {
+                                "type": "number",
+                                "minimum": 0
+                              }
+                            },
+                            "required": [
+                              "x",
+                              "y",
+                              "width",
+                              "height"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "selector",
+                          "text",
+                          "tag",
+                          "box"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "page": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "screenshot": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 4000000,
+                        "pattern": "^data:image\\/(jpeg|png);base64,[A-Za-z0-9+/=]+$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "console": {
+                    "type": "array",
+                    "maxItems": 50,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "level": {
+                          "enum": [
+                            "error",
+                            "warn"
+                          ],
+                          "type": "string"
+                        },
+                        "text": {
+                          "type": "string",
+                          "maxLength": 2000
+                        },
+                        "at": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "level",
+                        "text",
+                        "at"
+                      ]
+                    }
+                  },
+                  "requests": {
+                    "type": "array",
+                    "maxItems": 50,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "method": {
+                          "type": "string",
+                          "maxLength": 10
+                        },
+                        "url": {
+                          "type": "string",
+                          "maxLength": 2000
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 500
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "at": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "method",
+                        "url",
+                        "status",
+                        "error",
+                        "at"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "reviewId",
+                  "kind",
+                  "text",
+                  "device",
+                  "element"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    },
+                    "reviewId": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    },
+                    "round": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "kind": {
+                      "enum": [
+                        "keep",
+                        "change",
+                        "problem",
+                        "general"
+                      ],
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "device": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 60
+                            },
+                            "width": {
+                              "type": "integer",
+                              "minimum": 120,
+                              "maximum": 8000
+                            },
+                            "height": {
+                              "type": "integer",
+                              "minimum": 120,
+                              "maximum": 8000
+                            },
+                            "orientation": {
+                              "enum": [
+                                "portrait",
+                                "landscape"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "width",
+                            "height",
+                            "orientation"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "element": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "selector": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 2000
+                            },
+                            "text": {
+                              "type": "string",
+                              "maxLength": 2000
+                            },
+                            "tag": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 40
+                            },
+                            "box": {
+                              "type": "object",
+                              "properties": {
+                                "x": {
+                                  "type": "number"
+                                },
+                                "y": {
+                                  "type": "number"
+                                },
+                                "width": {
+                                  "type": "number",
+                                  "minimum": 0
+                                },
+                                "height": {
+                                  "type": "number",
+                                  "minimum": 0
+                                }
+                              },
+                              "required": [
+                                "x",
+                                "y",
+                                "width",
+                                "height"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "selector",
+                            "text",
+                            "tag",
+                            "box"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "page": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "hasScreenshot": {
+                      "type": "boolean"
+                    },
+                    "console": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "level": {
+                            "enum": [
+                              "error",
+                              "warn"
+                            ],
+                            "type": "string"
+                          },
+                          "text": {
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          "at": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "level",
+                          "text",
+                          "at"
+                        ]
+                      }
+                    },
+                    "requests": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "method": {
+                            "type": "string",
+                            "maxLength": 10
+                          },
+                          "url": {
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "error": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 500
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "at": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "method",
+                          "url",
+                          "status",
+                          "error",
+                          "at"
+                        ]
+                      }
+                    },
+                    "source": {
+                      "enum": [
+                        "page",
+                        "chat"
+                      ],
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "editedAt": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "reviewId",
+                    "round",
+                    "kind",
+                    "text",
+                    "device",
+                    "element",
+                    "page",
+                    "hasScreenshot",
+                    "console",
+                    "requests",
+                    "source",
+                    "createdAt",
+                    "editedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reviews/notes/edit": {
+      "post": {
+        "operationId": "reviews.notes.edit",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  },
+                  "kind": {
+                    "enum": [
+                      "keep",
+                      "change",
+                      "problem",
+                      "general"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    },
+                    "reviewId": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    },
+                    "round": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "kind": {
+                      "enum": [
+                        "keep",
+                        "change",
+                        "problem",
+                        "general"
+                      ],
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "device": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 60
+                            },
+                            "width": {
+                              "type": "integer",
+                              "minimum": 120,
+                              "maximum": 8000
+                            },
+                            "height": {
+                              "type": "integer",
+                              "minimum": 120,
+                              "maximum": 8000
+                            },
+                            "orientation": {
+                              "enum": [
+                                "portrait",
+                                "landscape"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "width",
+                            "height",
+                            "orientation"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "element": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "selector": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 2000
+                            },
+                            "text": {
+                              "type": "string",
+                              "maxLength": 2000
+                            },
+                            "tag": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 40
+                            },
+                            "box": {
+                              "type": "object",
+                              "properties": {
+                                "x": {
+                                  "type": "number"
+                                },
+                                "y": {
+                                  "type": "number"
+                                },
+                                "width": {
+                                  "type": "number",
+                                  "minimum": 0
+                                },
+                                "height": {
+                                  "type": "number",
+                                  "minimum": 0
+                                }
+                              },
+                              "required": [
+                                "x",
+                                "y",
+                                "width",
+                                "height"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "selector",
+                            "text",
+                            "tag",
+                            "box"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "page": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "hasScreenshot": {
+                      "type": "boolean"
+                    },
+                    "console": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "level": {
+                            "enum": [
+                              "error",
+                              "warn"
+                            ],
+                            "type": "string"
+                          },
+                          "text": {
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          "at": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "level",
+                          "text",
+                          "at"
+                        ]
+                      }
+                    },
+                    "requests": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "method": {
+                            "type": "string",
+                            "maxLength": 10
+                          },
+                          "url": {
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "error": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 500
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "at": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "method",
+                          "url",
+                          "status",
+                          "error",
+                          "at"
+                        ]
+                      }
+                    },
+                    "source": {
+                      "enum": [
+                        "page",
+                        "chat"
+                      ],
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "editedAt": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "reviewId",
+                    "round",
+                    "kind",
+                    "text",
+                    "device",
+                    "element",
+                    "page",
+                    "hasScreenshot",
+                    "console",
+                    "requests",
+                    "source",
+                    "createdAt",
+                    "editedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reviews/notes/delete": {
+      "post": {
+        "operationId": "reviews.notes.delete",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reviews/notes/screenshot": {
+      "post": {
+        "operationId": "reviews.notes.screenshot",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "dataUrl": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "dataUrl"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reviews/sendNotes": {
+      "post": {
+        "operationId": "reviews.sendNotes",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "round": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "notes": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "round",
+                    "notes"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reviews/approve": {
+      "post": {
+        "operationId": "reviews.approve",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reviews/withdraw": {
+      "post": {
+        "operationId": "reviews.withdraw",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reviews/frame": {
+      "post": {
+        "operationId": "reviews.frame",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                  },
+                  "path": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "html": {
+                      "type": "string"
+                    },
+                    "missing": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "html",
+                    "missing"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/text/polish": {
       "post": {
         "operationId": "text.polish",
@@ -49350,6 +51145,17 @@
                         "anyOf": [
                           {
                             "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "reviewId": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
                           },
                           {
                             "type": "null"

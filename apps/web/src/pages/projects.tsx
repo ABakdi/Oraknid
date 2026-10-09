@@ -24,7 +24,7 @@ import { NewProjectDialog } from "@/components/new-project";
 import { type PageTab, PageTabs } from "@/components/page-tabs";
 import { matchProjects, ProjectList } from "@/components/project-list";
 import { ProjectNetworkCard } from "@/components/project-network";
-import { nowRank, ProjectWorkBar } from "@/components/project-now";
+import { nowRank, ProjectWorkBar, ReviewsWaiting } from "@/components/project-now";
 import { ProjectMenu, ProjectRemovalDialog, type RemovalKind } from "@/components/project-removal";
 import { isSeveral, ProjectReposCard, ProjectRepoTab } from "@/components/project-repo";
 import { ProjectSecretsCard } from "@/components/project-secrets";
@@ -293,6 +293,8 @@ function ProjectDetail({
         // A job open on a phone keeps the room: several jobs fold to one line.
         defaultFolded={!!job && typeof window !== "undefined" && window.innerWidth < 768}
       />
+      {/* A review waiting for me (ADR-064), in case its tab didn't open. */}
+      <ReviewsWaiting projectId={id} />
     </div>
   );
   if (jobs.error) return <ErrorNote error={jobs.error} />;

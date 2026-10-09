@@ -34,6 +34,8 @@ import {
   inboxItems,
   jobs,
   projects,
+  reviewNotes,
+  reviews,
   servers,
   sessions,
   settings,
@@ -425,7 +427,17 @@ export class Projects {
       .all()
       .map((t) => t.id);
     if (taskIds.length) this.db.delete(taskEdges).where(inArray(taskEdges.taskId, taskIds)).run();
+    // Their reviews' notes before the reviews (ADR-064); the screenshots' files stay with the data.
+    const reviewIds = this.db
+      .select({ id: reviews.id })
+      .from(reviews)
+      .where(inArray(reviews.jobId, ids))
+      .all()
+      .map((r) => r.id);
+    if (reviewIds.length)
+      this.db.delete(reviewNotes).where(inArray(reviewNotes.reviewId, reviewIds)).run();
     for (const table of [
+      reviews,
       attemptEvents,
       attempts,
       sessions,
