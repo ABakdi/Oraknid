@@ -15,6 +15,7 @@ import { hostFor } from "../workspace/hosts/registry.ts";
 import { type Projects, viewOf } from "../workspace/projects.ts";
 import { isSeveral } from "../workspace/repos.ts";
 import { mergeJob } from "../workspace/result.ts";
+import { projectWork } from "./evaluations.ts";
 import { ensureLinks } from "./links.ts";
 
 // The repo's part is Oraknid's (Jobs-and-Projects → Ending a job, after the
@@ -87,6 +88,8 @@ export async function runEnding(
   ctx: JobContext,
   job: { id: string; projectId: string; goal: string },
 ): Promise<EndingDone | null> {
+  // A completed job lands in my project (ADR-064 §8): merged as the project's setting says, or I'm asked.
+  await ctx.step("ending:merge-setting", null, async () => mergeBySetting(d, job.id));
   const want = readEnding(d.db, job.id);
   if (!want.merge && !want.push) return null;
   if (want.done) return want.done;
@@ -111,7 +114,7 @@ export async function runEnding(
 
 /** The end steps themselves: the merge, then the push, each said in what it returns. */
 export async function endSteps(
-  d: Omit<EndingDeps, "inbox" | "now">,
+  d: Omit<EndingDeps, "inbox" | "now"> & { inbox?: InboxStore },
   jobId: string,
 ): Promise<EndingDone> {
   const want = readEnding(d.db, jobId);
@@ -127,8 +130,11 @@ export async function endSteps(
   if (want.merge) {
     const m = mergeJob(d.db, d.bus, jobId, true);
     if (m.ok) done.merged = { into: project.workBranch, commit: m.commit };
-    else if (!/already/i.test(m.reason))
+    else if (!/already/i.test(m.reason)) {
       done.problems.push(`Merging into ${project.workBranch}: ${m.reason}`);
+      // Not merged: I'm asked what to do, the job's branch kept as it is (ADR-064 §8).
+      if (d.inbox) askToMerge(d as MergeDeps, jobId, project.workBranch, m);
+    }
   }
   if (want.push) {
     const github = d.github;
@@ -181,3 +187,98 @@ export async function endSteps(
   });
   return done;
 }
+
+// ── The job lands in my project (ADR-064 §8, after the Keys job) ───────
+
+interface MergeDeps {
+  db: Db;
+  bus: EventBus;
+  inbox: InboxStore;
+}
+
+const MERGE = "Merge into";
+const RETRY = "Try the merge again";
+const KEEP = "Keep it on its branch";
+const MergeAsked = z.array(z.string());
+const mergeAskedKey = (jobId: string) => `job.mergeAsked.${jobId}`;
+
+/**
+ * Before the end steps: a job that has a branch to merge is merged into
+ * the work branch when the project says "merge" (the default), as if I had
+ * asked; with "ask", I'm asked in the inbox and the job completes
+ * meanwhile. A job I asked to merge in words is merged either way.
+ */
+function mergeBySetting(d: EndingDeps, jobId: string) {
+  const want = readEnding(d.db, jobId);
+  if (want.merge || want.done) return null;
+  const job = d.db.select().from(jobs).where(eq(jobs.id, jobId)).get();
+  const row = job ? d.db.select().from(projects).where(eq(projects.id, job.projectId)).get() : null;
+  if (!job?.branch || !row?.isGitRepo || row.serverId) return null;
+  const setting = projectWork(d.db, row.id).merge;
+  if (setting === "merge") {
+    requestEnding(d.db, jobId, { merge: true }, "the project's setting");
+    return "merge";
+  }
+  const into = viewOf(row).workBranch;
+  openMergeQuestion(d, jobId, {
+    title: `Merge “${job.title}” into ${into}?`,
+    detail: `The job is done and its work is on its branch ${job.branch}. The project's setting asks before merging: merge it into ${into}, or keep it on its branch (the Merge button on the job does it later).`,
+    options: [`${MERGE} ${into}`, KEEP],
+  });
+  return "ask";
+}
+
+function openMergeQuestion(
+  d: { db: Db; inbox: InboxStore },
+  jobId: string,
+  q: { title: string; detail: string; options: string[] },
+) {
+  const id = d.inbox.open({
+    kind: "question",
+    jobId,
+    raisedBy: "eye",
+    title: q.title,
+    detail: q.detail,
+    options: q.options,
+    defaultOption: null,
+  });
+  writeSetting(d.db, mergeAskedKey(jobId), MergeAsked, [
+    ...readSetting(d.db, mergeAskedKey(jobId), MergeAsked, []),
+    id,
+  ]);
+}
+
+/** A merge that didn't happen (a conflict, uncommitted changes in my checkout): I'm asked what next. */
+function askToMerge(
+  d: MergeDeps,
+  jobId: string,
+  into: string,
+  m: { reason: string; conflicts: string[] },
+) {
+  openMergeQuestion(d, jobId, {
+    title: `The job couldn't be merged into ${into}`,
+    detail: [
+      m.reason,
+      m.conflicts.length ? `Conflicting: ${m.conflicts.map((f) => `\`${f}\``).join(", ")}` : "",
+      "Nothing was merged; the work is on the job's branch. Put it right, then try again, or keep it on its branch.",
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
+    options: [RETRY, KEEP],
+  });
+}
+
+/** My answer to "merge it?": merged now (asked again if it can't be), or left on its branch. */
+export function answerMerge(d: MergeDeps, jobId: string, itemId: string) {
+  if (!readSetting(d.db, mergeAskedKey(jobId), MergeAsked, []).includes(itemId)) return;
+  const answer = d.inbox.get(itemId)?.answer ?? "";
+  if (!answer.startsWith(MERGE) && answer !== RETRY) return;
+  const m = mergeJob(d.db, d.bus, jobId, false);
+  const job = d.db.select().from(jobs).where(eq(jobs.id, jobId)).get();
+  const row = job ? d.db.select().from(projects).where(eq(projects.id, job.projectId)).get() : null;
+  if (!m.ok && !/already/i.test(m.reason) && row) askToMerge(d, jobId, viewOf(row).workBranch, m);
+}
+
+/** The questions a job's end asked (whether to merge it): they outlive the job (ADR-064 §8). */
+export const asksAfterEnd = (db: Db, jobId: string) =>
+  new Set(readSetting(db, mergeAskedKey(jobId), MergeAsked, []));

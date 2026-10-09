@@ -108,6 +108,8 @@ const TITLES: Record<string, string> = {
   "task.drift": "Drift",
   "task.waiting": "Task waiting",
   "task.waiting-for-leg": "Waiting for a Leg",
+  "task.leg-paused-goes-on": "Goes on without a paused Leg",
+  "task.review-opened": "Review opened",
   "task.verified": "Checked",
   "task.verifying": "Checking",
   "task.evaluated": "Reviewed",

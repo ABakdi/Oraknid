@@ -1,8 +1,12 @@
-import type { PlanMeasures, WebPlan } from "@oraknid/contracts";
+import type { Evaluations, PlanMeasures, WebPlan } from "@oraknid/contracts";
+import { shapeEvaluations } from "./evaluations.ts";
 import { likeness, meaningWords } from "./likeness.ts";
 
-/** Task kinds that may have no verify command; they get a second reasoning look instead. */
-const UNVERIFIED_OK = new Set(["plan", "research"]);
+/**
+ * Task kinds that may have no verify command: a plan or research gets a
+ * second reasoning look instead; an evaluation step is mine (ADR-064 §1).
+ */
+const UNVERIFIED_OK = new Set(["plan", "research", "evaluation"]);
 /** Task kinds that change files and so need a scope. */
 const CHANGES_FILES = new Set(["implement", "test", "mechanical", "review"]);
 
@@ -29,6 +33,16 @@ export function validateWeb(plan: WebPlan): string[] {
         `Task "${t.key}" (${t.kind}) has no verify command; every task that changes things must.`,
       );
     }
+    if (t.kind === "evaluation" && !t.evaluation)
+      problems.push(
+        `Task "${t.key}" is an evaluation step: say what it shows in "evaluation": {"kind": "design" | "app" | "checkpoint", "why": "…"}.`,
+      );
+    if (t.kind === "evaluation" && t.dependsOn.length === 0)
+      problems.push(
+        `Evaluation step "${t.key}" depends on nothing: it comes after the work it shows.`,
+      );
+    if (t.kind !== "evaluation" && t.evaluation)
+      problems.push(`Task "${t.key}" has an "evaluation" but is not of kind "evaluation".`);
     if (CHANGES_FILES.has(t.kind) && t.scope.length === 0) {
       problems.push(`Task "${t.key}" (${t.kind}) has no scope: say which paths it may change.`);
     }
@@ -321,6 +335,11 @@ export function graphProblems(plan: WebPlan): string[] {
 export function shapeWeb(
   plan: WebPlan,
   known: Set<string> = new Set(),
+  /**
+   * The evaluation steps the job's setting allows (ADR-064 §1); `add`: a
+   * first plan, which gets the reviews work I'll see must have.
+   */
+  evaluations?: { setting: Evaluations; add: boolean },
 ): { plan: WebPlan; notes: string[] } {
   const notes: string[] = [];
   // The same work twice: the later merged into the earlier, references moved with it.
@@ -370,6 +389,16 @@ export function shapeWeb(
       t.dependsOn = [...new Set(t.dependsOn.map((d) => into.get(d) ?? d))].filter(
         (d) => d !== t.key,
       );
+  }
+
+  // Evaluation steps as the setting wants them, before the order is made (ADR-064 §1).
+  if (evaluations) {
+    const e = shapeEvaluations({ ...plan, tasks: kept }, evaluations.setting, {
+      add: evaluations.add,
+    });
+    kept.splice(0, kept.length, ...e.plan.tasks);
+    for (const t of kept) keys.add(t.key);
+    notes.push(...e.notes);
   }
 
   // Phases in order: a phase's first tasks come after the previous phase's last ones.
@@ -451,7 +480,9 @@ export function mergeCrumbs(tasks: Planned[]): { into: string; from: string[]; t
   const after = new Map<string, string[]>();
   for (const t of tasks)
     for (const d of t.dependsOn) after.set(d, [...(after.get(d) ?? []), t.key]);
-  const small = (t: Planned) => t.difficulty !== "high" && t.kind !== "external";
+  // An evaluation step is mine, never a crumb of an agent's (ADR-064 §1).
+  const small = (t: Planned) =>
+    t.difficulty !== "high" && t.kind !== "external" && t.kind !== "evaluation";
   /** The task that follows `a` as a crumb, if one does. */
   const next = (a: Planned): Planned | null => {
     const followers = after.get(a.key) ?? [];

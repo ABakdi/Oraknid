@@ -20,10 +20,24 @@ Context). Verification by the person the work is for, inside the work.
   Tested: `reviews.test.ts` → the design served read-only (POST 405), the overlay first in `<head>` of HTML only (CSS as it is), nothing outside its folder (`..` plain or encoded, dot files, a symlink out, `\`), another key or port nothing, withdrawn nothing, the API never on a review's origin; the app proxied to its port only (an absolute-form request naming another port still reaches the app's), Host and Origin rewritten, `X-Frame-Options` dropped and `frame-ancestors` added, gzip HTML decoded and injected, JSON untouched, its websocket (HMR) through; the app down: a page that says so and retries. Oraknid's own port and ports below 1024 refused. `review-check.mjs` → the stand-in app's `console.error` and failed fetch counted on the page. The feedback in the chat: "The knobs are too small on the phone" in the project's chat with one review open is a general note from the chat, and The Eye says so.
 
 ### M16.2 — Evaluation steps in the plan
-- [ ] The planner adds design and final reviews for work I'll see, and reviews after features when worth it, with why
-- [ ] Review nodes in the graph: dependants wait, independent work goes on
-- [ ] Project settings and New work: all / some / none; "add a review after X" and "skip reviews" in the chat edit the plan
-- [ ] Notes become tasks; keep-notes become constraints; the next round opens by itself
+- [x] The planner adds design and final reviews for work I'll see, and reviews after features when worth it, with why
+- [x] Review nodes in the graph: dependants wait, independent work goes on
+- [x] Project settings and New work: all / some / none; "add a review after X" and "skip reviews" in the chat edit the plan
+- [x] Notes become tasks; keep-notes become constraints; the next round opens by itself
+
+*Tested:* core `evaluations.test.ts` (a node validated; dependants wait,
+independent work goes on; reviews added for UI work and not for a pure
+backend; none and some honoured; never a crumb); daemon
+`eye/evaluations.test.ts` with the scripted brain and Leg and the
+stand-in ReviewPort (a design review: notes, a task, round 2, approval,
+then the features; settings none adds none; a review passing by itself;
+an app review starts the dev server on a free port and stops it after;
+the dev command found; "skip reviews" while waiting; "add a review after
+the keyboard"). The review page itself is M16.1's, and the daemon's
+default port since (`reviews/port.test.ts`: a design review opened by the
+program on the page, a note added and sent through the API, the notes'
+task with the note's device and element in its prompt, round 2 on the
+same review, Approve, the features, the job completed).
 
 ### M16.3 — Designs, skills and the visual check
 - [x] The design task: clickable HTML/CSS of the screens per device in `design/`, logo and palette when there's a brand
@@ -39,8 +53,15 @@ Done 2026-10-09 (ADR-064 → As built (M16.3); Skills → Library and Picking wh
 The-Eye → What the work needs and The experience section; ADR-056 → The visual check).
 
 ### M16.4 — From the Keys job
-- [ ] The ladder's top is the strongest available model; never blocked waiting for a paused agent; asked once after a failed climb
-- [ ] A completed job is merged into the project's work branch, or I'm asked
+- [x] The ladder's top is the strongest available model; never blocked waiting for a paused agent; asked once after a failed climb
+- [x] A completed job is merged into the project's work branch, or I'm asked
+
+*Tested:* daemon `eye/evaluations.test.ts` (Claude paused: the task runs
+on the model available and I'm asked once; my "Unpause" unpauses it and
+the task climbs to it; a completed job merged by default; "ask" asks and
+merges on my answer), `eye/eye.test.ts` (a Leg paused under its task:
+the other Leg goes on from the handoff; with no other, it waits and goes
+on when resumed; the job's summary says it was merged).
 
 ## Exit criterion
 The Keys spec, with an experience section, run again: a design opens in

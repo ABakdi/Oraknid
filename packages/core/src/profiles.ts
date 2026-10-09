@@ -239,6 +239,8 @@ export const CAPABILITY_OF: Record<TaskKind, Capability> = {
   research: "planning",
   mechanical: "mechanical",
   external: "mechanical",
+  // No agent works on an evaluation step (ADR-064 §1); nothing is learned from it.
+  evaluation: "review",
 };
 
 /** Success rate the default strengths assume: above it a strength rises, below it falls. */

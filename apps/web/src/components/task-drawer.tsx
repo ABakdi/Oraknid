@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Agents } from "@/components/agents";
 import { Markdown, StateBadge } from "@/components/common";
 import { useConfirm } from "@/components/confirm";
+import { EvaluationNote } from "@/components/evaluations";
 import { TaskDiff } from "@/components/task-diff";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -157,6 +158,7 @@ export function TaskDrawer({
                   </div>
                 ) : null}
               </Field>
+              {task.evaluation ? <EvaluationNote evaluation={task.evaluation} /> : null}
               {task.routing ? (
                 <Field
                   label={t("Why {leg} · {model}", {

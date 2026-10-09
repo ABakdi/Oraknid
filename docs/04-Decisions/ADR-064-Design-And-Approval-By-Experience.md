@@ -101,6 +101,53 @@ the person the work is for, as part of the work.
 - A completed job's branch is merged into the project's work branch (as
   ADR-034's ending says), or I am asked, so the result is in my folder.
 
+## As built (M16.2 and M16.4, 2026-10-09)
+- **Evaluation nodes** (§1): a task kind `evaluation` with its
+  `evaluation` (`design` | `app` | `checkpoint`, `why`, an app's `run`);
+  `review` stays an agent's code review. Core's `validateWeb` checks one
+  (what it shows, after the work it shows; no scope or verify needed),
+  `shapeEvaluations` (called by `shapeWeb`) keeps the kinds the job's
+  setting allows and, on a first plan with UI work, adds a design review
+  after the design tasks and a final app review, the features built on
+  the design depending on its review; `evaluationRules` is what the
+  planner is told. A node's own state (round, review, port, when it
+  passes by itself, how it ended) is the setting `task.evaluation.<task>`.
+- **Running a node** (§1–§3): `eye/evaluations.ts` (`advanceEvaluation`)
+  from the job's loop: the review opened once per round through the
+  **`ReviewPort`** (`harness/reviews.ts`), the app started for an app
+  review (`eye/run-app.ts`: the plan's command, the dev script, the
+  README, a static server; in the sandbox on a free port; stopped after),
+  the job `waiting` on it when nothing else can go on ("Waiting for your
+  review of the design — Open …"), resumed by `review.notes-sent` /
+  `review.approved` or its time to pass by itself; notes become tasks
+  before the node (keep-notes Silk decisions), then round 2.
+- **The seam** to the review page (M16.1): `ReviewPort.open({jobId,
+  stepTaskId, projectId, kind, target, round, title}) → {reviewId, url}`,
+  `outcome(reviewId)`, `waitForOutcome(reviewId, signal)`; the target is
+  `{kind: "folder", path}` or `{kind: "port", port}`; the page's events
+  must carry the job's id. The daemon takes a `ReviewPortFactory`
+  (`startDaemon({ reviews })`); its default is the review page's port
+  (`reviews/port.ts`, M16.1); `inboxReviews` (the review as a question in
+  the inbox) stays for a program run without the daemon's; tests use
+  `standInReviews`.
+- **Settings**: the project's `ProjectWorkSettings` (`evaluations`
+  all/some/none with kinds, `autoPassMinutes`, `merge`), API
+  `projects.workSettings` / `setWorkSettings`; a job's own
+  `jobs.evaluations` / `setEvaluations` (New work's **Reviews**); the chat's
+  "add a review after X" / "skip reviews" (`editReviews`, the triage's
+  `reviews`, `reviewEditOf`).
+- **The ladder** (§7): `route.ts` and `harness/ladder.ts` (ADR-052 §3's note).
+- **The end** (§8): `ending.ts` merges by the project's setting (default
+  merge) or asks; a failed merge asks; `answerMerge` acts on my answer.
+  What was there before: a job merged only when I asked in words, so the
+  Keys job's branch stayed unmerged.
+- **Limits**: the review page itself, its proxy and overlay are M16.1's;
+  until then a review is an inbox question with notes in words. The app is
+  found by convention (no monorepo workspace picking); a checkpoint shows
+  the app when it runs, else the job's folder. "Add a review after X"
+  finds X by its title's words. Merging is a merge commit, as the Merge
+  button's (no fast-forward).
+
 ## As built (M16.3, 2026-10-09)
 - **Skills** (`skills/`): `ui-design.md` (a page per screen and device in
   `design/`, `design/tokens.css`, sample content, the product's own
@@ -254,9 +301,19 @@ the person the work is for, as part of the work.
   overlay in it), shown in a sandboxed frame; a link asks for the next
   page. A module script that imports others can't run so: a Vite app
   under development shows its HTML only, said in the page's footer.
-- **The API the harness calls** (M16.2): `reviews.open({jobId, taskId?,
-  kind, target, entry?, title?})` → `{id, url, round}` (or the service's
-  `open` in-process, `EyeDeps.reviews`); then wait for
-  `review.notes-sent` (payload `{reviewId, taskId, round, notes}`) or
-  `review.approved` on `job:<id>`; `Reviews.notes(id, round?)` reads a
+- **Wired to the evaluation steps** (M16.2's `ReviewPort`,
+  `harness/reviews.ts`): `reviews/port.ts` `pageReviews` is the daemon's
+  default port. `open` calls `Reviews.open` with the step's task and the
+  target (`{kind: "folder", path}` or `{kind: "port", port}`); a step's
+  rounds are one review on the page, so the port's id is
+  `<review id>:<round>`, and a round whose notes were sent keeps the
+  outcome "notes" once the next is open. `outcome` and `waitForOutcome`
+  read the review (approved or withdrawn: approved; notes sent: the
+  round's notes, each `{kind, text, device "Phone 390×844", element
+  "<button> Play (#play)"}`, the app's console errors and failed
+  requests added to its words). The page publishes `review.notes-sent`
+  and `review.approved` on `job:<id>` with the job's id (payload
+  `{reviewId, taskId, round, notes}`), which resumes a waiting job.
+  Also on the API: `reviews.open({jobId, taskId?, kind, target, entry?,
+  title?})` → `{id, url, round}`; `Reviews.notes(id, round?)` reads a
   round's notes whole; `withdraw(id)` when the step is dropped.

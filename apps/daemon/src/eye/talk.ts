@@ -37,6 +37,7 @@ import { viewOf } from "../workspace/projects.ts";
 import { isSeveral } from "../workspace/repos.ts";
 import type { EyeBrain, EyeTriage } from "./brain.ts";
 import { type EndingDone, requestEnding } from "./ending.ts";
+import { editReviews, reviewEditOf } from "./evaluations.ts";
 import { ENOUGH, INTERVIEW_ENDED, ROUND_TITLE } from "./interview.ts";
 import {
   carryOver,
@@ -1049,6 +1050,19 @@ async function act(
       );
       return;
     }
+  }
+  // The plan's evaluation steps, added or skipped in my words (ADR-064 §1).
+  const edit = ENDED.has(jobState) ? null : (v.reviews ?? reviewEditOf(text));
+  if (edit && (edit.skip || (edit.add.length && !at.unplanned))) {
+    const r = editReviews({ ...d, now: d.now ?? Date.now }, jobId, edit);
+    did.push(...r.did);
+    reply = r.reply || reply;
+    keep("decision", v.silk?.title ?? `My instruction: ${firstLine(text)}`, v.silk?.body ?? text);
+    // A job that waited on a review I skipped, or that ended its work before the one I added, goes on.
+    if (d.db.select({ s: jobs.state }).from(jobs).where(eq(jobs.id, jobId)).get()?.s === "waiting")
+      await d.runner.resume(jobId).catch(() => {});
+    add(d, jobId, "eye", reply, { intent: v.intent, did, silkIds, taskIds, jobId: jobRef });
+    return;
   }
   switch (v.intent) {
     case "instruction":

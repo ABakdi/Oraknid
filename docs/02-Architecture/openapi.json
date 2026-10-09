@@ -3090,6 +3090,239 @@
         }
       }
     },
+    "/projects/workSettings": {
+      "post": {
+        "operationId": "projects.workSettings",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "evaluations": {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "enum": [
+                            "all",
+                            "some",
+                            "none"
+                          ],
+                          "type": "string",
+                          "default": "all"
+                        },
+                        "kinds": {
+                          "type": "array",
+                          "items": {
+                            "enum": [
+                              "design",
+                              "app",
+                              "checkpoint"
+                            ],
+                            "type": "string"
+                          },
+                          "default": []
+                        }
+                      },
+                      "default": {
+                        "mode": "all",
+                        "kinds": []
+                      }
+                    },
+                    "autoPassMinutes": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "maximum": 43200,
+                          "exclusiveMinimum": 0
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "merge": {
+                      "enum": [
+                        "merge",
+                        "ask"
+                      ],
+                      "type": "string",
+                      "default": "merge"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/setWorkSettings": {
+      "post": {
+        "operationId": "projects.setWorkSettings",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "settings": {
+                    "type": "object",
+                    "properties": {
+                      "evaluations": {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "enum": [
+                              "all",
+                              "some",
+                              "none"
+                            ],
+                            "type": "string",
+                            "default": "all"
+                          },
+                          "kinds": {
+                            "type": "array",
+                            "items": {
+                              "enum": [
+                                "design",
+                                "app",
+                                "checkpoint"
+                              ],
+                              "type": "string"
+                            },
+                            "default": []
+                          }
+                        },
+                        "default": {
+                          "mode": "all",
+                          "kinds": []
+                        }
+                      },
+                      "autoPassMinutes": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "maximum": 43200,
+                            "exclusiveMinimum": 0
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "default": null
+                      },
+                      "merge": {
+                        "enum": [
+                          "merge",
+                          "ask"
+                        ],
+                        "type": "string",
+                        "default": "merge"
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "settings"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "evaluations": {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "enum": [
+                            "all",
+                            "some",
+                            "none"
+                          ],
+                          "type": "string",
+                          "default": "all"
+                        },
+                        "kinds": {
+                          "type": "array",
+                          "items": {
+                            "enum": [
+                              "design",
+                              "app",
+                              "checkpoint"
+                            ],
+                            "type": "string"
+                          },
+                          "default": []
+                        }
+                      },
+                      "default": {
+                        "mode": "all",
+                        "kinds": []
+                      }
+                    },
+                    "autoPassMinutes": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "maximum": 43200,
+                          "exclusiveMinimum": 0
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "merge": {
+                      "enum": [
+                        "merge",
+                        "ask"
+                      ],
+                      "type": "string",
+                      "default": "merge"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/projects/setServers": {
       "post": {
         "operationId": "projects.setServers",
@@ -38921,7 +39154,8 @@
                                 "review",
                                 "research",
                                 "mechanical",
-                                "external"
+                                "external",
+                                "evaluation"
                               ],
                               "type": "string"
                             },
@@ -41497,7 +41731,8 @@
                               "review",
                               "research",
                               "mechanical",
-                              "external"
+                              "external",
+                              "evaluation"
                             ],
                             "type": "string"
                           },
@@ -41802,6 +42037,94 @@
                             "anyOf": [
                               {
                                 "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "default": null
+                          },
+                          "evaluation": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "design",
+                                      "app",
+                                      "checkpoint"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "why": {
+                                    "type": "string"
+                                  },
+                                  "round": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "reviewId": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "url": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "waiting": {
+                                    "type": "boolean"
+                                  },
+                                  "passAt": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "outcome": {
+                                    "anyOf": [
+                                      {
+                                        "enum": [
+                                          "approved",
+                                          "auto-passed",
+                                          "skipped"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "why",
+                                  "round",
+                                  "reviewId",
+                                  "url",
+                                  "waiting",
+                                  "passAt",
+                                  "outcome"
+                                ]
                               },
                               {
                                 "type": "null"
@@ -42295,7 +42618,8 @@
                                 "review",
                                 "research",
                                 "mechanical",
-                                "external"
+                                "external",
+                                "evaluation"
                               ],
                               "type": "string"
                             },
@@ -42600,6 +42924,94 @@
                               "anyOf": [
                                 {
                                   "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "default": null
+                            },
+                            "evaluation": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "design",
+                                        "app",
+                                        "checkpoint"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "why": {
+                                      "type": "string"
+                                    },
+                                    "round": {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991,
+                                      "exclusiveMinimum": 0
+                                    },
+                                    "reviewId": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "url": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "waiting": {
+                                      "type": "boolean"
+                                    },
+                                    "passAt": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "outcome": {
+                                      "anyOf": [
+                                        {
+                                          "enum": [
+                                            "approved",
+                                            "auto-passed",
+                                            "skipped"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "why",
+                                    "round",
+                                    "reviewId",
+                                    "url",
+                                    "waiting",
+                                    "passAt",
+                                    "outcome"
+                                  ]
                                 },
                                 {
                                   "type": "null"
@@ -43514,7 +43926,8 @@
                                   "review",
                                   "research",
                                   "mechanical",
-                                  "external"
+                                  "external",
+                                  "evaluation"
                                 ],
                                 "type": "string"
                               },
@@ -43819,6 +44232,94 @@
                                 "anyOf": [
                                   {
                                     "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "default": null
+                              },
+                              "evaluation": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "design",
+                                          "app",
+                                          "checkpoint"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "why": {
+                                        "type": "string"
+                                      },
+                                      "round": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991,
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "reviewId": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "url": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "waiting": {
+                                        "type": "boolean"
+                                      },
+                                      "passAt": {
+                                        "anyOf": [
+                                          {
+                                            "type": "number"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "outcome": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "approved",
+                                              "auto-passed",
+                                              "skipped"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "why",
+                                      "round",
+                                      "reviewId",
+                                      "url",
+                                      "waiting",
+                                      "passAt",
+                                      "outcome"
+                                    ]
                                   },
                                   {
                                     "type": "null"
@@ -45371,6 +45872,180 @@
                 },
                 "required": [
                   "id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {},
+                    {
+                      "not": {}
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/evaluations": {
+      "post": {
+        "operationId": "jobs.evaluations",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "own": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "enum": [
+                                "all",
+                                "some",
+                                "none"
+                              ],
+                              "type": "string",
+                              "default": "all"
+                            },
+                            "kinds": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "design",
+                                  "app",
+                                  "checkpoint"
+                                ],
+                                "type": "string"
+                              },
+                              "default": []
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "effective": {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "enum": [
+                            "all",
+                            "some",
+                            "none"
+                          ],
+                          "type": "string",
+                          "default": "all"
+                        },
+                        "kinds": {
+                          "type": "array",
+                          "items": {
+                            "enum": [
+                              "design",
+                              "app",
+                              "checkpoint"
+                            ],
+                            "type": "string"
+                          },
+                          "default": []
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "own",
+                    "effective"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/setEvaluations": {
+      "post": {
+        "operationId": "jobs.setEvaluations",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "evaluations": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "enum": [
+                              "all",
+                              "some",
+                              "none"
+                            ],
+                            "type": "string",
+                            "default": "all"
+                          },
+                          "kinds": {
+                            "type": "array",
+                            "items": {
+                              "enum": [
+                                "design",
+                                "app",
+                                "checkpoint"
+                              ],
+                              "type": "string"
+                            },
+                            "default": []
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "evaluations"
                 ]
               }
             }
@@ -47281,7 +47956,8 @@
                                       "review",
                                       "research",
                                       "mechanical",
-                                      "external"
+                                      "external",
+                                      "evaluation"
                                     ],
                                     "type": "string"
                                   },
@@ -47832,7 +48508,8 @@
                                     "review",
                                     "research",
                                     "mechanical",
-                                    "external"
+                                    "external",
+                                    "evaluation"
                                   ],
                                   "type": "string"
                                 },
@@ -48696,7 +49373,8 @@
                                     "review",
                                     "research",
                                     "mechanical",
-                                    "external"
+                                    "external",
+                                    "evaluation"
                                   ],
                                   "type": "string"
                                 },
@@ -49246,7 +49924,8 @@
                                     "review",
                                     "research",
                                     "mechanical",
-                                    "external"
+                                    "external",
+                                    "evaluation"
                                   ],
                                   "type": "string"
                                 },
