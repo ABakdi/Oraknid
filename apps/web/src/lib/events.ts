@@ -58,6 +58,8 @@ export function eventKind(e: Event): EventKind {
     case "leg":
       return "leg";
     case "inbox":
+    // A review waits for me, or I answered it (ADR-064).
+    case "review":
       return "inbox";
     case "policy":
     case "permission":
@@ -129,6 +131,13 @@ const TITLES: Record<string, string> = {
   "inbox.opened": "Asks you",
   "inbox.answered": "Answered",
   "inbox.withdrawn": "Withdrawn",
+  "review.opened": "Ready for your review",
+  "review.note-added": "Review note",
+  "review.note-edited": "Review note changed",
+  "review.note-deleted": "Review note deleted",
+  "review.notes-sent": "Review notes sent",
+  "review.approved": "Review approved",
+  "review.withdrawn": "Review withdrawn",
   "policy.decision": "Approval",
   "policy.waived": "Gate waived",
   "policy.updated": "Rules changed",

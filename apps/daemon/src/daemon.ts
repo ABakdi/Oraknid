@@ -61,7 +61,7 @@ import { forgetGuidance, recordAnswer, resumeConversations } from "./eye/talk.ts
 import { EyeThinking } from "./eye/thinking.ts";
 import { forgetJob } from "./harness/gate.ts";
 import { answerLadder } from "./harness/ladder.ts";
-import { inboxReviews, REVIEW_EVENTS, type ReviewPortFactory } from "./harness/reviews.ts";
+import { REVIEW_EVENTS, type ReviewPortFactory } from "./harness/reviews.ts";
 import { chromiumRenderer, type VisualDeps, visionJudge } from "./harness/visual.ts";
 import { Helper, type HelperWho } from "./helper/service.ts";
 import { isLocalRequest } from "./http/guard.ts";
@@ -92,6 +92,9 @@ import { DEFAULT_HOST, DEFAULT_PORT, isDefaultDataDir, type Paths } from "./path
 import { diskSpace } from "./resources/disks.ts";
 import { startGuard } from "./resources/guard.ts";
 import { thresholdsOf, Work } from "./resources/work.ts";
+import { reviewFrames, reviewKeyOf } from "./reviews/frame.ts";
+import { pageReviews } from "./reviews/port.ts";
+import { Reviews } from "./reviews/service.ts";
 import { ProjectSecrets } from "./secrets/service.ts";
 import { ENV_TOOL_NAME, envServer, envTool } from "./secrets/tool.ts";
 import { startRefreshAfterStop } from "./servers/after-end.ts";
@@ -165,7 +168,7 @@ export interface DaemonOptions {
   stallCheckMs?: number;
   /**
    * Where evaluation steps open their reviews (ADR-064 §1): the review
-   * page's API once wired; the inbox until then; a stand-in in tests.
+   * page's (reviews/port.ts) unless given; a stand-in in tests.
    */
   reviews?: ReviewPortFactory;
   /** How long an app under review may take to answer, and how often reviews that pass by themselves are looked at (tests). */
@@ -296,6 +299,15 @@ export async function startDaemon(options: DaemonOptions) {
   const jobsStore = new JobStore(db, bus, now);
   const journal = new StepJournal(db, now);
   const inbox = new InboxStore(db, bus, now);
+  // Reviews (ADR-064): a design or the running app annotated per device; the frame on its own origin.
+  const reviewPage = new Reviews({
+    db,
+    bus,
+    inbox,
+    dataDir: paths.dataDir,
+    port: () => port,
+    now,
+  });
   const effects = new SideEffects(db, bus, inbox, now);
   const silk = new SilkStore(db, bus, inbox, now);
   const skills = new SkillStore(db, now);
@@ -444,8 +456,8 @@ export async function startDaemon(options: DaemonOptions) {
         }),
       thinking,
     });
-  // Evaluation steps' reviews (ADR-064 §1): the review page's, or the inbox's until it is wired.
-  const reviews = (options.reviews ?? inboxReviews)({ bus, inbox });
+  // Evaluation steps' reviews (ADR-064 §1): the review page (M16.1), unless a test gives its own.
+  const reviews = (options.reviews ?? ((d) => pageReviews(reviewPage, d)))({ bus, inbox });
   // A job waiting on a review goes on as soon as I approve it or send notes.
   bus.subscribe((e) => {
     if (!REVIEW_EVENTS.has(e.type) || !e.jobId) return;
@@ -487,6 +499,24 @@ export async function startDaemon(options: DaemonOptions) {
       recordAnswer({ db, bus, now }, id);
     } catch (error) {
       console.error("recording the answer in the conversation failed", error);
+    }
+    // A review's item answered in words (the chat answered it): a general note of the review.
+    const review = reviewPage.reviewOfItem(id);
+    if (review?.state === "open" && answer.trim()) {
+      try {
+        reviewPage.addNote(
+          {
+            reviewId: review.id,
+            kind: "general",
+            text: answer.slice(0, 4000),
+            device: null,
+            element: null,
+          },
+          { source: "chat" },
+        );
+      } catch (error) {
+        console.error("adding the answer to the review failed", error);
+      }
     }
     try {
       silk.answerImport(id, answer);
@@ -673,6 +703,11 @@ export async function startDaemon(options: DaemonOptions) {
     inbox,
     notifications,
     uiUrl: () => url,
+    // A review's item opens the review itself (ADR-064).
+    reviewOf: (itemId) => {
+      const r = reviewPage.reviewOfItem(itemId);
+      return r ? { id: r.id, kind: r.kind } : null;
+    },
     ...(options.emailDelayMs ? { emailDelayMs: options.emailDelayMs } : {}),
   });
   backupPlans.start();
@@ -746,6 +781,15 @@ export async function startDaemon(options: DaemonOptions) {
   const server = createServer(app);
   let port = options.port ?? DEFAULT_PORT;
 
+  // A review's frame (ADR-064): its own origin, rv-<key>.localhost, answered before anything else.
+  const frames = reviewFrames({ reviews: reviewPage, port: () => port });
+  app.use((req, res, next) => {
+    if (!frames.http(req, res)) next();
+  });
+  server.on("upgrade", (req, socket, head) => {
+    frames.upgrade(req, socket, head);
+  });
+
   app.use((req, res, next) => {
     if (isLocalRequest(req, port)) return next();
     res.status(403).json({ message: "Oraknid only accepts requests from this machine for now." });
@@ -753,7 +797,7 @@ export async function startDaemon(options: DaemonOptions) {
 
   // No other site may frame the UI or run anything in it (Audit 2).
   app.use((req, res, next) => {
-    res.setHeader("Content-Security-Policy", UI_CSP);
+    res.setHeader("Content-Security-Policy", uiCsp(port));
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer");
@@ -824,6 +868,8 @@ export async function startDaemon(options: DaemonOptions) {
       isLocalRequest(req, port) &&
       unlocked(tokenOf(req.headers, req.url), unlockOf(req.headers, req.url)) !== null,
     ...(options.heartbeatMs ? { heartbeatMs: options.heartbeatMs } : {}),
+    // A review frame's websockets are the app's own (ADR-064).
+    skip: (req) => reviewKeyOf(req.headers.host, port) !== null,
     // A server's log, followed while its screen is open (ADR-043).
     followLog: (id, source, push, end) => serverService.insight.follow(id, source, push, end),
   });
@@ -935,6 +981,8 @@ export async function startDaemon(options: DaemonOptions) {
       const after = asksAfterEnd(db, e.jobId);
       for (const item of inbox.list({ jobId: e.jobId, state: "open" }))
         if (!after.has(item.id)) inbox.withdraw(item.id);
+      // Its reviews wait for nothing any more (ADR-064).
+      reviewPage.withdrawJob(e.jobId);
       forgetJob(db, e.jobId);
       forgetGuidance(e.jobId);
       stopJobApps(db, e.jobId);
@@ -1111,6 +1159,7 @@ export async function startDaemon(options: DaemonOptions) {
     updates,
     models,
     projectSecrets,
+    reviews: reviewPage,
     brain,
     thinking,
     openPath:
@@ -1368,6 +1417,8 @@ export async function startDaemon(options: DaemonOptions) {
     naming,
     thinking,
     ciWatch,
+    reviews: reviewPage,
+    reviewPort: reviews,
     close,
   };
 }
@@ -1410,9 +1461,13 @@ function rpcError(res: express.Response, status: number, code: string, message: 
 /**
  * The UI's content policy: its own scripts only, no framing. Images may
  * come from the web for mail I allowed them in (ADR-032); a message's own
- * frame blocks them until I do.
+ * frame blocks them until I do. The review page frames a review's own
+ * origin on this port, rv-<key>.localhost (ADR-064).
  */
-const UI_CSP = [
+const uiCsp = (port: number) =>
+  [...UI_CSP_BASE, `frame-src 'self' http://*.localhost:${port}`].join("; ");
+
+const UI_CSP_BASE = [
   "default-src 'self'",
   "script-src 'self'",
   "worker-src 'self' blob:",
@@ -1424,7 +1479,7 @@ const UI_CSP = [
   "base-uri 'none'",
   "form-action 'self'",
   "object-src 'none'",
-].join("; ");
+];
 
 /** What a browser reads from an Oraknid without its web UI built (ADR-055). */
 export const NO_WEB_UI = `This Oraknid has no web UI here: it was installed for the terminal only

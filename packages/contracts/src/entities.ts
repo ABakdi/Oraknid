@@ -376,6 +376,8 @@ export const InboxItem = z.object({
   projectId: Id.optional(),
   projectName: z.string().optional(),
   taskTitle: z.string().nullable().optional(),
+  /** A review waiting for me (ADR-064): the item opens its page. */
+  reviewId: Id.nullable().optional(),
 });
 export type InboxItem = z.infer<typeof InboxItem>;
 

@@ -391,6 +391,16 @@ export const HOME_ONLY = [
   "/jobs/setRules",
   // Updating Oraknid restarts it (ADR-048).
   "/updates/run",
+  // Reviews (ADR-064): my notes, Send notes and Approve steer the work; the frame reads the
+  // project's files or its app. Reading the reviews and their notes stays open.
+  "/reviews/open",
+  "/reviews/notes/add",
+  "/reviews/notes/edit",
+  "/reviews/notes/delete",
+  "/reviews/sendNotes",
+  "/reviews/approve",
+  "/reviews/withdraw",
+  "/reviews/frame",
 ];
 
 /** What a device away from home may call: with full rights, all but ALWAYS_HOME (ADR-030). */

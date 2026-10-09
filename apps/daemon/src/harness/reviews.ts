@@ -17,7 +17,8 @@ import type { InboxStore } from "../inbox/store.ts";
 // `review.notes-sent {reviewId, notes}` and `review.approved {reviewId}`).
 // Whatever implements this must publish those events on the bus with the
 // job's id (topic `job:<id>`): a job waiting on a review is resumed by them
-// (daemon.ts). Until it is wired, the daemon uses `inboxReviews`: the
+// (daemon.ts). The daemon's default is the review page's (reviews/port.ts);
+// without the daemon's, the program falls back to `inboxReviews`: the
 // review is a question in the inbox (Approve, or my notes in words).
 // Tests use `standInReviews`.
 

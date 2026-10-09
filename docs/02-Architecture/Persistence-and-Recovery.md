@@ -31,6 +31,7 @@ durable step engine runs on the same database ([[ADR-003-Job-Execution-Engine]])
 | `backup_plans`, `backup_runs`, `backup_keys` | Database backups: plans, each run, the age public keys (migration 0033, [[ADR-044-Backups]]). |
 | `cloud_providers` | My storage accounts in the pool (migration 0034, [[ADR-046-Cloud-Storage]]). |
 | `project_secrets` | A project's secrets by environment and name, never a value (that is in the keychain); migration 0041, [[ADR-059-Project-Secrets]]. |
+| `reviews`, `review_notes` | A design or the running app opened for me to annotate, per evaluation step and round, and my notes on it per device (migration 0044, [[ADR-064-Design-And-Approval-By-Experience]]); a note's picture is a file under `<data>/reviews/<id>/`. Deleted with their job. |
 | `local_models` | Models downloaded to this computer, their files' checksums, run settings and measurements (migration 0038, [[ADR-054-Local-Models]]). |
 
 Git checkpoints are refs in the repository, not rows ([[Sandboxing]]).

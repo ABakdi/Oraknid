@@ -5,6 +5,7 @@ import { Link } from "wouter";
 import { CodeSpans, Empty, ErrorNote, Loading, Markdown, PageHeader } from "@/components/common";
 import { choiceOf, OptionChoices } from "@/components/option-choices";
 import { QuestionsForm } from "@/components/questions";
+import { ReviewLink } from "@/components/review-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -285,7 +286,18 @@ export function InboxItemCard({ item, highlight }: { item: InboxItem; highlight?
             className="min-w-0 [overflow-wrap:anywhere] [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_pre]:whitespace-pre-wrap"
           />
         ) : null}
-        {!open ? (
+        {item.reviewId ? (
+          // A review waiting (ADR-064): it is answered on its page, not here.
+          open ? (
+            <ReviewLink id={item.reviewId} label={t("Open the review")} />
+          ) : (
+            <div className="text-sm text-muted-foreground">
+              {item.state === "withdrawn"
+                ? t("Its round has ended.")
+                : t("Answered: {a}", { a: item.answer ?? "" })}
+            </div>
+          )
+        ) : !open ? (
           item.answers?.length ? (
             <div className="space-y-1 text-sm text-muted-foreground">
               <div>{t("Answered:")}</div>

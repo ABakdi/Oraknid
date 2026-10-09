@@ -218,6 +218,7 @@ import type { Notifications } from "../notify/notifications.ts";
 import type { Secrets } from "../os/secrets.ts";
 import type { Paths } from "../paths.ts";
 import { readResources, type Work, writeResources } from "../resources/work.ts";
+import type { Reviews } from "../reviews/service.ts";
 import type { ProjectSecrets } from "../secrets/service.ts";
 import {
   ensureServerProject,
@@ -264,6 +265,7 @@ import { ciRouter } from "./ci.ts";
 import { cloudRouter, notAway } from "./cloud.ts";
 import { hostsRouter } from "./hosts.ts";
 import { modelsRouter } from "./models.ts";
+import { reviewsRouter } from "./reviews.ts";
 import { projectSecretsRouter } from "./secrets.ts";
 import { sitesRouter } from "./sites.ts";
 import {
@@ -355,6 +357,8 @@ export interface ApiContext {
   models: LocalModels;
   /** A project's secrets per environment (ADR-059). */
   projectSecrets: ProjectSecrets;
+  /** Reviews of designs and running apps (ADR-064). */
+  reviews: Reviews;
   brain: EyeBrain;
   /** What The Eye is thinking now, and what it thought (M13.25). */
   thinking?: EyeThinking;
@@ -581,6 +585,8 @@ const talkDeps = (c: ApiContext) => ({
   endNow: (id: string) =>
     endSteps({ db: c.jobs.db, bus: c.bus, github: c.github, projects: c.projects }, id),
   ...(c.thinking ? { thinking: c.thinking } : {}),
+  // Feedback in the chat while a review is open: a note on it (ADR-064 §3).
+  reviews: c.reviews,
   // A request that belongs to a server or another project, taken there (The-Eye → Resolving
   // what it doesn't know). Read there as any message, never sent on again.
   elsewhere: {
@@ -1441,6 +1447,8 @@ export const router = {
   ci: ciRouter,
   /** A project's secrets per environment (ADR-059). */
   projectSecrets: projectSecretsRouter,
+  /** Reviews: a design or the running app annotated per device, in rounds (ADR-064). */
+  reviews: reviewsRouter,
   /** A text of mine rephrased by a quick model, for any textarea (Chats-and-Helper → Fix wording). */
   text: {
     polish: base

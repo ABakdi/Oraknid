@@ -18,6 +18,8 @@ export interface LiveOptions {
   /** Decides whether an upgrade request may connect. */
   allow: (req: IncomingMessage) => boolean;
   heartbeatMs?: number;
+  /** Upgrades answered elsewhere (a review frame's websockets, ADR-064): left alone. */
+  skip?: (req: IncomingMessage) => boolean;
   /** Follows a server's log while a screen asks (ADR-043); returns how to stop it. */
   followLog?: (
     serverId: string,
@@ -54,7 +56,14 @@ const RELAYED = new Set([
   "job.named",
 ]);
 
-export function attachLive({ server, bus, allow, heartbeatMs = 15_000, followLog }: LiveOptions) {
+export function attachLive({
+  server,
+  bus,
+  allow,
+  heartbeatMs = 15_000,
+  followLog,
+  skip,
+}: LiveOptions) {
   const wss = new WebSocketServer({ noServer: true });
   /** Clients subscribed to "metrics", for the ephemeral metrics stream. */
   const metricsClients = new Set<WebSocket>();
@@ -64,7 +73,7 @@ export function attachLive({ server, bus, allow, heartbeatMs = 15_000, followLog
   server.on("upgrade", (req, socket, head) => {
     const path = new URL(req.url ?? "/", "http://localhost").pathname;
     // The terminal's socket is its own (ADR-028).
-    if (path === "/term") return;
+    if (path === "/term" || skip?.(req)) return;
     if (path !== "/live" || !allow(req)) {
       socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
       socket.destroy();

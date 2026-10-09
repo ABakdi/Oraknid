@@ -857,6 +857,56 @@ Withdrawn, Expired or every state; with Open, "Show answered (n)"
 under the list goes to every state; the item I came to see stays shown
 whatever the filters.
 
+A review's item (2026-10-09) has **Open the review** instead of
+answers: a review is answered on its page.
+
+### The review page (2026-10-09, [[ADR-064-Design-And-Approval-By-Experience]])
+
+`/review/<id>`, full screen, its own layout (no sidebar), opened in a
+new tab when a review opens: every page of mine hears `review.opened`
+and one of them (claimed across tabs, only within a minute of the
+event) calls `window.open`; a browser that blocks a tab not opened by a
+click gets a toast with **Open**, and the project's page shows "A
+design is ready for your review — Open" under its work bar (one line per
+open review, its round and notes). The desktop notification opens it
+too. Lazy-loaded: the rest of the UI doesn't carry it.
+
+- **Top bar**: close (the tab, or back to the project), the project ·
+  what is reviewed, the round, the job, the state once ended; **Send
+  notes (n)** (this round's notes; disabled with none) and **Approve**
+  (asks first when the round has notes other than keep-notes).
+- **Device bar**: a device (Phone 390×844, Phone landscape 844×390,
+  Tablet 820×1180 and landscape, Laptop 1440×900, Desktop 1920×1080,
+  Custom size), turn, width × height of my own (120–8000), **Fit** /
+  **100%** (wide screens); **Select** (select mode, Esc stops) and
+  **General note**; on a phone the notes' count opens them. A phone
+  opens on Phone, anything else on Laptop.
+- **The stage**: the target in a frame at the device's size, scaled to
+  fit (never above 100%), its device and zoom in a corner. The frame
+  is the review's own origin (`rv-<key>.localhost`), sandboxed without
+  top navigation; away from home the page inlined (`reviews.frame`) in
+  a frame sandboxed without same-origin, a link loading the next page.
+- **Select-and-note**: the overlay outlines what I point at; a click
+  opens the composer: the part (`<tag> text`), its picture, the kind
+  chips **Keep / Change / Problem** (General for a general note), my
+  words (Ctrl+Enter saves), **Save note**. The note keeps the device,
+  the page, the element's selector, text, tag and box, the picture,
+  and for an app its console errors and failed requests so far.
+- **Pins**: this round's notes on this device and page, numbered as
+  the list numbers them, coloured by kind, drawn by the overlay at their
+  element (they follow its scrolling); a pin clicked marks its note.
+- **Notes**: on the right (w-80, w-96 on large screens), a bottom sheet
+  on a phone: filter chips (All, Keep, Change, Problem, General),
+  grouped by device (general ones last), each with its number, words,
+  kind, element, page, "from the chat", its errors; its picture on
+  demand; edit and delete while the round is open; a click shows its
+  part, switching device. **Earlier rounds** lists the notes sent before.
+- **Footer**, when there is something to say: the app's console errors
+  and failed requests so far; away from home what couldn't be inlined.
+- Performance: the review reloads on `review.*` and `inbox.*` events
+  (paced as any `useLive`); pictures load only when asked for; the
+  overlay redraws pins on scroll and every 700 ms at most.
+
 ### Legs
 
 The registry: health, kind, model, quota, observed performance. Each

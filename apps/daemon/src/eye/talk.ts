@@ -31,6 +31,7 @@ import type { JobRunner } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 import type { InboxStore } from "../inbox/store.ts";
+import { readsAsFeedback } from "../reviews/feedback.ts";
 import type { SilkStore } from "../silk/store.ts";
 import { viewOf } from "../workspace/projects.ts";
 import { isSeveral } from "../workspace/repos.ts";
@@ -98,7 +99,22 @@ export interface TalkDeps {
    * The Eye only says where it found what I named.
    */
   elsewhere?: Elsewhere;
+  /**
+   * Reviews (ADR-064 §3): a message that reads as feedback while exactly one
+   * review is open in the project is attached to it as a general note.
+   */
+  reviews?: ReviewNotesFromChat;
 }
+
+/** What the conversation needs of reviews: the open ones, and a note added from the chat. */
+export interface ReviewNotesFromChat {
+  openIn(projectId: string): { id: string; title: string }[];
+  attachChatToReview(projectId: string, text: string): { reviewId: string; noteId: string } | null;
+}
+
+/** Said when my message went to the open review as a note. */
+export const ATTACHED_TO_REVIEW =
+  "I added this to the open review as a general note: it goes back with your other notes when you send them.";
 
 /** Where a request can be taken: a server's chat, another project's conversation. */
 export interface Elsewhere {
@@ -266,6 +282,11 @@ export async function talkInProject(
   const project = d.db.select().from(projects).where(eq(projects.id, projectId)).get();
   if (!project) throw new Error(`No project ${projectId}.`);
   const target = projectTarget(d.db, projectId);
+  // Feedback while one review is open there (ADR-064 §3): a note on it, not new work.
+  if (target && d.reviews && !extras.answers && readsAsFeedback(text)) {
+    const attached = attachToReview(d, d.reviews, projectId, target.id, text, extras);
+    if (attached) return attached;
+  }
   if (target) return { id: talk(d, target.id, text, extras, mode), jobId: target.id };
   if (project.archivedAt) throw new Error("The project is archived: restore it to ask for work.");
   if (!d.newJob || !d.startJob) throw new Error("New work can't start from here.");
@@ -290,6 +311,38 @@ export async function talkInProject(
       { intent: "task", did: ["Kept as a draft"], silkIds: [], taskIds: [], jobId },
     );
   }
+  return { id, jobId };
+}
+
+/** My message kept in the conversation and added to the project's one open review, or null. */
+function attachToReview(
+  d: TalkDeps,
+  reviews: ReviewNotesFromChat,
+  projectId: string,
+  jobId: string,
+  text: string,
+  extras: MessageExtras,
+): { id: string; jobId: string } | null {
+  if (reviews.openIn(projectId).length !== 1) return null;
+  const id = add(d, jobId, "owner", text, null, extras);
+  let attached: { reviewId: string } | null = null;
+  try {
+    attached = reviews.attachChatToReview(projectId, text);
+  } catch (error) {
+    console.error("attaching the message to the review failed", error);
+  }
+  if (!attached) {
+    // The review ended meanwhile: read as any message.
+    respond(d, jobId, text, id);
+    return { id, jobId };
+  }
+  add(d, jobId, "eye", ATTACHED_TO_REVIEW, {
+    intent: "context",
+    did: ["Added a note to the review"],
+    silkIds: [],
+    taskIds: [],
+    jobId,
+  });
   return { id, jobId };
 }
 

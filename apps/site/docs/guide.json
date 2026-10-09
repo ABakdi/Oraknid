@@ -8,6 +8,11 @@
   ["jobs", "Jobs and The Eye", "Starting work, following it, talking to The Eye."],
   ["inbox", "The inbox", "Approvals and questions from every job, answered in place."],
   [
+    "reviews",
+    "Reviews",
+    "A design or the running app, annotated on each device, sent back as work."
+  ],
+  [
     "chats",
     "Chats and the helper",
     "Talk with your models, and ask the helper to do things for you."
