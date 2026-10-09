@@ -1,6 +1,6 @@
 import type { PlannedTask, WebPlan } from "@oraknid/contracts";
 import { describe, expect, it } from "vitest";
-import { evaluationRules, hasUi, isDesignTask, shapeEvaluations } from "./evaluations.ts";
+import { evaluationRules, isDesignTask, planHasUi, shapeEvaluations } from "./evaluations.ts";
 import { readyTasks, shapeWeb, validateWeb } from "./web.ts";
 
 // Evaluation steps in the plan (ADR-064 §1, M16.2).
@@ -128,7 +128,7 @@ describe("the planner's shape adds reviews for work I'll see (shapeEvaluations)"
       t({ key: "db", title: "Add the migrations" }),
       t({ key: "api", title: "Write the REST endpoints", dependsOn: ["db"] }),
     ]);
-    expect(hasUi(backend)).toBe(false);
+    expect(planHasUi(backend)).toBe(false);
     const { plan: p, notes } = shapeEvaluations(backend, ALL, { add: true });
     expect(p.tasks.map((x) => x.key)).toEqual(["db", "api"]);
     expect(notes).toEqual([]);

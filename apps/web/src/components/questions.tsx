@@ -13,10 +13,24 @@ import { cn } from "@/lib/utils";
 
 type Draft = Record<string, { options: string[]; text: string }>;
 
-/** What a question starts with: its recommended option, selected (ADR-037). */
+/**
+ * What a question starts with: its recommended option, selected (ADR-037);
+ * a multi question's preselected options all ticked, to untick (ADR-064 §6).
+ */
 function initial(questions: Question[]): Draft {
   return Object.fromEntries(
-    questions.map((q) => [q.id, { options: q.recommended ? [q.recommended] : [], text: "" }]),
+    questions.map((q) => [
+      q.id,
+      {
+        options:
+          q.shape === "multi" && q.preselected?.length
+            ? [...q.preselected]
+            : q.recommended
+              ? [q.recommended]
+              : [],
+        text: "",
+      },
+    ]),
   );
 }
 

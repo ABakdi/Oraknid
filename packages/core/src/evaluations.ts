@@ -33,7 +33,7 @@ export function isDesignTask(
 }
 
 /** Work I will see or use: a task builds a UI or its design. */
-export const hasUi = (plan: WebPlan) =>
+export const planHasUi = (plan: WebPlan) =>
   plan.tasks.some(
     (t) => !isEvaluation(t) && (t.requiredCapabilities.includes("ui") || isDesignTask(t)),
   );
@@ -122,7 +122,7 @@ export function shapeEvaluations(
   const shaped = (): WebPlan => ({ ...plan, tasks });
   const has = (kind: EvaluationKind) =>
     tasks.some((t) => isEvaluation(t) && t.evaluation?.kind === kind);
-  if (o.add && hasUi(shaped())) {
+  if (o.add && planHasUi(shaped())) {
     const designs = tasks.filter(isDesignTask);
     if (designs.length && !has("design") && wantsEvaluation(setting, "design")) {
       const w = EVALUATION_WORDS.design;

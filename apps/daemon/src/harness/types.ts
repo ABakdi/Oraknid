@@ -15,6 +15,7 @@ import type { McpBroker } from "../tools/broker.ts";
 import type { ToolRegistry } from "../tools/registry.ts";
 import type { GitHub } from "../workspace/github.ts";
 import type { WorkTree } from "../workspace/tree.ts";
+import type { VisualDeps } from "./visual.ts";
 
 // What a task's attempt works with and ends as (ADR-056 §8): the daemon's
 // parts it uses, the job as the attempt sees it, its folder, its outcome.
@@ -50,6 +51,8 @@ export interface AttemptDeps {
   /** How long the drift judge may take, both stages (ADR-056); 30 s unless a test says. */
   driftJudgeMs?: number;
   maxTurns?: number;
+  /** The visual check's renderer and judge (ADR-064 §5); without them it is skipped. */
+  visual?: VisualDeps;
 }
 
 export interface AttemptJob {

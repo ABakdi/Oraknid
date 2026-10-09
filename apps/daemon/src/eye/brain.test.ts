@@ -477,3 +477,74 @@ describe("The Eye's own thinking when its first choice is out of quota (2026-10-
     expect((leg.limitedUntil ?? 0) - Date.now()).toBeGreaterThan(25 * 3600_000);
   });
 });
+
+describe("The Eye's brain looking and choosing (ADR-064)", () => {
+  const SHOT = {
+    device: "phone",
+    page: "index.html",
+    path: ".oraknid/visual/T1/index.phone.png",
+    width: 390,
+    height: 844,
+    overflow: false,
+    errors: [],
+  };
+
+  it("judges screenshots on a model that reads images, the files named for it to open", async () => {
+    const reply = `\`\`\`json\n${JSON.stringify({
+      verdicts: [{ criterion: "Knobs, not number fields.", pass: false, reason: "Number fields." }],
+    })}\n\`\`\``;
+    const { brain, input, sent } = await brainWith([reply]);
+    const r = await brain.judgeVisual({
+      jobId: input.jobId,
+      cwd: input.cwd,
+      target: "the design",
+      criteria: ["Knobs, not number fields."],
+      experience: "",
+      shots: [SHOT],
+    });
+    expect(r.verdicts).toEqual([
+      { criterion: "Knobs, not number fields.", pass: false, reason: "Number fields." },
+    ]);
+    expect(r.model).toMatch(/^Claude · /);
+    expect(sent[0]).toContain("`.oraknid/visual/T1/index.phone.png`");
+  });
+
+  it("says no Leg reads images when none has the vision capability", async () => {
+    const { brain, input } = await brainWith(["{}"]);
+    const d = daemon as Daemon;
+    for (const leg of d.registry.all())
+      for (const m of d.registry.models(leg.id))
+        d.registry.setOverrides(m.id, { strengths: { vision: 0 } });
+    await expect(
+      brain.judgeVisual({
+        jobId: input.jobId,
+        cwd: input.cwd,
+        target: "the design",
+        criteria: ["x"],
+        experience: "",
+        shots: [SHOT],
+      }),
+    ).rejects.toThrow("No Leg reads images");
+  });
+
+  it("proposes only skills the library has, sent back once when it names another", async () => {
+    const bad = `\`\`\`json\n${JSON.stringify({ skills: [{ name: "figma", why: "x" }] })}\n\`\`\``;
+    const good = `\`\`\`json\n${JSON.stringify({
+      skills: [{ name: "ui-design", why: "a UI" }],
+      ui: true,
+    })}\n\`\`\``;
+    const { brain, input, sent } = await brainWith([bad, good]);
+    const p = await brain.proposeNeeds({
+      jobId: input.jobId,
+      cwd: input.cwd,
+      goal: "A piano app",
+      skill: "canon-driven-development",
+      skills: [{ name: "ui-design", description: "Design screens" }],
+      tools: [],
+      servers: [],
+      legs: [],
+    });
+    expect(p).toMatchObject({ skills: [{ name: "ui-design" }], ui: true, missingSkills: [] });
+    expect(sent[1]).toMatch(/"skills" names what isn't listed: figma/);
+  });
+});

@@ -21,7 +21,25 @@ import {
 import { z } from "zod";
 import type { LegRegistry } from "../legs/registry.ts";
 import type { LegSupervisor } from "../legs/supervisor.ts";
+import { EXPERIENCE_ASK } from "./experience.ts";
+import {
+  type DraftSkillInput,
+  draftProblems,
+  draftPrompt,
+  type NeedsInput,
+  NeedsProposal,
+  needsProblems,
+  needsPrompt,
+  SkillDraft,
+} from "./needs.ts";
 import { BrainStopped, type EyeThinking, summaryOf, type Thinking } from "./thinking.ts";
+import {
+  type VisualJudgeInput,
+  type VisualVerdict,
+  VisualVerdicts,
+  verdictProblems,
+  visualPrompt,
+} from "./visual-judge.ts";
 
 export { BrainStopped };
 
@@ -106,6 +124,20 @@ export interface EyeBrain {
     goal: string;
     skills: { id: string; name: string; description: string }[];
   }): Promise<SkillPick>;
+  /**
+   * What the job needs (ADR-064 §6): skills (several), tools, servers and
+   * Legs from the library, each with why, and skills it lacks. Optional:
+   * without it the job keeps its method and nothing is asked.
+   */
+  proposeNeeds?(input: NeedsInput): Promise<NeedsProposal>;
+  /** A missing skill drafted from the canon-driven template (ADR-064 §6). Optional: a plain template. */
+  draftSkill?(input: DraftSkillInput): Promise<SkillDraft>;
+  /**
+   * The visual check's judge (ADR-064 §5): on a model that reads images
+   * (capability "vision"), screenshots judged against the experience
+   * criteria. Optional: without it, a local vision model, else skipped.
+   */
+  judgeVisual?(input: VisualJudgeInput): Promise<{ model: string; verdicts: VisualVerdict[] }>;
   /** A server's state document, from my description, the last one and a discovery (ADR-026). */
   serverState(input: {
     /** An empty folder of the caller's: the reasoning session's working directory. */
@@ -188,6 +220,11 @@ export interface InterviewInput {
   rounds?: number;
   /** The rounds are used up: only the playback and assumptions, no questions. */
   final?: boolean;
+  /**
+   * The work has a UI (ADR-064 §4): the interview asks for, or proposes
+   * from the goal, an experience section with experience criteria.
+   */
+  experience?: boolean;
 }
 
 export interface ExtendInput extends PlanInput {
@@ -462,6 +499,9 @@ const KIND_OF: Record<string, DecisionKind> = {
   "job-summary": "quick",
   "name-job": "quick",
   "polish-text": "quick",
+  "propose-needs": "planning",
+  "draft-skill": "planning",
+  "visual-judge": "judging",
 };
 
 export interface EyePins {
@@ -681,6 +721,7 @@ Set "done" to true when nothing left blocks planning; list in "open" only what s
       history,
       decided,
       task,
+      i.experience ? EXPERIENCE_ASK : "",
     ]
       .filter(Boolean)
       .join("\n\n");
@@ -853,6 +894,47 @@ Answer with the id of one of them in "skillId" and one sentence in "reason".`;
     return this.#ask(i.jobId, i.cwd, "low", ["classify"], SkillPick, prompt, "pick-skill", (r) =>
       ids.has(r.skillId) ? [] : [`"${r.skillId}" is not one of the ids listed.`],
     );
+  }
+
+  proposeNeeds(i: NeedsInput) {
+    return this.#ask(
+      i.jobId,
+      i.cwd,
+      "medium",
+      ["planning"],
+      NeedsProposal,
+      needsPrompt(i),
+      "propose-needs",
+      (p) => needsProblems(i, p),
+    );
+  }
+
+  draftSkill(i: DraftSkillInput) {
+    return this.#ask(
+      i.jobId,
+      i.cwd,
+      "medium",
+      ["docs"],
+      SkillDraft,
+      draftPrompt(i),
+      "draft-skill",
+      (r) => draftProblems(i.name, r),
+    );
+  }
+
+  /** On a model that reads images only; none: "No Leg reads images", and the check is skipped. */
+  async judgeVisual(i: VisualJudgeInput) {
+    const a = await this.#run(
+      i.jobId,
+      i.cwd,
+      "medium",
+      ["vision", "review"],
+      VisualVerdicts,
+      visualPrompt(i, false),
+      "visual-judge",
+      (v) => verdictProblems(i.criteria, v),
+    );
+    return { model: a.model, verdicts: a.value.verdicts };
   }
 
   repairCheck(i: {
@@ -1071,9 +1153,13 @@ Answer with "text": the rewritten text only.`;
     strong = false,
   ) {
     const candidates: RouteCandidate[] = [];
+    // A call that looks at images goes only to models that read them (ADR-064 §5).
+    const sees = capabilities.includes("vision");
     for (const leg of this.o.registry.all()) {
       const view = this.o.registry.view(leg);
-      for (const m of view.models.filter((x) => !x.hidden)) {
+      for (const m of view.models.filter(
+        (x) => !x.hidden && (!sees || (x.profile.strengths.vision ?? 0) > 0),
+      )) {
         candidates.push({
           legId: leg.id,
           legModelId: m.id,
@@ -1111,6 +1197,10 @@ Answer with "text": the rewritten text only.`;
     // plans while a known strong one is healthy (after the piano job, 2026-10-04).
     if (strong && !chosen) r = { ...r, ranked: strongestFirst(r.ranked, capabilities) };
     const best = r.ranked[0];
+    if (!best && sees && candidates.length === 0)
+      throw new BrainFailed(
+        "No Leg reads images: no Leg model has the vision capability (a model's profile, on the Legs page).",
+      );
     if (!best) {
       throw new BrainFailed(
         `No Leg can think for The Eye right now: ${r.excluded.map((e) => e.why).join(" ") || "there are no Legs."}`,

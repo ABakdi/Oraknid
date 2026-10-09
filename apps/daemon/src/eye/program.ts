@@ -38,6 +38,7 @@ import { checkRefusal } from "../harness/gate.ts";
 import type { ReviewPort } from "../harness/reviews.ts";
 import type { AttemptJob, AttemptOutcome } from "../harness/types.ts";
 import { createVerifier } from "../harness/verifier.ts";
+import type { VisualDeps } from "../harness/visual.ts";
 import type { InboxStore } from "../inbox/store.ts";
 import { sandboxPlan } from "../legs/plan.ts";
 import type { LegRegistry } from "../legs/registry.ts";
@@ -87,6 +88,7 @@ import {
   jobEvaluations,
   reviewPortOf as reviewPortFallback,
 } from "./evaluations.ts";
+import { keepExperience } from "./experience.ts";
 import { readInside, renderInputs } from "./inputs.ts";
 import {
   closeInterview,
@@ -99,6 +101,7 @@ import {
   interviewSoFar,
 } from "./interview.ts";
 import { ensureLinks } from "./links.ts";
+import { chooseJobNeeds, jobExtraSkills, jobHasUi, readNeeds } from "./needs.ts";
 import { dependentsOf } from "./questions.ts";
 import { forgetTaskMemory, withdrawTaskQuestions } from "./task-memory.ts";
 import { storeWeb, taskRows } from "./web-store.ts";
@@ -138,6 +141,8 @@ export interface EyeDeps {
   reviews?: ReviewPort;
   /** How long an app under review may take to answer. */
   appWaitMs?: number;
+  /** The visual check's renderer and judge (ADR-064 §5); without them it is skipped. */
+  visual?: VisualDeps;
 }
 
 /** Where a job's work is: its folder, its tree (one repo or several), and Oraknid's places for it. */
@@ -184,6 +189,11 @@ export function eyeProgram(d: EyeDeps): JobProgram {
       await ctx.step("skill:pick", { choices: job0.skillChoices }, () =>
         pickJobSkill(d, ctx.jobId, project.workspacePath),
       );
+      job0 = d.db.select().from(jobs).where(eq(jobs.id, ctx.jobId)).get() ?? job0;
+    }
+    // What the work needs besides its method (ADR-064 §6): proposed once, before any plan, for my approval.
+    if (!taskRows(d.db, ctx.jobId).some((t) => t.planKey)) {
+      await chooseJobNeeds(d, ctx, project.workspacePath);
       job0 = d.db.select().from(jobs).where(eq(jobs.id, ctx.jobId)).get() ?? job0;
     }
     const skill = d.skills.version(job0.skillId, job0.skillVersion);
@@ -319,7 +329,11 @@ export function eyeProgram(d: EyeDeps): JobProgram {
             jobId: job0.id,
             cwd: several ? project.workspacePath : ws.cwd,
             goal: job0.goal,
-            skill: skill ? skillExcerpt(skill.body, "plan phases tasks", 6000) : "",
+            skill: withJobSkills(
+              d,
+              job0.id,
+              skill ? skillExcerpt(skill.body, "plan phases tasks", 6000) : "",
+            ),
             silk: silkText(d.silk, job0.id),
             digest: layout,
             verify: job0.verify,
@@ -898,9 +912,14 @@ async function runTask(
         }
       : {}),
     skillChecks: skillChecks(d.skills.version(job.skillId, job.skillVersion)?.body ?? ""),
-    otherSkills: (
-      d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.skillIds ?? []
-    )
+    // The skills I approved for this job (ADR-064 §6) first, then the project's others.
+    otherSkills: [
+      ...new Set([
+        ...readNeeds(d.db, job.id).skills,
+        ...(d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.skillIds ??
+          []),
+      ]),
+    ]
       .filter((id) => id !== job.skillId)
       .map((id) => d.skills.latest(id))
       .filter((x): x is NonNullable<typeof x> => !!x)
@@ -951,6 +970,7 @@ async function runTask(
           ...(d.github ? { github: d.github } : {}),
           ...(d.stallCheckMs ? { stallCheckMs: d.stallCheckMs } : {}),
           ...(d.driftJudgeMs ? { driftJudgeMs: d.driftJudgeMs } : {}),
+          ...(d.visual ? { visual: d.visual } : {}),
         },
         attemptJob,
         task.id,
@@ -1164,6 +1184,8 @@ async function interview(
   if (ctx.state() === "draft") ctx.setState("interviewing");
   // A goal that is a complete spec gets one round, never a dozen (ADR-052 §7).
   const max = specComplete(job.goal) ? 1 : interviewRounds(d.db);
+  // Work I'll see or use: the interview asks for its experience section (ADR-064 §4).
+  const ui = jobHasUi(d.db, job.id, job.goal);
   for (let n = 1; ; n++) {
     // I said to end it in the conversation while no round was open: planning starts with what's known.
     if (interviewEnded(d.silk, job.id)) {
@@ -1196,9 +1218,15 @@ async function interview(
           round: draftRounds + n,
           rounds: max,
           final,
+          ...(ui ? { experience: true } : {}),
         }),
       ),
     );
+    // The experience section as it stands (ADR-064 §4): kept on the job and in Silk.
+    if (ui)
+      await ctx.step(`interview:${n}:experience`, { n }, async () => {
+        keepExperience(d.db, d.silk, job.id, round.experience);
+      });
     // Never the same question twice, nor more than five a round: what's left is new, or nothing is.
     const { fresh } = freshQuestions(normalizeQuestions(round.questions), asked, 5);
     if (round.done || final || fresh.length === 0 || interviewEnded(d.silk, job.id)) {
@@ -1360,4 +1388,19 @@ function firstLeg(d: EyeDeps) {
   const leg = d.registry.all()[0];
   if (!leg) throw new Error("There are no Legs.");
   return leg;
+}
+
+/**
+ * The method's excerpt for the plan, with the other skills I approved for
+ * this job (ADR-064 §6): each one's name, what it is for, and its short
+ * version, so the plan has their tasks (a design before feature code).
+ */
+function withJobSkills(d: EyeDeps, jobId: string, method: string): string {
+  const extra = jobExtraSkills(d.db, d.skills, jobId);
+  if (!extra.length) return method;
+  return `${method}\n\n# This job's other skills (plan the work each one is for)\n${extra
+    .map(
+      (x) => `## ${x.name}\n${x.description}\n\n${skillExcerpt(x.body, "plan design tasks", 1500)}`,
+    )
+    .join("\n\n")}`;
 }

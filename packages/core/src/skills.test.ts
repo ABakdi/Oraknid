@@ -21,6 +21,36 @@ describe("parseSkill", () => {
     expect(s.body).toMatch(/^# Canon-Driven Development/);
   });
 
+  it("reads the design skills of ADR-064: front matter valid, their own checks", () => {
+    const read = (name: string) =>
+      parseSkill(
+        readFileSync(join(import.meta.dirname, `../../../skills/${name}.md`), "utf8"),
+        "fallback",
+      );
+    const ui = read("ui-design");
+    expect(ui).toMatchObject({
+      name: "ui-design",
+      interview: false,
+      requiredTools: [],
+      verify: ["test -f design/index.html", "oraknid visual-check --target design"],
+      ignored: [],
+    });
+    expect(ui.description).toMatch(/clickable HTML and CSS design in design\//);
+    expect(skillChecks(ui.body)).toMatch(/links a page for every screen/);
+    expect(ui.body).toMatch(/phone 390×844/);
+    const logo = read("logo-design");
+    expect(logo).toMatchObject({
+      name: "logo-design",
+      verify: ["test -f design/brand/index.html"],
+      ignored: [],
+    });
+    expect(skillChecks(logo.body)).toMatch(/plain SVG/);
+    const review = read("ux-review");
+    expect(review).toMatchObject({ name: "ux-review", verify: [], ignored: [] });
+    expect(review.body).toMatch(/`keep`.*`change`.*`problem`/s);
+    expect(skillChecks(review.body)).toMatch(/Every keep note is written down/);
+  });
+
   it("reads lists in both styles", () => {
     const s = parseSkill(
       '---\nname: x\nverify:\n  - pnpm test\n  - "pnpm lint"\nrequires:\n  tools: [email, calendar]\n---\nbody',

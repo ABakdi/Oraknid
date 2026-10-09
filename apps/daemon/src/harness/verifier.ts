@@ -10,6 +10,16 @@ import type { GitHub } from "../workspace/github.ts";
 import { githubLinkOf, githubLinksOf } from "../workspace/github-tool.ts";
 import type { CheckLine } from "./log.ts";
 import { anotherWay, filesUnder, suspectFiles, withHidden } from "./scope-guard.ts";
+import { runVisualCheck, type VisualDeps } from "./visual.ts";
+
+/** No renderer and no judge here: a visual check says so and is skipped. */
+const NO_VISUAL: VisualDeps = {
+  renderer: {
+    render: async () => ({ ok: false, skipped: "this Oraknid has no visual check set up." }),
+  },
+  judge: { judge: async () => ({ ok: false, skipped: "no vision model." }) },
+  experience: () => null,
+};
 
 // The Verifier (ADR-056 §4): one runner for checks, used by the task, the
 // stop hook, the checks tried before the work, the merge and the job. Built
@@ -49,6 +59,8 @@ export interface VerifierDeps {
   db: Db;
   servers?: Servers;
   github?: GitHub;
+  /** `oraknid visual-check` (ADR-064 §5): its renderer and judge; without them it is skipped. */
+  visual?: VisualDeps;
 }
 
 /** Where the checks run and who may refuse them. */
@@ -74,6 +86,8 @@ export interface VerifierWhere {
    * such look.
    */
   scope?: { inScope: (path: string) => boolean };
+  /** The task the checks are for: its visual check's screenshots go to .oraknid/visual/<task id>/. */
+  task?: { id: string; title: string };
 }
 
 type ChecksRanData = { passed: boolean; results: CheckLine[]; why: string };
@@ -99,8 +113,16 @@ export function createVerifier(d: VerifierDeps, job: { id: string }, where: Veri
     return (repos.length === 1 ? repos[0]?.github : linked[0]?.github) ?? null;
   };
 
-  /** Checks Oraknid answers itself: on one of the job's servers, or about GitHub. */
+  /** Checks Oraknid answers itself: the visual check, on one of the job's servers, or about GitHub. */
   const builtin = async (command: string): Promise<VerifyResult | null> => {
+    const visual = await runVisualCheck(command, {
+      deps: d.visual ?? NO_VISUAL,
+      jobId: job.id,
+      cwd: where.cwd,
+      task: where.task ?? null,
+      signal: where.signal,
+    });
+    if (visual) return visual;
     const servers = where.servers();
     const onServer =
       servers.length && d.servers

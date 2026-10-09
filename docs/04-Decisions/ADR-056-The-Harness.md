@@ -599,6 +599,17 @@ stays until its setting is cleared; a stall or a token burn the judge
 found expected is judged again when its evidence changes (the minutes, the
 tokens), from the task's cache when it is the same.
 
+### The visual check (2026-10-09, [[ADR-064-Design-And-Approval-By-Experience]] §5)
+`oraknid visual-check` is one of the Verifier's own checks, like
+`oraknid github-…`: answered before the server checks and the sandbox,
+with the task it runs for (`VerifierWhere.task`, given by the controller)
+so its screenshots go to `.oraknid/visual/<task id>/`. It needs a renderer
+and a judge (`VerifierDeps.visual`, the daemon's: headless Chromium and a
+model that reads images); without either it passes as **skipped**, saying
+why, never a failure. A failing criterion is a failing check with the
+signature `visual:<criteria>`, so the ladder and the monitors treat it
+like any other.
+
 ### The harness's shape (after stage 5)
 One attempt is a state machine that decides nothing (`controller.ts`). It
 routes through `route.ts`, runs the agent through a session opened by

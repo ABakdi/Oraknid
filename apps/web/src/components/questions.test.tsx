@@ -157,3 +157,32 @@ describe("questions with options (ADR-037)", () => {
     );
   });
 });
+
+describe("a proposal to untick (ADR-064 §6)", () => {
+  it("starts with its preselected options all ticked", () => {
+    render(
+      <QuestionsForm
+        questions={normalizeQuestions([
+          {
+            id: "use",
+            shape: "multi",
+            prompt: "This job will use these. Untick what it shouldn't.",
+            options: [
+              { id: "skill:ui", label: "Skill: ui-design", detail: "a design first" },
+              { id: "skill:logo", label: "Skill: logo-design", detail: "its own logo" },
+            ],
+            preselected: ["skill:ui", "skill:logo"],
+            allowOther: false,
+          },
+        ])}
+        onSubmit={() => {}}
+      />,
+    );
+    const ui = screen.getByRole("checkbox", { name: /ui-design/ });
+    const logo = screen.getByRole("checkbox", { name: /logo-design/ });
+    expect(ui.getAttribute("aria-checked")).toBe("true");
+    expect(logo.getAttribute("aria-checked")).toBe("true");
+    act(() => logo.click());
+    expect(logo.getAttribute("aria-checked")).toBe("false");
+  });
+});

@@ -228,6 +228,8 @@ export const Capability = z.enum([
   "summarize",
   "classify",
   "ui",
+  /** Reads images: screenshots, designs (ADR-064 §5, the visual check). */
+  "vision",
 ]);
 export type Capability = z.infer<typeof Capability>;
 
@@ -550,6 +552,8 @@ export const EyeReport = z.object({
     "denied",
     "cancelled",
     "folder-restored",
+    /** A visual check judged a task's screenshots (ADR-064 §5). */
+    "visual-check",
   ]),
   taskId: Id.nullable().default(null),
   /** Short facts: the branch, its commits, where it was pushed (with a link). */

@@ -36,6 +36,21 @@ the set when it fits that task better (a docs task in a code job). A
 skill can be added to the set from the project's settings, by picking
 from the library or uploading a `.md` file.
 
+## Picking what a job needs (2026-10-09)
+
+Besides its method, The Eye proposes from the goal the job's **other
+skills** (several: canon-driven, ui-design and logo-design for an app
+with a brand), the tools, servers and Legs it uses, each with one line of
+why, as **one** question in the inbox ("What this job needs"): everything
+ticked; **Approve all**, or untick what it shouldn't use. Nothing new to
+propose, nothing is asked. The skills I keep are the job's own: the plan
+is told of each one, and each task gets the guidance of the one that fits
+it. When the work needs a method Oraknid lacks, it says so: **Make it**
+drafts a skill from the canon-driven skill's shape into the project's
+`.oraknid/skills/<name>.md`, which I read (and edit) before I approve
+adding it to Oraknid's skills, the project's set and the job; **Go on
+without** goes on. ([[The-Eye]] → What the work needs.)
+
 ## Tools
 
 `requires.tools` names the tools a skill's jobs use. A tool is an MCP
@@ -64,7 +79,15 @@ sends back what fails, like a failed check.
   a server job's method, no interview: look first, say what will
   change, change carefully (a copy of a configuration before editing
   it, tested before it is loaded), check on the server, list what
-  changed.
+  changed; and, for work I will see (2026-10-09,
+  [[ADR-064-Design-And-Approval-By-Experience]]): **ui-design** (a
+  clickable HTML and CSS design in `design/`: a page per screen and per
+  device the spec names, sample content, a small design system in
+  `design/tokens.css`, the controls the product needs, an index;
+  no backend), **logo-design** (the mark, wordmark, palette, favicon and
+  dark variants as SVG in `design/brand/`), **ux-review** (my review
+  notes, keep, change and problem with their element, device and
+  screenshot, turned into precise changes; keep notes are constraints).
 - **Uploaded:** mine, pasted or from a `.md` file. I can view, edit (in
   the UI, with preview), version and delete them. A job pins the version it started with.
   Editing a skill never changes a running job.

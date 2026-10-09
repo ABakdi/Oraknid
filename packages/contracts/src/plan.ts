@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Capability, Difficulty, TaskKind } from "./entities.ts";
 import { PlannedEvaluation } from "./evaluations.ts";
+import { Experience } from "./experience.ts";
 import { LooseQuestions } from "./questions.ts";
 
 // What The Eye's brain returns when it plans a job (The-Eye → Planning).
@@ -72,6 +73,11 @@ export const InterviewRound = z.object({
    * decisions, which I can correct.
    */
   assumptions: z.array(z.string()).optional(),
+  /**
+   * The experience section, when the work has a UI (ADR-064 §4): asked
+   * for or proposed from the goal; the latest one given is kept.
+   */
+  experience: Experience.nullable().optional(),
 });
 export type InterviewRound = z.infer<typeof InterviewRound>;
 
