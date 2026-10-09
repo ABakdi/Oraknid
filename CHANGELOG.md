@@ -3,6 +3,35 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.6.0 — 2026-10-09 (pre-release)
+
+Design and approval by experience ([ADR-064](docs/04-Decisions/ADR-064-Design-And-Approval-By-Experience.md), Phase 16).
+
+### The review page
+- **A review opens in a new browser tab:**
+  - the design or the running app in a frame, with a device switcher (phone, tablet, laptop, desktop, portrait or landscape, any size);
+  - select a part to write **Keep**, **Change** or **Problem** with a screenshot of it, or a general note;
+  - pins per device, and earlier rounds.
+- **Approve** ends the review; **Send notes** turns your notes into work and opens the next round.
+- **The running app** is served through Oraknid's own proxy, which adds the select-and-note layer and captures the app's console errors and failed requests with each note. Nothing is written into the project. The frame lives on its own origin, so code under review can never act as you.
+- **If the browser blocks the new tab:** a toast, a line on the project page, the inbox item and a desktop notification open it instead. Feedback written in the chat while a review is open is added to it.
+
+### Review steps in the plan
+- **For work you'll see or use,** the plan has a design review before feature code and a final review of the running app, plus reviews after features where worth it, each with why. Only the work that depends on a review waits for it.
+- **For an app review,** Oraknid finds how to start the app, runs it in the sandbox and stops it after.
+- **Your notes become tasks;** keep notes become rules for later tasks.
+- **Project settings:** reviews all, some or none; an optional auto-pass time; merge or ask when a job ends. New work can override the review setting. In the chat, "add a review after X" and "skip reviews" edit the plan.
+
+### Designs, skills and the visual check
+- **New built-in skills:** ui-design (a clickable design per screen and device, with the product's own controls), logo-design (marks, palette, favicon, dark variants) and ux-review.
+- **The Eye proposes what a job needs:** skills, tools, servers and agents, each with why, as one approval. It offers to write a skill that's missing.
+- **The interview asks about the experience** for UI work: how it should feel, the layout on each device, its controls, references and how to judge them.
+- **The visual check:** headless screenshots per device, judged by a model that reads images against those criteria, and shown in the task's report. Skipped, saying why, when there's no Chromium or no such model.
+
+### From the Keys job
+- **A task never waits for a paused agent** while another model can take it. You're asked once, without holding the work, whether to unpause it.
+- **A finished job is merged into your project** by default, or you're asked first.
+
 ## 0.5.2 — 2026-10-08 (pre-release)
 
 - **Projects is a full-width list:** each card shows the job at work, its progress, branches, servers, CI and last activity. A card opens the project as its own page.
