@@ -63,6 +63,14 @@ merges on my answer), `eye/eye.test.ts` (a Leg paused under its task:
 the other Leg goes on from the handoff; with no other, it waits and goes
 on when resumed; the job's summary says it was merged).
 
+### M16.5 — Review surfaces, an adapter per kind of app ([[ADR-065-Pluggable-Review-Surfaces]]) · planned
+- [ ] The `ReviewSurface` interface and its registry; anchors (css, region, accessibility, time, text, request); today's notes migrated as css anchors
+- [ ] web-design and web-app moved behind it, unchanged in behaviour
+- [ ] The screen surface: desktop windows, Android emulator, iOS simulator, games; regions, accessibility anchors where readable, taps and keys forwarded
+- [ ] The terminal, api, document and audio surfaces
+- [ ] The planner picks the surface with `detect` (with why), changeable on the step and in the chat; visual checks take pictures through it
+- [ ] A surface that can't run here falls back to the next that fits, down to notes in words
+
 ## Exit criterion
 The Keys spec, with an experience section, run again: a design opens in
 a tab for me to annotate on phone and desktop; my notes come back as
