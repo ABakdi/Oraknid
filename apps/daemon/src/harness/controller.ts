@@ -347,6 +347,8 @@ export async function runController(
     refuse: (command, where) => gate.check(command, where),
     signal,
     log: trail,
+    // Its visual check's screenshots go to the task's own folder (ADR-064 §5).
+    task: { id: task.id, title: task.title },
   });
   const runChecks: AttemptCtx["runChecks"] = (commands, o = {}) => verifier.run(commands, o);
   const checks = taskChecks(d, job, task, {

@@ -56,6 +56,7 @@ function handle(d: ReportDeps, e: Event) {
   if (e.type === "task.state" && p.to === "done") return taskDone(d, jobId, p);
   if (e.type === "task.state" && p.to === "skipped") return leftOut(d, jobId, p);
   if (e.type === "task.folder-restored") return folderRestored(d, jobId, p);
+  if (e.type === "task.visual-check") return visualChecked(d, jobId, p);
   if (e.type !== "job.state") return;
   if (p.to === "blocked") return blocked(d, jobId, String(p.reason ?? ""));
   if (p.to === "waiting") return waiting(d, jobId);
@@ -145,6 +146,43 @@ function taskDone(d: ReportDeps, jobId: string, p: Payload) {
     report("task-done", {
       taskId: t.id,
       facts: commits ? [{ label: "Commit", value: commits, href: null }] : [],
+    }),
+  );
+}
+
+/**
+ * The visual check's section of a task's report (ADR-064 §5): what it
+ * looked at, on which devices, each criterion's verdict, and where the
+ * screenshots are; skipped, why. Said when it judged something new.
+ */
+function visualChecked(d: ReportDeps, jobId: string, p: Payload) {
+  const shots = Array.isArray(p.shots)
+    ? (p.shots as { device: string; page: string; path: string }[])
+    : [];
+  const verdicts = Array.isArray(p.verdicts)
+    ? (p.verdicts as { criterion: string; pass: boolean; reason: string }[])
+    : [];
+  const what = p.target === "app" ? "the running app" : "the design";
+  const task = typeof p.taskTitle === "string" ? ` of **${p.taskTitle}**` : "";
+  const devices = Array.isArray(p.devices) ? (p.devices as string[]).join(", ") : "";
+  const failed = verdicts.filter((v) => !v.pass);
+  const head =
+    typeof p.skipped === "string" && p.skipped && !failed.length
+      ? `Visual check${task} skipped: ${p.skipped}`
+      : failed.length
+        ? `Visual check${task}: ${failed.length} of ${verdicts.length} criteria failed on ${what} (${devices}).`
+        : `Visual check${task}: ${what} holds on ${devices}, every criterion${
+            typeof p.model === "string" ? ` (judged by ${p.model})` : ""
+          }.`;
+  const lines = verdicts.map((v) => `- ${v.pass ? "✓" : "✗"} ${v.criterion} — ${v.reason}`);
+  say(
+    d,
+    jobId,
+    [head, lines.join("\n")].filter(Boolean).join("\n\n"),
+    report("visual-check", {
+      taskId: typeof p.taskId === "string" ? p.taskId : null,
+      facts: shots.map((s) => ({ label: s.device, value: s.path, href: null })),
+      todo: failed.map((v) => `${v.criterion} (${v.reason})`),
     }),
   );
 }

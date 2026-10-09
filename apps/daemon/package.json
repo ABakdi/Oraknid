@@ -52,6 +52,7 @@
     "mailparser": "3.9.33",
     "node-pty": "^1.1.0",
     "nodemailer": "10.0.13",
+    "playwright-core": "1.64.0",
     "react": "19.3.0",
     "ssh2": "^1.17.0",
     "tree-sitter-bash": "0.25.1",

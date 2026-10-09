@@ -8,11 +8,14 @@ import {
   FolderSync,
   Hourglass,
   PartyPopper,
+  ScanEye,
   ShieldX,
 } from "lucide-react";
+import { useState } from "react";
 import { Link } from "wouter";
 import { JobCiLine } from "@/components/ci-badge";
 import { Markdown } from "@/components/common";
+import { api } from "@/lib/api";
 import { ago } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -30,6 +33,7 @@ const LOOK: Record<
   denied: { icon: ShieldX, tone: "border-l-muted-foreground", label: "Denied" },
   cancelled: { icon: Ban, tone: "border-l-muted-foreground", label: "Stopped" },
   "folder-restored": { icon: FolderSync, tone: "border-l-warning", label: "Folder put back" },
+  "visual-check": { icon: ScanEye, tone: "border-l-eye", label: "Visual check" },
 };
 
 /**
@@ -138,7 +142,10 @@ export function EyeReportView({
         {t(look.label)}
       </div>
       <Markdown text={message.text} />
-      {report.todo.length && report.kind !== "blocked" ? (
+      {report.kind === "visual-check" && message.jobId && report.facts.length ? (
+        <VisualShots jobId={message.jobId} shots={report.facts} />
+      ) : null}
+      {report.todo.length && report.kind !== "blocked" && report.kind !== "visual-check" ? (
         <ul className="mt-1 list-disc pl-5 text-xs text-muted-foreground">
           {report.todo.map((x) => (
             <li key={x}>{x}</li>
@@ -146,6 +153,57 @@ export function EyeReportView({
         </ul>
       ) : null}
       <div className="mt-0.5 text-[10px] text-muted-foreground">{ago(message.createdAt)}</div>
+    </div>
+  );
+}
+
+/**
+ * The screenshots a visual check took (ADR-064 §5), one per device and
+ * page, loaded when I ask: they live in the job's folder.
+ */
+function VisualShots({ jobId, shots }: { jobId: string; shots: EyeReport["facts"] }) {
+  const [urls, setUrls] = useState<Record<string, string> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const load = () => {
+    setError(null);
+    Promise.all(
+      shots.map((s) =>
+        api.jobs
+          .visualShot({ id: jobId, path: s.value })
+          .then((r) => [s.value, r.dataUrl] as const),
+      ),
+    ).then(
+      (pairs) => setUrls(Object.fromEntries(pairs)),
+      (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+    );
+  };
+  if (!urls)
+    return (
+      <div className="mt-1 text-xs">
+        <button
+          type="button"
+          onClick={load}
+          className="font-medium text-primary underline-offset-2 hover:underline"
+        >
+          {t("Show the screenshots")} ({shots.length})
+        </button>
+        {error ? <span className="ml-2 text-destructive">{error}</span> : null}
+      </div>
+    );
+  return (
+    <div data-testid="visual-shots" className="mt-2 flex flex-wrap gap-2">
+      {shots.map((s) => (
+        <figure key={s.value} className="min-w-0 max-w-[45%]">
+          <img
+            src={urls[s.value]}
+            alt={`${s.label}: ${s.value}`}
+            className="max-h-64 rounded border object-contain"
+          />
+          <figcaption className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+            {s.label}
+          </figcaption>
+        </figure>
+      ))}
     </div>
   );
 }

@@ -27,7 +27,7 @@ const gitRepo = () => {
 describe("skills library", () => {
   it("seeds the built-in skills once, as version 1, the canon-driven one with a stable id", () => {
     const s = new SkillStore(db);
-    expect(s.seedBuiltIns()).toBe(3);
+    expect(s.seedBuiltIns()).toBe(6);
     expect(s.seedBuiltIns()).toBe(0);
     expect(s.latest(BUILT_IN_DEFAULT)).toMatchObject({
       name: "canon-driven-development",
@@ -223,7 +223,10 @@ describe("skills library over the API", () => {
       expect((await api.skills.list()).map((s: { name: string }) => s.name)).toEqual([
         "canon-driven-development",
         "email-triage",
+        "logo-design",
         "server-work",
+        "ui-design",
+        "ux-review",
       ]);
       await expect(api.skills.edit({ id: BUILT_IN_DEFAULT, markdown: "x" })).rejects.toThrow(
         "Built-in skills are read-only",
