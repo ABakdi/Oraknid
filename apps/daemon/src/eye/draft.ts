@@ -16,6 +16,7 @@ import { newId } from "../ids.ts";
 import type { SilkStore } from "../silk/store.ts";
 import type { SkillStore } from "../skills/store.ts";
 import type { EyeBrain } from "./brain.ts";
+import { keepExperience } from "./experience.ts";
 import {
   closeInterview,
   decidedSoFar,
@@ -23,6 +24,7 @@ import {
   interviewRounds,
   interviewSoFar,
 } from "./interview.ts";
+import { jobHasUi } from "./needs.ts";
 import { pickJobSkill } from "./program.ts";
 
 // The conversation before Start (Jobs-and-Projects → Starting work):
@@ -216,6 +218,8 @@ async function next(d: DraftDeps, jobId: string, text: string | null) {
     const so = interviewSoFar(d.db, jobId);
     const max = interviewRounds(d.db);
     const final = so.draftRounds >= max;
+    // Work I'll see or use: the interview asks for its experience section (ADR-064 §4).
+    const ui = jobHasUi(d.db, jobId, fresh.goal);
     const round = await d.brain.interviewRound({
       jobId,
       cwd,
@@ -230,7 +234,9 @@ async function next(d: DraftDeps, jobId: string, text: string | null) {
       round: so.draftRounds + 1,
       rounds: max,
       final,
+      ...(ui ? { experience: true } : {}),
     });
+    if (ui) keepExperience(d.db, d.silk, jobId, round.experience);
     // Never the same question twice, nor more than five a round.
     const next = freshQuestions(normalizeQuestions(round.questions), so.asked, 5).fresh;
     if (round.done || final || next.length === 0) {

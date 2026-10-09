@@ -134,6 +134,9 @@ importers:
       nodemailer:
         specifier: 10.0.13
         version: 10.0.13
+      playwright-core:
+        specifier: 1.64.0
+        version: 1.64.0
       react:
         specifier: 19.3.0
         version: 19.3.0

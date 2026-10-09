@@ -24,6 +24,10 @@ const ALL: Capability[] = [
   "ui",
 ];
 
+/**
+ * Reading images (ADR-064 §5) is not in the flat defaults: only the families
+ * known to read screenshots get it, by name below.
+ */
 const flat = (n: number, extra: Strengths = {}): Strengths => ({
   ...Object.fromEntries(ALL.map((c) => [c, n])),
   ...extra,
@@ -59,7 +63,7 @@ export function defaultProfile(kind: LegKind, model: string): ProfileSettings {
     if (m.includes("opus") || m.includes("fable") || m === "default") {
       return {
         ...claude,
-        strengths: flat(5, { mechanical: 4, ui: 4 }),
+        strengths: flat(5, { mechanical: 4, ui: 4, vision: 4 }),
         quotaWeight: 5,
         maxDifficulty: "high",
       };
@@ -67,7 +71,14 @@ export function defaultProfile(kind: LegKind, model: string): ProfileSettings {
     if (m.includes("haiku")) {
       return {
         ...claude,
-        strengths: flat(2, { mechanical: 4, summarize: 4, classify: 4, docs: 3, tests: 3 }),
+        strengths: flat(2, {
+          mechanical: 4,
+          summarize: 4,
+          classify: 4,
+          docs: 3,
+          tests: 3,
+          vision: 2,
+        }),
         quotaWeight: 1,
         maxDifficulty: "low",
       };
@@ -75,7 +86,7 @@ export function defaultProfile(kind: LegKind, model: string): ProfileSettings {
     // Sonnet and anything else.
     return {
       ...claude,
-      strengths: flat(4, { planning: 3, architecture: 3 }),
+      strengths: flat(4, { planning: 3, architecture: 3, vision: 3 }),
       quotaWeight: 2,
       maxDifficulty: "medium",
     };
@@ -91,10 +102,10 @@ export function defaultProfile(kind: LegKind, model: string): ProfileSettings {
     if (m.includes("flash"))
       return {
         ...agy,
-        strengths: flat(3, { mechanical: 4, summarize: 4 }),
+        strengths: flat(3, { mechanical: 4, summarize: 4, vision: 3 }),
         maxDifficulty: "medium",
       };
-    return { ...agy, strengths: flat(4), quotaWeight: 3, maxDifficulty: "high" };
+    return { ...agy, strengths: flat(4, { vision: 4 }), quotaWeight: 3, maxDifficulty: "high" };
   }
   if (kind === "codex") {
     // OpenAI's models through Codex (ADR-057), on a ChatGPT plan's windows. Estimated
@@ -115,7 +126,14 @@ export function defaultProfile(kind: LegKind, model: string): ProfileSettings {
       };
     return {
       ...codex,
-      strengths: flat(4, { implementation: 5, debugging: 5, refactor: 5, tests: 5, review: 5 }),
+      strengths: flat(4, {
+        implementation: 5,
+        debugging: 5,
+        refactor: 5,
+        tests: 5,
+        review: 5,
+        vision: 3,
+      }),
       quotaWeight: 3,
       maxDifficulty: "high",
     };

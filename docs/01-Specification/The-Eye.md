@@ -304,6 +304,31 @@ that passes only thanks to files the agent made outside its task after
 the check failed, files the check names, fails (ADR-052 §2 → Not
 another way; the Verifier's rule, wired with the harness's stage 4).
 
+## What the work needs (2026-10-09, [[ADR-064-Design-And-Approval-By-Experience]] §6)
+
+Before the interview, The Eye reads the goal and proposes what the job
+uses besides its method: skills from the library (a UI → **ui-design**,
+a brand → **logo-design**, my review notes → **ux-review**), the tools
+set up, the project's servers and the Legs, each with why; and a skill
+the work needs that Oraknid doesn't have. It is one question in the
+inbox, everything ticked: **Approve all** or untick. A missing skill:
+**Make it** (drafted from the canon-driven template, mine to approve) or
+**Go on without**. Kept in Silk as "What this job uses"; nothing new,
+nothing asked. A server's own job is not asked.
+
+### The experience section (ADR-064 §4)
+When the work has a UI (The Eye's proposal said so, or the goal names
+one: an app, a page, a screen, a dashboard, an instrument), the
+interview asks for an **experience** section, or proposes one from the
+goal: how it should feel, the layout on each device, the kinds of
+controls, references, and **experience acceptance criteria**, each a
+thing seen in a screenshot on a named device. It is kept on the job and
+in Silk as "Experience"; the plan reads it, so UI tasks carry the
+criteria they touch and may check them with `oraknid visual-check`, which
+looks at the design or the running app per device with a model that
+reads images ([[ADR-056-The-Harness]] → The visual check). A backend job
+gets none.
+
 ## What the agent needs of me (2026-10-07)
 
 An agent can end its turn with a failed check because something only I

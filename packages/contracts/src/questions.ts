@@ -28,6 +28,12 @@ export const Question = z.object({
   recommended: z.string().nullable().default(null),
   /** A choice question also takes a typed answer ("Other"). */
   allowOther: z.boolean().default(true),
+  /**
+   * A multi question's options ticked at first, to untick what I don't
+   * want (The Eye's proposal of what a job needs, ADR-064 §6); answered
+   * without a change, these are the answer.
+   */
+  preselected: z.array(z.string().max(80)).max(9).optional(),
 });
 export type Question = z.infer<typeof Question>;
 export type QuestionInput = z.input<typeof Question>;
@@ -101,7 +107,12 @@ export function normalizeQuestions(list: QuestionInput[]): Question[] {
     // A choice with nothing to choose from is a text question.
     const shape =
       (q.shape === "single" || q.shape === "multi") && !options.length ? "text" : q.shape;
-    return { ...q, id, shape, options, recommended };
+    const preselected =
+      shape === "multi" && q.preselected
+        ? q.preselected.filter((p) => options.some((o) => o.id === p))
+        : undefined;
+    const { preselected: _given, ...rest } = q;
+    return { ...rest, id, shape, options, recommended, ...(preselected ? { preselected } : {}) };
   });
 }
 
@@ -135,6 +146,8 @@ export function completeAnswers(questions: Question[], given: QuestionAnswer[]):
       text: q.shape === "text" || q.allowOther ? (a?.text ?? "").trim() : "",
     };
     if (isAnswered(kept)) return kept;
+    if (q.shape === "multi" && q.preselected?.length)
+      return { ...kept, options: [...q.preselected] };
     return q.recommended ? { ...kept, options: [q.recommended] } : kept;
   });
 }

@@ -95,3 +95,36 @@ describe("questions with options (ADR-037)", () => {
     );
   });
 });
+
+describe("a multi question with its options ticked at first (ADR-064 §6)", () => {
+  const [use] = normalizeQuestions([
+    {
+      id: "use",
+      shape: "multi",
+      prompt: "This job will use these. Untick what it shouldn't.",
+      options: [
+        { id: "skill:a", label: "Skill: ui-design" },
+        { id: "skill:b", label: "Skill: logo-design" },
+      ],
+      preselected: ["skill:a", "skill:b", "gone"],
+      allowOther: false,
+    },
+  ]);
+
+  it("keeps only options it has as preselected", () => {
+    expect(use?.preselected).toEqual(["skill:a", "skill:b"]);
+    expect(normalizeQuestions([{ id: "x", shape: "text", prompt: "Why?" }])[0]).not.toHaveProperty(
+      "preselected",
+    );
+  });
+
+  it("answers with them when left as they are, with what I kept when I untick", () => {
+    const q = [use as NonNullable<typeof use>];
+    expect(completeAnswers(q, [])).toEqual([
+      { questionId: "use", options: ["skill:a", "skill:b"], text: "" },
+    ]);
+    expect(completeAnswers(q, [{ questionId: "use", options: ["skill:a"], text: "" }])).toEqual([
+      { questionId: "use", options: ["skill:a"], text: "" },
+    ]);
+  });
+});
