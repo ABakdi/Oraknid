@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Capability, Difficulty, TaskKind } from "./entities.ts";
+import { PlannedEvaluation } from "./evaluations.ts";
 import { LooseQuestions } from "./questions.ts";
 
 // What The Eye's brain returns when it plans a job (The-Eye → Planning).
@@ -22,6 +23,8 @@ export const PlannedTask = z.object({
    * every task of a later phase comes after the earlier phases' work.
    */
   phase: z.number().int().min(1).max(20).optional(),
+  /** For an evaluation step (kind "evaluation", ADR-064 §1): what it shows me, and why. */
+  evaluation: PlannedEvaluation.optional(),
 });
 export type PlannedTask = z.infer<typeof PlannedTask>;
 

@@ -48,14 +48,19 @@ import { EventBus } from "./events/bus.ts";
 import { type EyeBrain, PoolLegBrain } from "./eye/brain.ts";
 import { startBudgetWatch } from "./eye/budgets.ts";
 import { EyeDecisions } from "./eye/decisions.ts";
+import { answerMerge, asksAfterEnd } from "./eye/ending.ts";
+import { stopJobApps, waitingReviews } from "./eye/evaluations.ts";
 import { pauseForRoom } from "./eye/leg-work.ts";
 import { serverAdded } from "./eye/links.ts";
 import { type NamingDeps, startJobNaming } from "./eye/naming.ts";
 import { eyeProgram } from "./eye/program.ts";
 import { startEyeReports } from "./eye/reports.ts";
+import { stopAllApps } from "./eye/run-app.ts";
 import { forgetGuidance, recordAnswer, resumeConversations } from "./eye/talk.ts";
 import { EyeThinking } from "./eye/thinking.ts";
 import { forgetJob } from "./harness/gate.ts";
+import { answerLadder } from "./harness/ladder.ts";
+import { inboxReviews, REVIEW_EVENTS, type ReviewPortFactory } from "./harness/reviews.ts";
 import { Helper, type HelperWho } from "./helper/service.ts";
 import { isLocalRequest } from "./http/guard.ts";
 import { requestIds, tagConsoleWithRequestIds } from "./http/request-id.ts";
@@ -154,6 +159,14 @@ export interface DaemonOptions {
   /** Opens a folder on this machine; tests replace it. */
   openPath?: (path: string) => void;
   stallCheckMs?: number;
+  /**
+   * Where evaluation steps open their reviews (ADR-064 §1): the review
+   * page's API once wired; the inbox until then; a stand-in in tests.
+   */
+  reviews?: ReviewPortFactory;
+  /** How long an app under review may take to answer, and how often reviews that pass by themselves are looked at (tests). */
+  appWaitMs?: number;
+  reviewPassCheckMs?: number;
   /** How long the drift judge may take (tests); 30 s otherwise (ADR-056). */
   driftJudgeMs?: number;
   budgetIntervalMs?: number;
@@ -427,6 +440,26 @@ export async function startDaemon(options: DaemonOptions) {
         }),
       thinking,
     });
+  // Evaluation steps' reviews (ADR-064 §1): the review page's, or the inbox's until it is wired.
+  const reviews = (options.reviews ?? inboxReviews)({ bus, inbox });
+  // A job waiting on a review goes on as soon as I approve it or send notes.
+  bus.subscribe((e) => {
+    if (!REVIEW_EVENTS.has(e.type) || !e.jobId) return;
+    if (jobsStore.get(e.jobId)?.state !== "waiting") return;
+    void runner
+      .resume(e.jobId)
+      .catch((error) => console.error("resume after a review failed", error));
+  });
+  // My answer to "<Leg> would help here: unpause it?" (ADR-064 §7), and to "merge it?" (§8).
+  bus.subscribe((e) => {
+    if (e.type !== "inbox.answered" || !e.jobId) return;
+    try {
+      answerLadder({ db, registry }, e.jobId, (e.payload as { id: string }).id, inbox);
+      answerMerge({ db, bus, inbox }, e.jobId, (e.payload as { id: string }).id);
+    } catch (error) {
+      console.error("acting on the answer failed", error);
+    }
+  });
   // My answer to "import my edits?" goes back to Silk.
   bus.subscribe((e) => {
     if (e.type !== "inbox.answered") return;
@@ -575,8 +608,17 @@ export async function startDaemon(options: DaemonOptions) {
         now,
         ...(options.stallCheckMs ? { stallCheckMs: options.stallCheckMs } : {}),
         ...(options.driftJudgeMs ? { driftJudgeMs: options.driftJudgeMs } : {}),
+        reviews,
+        ...(options.appWaitMs ? { appWaitMs: options.appWaitMs } : {}),
       }),
   });
+  // A review that passes by itself (the project's setting) resumes its waiting job at its time.
+  const reviewTimer = setInterval(() => {
+    for (const j of db.select().from(jobsTable).where(eq(jobsTable.state, "waiting")).all())
+      if (waitingReviews(db, j.id).some((r) => r.s?.passAt && r.s.passAt <= now()))
+        void runner.resume(j.id).catch((e) => console.error("review auto-pass failed", e));
+  }, options.reviewPassCheckMs ?? 30_000);
+  reviewTimer.unref();
   // The Oraknid helper: what I ask in words, through Oraknid's own services (ADR-024).
   const helper = new Helper({
     db,
@@ -876,9 +918,13 @@ export async function startDaemon(options: DaemonOptions) {
     // An ended job asks me nothing any more (Audit 1 → Q1-12).
     const to = (e.payload as { to?: string } | null)?.to;
     if (e.type === "job.state" && e.jobId && (to === "completed" || to === "cancelled")) {
-      for (const item of inbox.list({ jobId: e.jobId, state: "open" })) inbox.withdraw(item.id);
+      // Except whether to merge it, which only its end asks (ADR-064 §8).
+      const after = asksAfterEnd(db, e.jobId);
+      for (const item of inbox.list({ jobId: e.jobId, state: "open" }))
+        if (!after.has(item.id)) inbox.withdraw(item.id);
       forgetJob(db, e.jobId);
       forgetGuidance(e.jobId);
+      stopJobApps(db, e.jobId);
       // Its homes on the Legs go, keys and files (Audit 2, S2-08).
       removeJobHomes(paths.legs, e.jobId, legConfigDir, legCodexHome);
     }
@@ -1228,6 +1274,7 @@ export async function startDaemon(options: DaemonOptions) {
       clearInterval(mirrorTimer);
       clearInterval(unclaimed);
       clearInterval(blockedTimer);
+      clearInterval(reviewTimer);
       checkpoint.stop();
       updates.stop();
       budgets.stop();
@@ -1240,6 +1287,7 @@ export async function startDaemon(options: DaemonOptions) {
       ]);
       notifyRouter.stop();
       audit.stop();
+      stopAllApps();
       backups.stop();
       logins.stopAll();
       chats.stopAll();

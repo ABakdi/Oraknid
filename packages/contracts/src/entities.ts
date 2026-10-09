@@ -190,6 +190,12 @@ export const TaskKind = z.enum([
   "research",
   "mechanical",
   "external",
+  /**
+   * An evaluation step (ADR-064 §1): no agent works on it; Oraknid opens a
+   * review for me (the design, the running app, the work so far) and the
+   * tasks after it wait for my approval. ("review" is an agent's code review.)
+   */
+  "evaluation",
 ]);
 export type TaskKind = z.infer<typeof TaskKind>;
 

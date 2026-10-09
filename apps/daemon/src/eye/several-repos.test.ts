@@ -199,6 +199,14 @@ async function harness(
   return { d: daemon, api, leg, starts, plans, project };
 }
 
+/** Tests of the Merge button: the project asks before merging a completed job (ADR-064 §8). */
+async function askFirst(api: Awaited<ReturnType<typeof harness>>["api"], projectId: string) {
+  await api.projects.setWorkSettings({
+    id: projectId,
+    settings: { evaluations: { mode: "all", kinds: [] }, autoPassMinutes: null, merge: "ask" },
+  });
+}
+
 type Api = Awaited<ReturnType<typeof harness>>["api"];
 
 async function until(api: Api, id: string, states: string[], ms = 20_000): Promise<JobView> {
@@ -300,6 +308,7 @@ describe("a project of several repos (ADR-042)", () => {
     expect(project.github).toBeNull();
     expect(project.isGitRepo).toBe(true);
 
+    await askFirst(api, project.id);
     const id = await newJob(api, project.id, "A page and its API");
     const done = await until(api, id, ["completed", "blocked", "paused", "waiting"]);
     expect(done.state).toBe("completed");
@@ -635,6 +644,7 @@ describe("tasks side by side across several repos (ADR-042, ADR-016)", () => {
     );
     await api.settings.setMaxTasksPerJob({ max: 3 });
     for (const leg of await api.legs.list()) await api.legs.update({ id: leg.id, maxSessions: 3 });
+    await askFirst(api, project.id);
     const id = await newJob(api, project.id, "A page, an API, and the wiring");
     const done = await until(api, id, ["completed", "blocked", "paused", "waiting"], 60_000);
     expect(done.state, done.blockedReason ?? "").toBe("completed");

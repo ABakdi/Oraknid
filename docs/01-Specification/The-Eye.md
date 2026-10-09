@@ -123,6 +123,29 @@ a complete spec (`specComplete`: a long text, a list of six features or
 more, or sections) is interviewed in one round at most, told to ask only
 what the spec truly leaves open.
 
+**Evaluation steps** (2026-10-09, [[ADR-064-Design-And-Approval-By-Experience]]
+§1, M16.2). For work I will see or use, the plan has steps where I look
+at it: nodes of kind `evaluation` (`evaluation`: `design`, `app` or
+`checkpoint`, with a one-line `why` and, for an app, the command that
+runs it) that no agent works on. The planner is told the rules the job's
+setting allows (core's `evaluationRules`): a design task (clickable
+HTML and CSS in `design/`, capability `ui`) and a **design review** after
+it, before every feature built on the design; a **final review** of the
+running app after the last tasks; a **checkpoint** after a feature worth
+a look, with why; none for a pure backend; work that doesn't need what a
+step shows (an audio engine beside a UI design review) never depends on
+it. `shapeWeb` keeps what the setting allows (`shapeEvaluations`): a
+kind it doesn't want is left out, the tasks after it following what it
+reviewed; on a first plan with UI work (a task with capability `ui`, or
+a design task) it adds the design review after the design tasks and the
+final app review when the planner left them out; a design review is put
+before every task that depended on the design. The setting is the
+project's (all, some kinds, none: Settings → Reviews and the end of a
+job), or the job's own from New work or the chat. A step in the graph is
+`kind: "evaluation"` because `review` is an agent's code review.
+
+How a step runs is in [[Jobs-and-Projects]] → Evaluation steps.
+
 Plans are versioned. A replan never discards done tasks. It adds,
 removes or rewrites pending ones, and the change is shown in the UI. A
 replan's task that is already in The Web unfinished isn't added again.
@@ -212,6 +235,20 @@ Oraknid: unpause it on its card (Legs) to go on"), never "out of quota"
 for a Leg that is paused. A usage limit or a
 provider's failure is not the task failing: the attempt isn't counted
 against it, and the failing model or Leg rests (M13.22).
+
+**The ladder never stalls** (2026-10-09, after the Keys job,
+[[ADR-064-Design-And-Approval-By-Experience]] §7, M16.4). A paused or
+limited Leg is not the top of the ladder: the strongest model **available**
+is, for now. A task whose Leg I paused under it goes on with the
+strongest model available (`task.leg-paused-goes-on`), and waits for the
+paused Leg only when no other can take it (said once, `task.waiting-for-leg`);
+a task that was going back to its Leg goes to the others when that Leg
+can't take it (out of quota, failing). When a task fails at the top of
+what is available and a stronger model's Leg is only paused, I'm asked
+once per job and Leg, in the inbox, without the work waiting:
+"Claude A would help here: unpause it, or go on with OpenCode?"
+(**Unpause Claude A** unpauses it, and the next climb can reach it;
+**Go on with …** leaves it).
 
 ## Self-prompting
 
@@ -364,6 +401,16 @@ conversation** (its project's, newest first, five), each with its title,
 how it stands or ended and why ("cancelled: Cancelled from the chat",
 "blocked: …") and its description; in a server's chat, the server's
 **state document** too (its first 6000 characters).
+
+**Reviews in my words** (M16.2). "Add a review after the sound designer"
+puts an evaluation step (a checkpoint, or the kind I name: "a design
+review", "an app review", "a final review") after the task my words name,
+and the tasks after that task wait for it too; "skip reviews this time"
+skips every review not done (the job plans none again) and a job
+waiting on one goes on. The triage says it (`reviews`: `skip`, or `add`
+with the task's id and kind); plain words like these are read without it
+(`reviewEditOf`). Either way it is kept as my decision and said in the
+reply.
 
 ### Resolving what it doesn't know (2026-10-07)
 

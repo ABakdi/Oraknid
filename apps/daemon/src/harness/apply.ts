@@ -53,6 +53,7 @@ const PREFIX: Record<TaskKind, string> = {
   review: "refactor",
   mechanical: "chore",
   external: "chore",
+  evaluation: "chore",
 };
 
 /**

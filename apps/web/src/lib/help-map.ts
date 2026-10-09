@@ -112,7 +112,7 @@ export const PAGES: HelpPage[] = [
       {
         id: "settings",
         name: "Settings",
-        does: "Folder and branches, archive or delete, the project's command rules.",
+        does: "Folder and branches, reviews and merging at a job's end, archive or delete, the project's command rules.",
       },
       {
         id: "skills",
@@ -456,6 +456,13 @@ export const CONTROLS: HelpControl[] = [
     where: "New work → Options",
   },
   {
+    id: "work.evaluations",
+    page: "new",
+    name: "Reviews",
+    does: "The job's own reviews: the project's (the default), all, some (design, running app, checkpoints) or none. A review is a step in the plan where I look at the design or the running app and approve it or send notes.",
+    where: "New work → Options, under Autonomy",
+  },
+  {
     id: "work.tokens",
     page: "new",
     name: "Token limit",
@@ -684,6 +691,34 @@ export const CONTROLS: HelpControl[] = [
     name: "Delete the project",
     does: "Deletes it and its jobs' history from Oraknid; I may also tick its folder on this computer and its GitHub repos, typing its name to confirm. The result lists each step, done or not.",
     where: "A project → Settings, or its … menu",
+  },
+  {
+    id: "project.evaluations",
+    page: "projects",
+    tab: "settings",
+    needsItem: true,
+    name: "Reviews",
+    does: "Which reviews the project's plans get: all (a design review before feature code, a final review of the running app, checkpoints where worth it), some (the kinds ticked) or none. Saved with Save.",
+    where: "A project → Settings → Reviews and the end of a job",
+  },
+  {
+    id: "project.auto-pass",
+    page: "projects",
+    tab: "settings",
+    needsItem: true,
+    name: "A review passes by itself after (minutes)",
+    does: "For jobs I don't watch: a review with no word from me passes by itself after this long. Empty: it waits for me.",
+    where: "A project → Settings → Reviews and the end of a job",
+    field: true,
+  },
+  {
+    id: "project.merge",
+    page: "projects",
+    tab: "settings",
+    needsItem: true,
+    name: "When a job is done",
+    does: "Merge it into the work branch (the default), or ask me first in the inbox. A conflict, or changes of mine not committed, are asked about either way.",
+    where: "A project → Settings → Reviews and the end of a job",
   },
   {
     id: "project.rules",

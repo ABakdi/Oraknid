@@ -1,6 +1,7 @@
 import {
   Capability,
   Difficulty,
+  EvaluationEdit,
   EyeIntent,
   InterviewRound,
   JobEnding,
@@ -158,6 +159,8 @@ export interface PlanInput {
   silk: string;
   digest: string;
   verify: string[];
+  /** The rules for evaluation steps, as the job's setting allows them (ADR-064 §1; core's `evaluationRules`). */
+  evaluations?: string;
 }
 
 /** A question asked earlier in the interview, and what I answered (Skills → The interview). */
@@ -409,6 +412,12 @@ export const EyeTriage = z.object({
     .nullable()
     .optional(),
   place: PlaceChoice,
+  /**
+   * The message edits the plan's evaluation steps (ADR-064 §1): "skip
+   * reviews" (skip), "add a review after the sound designer" (add, after
+   * the task's id or title).
+   */
+  reviews: EvaluationEdit.nullable().optional(),
 });
 export type EyeTriage = z.infer<typeof EyeTriage>;
 
@@ -934,6 +943,7 @@ If the check is at fault ("broken": true), give in "command" a corrected check t
 - "later": an idea or request for later, not for now. Put it in "silk" as "later".
 - "stop": the owner wants the work stopped or paused.
 - "question": the owner asks about the job. Answer it in "reply" from what is above; "silk" is null.
+When the message adds or skips the owner's reviews (evaluation steps: "add a review after the sound designer", "skip reviews this time"), set "reviews": {"skip": true} or {"add": [{"after": the task's id, "kind": "design" | "app" | "checkpoint", "why": one line}]}, intent "instruction", and say it in "reply".
 When the message mixes several, pick what matters most and say in "reply" what you did. Never invent facts. "reply" is one or two plain sentences to the owner.
 When you can't act without a choice from the owner, ask it in "questions" (at most 3) rather than in prose: each with an "id", a "prompt", a "shape" ("single", "multi", "confirm" or "text"), "options" with "id" and "label" (and a one-line "detail" when useful) and the "recommended" option's id. The owner's answers come back as their next message. Leave "questions" empty otherwise. Never ask which GitHub repository or server to use: Oraknid asks that itself.
 Committing into a branch, merging into the work branch and pushing to GitHub are never tasks: Oraknid does them itself when the job ends (at once when it has ended). When the owner asks for them, set "ending" ("push" true for GitHub, "merge" true only when they asked in so many words for the work to go into the work branch), add no task for it, and say in "reply" that Oraknid does it at the end.${
@@ -1391,6 +1401,7 @@ function planPrompt(i: PlanInput, extra: string | null): string {
       ? `# The job must also pass\n${i.verify.map((v) => `- \`${v}\``).join("\n")}`
       : "",
     PLAN_RULES,
+    i.evaluations ?? "",
     extra ?? "",
   ]
     .filter(Boolean)

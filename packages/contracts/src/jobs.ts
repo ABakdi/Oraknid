@@ -14,6 +14,7 @@ import {
   SilkEntry,
   Task,
 } from "./entities.ts";
+import { TaskEvaluation } from "./evaluations.ts";
 import { Event } from "./events.ts";
 import { SecretEnvironment } from "./secrets.ts";
 
@@ -191,6 +192,8 @@ export const TaskView = Task.extend({
   avoidLegIds: z.array(z.string()).default([]),
   /** Why it is ready and not running yet (ADR-050): "waiting for memory", "overlaps “X”". */
   waitingReason: z.string().nullable().default(null),
+  /** An evaluation step's review (ADR-064 §1): its kind, round and where I open it. */
+  evaluation: TaskEvaluation.nullable().default(null),
 });
 export type TaskView = z.infer<typeof TaskView>;
 

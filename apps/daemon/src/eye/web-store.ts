@@ -7,6 +7,7 @@ import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 import type { SilkStore } from "../silk/store.ts";
 import { requestEnding } from "./ending.ts";
+import { jobEvaluations, rememberEvaluation } from "./evaluations.ts";
 
 // The Web, stored (The-Eye → Planning): a plan becomes tasks and the
 // dependencies between them, made a sound graph first. Every way work
@@ -44,6 +45,8 @@ export interface Stored {
   added: string[];
   /** Titles of planned tasks that were in The Web already, and so not added again. */
   known: string[];
+  /** Their ids. */
+  knownIds: string[];
 }
 
 /**
@@ -59,10 +62,19 @@ export function storeWeb(
   d: WebStoreDeps,
   jobId: string,
   plan: WebPlan,
-  o: { keyPrefix?: string; againstDone?: boolean; title?: string } = {},
+  o: {
+    keyPrefix?: string;
+    againstDone?: boolean;
+    title?: string;
+    /**
+     * The job's setting shapes the plan's evaluation steps (ADR-064 §1),
+     * adding them to a first plan; false: as planned (one I asked for).
+     */
+    evaluations?: boolean;
+  } = {},
 ): Stored {
   const job = d.db.select().from(jobs).where(eq(jobs.id, jobId)).get();
-  if (!job) return { added: [], known: [] };
+  if (!job) return { added: [], known: [], knownIds: [] };
   const existing = taskRows(d.db, jobId);
   const prefix = o.keyPrefix ?? "";
   const keyToId = new Map(
@@ -71,10 +83,17 @@ export function storeWeb(
   // Tasks of The Web the plan may name: by their key in an earlier plan, or by their id.
   const ids = new Set(existing.map((t) => t.id));
   const known = new Set([...ids, ...keyToId.keys()]);
-  const { plan: shaped, notes } = shapeWeb(plan, known);
+  const { plan: shaped, notes } = shapeWeb(
+    plan,
+    known,
+    o.evaluations === false
+      ? undefined
+      : { setting: jobEvaluations(d.db, jobId), add: job.webVersion === 0 },
+  );
   const resolve = (key: string) =>
     keyToId.get(prefix + key) ?? keyToId.get(key) ?? (ids.has(key) ? key : null);
   const already: string[] = [];
+  const alreadyIds: string[] = [];
   const added: string[] = [];
   let position = Math.max(-1, ...existing.map((t) => t.position)) + 1;
   d.bus.atomically(() => {
@@ -89,6 +108,7 @@ export function storeWeb(
       if (twin) {
         keyToId.set(prefix + t.key, twin.id);
         already.push(twin.title);
+        alreadyIds.push(twin.id);
         continue;
       }
       const id = newId(d.now());
@@ -111,6 +131,9 @@ export function storeWeb(
           planKey: prefix + t.key,
         })
         .run();
+      // An evaluation step's own state: what it shows and why (ADR-064 §1).
+      if (t.kind === "evaluation")
+        rememberEvaluation(d.db, id, t.evaluation ?? { kind: "checkpoint", why: t.title });
     }
     for (const t of shaped.tasks) {
       const from = keyToId.get(prefix + t.key);
@@ -167,5 +190,5 @@ export function storeWeb(
       .join("\n\n"),
     authoredBy: "eye",
   });
-  return { added, known: [...new Set(already)] };
+  return { added, known: [...new Set(already)], knownIds: [...new Set(alreadyIds)] };
 }

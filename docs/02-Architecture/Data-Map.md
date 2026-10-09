@@ -75,6 +75,10 @@ no row.
 | `job.attemptsFrom.<job>` | Since when a job's failed attempts count: set when I resume it after it hit the limit. |
 | `job.legWork.<job>` | Legs whose work I stopped in a job, per task, and the paused Leg a task waits for ([[Jobs-and-Projects]] → Controls). |
 | `job.ending.<job>` | The end steps asked of a job (merge, push, where from) and what they did ([[Jobs-and-Projects]] → Ending a job). |
+| `project.work.<project>` | A project's reviews (all, some kinds, none), the minutes before one passes by itself, and whether a completed job is merged or I'm asked ([[ADR-064-Design-And-Approval-By-Experience]]). |
+| `job.evaluations.<job>` | A job's own reviews, from New work or the chat; none: the project's. |
+| `task.evaluation.<task>` | An evaluation step's state: its kind, why, round, the review open (id, address, the app's port), when it passes by itself, how it ended ([[Jobs-and-Projects]] → Evaluation steps). |
+| `job.mergeAsked.<job>`, `job.ladderAsked.<job>` | The inbox questions a job's end asked (merge it?), and the Legs it asked me to unpause once ([[ADR-064-Design-And-Approval-By-Experience]] §7, §8). |
 | `project.budget.<project>` | A project's limits on tokens and money across its jobs, and a new job's default ([[Budgets-and-Quotas]] → A project's budget). |
 | `project.budgetState.<project>` | Where it stands: the warnings already given, the open inbox question and the jobs it paused. |
 | `lock.pin`, `lock.idleMinutes` | The PIN's hash; the idle lock ([[ADR-029-App-Lock]]). |

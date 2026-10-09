@@ -611,6 +611,21 @@ counting and the escalation policy), and `apply.ts` does what it says.
 `runTask` applies the attempt's result from a table. Policy lives in core
 and the Gate; Leg specifics live in the adapters and the Leg SDK.
 
+### Evaluation steps beside the attempts (2026-10-09, ADR-064 §1, M16.2)
+An evaluation node of The Web (kind `evaluation`) is not an attempt: no
+agent, no session, no Gate. The job's program (`runTasks`) takes it out
+of the tasks it hands to the controller and advances it itself
+(`eye/evaluations.ts`, `advanceEvaluation`): its round's review opened
+once through the `ReviewPort` (`harness/reviews.ts`, a journaled step;
+for an app review the app started first, `eye/run-app.ts`), what I said
+applied (approved: the node is done; notes: tasks before it, the next
+round after them), else it waits. The loop waits on Leg tasks and on the
+reviews together; when only reviews are left, the program ends with
+`AwaitingOwner` and the job is `waiting` with the review's words, resumed
+by the review's events or its time to pass by itself (`daemon.ts`). The
+controller didn't grow (its ceiling stays 625 lines); the ladder's change
+(ADR-064 §7) lives in `route.ts` and `ladder.ts`.
+
 ## Consequences
 - More files, each small, each with its own tests; the bugs of the last
   two days become cases in a table.

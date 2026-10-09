@@ -17,6 +17,7 @@ import { LegComparison, TokensChart } from "@/components/charts";
 import { ProjectCiBadge } from "@/components/ci-badge";
 import { ProjectCiTab } from "@/components/ci-panel";
 import { Empty, ErrorNote, Loading, PageHeader, Stat } from "@/components/common";
+import { ProjectWorkSettingsCard } from "@/components/evaluations";
 import { EyeChat } from "@/components/eye-chat";
 import { ProjectBudgetCard } from "@/components/job-budget";
 import { CloneAgainButton, ExportRecordsButton } from "@/components/moving";
@@ -380,6 +381,7 @@ function ProjectDetail({
         <div className="space-y-4">
           {/* Its GitHub repo is on the Repo tab; its servers, with their roles, here (ADR-038, ADR-042). */}
           <ProjectServersCard projectId={id} />
+          <ProjectWorkSettingsCard projectId={id} />
           <ProjectReposCard project={project} />
           <ProjectActions project={project} />
           <RulesCard
