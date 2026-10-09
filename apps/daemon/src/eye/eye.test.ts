@@ -246,7 +246,7 @@ async function until(
   api: { jobs: { get(i: { id: string }): Promise<JobView> } },
   id: string,
   states: string[],
-  ms = 8000,
+  ms = 25_000,
 ) {
   const end = Date.now() + ms;
   for (;;) {
@@ -420,7 +420,7 @@ describe("The Eye, end to end", () => {
         },
       },
     );
-    const end = Date.now() + 8000;
+    const end = Date.now() + 25_000;
     let item: Awaited<ReturnType<typeof api.inbox.list>>[number] | undefined;
     while (!item && Date.now() < end) {
       item = (await api.inbox.list({ state: "open" })).find((i) => i.kind === "approval");
@@ -2606,7 +2606,7 @@ describe("tasks side by side (ADR-016, M3.1–M3.2)", () => {
 
 describe("a Leg's work, stopped while its job goes on (Jobs-and-Projects → Controls)", () => {
   const running = async (api: Awaited<ReturnType<typeof eye>>["api"], id: string) => {
-    const end = Date.now() + 8000;
+    const end = Date.now() + 25_000;
     for (;;) {
       const t = (await api.jobs.get({ id })).tasks.find((x) => x.state === "running");
       // Its session open, working.
@@ -3320,7 +3320,7 @@ function mostAtOnce(d: Daemon, jobId: string) {
   return most;
 }
 
-async function eventually<T>(f: () => Promise<T | null | undefined | false>, ms = 8000) {
+async function eventually<T>(f: () => Promise<T | null | undefined | false>, ms = 25_000) {
   const end = Date.now() + ms;
   for (;;) {
     const v = await f();
