@@ -5,6 +5,7 @@ export * from "./cloud.ts";
 export * from "./common.ts";
 export * from "./entities.ts";
 export * from "./events.ts";
+export * from "./experience.ts";
 export * from "./files.ts";
 export * from "./git-hosts.ts";
 export * from "./github.ts";

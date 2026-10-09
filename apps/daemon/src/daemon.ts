@@ -48,6 +48,7 @@ import { EventBus } from "./events/bus.ts";
 import { type EyeBrain, PoolLegBrain } from "./eye/brain.ts";
 import { startBudgetWatch } from "./eye/budgets.ts";
 import { EyeDecisions } from "./eye/decisions.ts";
+import { readExperience } from "./eye/experience.ts";
 import { pauseForRoom } from "./eye/leg-work.ts";
 import { serverAdded } from "./eye/links.ts";
 import { type NamingDeps, startJobNaming } from "./eye/naming.ts";
@@ -56,6 +57,7 @@ import { startEyeReports } from "./eye/reports.ts";
 import { forgetGuidance, recordAnswer, resumeConversations } from "./eye/talk.ts";
 import { EyeThinking } from "./eye/thinking.ts";
 import { forgetJob } from "./harness/gate.ts";
+import { chromiumRenderer, type VisualDeps, visionJudge } from "./harness/visual.ts";
 import { Helper, type HelperWho } from "./helper/service.ts";
 import { isLocalRequest } from "./http/guard.ts";
 import { requestIds, tagConsoleWithRequestIds } from "./http/request-id.ts";
@@ -151,6 +153,8 @@ export interface DaemonOptions {
   program?: JobProgram;
   /** The Eye's reasoning (tests replace it). */
   brain?: EyeBrain;
+  /** The visual check's renderer and judge (tests give stand-ins; ADR-064 §5). */
+  visual?: Partial<Pick<VisualDeps, "renderer" | "judge">>;
   /** Naming jobs' timings (tests): the backfill's start (-1: never) and pace. */
   naming?: Pick<NamingDeps, "gapMs" | "retryMs" | "draftDelayMs" | "backfillDelayMs">;
   /** Opens a folder on this machine; tests replace it. */
@@ -431,6 +435,14 @@ export async function startDaemon(options: DaemonOptions) {
         }),
       thinking,
     });
+  // The visual check (ADR-064 §5): headless Chromium, judged by a model that reads images.
+  const visual: VisualDeps = {
+    renderer: options.visual?.renderer ?? chromiumRenderer(),
+    judge: options.visual?.judge ?? visionJudge({ brain, local: models }),
+    experience: (jobId) => readExperience(db, jobId),
+    publish: (jobId, payload) =>
+      bus.publish({ type: "task.visual-check", topic: `job:${jobId}`, jobId, payload }),
+  };
   // My answer to "import my edits?" goes back to Silk.
   bus.subscribe((e) => {
     if (e.type !== "inbox.answered") return;
@@ -598,6 +610,7 @@ export async function startDaemon(options: DaemonOptions) {
         reviews,
         ...(options.stallCheckMs ? { stallCheckMs: options.stallCheckMs } : {}),
         ...(options.driftJudgeMs ? { driftJudgeMs: options.driftJudgeMs } : {}),
+        visual,
       }),
   });
   // The Oraknid helper: what I ask in words, through Oraknid's own services (ADR-024).

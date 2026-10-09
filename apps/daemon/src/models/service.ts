@@ -1082,6 +1082,31 @@ export class LocalModels {
     );
   }
 
+  /** A vision model has (or would get) the OCR role: the visual check can look with it (ADR-064 §5). */
+  canSee(): boolean {
+    return !!this.effectiveRoles().ocr;
+  }
+
+  /**
+   * The OCR role's vision model looks at images (PNG screenshots) and answers
+   * a prompt about them: the visual check's judge without a Leg that reads
+   * images (ADR-064 §5). Files are Oraknid's own, by absolute path.
+   */
+  async look(prompt: string, files: string[]): Promise<{ model: string; text: string }> {
+    const id = this.effectiveRoles().ocr;
+    if (!id) throw new Error("No local vision model has the OCR role.");
+    const images = files.slice(0, 12).map((f) => ({
+      type: "image_url",
+      image_url: { url: `data:image/png;base64,${readFileSync(f).toString("base64")}` },
+    }));
+    const text = await this.#chat(
+      "ocr",
+      [],
+      [{ role: "user", content: [{ type: "text", text: prompt }, ...images] }],
+    );
+    return { model: `${this.get(id).name} (local)`, text };
+  }
+
   async embed(texts: string[]): Promise<{ model: string; vectors: number[][] }> {
     const { row, baseUrl } = await this.forRole("embed");
     const res = await this.#http(`${baseUrl}/embeddings`, {

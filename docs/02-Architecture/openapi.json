@@ -3289,7 +3289,8 @@
                                           "waiting",
                                           "denied",
                                           "cancelled",
-                                          "folder-restored"
+                                          "folder-restored",
+                                          "visual-check"
                                         ],
                                         "type": "string"
                                       },
@@ -3506,6 +3507,14 @@
                                 "allowOther": {
                                   "type": "boolean",
                                   "default": true
+                                },
+                                "preselected": {
+                                  "type": "array",
+                                  "maxItems": 9,
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 80
+                                  }
                                 }
                               },
                               "required": [
@@ -3710,7 +3719,8 @@
                                         "waiting",
                                         "denied",
                                         "cancelled",
-                                        "folder-restored"
+                                        "folder-restored",
+                                        "visual-check"
                                       ],
                                       "type": "string"
                                     },
@@ -3927,6 +3937,14 @@
                               "allowOther": {
                                 "type": "boolean",
                                 "default": true
+                              },
+                              "preselected": {
+                                "type": "array",
+                                "maxItems": 9,
+                                "items": {
+                                  "type": "string",
+                                  "maxLength": 80
+                                }
                               }
                             },
                             "required": [
@@ -8995,7 +9013,8 @@
                                           "waiting",
                                           "denied",
                                           "cancelled",
-                                          "folder-restored"
+                                          "folder-restored",
+                                          "visual-check"
                                         ],
                                         "type": "string"
                                       },
@@ -9212,6 +9231,14 @@
                                 "allowOther": {
                                   "type": "boolean",
                                   "default": true
+                                },
+                                "preselected": {
+                                  "type": "array",
+                                  "maxItems": 9,
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 80
+                                  }
                                 }
                               },
                               "required": [
@@ -38944,7 +38971,8 @@
                                   "mechanical",
                                   "summarize",
                                   "classify",
-                                  "ui"
+                                  "ui",
+                                  "vision"
                                 ],
                                 "type": "string"
                               },
@@ -41502,7 +41530,8 @@
                                 "mechanical",
                                 "summarize",
                                 "classify",
-                                "ui"
+                                "ui",
+                                "vision"
                               ],
                               "type": "string"
                             }
@@ -42299,7 +42328,8 @@
                                   "mechanical",
                                   "summarize",
                                   "classify",
-                                  "ui"
+                                  "ui",
+                                  "vision"
                                 ],
                                 "type": "string"
                               }
@@ -43075,6 +43105,54 @@
         }
       }
     },
+    "/jobs/visualShot": {
+      "post": {
+        "operationId": "jobs.visualShot",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                },
+                "required": [
+                  "id",
+                  "path"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "dataUrl": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "dataUrl"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/jobs/export": {
       "post": {
         "operationId": "jobs.export",
@@ -43469,7 +43547,8 @@
                                     "mechanical",
                                     "summarize",
                                     "classify",
-                                    "ui"
+                                    "ui",
+                                    "vision"
                                   ],
                                   "type": "string"
                                 }
@@ -44298,7 +44377,8 @@
                                               "waiting",
                                               "denied",
                                               "cancelled",
-                                              "folder-restored"
+                                              "folder-restored",
+                                              "visual-check"
                                             ],
                                             "type": "string"
                                           },
@@ -44515,6 +44595,14 @@
                                     "allowOther": {
                                       "type": "boolean",
                                       "default": true
+                                    },
+                                    "preselected": {
+                                      "type": "array",
+                                      "maxItems": 9,
+                                      "items": {
+                                        "type": "string",
+                                        "maxLength": 80
+                                      }
                                     }
                                   },
                                   "required": [
@@ -45690,7 +45778,8 @@
                                           "waiting",
                                           "denied",
                                           "cancelled",
-                                          "folder-restored"
+                                          "folder-restored",
+                                          "visual-check"
                                         ],
                                         "type": "string"
                                       },
@@ -45907,6 +45996,14 @@
                                 "allowOther": {
                                   "type": "boolean",
                                   "default": true
+                                },
+                                "preselected": {
+                                  "type": "array",
+                                  "maxItems": 9,
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 80
+                                  }
                                 }
                               },
                               "required": [
@@ -47025,7 +47122,8 @@
                                       "mechanical",
                                       "summarize",
                                       "classify",
-                                      "ui"
+                                      "ui",
+                                      "vision"
                                     ],
                                     "type": "string"
                                   },
@@ -47162,7 +47260,8 @@
                                       "mechanical",
                                       "summarize",
                                       "classify",
-                                      "ui"
+                                      "ui",
+                                      "vision"
                                     ],
                                     "type": "string"
                                   },
@@ -47574,7 +47673,8 @@
                                     "mechanical",
                                     "summarize",
                                     "classify",
-                                    "ui"
+                                    "ui",
+                                    "vision"
                                   ],
                                   "type": "string"
                                 },
@@ -47711,7 +47811,8 @@
                                     "mechanical",
                                     "summarize",
                                     "classify",
-                                    "ui"
+                                    "ui",
+                                    "vision"
                                   ],
                                   "type": "string"
                                 },
@@ -48436,7 +48537,8 @@
                                     "mechanical",
                                     "summarize",
                                     "classify",
-                                    "ui"
+                                    "ui",
+                                    "vision"
                                   ],
                                   "type": "string"
                                 },
@@ -48573,7 +48675,8 @@
                                     "mechanical",
                                     "summarize",
                                     "classify",
-                                    "ui"
+                                    "ui",
+                                    "vision"
                                   ],
                                   "type": "string"
                                 },
@@ -48984,7 +49087,8 @@
                                     "mechanical",
                                     "summarize",
                                     "classify",
-                                    "ui"
+                                    "ui",
+                                    "vision"
                                   ],
                                   "type": "string"
                                 },
@@ -49121,7 +49225,8 @@
                                     "mechanical",
                                     "summarize",
                                     "classify",
-                                    "ui"
+                                    "ui",
+                                    "vision"
                                   ],
                                   "type": "string"
                                 },
@@ -50005,7 +50110,8 @@
                             "mechanical",
                             "summarize",
                             "classify",
-                            "ui"
+                            "ui",
+                            "vision"
                           ],
                           "type": "string"
                         },
@@ -51068,6 +51174,14 @@
                                 "allowOther": {
                                   "type": "boolean",
                                   "default": true
+                                },
+                                "preselected": {
+                                  "type": "array",
+                                  "maxItems": 9,
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 80
+                                  }
                                 }
                               },
                               "required": [

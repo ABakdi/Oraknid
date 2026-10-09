@@ -347,6 +347,7 @@ export async function runController(
     refuse: (command, where) => gate.check(command, where),
     signal,
     log: trail,
+    task: { id: task.id, title: task.title },
   });
   const runChecks: AttemptCtx["runChecks"] = (commands, o = {}) => verifier.run(commands, o);
   const checks = taskChecks(d, job, task, {

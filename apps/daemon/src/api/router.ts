@@ -188,6 +188,7 @@ import {
 } from "../eye/talk.ts";
 import type { EyeThinking } from "../eye/thinking.ts";
 import { SAME_PROVIDER_FALLBACK } from "../harness/route.ts";
+import { readShot } from "../harness/visual.ts";
 import type { Helper } from "../helper/service.ts";
 import { currentRequestId } from "../http/request-id.ts";
 import type { InboxStore } from "../inbox/store.ts";
@@ -2389,6 +2390,13 @@ export const router = {
       .input(z.object({ id: z.string() }))
       .output(JobResult)
       .handler(({ context: c, input }) => guard(() => jobResult(c.jobs.db, input.id))),
+    /** A screenshot its visual check took, for the report (ADR-064 §5). */
+    visualShot: base
+      .input(z.object({ id: z.string(), path: z.string().max(300) }))
+      .output(z.object({ dataUrl: z.string() }))
+      .handler(({ context: c, input }) =>
+        guard(() => readShot(c.jobs.get(input.id)?.worktree ?? null, input.path)),
+      ),
     /** A job's full record as JSON for a download, secrets scrubbed (Audit 1 → Q1-15). */
     export: base
       .input(z.object({ id: z.string() }))
