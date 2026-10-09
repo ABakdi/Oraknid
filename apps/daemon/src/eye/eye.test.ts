@@ -233,6 +233,15 @@ async function eye(
   return { d: daemon, api, id, workspace, leg, plans, legIds, dataDir: dir, sent: fake.sent };
 }
 
+/** The project asks before merging a completed job (ADR-064 §8): tests of the Merge button. */
+async function askToMerge(api: RouterClient<Router>) {
+  for (const p of await api.projects.list())
+    await api.projects.setWorkSettings({
+      id: p.id,
+      settings: { evaluations: { mode: "all", kinds: [] }, autoPassMinutes: null, merge: "ask" },
+    });
+}
+
 async function until(
   api: { jobs: { get(i: { id: string }): Promise<JobView> } },
   id: string,
@@ -2104,7 +2113,10 @@ describe("talking to The Eye (Checkpoint 1 → F1-4)", () => {
 
 describe("a finished job's result (Checkpoint 1 → F1-5)", () => {
   it("shows the folder, branch and commits, and merges into the work branch when I press it", async () => {
-    const { api, id, workspace } = await eye(good);
+    const { api, id, workspace } = await eye(good, {
+      // Merged with the Merge button: the project asks first (ADR-064 §8).
+      setup: askToMerge,
+    });
     expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
     const r = await api.jobs.result({ id });
     expect(r).toMatchObject({ into: "dev", merged: false, cannotMerge: null });
@@ -2124,7 +2136,7 @@ describe("a finished job's result (Checkpoint 1 → F1-5)", () => {
   });
 
   it("merges nothing on a conflict, or into a checkout with uncommitted changes", async () => {
-    const { api, id, workspace } = await eye(good);
+    const { api, id, workspace } = await eye(good, { setup: askToMerge });
     expect((await until(api, id, ["completed", "blocked"])).state).toBe("completed");
     sh(workspace, "checkout", "-q", "dev");
     writeFileSync(join(workspace, "README.md"), "# mine, not committed\n");
@@ -2607,7 +2619,7 @@ describe("a Leg's work, stopped while its job goes on (Jobs-and-Projects → Con
     }
   };
 
-  it("pausing a Leg pauses its running session in place; the task waits for it and goes on when it is resumed", async () => {
+  it("pausing a Leg pauses its running session in place; the strongest Leg available takes the task meanwhile (ADR-064 §7)", async () => {
     let first = true;
     const { api, id, d } = await eye(
       (t) => {
@@ -2624,25 +2636,55 @@ describe("a Leg's work, stopped while its job goes on (Jobs-and-Projects → Con
     const legId = t.assignedLegId as string;
     expect(await api.legs.pause({ id: legId })).toEqual({ stopped: 1 });
 
-    // Stopped at a safe point, with a handoff; the job still runs and the task waits for its Leg.
-    let job = await api.jobs.get({ id });
-    expect(job.state).toBe("running");
-    const waiting = job.tasks.find((x) => x.id === t.id);
-    expect(waiting?.state).toBe("ready");
-    expect(waiting?.waitingForLegId).toBe(legId);
+    // Stopped at a safe point, with a handoff; the task never waits for a paused Leg while
+    // another can take it: the other Leg goes on from the handoff.
+    const done = await until(api, id, ["completed", "blocked"], 15_000);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
     const s = await api.sessions.list({ jobId: id });
     expect(s.map((x) => x.endReason)).toContain("stopped");
     expect(
       (await api.silk.list({ jobId: id })).some((e) => e.kind === "handoff" && e.taskId === t.id),
     ).toBe(true);
-    // It doesn't go to the other Leg meanwhile.
-    await new Promise((r) => setTimeout(r, 1500));
-    job = await api.jobs.get({ id });
-    expect(job.tasks.find((x) => x.id === t.id)?.state).toBe("ready");
-    expect((await api.sessions.list({ jobId: id })).length).toBe(s.length);
+    const legs = d.db
+      .select()
+      .from(sessions)
+      .where(and(eq(sessions.jobId, id), eq(sessions.taskId, t.id)))
+      .all()
+      .map((x) => x.legId);
+    expect(legs[0]).toBe(legId);
+    expect(legs.at(-1)).not.toBe(legId);
+    const said = d.bus
+      .since(0, [`job:${id}`], 2000)
+      .find((e) => e.type === "task.leg-paused-goes-on");
+    expect(said?.payload).toMatchObject({ taskId: t.id, legId });
     // A paused session isn't a failed attempt.
     const rows = d.db.select().from(attempts).where(eq(attempts.taskId, t.id)).all();
-    expect(rows.map((a) => a.outcome)).toEqual(["abandoned"]);
+    expect(rows.map((a) => a.outcome)).toEqual(["abandoned", "succeeded"]);
+    expect(done.tasks.find((x) => x.id === t.id)?.waitingForLegId).toBeNull();
+  }, 40_000);
+
+  it("waits for a paused Leg only when no other can take the task, and goes on on it when it is resumed", async () => {
+    let first = true;
+    const { api, id, d } = await eye((t) => {
+      if (task(t) === "Write hello.sh" && first) {
+        first = false;
+        return [{ write: "hello.sh", content: "echo hi\n" }, { hang: true }];
+      }
+      return good(t);
+    });
+    const t = await running(api, id);
+    const legId = t.assignedLegId as string;
+    expect(await api.legs.pause({ id: legId })).toEqual({ stopped: 1 });
+    let job = await api.jobs.get({ id });
+    expect(job.state).toBe("running");
+    expect(job.tasks.find((x) => x.id === t.id)?.waitingForLegId).toBe(legId);
+    await new Promise((r) => setTimeout(r, 1000));
+    job = await api.jobs.get({ id });
+    expect(job.tasks.find((x) => x.id === t.id)?.state).toBe("ready");
+    const said = d.bus.since(0, [`job:${id}`], 2000).find((e) => e.type === "task.waiting-for-leg");
+    expect((said?.payload as { reason: string } | undefined)?.reason).toMatch(
+      /as no other Leg can take it/,
+    );
 
     // Resumed: the task goes on on the same Leg, from where it stopped.
     await api.legs.resume({ id: legId });
@@ -2656,36 +2698,6 @@ describe("a Leg's work, stopped while its job goes on (Jobs-and-Projects → Con
       .map((x) => x.legId);
     expect(new Set(legs)).toEqual(new Set([legId]));
     expect(done.tasks.find((x) => x.id === t.id)?.waitingForLegId).toBeNull();
-  }, 40_000);
-
-  it("a task waiting for a paused Leg is reassigned when I cancel that Leg's work on it", async () => {
-    let first = true;
-    const { api, id, d } = await eye(
-      (t) => {
-        if (task(t) === "Write hello.sh" && first) {
-          first = false;
-          return [{ hang: true }];
-        }
-        return good(t);
-      },
-      { legs: ["Claude A", "Claude B"] },
-    );
-    const t = await running(api, id);
-    const legId = t.assignedLegId as string;
-    await api.legs.pause({ id: legId });
-    expect((await api.jobs.get({ id })).tasks.find((x) => x.id === t.id)?.waitingForLegId).toBe(
-      legId,
-    );
-    // Nothing of it runs any more: nothing to stop, and the task goes to the other Leg.
-    expect(await api.jobs.cancelLegWork({ id, legId, taskId: t.id })).toEqual({ stopped: 0 });
-    const done = await until(api, id, ["completed", "blocked"], 15_000);
-    expect(done.state, done.blockedReason ?? "").toBe("completed");
-    const mine = done.tasks.find((x) => x.id === t.id);
-    expect(mine?.assignedLegId).not.toBe(legId);
-    expect(mine?.avoidLegIds).toEqual([legId]);
-    // The other task may still use it: the cancel was for that task alone.
-    expect(done.tasks.find((x) => x.id !== t.id)?.avoidLegIds).toEqual([]);
-    expect(d.registry.require(legId).paused).toBe(true);
   }, 40_000);
 
   it("cancelling a Leg's work in a job ends its session there, and the job's tasks go on without it", async () => {
@@ -2834,8 +2846,10 @@ describe("The Eye speaks up, and the job's folder stays the project's", () => {
     expect(said[0]?.action?.report?.facts[0]?.label).toBe("Commit");
     const summary = said[2]?.action?.report;
     expect(summary?.facts[0]).toMatchObject({ label: "Branch" });
-    expect(summary?.facts[0]?.value).toMatch(/^oraknid\/.* · 2 commits$/);
-    expect(summary?.todo).toEqual(["Merge it into dev: the Merge button on the result."]);
+    // A completed job lands in the work branch by itself (ADR-064 §8): nothing left to merge.
+    expect(summary?.facts[0]?.value).toMatch(/^oraknid\/.* · merged$/);
+    expect(summary?.facts[1]).toMatchObject({ label: "Merged into", value: "dev" });
+    expect(summary?.todo).toEqual([]);
     // Nothing else: no narration of steps.
     expect(await api.jobs.conversation({ id })).toHaveLength(3);
   });

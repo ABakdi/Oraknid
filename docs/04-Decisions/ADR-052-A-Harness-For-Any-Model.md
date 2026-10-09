@@ -117,6 +117,18 @@ when needed.
   starts that kind lower in trust next time; one that succeeds is tried
   on harder work.
 
+*Note (2026-10-09, after the Keys job, [[ADR-064-Design-And-Approval-By-Experience]] §7):*
+"the strongest model I allow" means the strongest **available** now: a
+paused or limited Leg is not the top. A task whose Leg was paused under
+it goes on with the strongest model available (it waits for the paused
+Leg only when no other can take it); a task going back to its Leg goes
+to the others when that Leg can't take it; when a task fails at the top
+of what is available and a stronger model is only paused, I'm asked once
+per job and Leg, without the work waiting: "<Leg> would help here:
+unpause it, or go on with <the one on it>?". *As built:* `route.ts`
+(`pickRoute`, `higher`), `harness/ladder.ts` (`pausedAbove`,
+`askOnceToUnpause`, `answerLadder`).
+
 ### 4. Only usable agents are chosen
 - An agent **out of quota, rate-limited, paused, failing to start, or
   on a deprecated model** is never routed to; the reason is read from

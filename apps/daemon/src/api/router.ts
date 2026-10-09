@@ -11,6 +11,7 @@ import {
   DoctorCheck,
   DraftPatch,
   EmailSettings,
+  Evaluations,
   Event,
   EyeMessage,
   EyeModels,
@@ -84,6 +85,7 @@ import {
   ProjectRepo,
   ProjectRepoPatch,
   ProjectView,
+  ProjectWorkSettings,
   PruneRequest,
   PushSubscriptionInput,
   QuestionAnswers,
@@ -166,6 +168,15 @@ import {
 import type { EyeDecisions } from "../eye/decisions.ts";
 import { draftAnswer, draftStart, draftTalk, isThinking } from "../eye/draft.ts";
 import { endSteps } from "../eye/ending.ts";
+import {
+  evaluationView,
+  jobEvaluations,
+  jobEvaluationsKey,
+  jobEvaluationsOwn,
+  projectWork,
+  projectWorkKey,
+  waitingWords,
+} from "../eye/evaluations.ts";
 import { interviewRounds } from "../eye/interview.ts";
 import { cancelLegWork, pauseLegSessions, readLegWork } from "../eye/leg-work.ts";
 import {
@@ -672,7 +683,14 @@ function jobView(c: ApiContext, id: string): JobView {
       waitingReason:
         t.state === "ready" || t.state === "pending" ? c.work.reasonOf(id, t.id) : null,
       avoidLegIds: [...new Set([...legWork.avoid, ...(legWork.taskAvoid[t.id] ?? [])])],
-    }));
+      evaluation: t.kind === "evaluation" ? evaluationView(c.jobs.db, t.id, t.state) : null,
+    }))
+    .map((t) =>
+      // An evaluation step waits for me, not for room (ADR-064 §1).
+      t.evaluation?.waiting
+        ? { ...t, waitingReason: waitingWords(t.evaluation.kind, t.evaluation.url) }
+        : t,
+    );
   return JobView.parse({
     ...job,
     tasks,
@@ -1008,6 +1026,37 @@ export const router = {
             payload: { projectId: input.id, ports: input.ports },
             actor: "owner",
           });
+        }),
+      ),
+    /**
+     * Its jobs' evaluation steps (all, some, none), how long one waits before
+     * it passes by itself, and whether a completed job is merged or I'm asked
+     * (ADR-064 §1, §8).
+     */
+    workSettings: base
+      .input(z.object({ id: z.string() }))
+      .output(ProjectWorkSettings)
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          c.projects.require(input.id);
+          return projectWork(c.jobs.db, input.id);
+        }),
+      ),
+    setWorkSettings: base
+      .input(z.object({ id: z.string(), settings: ProjectWorkSettings }))
+      .output(ProjectWorkSettings)
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          c.projects.require(input.id);
+          writeSetting(c.jobs.db, projectWorkKey(input.id), ProjectWorkSettings, input.settings);
+          c.bus.publish({
+            type: "project.work-settings",
+            topic: "overview",
+            jobId: null,
+            payload: { projectId: input.id, ...input.settings },
+            actor: "owner",
+          });
+          return projectWork(c.jobs.db, input.id);
         }),
       ),
     /** The servers its jobs may use (Servers → Servers in projects). */
@@ -2437,6 +2486,35 @@ export const router = {
     updateDraft: base
       .input(DraftPatch)
       .handler(({ context: c, input }) => guard(() => c.projects.updateDraft(input))),
+    /**
+     * The job's own choice of evaluation steps (New work; ADR-064 §1), and
+     * the one it gets: its own, else its project's. Null: the project's.
+     */
+    evaluations: base
+      .input(z.object({ id: z.string() }))
+      .output(z.object({ own: Evaluations.nullable(), effective: Evaluations }))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          c.jobs.require(input.id);
+          return {
+            own: jobEvaluationsOwn(c.jobs.db, input.id),
+            effective: jobEvaluations(c.jobs.db, input.id),
+          };
+        }),
+      ),
+    setEvaluations: base
+      .input(z.object({ id: z.string(), evaluations: Evaluations.nullable() }))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          c.jobs.require(input.id);
+          writeSetting(
+            c.jobs.db,
+            jobEvaluationsKey(input.id),
+            Evaluations.nullable(),
+            input.evaluations,
+          );
+        }),
+      ),
     /** My name or description for a job, kept from then on (Jobs-and-Projects → A job's name). */
     rename: base
       .input(JobRename)

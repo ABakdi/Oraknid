@@ -242,6 +242,11 @@ async function harness(
   await api.legs.create({ kind: "claude-code", name: "Claude A", config: {} });
   const folder = pianoRepo();
   const project = await api.projects.create({ name: "oraknid-piano", workspacePath: folder });
+  // Merging is asked here, never done by itself at the end (ADR-064 §8): these tests push and merge.
+  await api.projects.setWorkSettings({
+    id: project.id,
+    settings: { evaluations: { mode: "all", kinds: [] }, autoPassMinutes: null, merge: "ask" },
+  });
   return { d: daemon, api, leg, gh, starts, folder, projectId: project.id };
 }
 
@@ -367,7 +372,13 @@ describe("a project's GitHub repo, chosen once (ADR-038)", () => {
     ]);
     expect(leg.mcpResults[0]?.text).toContain("doesn't exist yet");
     // Only one question for the link; the push elsewhere was the judge's: nothing else asked.
-    expect((await api.inbox.list({})).map((i) => i.kind).sort()).toEqual(["question"]);
+    // (Besides, at the end, whether to merge it: this project asks first, ADR-064 §8.)
+    expect(
+      (await api.inbox.list({}))
+        .filter((i) => !i.title.startsWith("Merge “"))
+        .map((i) => i.kind)
+        .sort(),
+    ).toEqual(["question"]);
 
     // My answer shows as a short list, then The Eye's word that it linked it.
     const talk = await api.projects.conversation({ id: projectId });

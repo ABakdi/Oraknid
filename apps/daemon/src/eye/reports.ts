@@ -323,7 +323,9 @@ export async function jobDone(d: ReportDeps, jobId: string) {
   if (result?.branch)
     facts.push({
       label: "Branch",
-      value: `${result.branch} · ${result.commits.length} commit${result.commits.length === 1 ? "" : "s"}`,
+      value: result.merged
+        ? `${result.branch} · merged`
+        : `${result.branch} · ${result.commits.length} commit${result.commits.length === 1 ? "" : "s"}`,
       href: null,
     });
   if (ending?.merged) facts.push({ label: "Merged into", value: ending.merged.into, href: null });

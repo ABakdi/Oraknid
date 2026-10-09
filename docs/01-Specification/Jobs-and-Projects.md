@@ -221,6 +221,7 @@ One page, two sides ([[Phase-8-Daily-Use]]):
 | Autonomy | Auto | See [[Approvals-and-Autonomy]] ([[ADR-053-Auto-Mode]]). |
 | Budget | the project's budget, else no money and tokens unlimited; time alarm 8 h | See [[Budgets-and-Quotas]]. |
 | Inputs, verification | none; from the skill and the project | Inputs: a repo, a folder or documents, each can be marked untrusted. Verification: commands that must pass, on top of the skill's and the project's. |
+| Reviews | the project's | The job's own evaluation steps: all, some (design, running app, checkpoints) or none (2026-10-09, [[ADR-064-Design-And-Approval-By-Experience]] §1; below → Evaluation steps). |
 
 **Right, the prompt and the conversation:** I write what I want; The
 Eye answers in the same place. When the skill interviews, the interview
@@ -334,6 +335,54 @@ tasks, result, agents' output, activity, Silk, inbox items, budget and
 its burn, settings and every problem. What runs now, across projects,
 is on the Overview. An old `/jobs/<id>` link opens the job there.
 
+## Evaluation steps (2026-10-09, [[ADR-064-Design-And-Approval-By-Experience]] §1–§3, M16.2)
+
+The plan puts in steps where I look at the work: a **design review**
+after the design, before the features built on it; a **final review** of
+the running app; **checkpoints** where the planner judges a look worth it
+([[The-Eye]] → Planning). Each is a node of The Web (kind `evaluation`)
+that no agent works on: the tasks after it wait for it; tasks that don't
+need what it shows go on beside it.
+
+- **A step's round.** When its dependencies are done, Oraknid opens a
+  review of it for me (once per round, journaled): for a design review
+  the design's folder (`design/` in the job's folder, made sure of); for
+  an app review (or a checkpoint on a project that runs) the **running
+  app**: its dev command found from the plan's `run`, the project's
+  `dev` (or `start`, `serve`, `preview`) script with its package manager
+  (Vite and the like given `--port`; Next `-p`), a command in its README,
+  or a static server for an `index.html`; run in the job's sandbox (its
+  port reachable from this computer) on a free local port, waited for
+  until it answers, and stopped when the review is over (or Oraknid
+  stops). An app that doesn't start, or nothing saying how it runs: the
+  review shows the job's folder, and Silk says why.
+- **The job waits on it**: while other tasks can go on, they do; when
+  nothing else can, the job is `waiting`: "Waiting for your review of the
+  design — Open <the review's address>". The task shows the step's kind,
+  round, why and an **Open the review** button.
+- **My answer.** **Approve** ends the step: done, the tasks after it go
+  on. **Send notes** ends the round: each "keep" note is kept in Silk as
+  my decision ("Keep: …", given to every later task); the others are
+  planned as work (The Eye's planning call, else one task with the notes
+  on what the step reviewed), put before the step; the step's next round
+  opens by itself after them. Either resumes a job that was waiting.
+- **Passing by itself.** With **A review passes by itself after
+  (minutes)** set on the project (default: never), a round with no word
+  from me passes by itself at that time (said in Silk; the step's
+  outcome is "auto-passed").
+- **Where reviews open** (*as built*): through the daemon's `ReviewPort`
+  (`harness/reviews.ts`: open, outcome, waitForOutcome; its events
+  `review.notes-sent` and `review.approved` resume a waiting job). Until
+  the review page ([[Phase-16-Approval-By-Experience]] → M16.1) is wired
+  to it, a review is a question in the inbox: **Approve**, or my notes
+  in words, one per line, "keep:", "change:" or "problem:" first.
+- **Settings.** The project's Settings → Reviews and the end of a job:
+  reviews all / some (kinds) / none, the minutes before one passes by
+  itself, and what happens when a job is done. On New work, **Reviews**
+  overrides the project's for the job. In the chat, "add a review after
+  the sound designer" and "skip reviews this time" edit the plan
+  ([[The-Eye]] → Talking to The Eye).
+
 ## Controls
 
 | Control | Effect |
@@ -341,7 +390,7 @@ is on the Overview. An old `/jobs/<id>` link opens the job there.
 | Pause job | Every running task reaches a safe point (BR-7), then the job is `paused`. The UI shows "Pausing…" until then, and names any Leg it is waiting for. |
 | Resume job | Continues from the recorded point. A task taken up again by the same model resumes that model's own session where its Leg can (told why it stopped); otherwise, and after a rollback, a fresh session from a Silk context pack (BR-2, 2026-10-07). |
 | Cancel job | Every running task stops at a safe point, then the job is `cancelled`; its open questions and approvals are withdrawn. The worktree and checkpoints are kept until I delete them. From the job's controls, from **Cancel** in a project's or a server's conversation (2026-10-07, [[The-Eye]] → Cancelling from the chat), or `/cancel` in the terminal app. **Stop the job**, chosen on a task that keeps going wrong, stops its other tasks too and starts none (2026-10-07). |
-| Pause/resume a Leg | No new sessions on that Leg, and each session it runs is paused in place: it stops at a safe point (BR-7: its work kept on a checkpoint, a handoff in Silk), the attempt doesn't count as a failure, and its task waits for that Leg ("It waits for Claude A, paused"), the job still running. Resumed, the task goes on on that Leg from the handoff; **Reassign** on the task sends it to another Leg instead. Other Legs continue. With one task at a time, the job waits with it. |
+| Pause/resume a Leg | No new sessions on that Leg, and each session it runs is paused in place: it stops at a safe point (BR-7: its work kept on a checkpoint, a handoff in Silk), the attempt doesn't count as a failure. Its task never waits for a paused Leg while another can take it (2026-10-09, [[ADR-064-Design-And-Approval-By-Experience]] §7): the strongest model available goes on from the handoff. Only when no other Leg can take it does it wait for that Leg ("It waits for Claude A, paused, as no other Leg can take it"), the job still running; resumed, the task goes on on that Leg. Other Legs continue. |
 | Stop a Leg's work in a job | On the job (per Leg working in it) or on a task: that Leg's sessions there end at a safe point (BR-7), their tasks go back to ready and don't use that Leg again in this job (that task). The Leg itself isn't paused; other jobs keep it. When no other Leg can take a task, the job blocks and says so. |
 | Redirect | A new instruction for The Eye. It is written to Silk as an `owner` decision, and The Eye replans. |
 | Edit the plan | Add, remove, reorder or rewrite tasks in The Web. Running tasks I change are paused first. |
@@ -426,6 +475,23 @@ things** on, my own load holds and pauses its work too.
   in the job's summary as left to me. Asked once the job has ended, it
   is done at once and said in the reply. The folder check is in
   [[Drift-Control]]; the refused commands in [[Approvals-and-Autonomy]].
+- **A job ends in my project** (2026-10-09, after the Keys job, whose
+  branch was never merged; [[ADR-064-Design-And-Approval-By-Experience]]
+  §8). The project's setting **When a job is done** (Settings → Reviews
+  and the end of a job): **Merge it into the work branch** (the default)
+  or **Ask me first**. Merging, a completed job is merged as the Merge
+  button does (a merge commit, `merge: <title>`; my checkout of the work
+  branch moves forward when it is clean), as if I had asked: the job's
+  ending gets `merge` from "the project's setting" and the job's summary
+  says "Merged into dev". Asking, the job completes and the inbox asks
+  "Merge “…” into dev?" (**Merge into dev** / **Keep it on its branch**);
+  this question outlives the job's end, unlike the job's others. A merge
+  that can't happen (a conflict, my changes not committed in the
+  checkout) merges nothing and asks "The job couldn't be merged into dev"
+  with what conflicted (**Try the merge again** / **Keep it on its
+  branch**). A server job, a folder that isn't a git repo, or a job with
+  nothing on its branch has nothing to merge. *As built:* `ending.ts`
+  (`mergeBySetting`, `answerMerge`), the setting `project.work.<project>`.
 - **Blocked**: it can't continue. The reason is shown in plain words
   ("All Legs are out of quota until 14:05" / "The tests fail the same
   way after 3 Legs tried"). It resumes on its own when the reason clears

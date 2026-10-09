@@ -1,10 +1,11 @@
-import type { Budget, JobInput } from "@oraknid/contracts";
+import type { Budget, Evaluations, JobInput } from "@oraknid/contracts";
 import { Play, Send, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Link, useLocation } from "wouter";
 import { ErrorNote, Loading, Markdown, PageHeader } from "@/components/common";
 import { useConfirm } from "@/components/confirm";
+import { EvaluationsPicker } from "@/components/evaluations";
 import {
   missing,
   NewProjectFields,
@@ -109,6 +110,9 @@ export function WorkPage({ draftId }: { draftId?: string }) {
   const [skill, setSkill] = useState("auto");
   const [legIds, setLegIds] = useState<string[]>([]);
   const [autonomy, setAutonomy] = useState<Autonomy>("auto");
+  // The job's own reviews (ADR-064 §1); null: the project's.
+  const [evaluations, setEvaluations] = useState<Evaluations | null>(null);
+  const [projectEvaluations, setProjectEvaluations] = useState<Evaluations | null>(null);
   const [tokensLimit, setTokensLimit] = useState("");
   const [money, setMoney] = useState<Budget["money"]>({ limit: 0, hard: true });
   const [share, setShare] = useState("");
@@ -131,6 +135,10 @@ export function WorkPage({ draftId }: { draftId?: string }) {
     // Its own skill, unless The Eye still chooses among the project's.
     setSkill(j.skillChoices.length > 1 ? "auto" : j.skillId);
     setAutonomy(j.autonomy);
+    api.jobs
+      .evaluations({ id: j.id })
+      .then((e) => setEvaluations(e.own))
+      .catch(() => {});
     setLegIds(j.allowedLegIds);
     setTokensLimit(j.budget.tokens ? String(j.budget.tokens.limit) : "");
     setMoney(j.budget.money);
@@ -186,6 +194,7 @@ export function WorkPage({ draftId }: { draftId?: string }) {
           inputs: jobInputs,
           ...(skill !== "auto" ? { skillId: skill } : {}),
         })
+        .then(() => api.jobs.setEvaluations({ id: draftId, evaluations }))
         .catch((e) => toast.error(message(e)));
     }, 600);
     return () => clearTimeout(timer);
@@ -199,6 +208,7 @@ export function WorkPage({ draftId }: { draftId?: string }) {
     verifyLines,
     jobInputs,
     skill,
+    evaluations,
   ]);
 
   const projectList = projects.data ?? [];
@@ -223,6 +233,24 @@ export function WorkPage({ draftId }: { draftId?: string }) {
       cancelled = true;
     };
   }, [effectiveProject, draftId]);
+
+  // The project's reviews, shown as the default (ADR-064 §1).
+  useEffect(() => {
+    if (!effectiveProject || effectiveProject === "new") {
+      setProjectEvaluations(null);
+      return;
+    }
+    let cancelled = false;
+    api.projects
+      .workSettings({ id: effectiveProject })
+      .then((w) => {
+        if (!cancelled) setProjectEvaluations(w.evaluations);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveProject]);
 
   // Tools the skill needs (ADR-021): missing ones hold the start.
   const skillIds =
@@ -296,6 +324,7 @@ export function WorkPage({ draftId }: { draftId?: string }) {
         unsandboxed: false,
         budget,
       });
+      if (evaluations) await api.jobs.setEvaluations({ id, evaluations });
       await api.jobs.draftStart({ id });
       go(`/new/${id}`, { replace: true });
     } catch (e) {
@@ -320,6 +349,7 @@ export function WorkPage({ draftId }: { draftId?: string }) {
         inputs: jobInputs,
         ...(skill !== "auto" ? { skillId: skill } : {}),
       });
+      await api.jobs.setEvaluations({ id: draftId, evaluations });
       if (noSandbox && !draftJob.data?.unsandboxed) {
         if (!unsandboxed)
           throw new Error(
@@ -519,6 +549,14 @@ export function WorkPage({ draftId }: { draftId?: string }) {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">{t(AUTONOMY_SAYS[autonomy])}</p>
+              </div>
+              <div className="col-span-2">
+                <EvaluationsPicker
+                  help="work.evaluations"
+                  value={evaluations}
+                  onChange={setEvaluations}
+                  project={projectEvaluations}
+                />
               </div>
               <div data-help="work.tokens" className="space-y-1.5">
                 <Label htmlFor="w-tok">{t("Token limit")}</Label>

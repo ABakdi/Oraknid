@@ -11,6 +11,7 @@ import {
 import {
   canRunSideBySide,
   EscalationPolicy,
+  evaluationRules,
   freshQuestions,
   type GatedAction,
   readingOf,
@@ -34,6 +35,7 @@ import type { EventBus } from "../events/bus.ts";
 import { forgetDriftVerdicts } from "../harness/confirm.ts";
 import { runController } from "../harness/controller.ts";
 import { checkRefusal } from "../harness/gate.ts";
+import type { ReviewPort } from "../harness/reviews.ts";
 import type { AttemptJob, AttemptOutcome } from "../harness/types.ts";
 import { createVerifier } from "../harness/verifier.ts";
 import type { VisualDeps } from "../harness/visual.ts";
@@ -80,6 +82,12 @@ import { forgetTaskVerdicts } from "./auto-mode.ts";
 import { BrainStopped, type EyeBrain } from "./brain.ts";
 import { parseBuiltinCheck } from "./builtin-checks.ts";
 import { endingKey, JobEndingState, readEnding, runEnding } from "./ending.ts";
+import {
+  type Advance,
+  advanceEvaluation,
+  jobEvaluations,
+  reviewPortOf as reviewPortFallback,
+} from "./evaluations.ts";
 import { keepExperience } from "./experience.ts";
 import { readInside, renderInputs } from "./inputs.ts";
 import {
@@ -129,6 +137,10 @@ export interface EyeDeps {
   driftJudgeMs?: number;
   /** Attempts per task before The Eye stops and asks me. */
   maxAttempts?: number;
+  /** Where evaluation steps open their reviews (ADR-064 §1; the inbox until the review page is wired). */
+  reviews?: ReviewPort;
+  /** How long an app under review may take to answer. */
+  appWaitMs?: number;
   /** The visual check's renderer and judge (ADR-064 §5); without them it is skipped. */
   visual?: VisualDeps;
 }
@@ -325,6 +337,8 @@ export function eyeProgram(d: EyeDeps): JobProgram {
             silk: silkText(d.silk, job0.id),
             digest: layout,
             verify: job0.verify,
+            // The evaluation steps the job's setting allows (ADR-064 §1).
+            evaluations: evaluationRules(jobEvaluations(d.db, job0.id)),
           }),
       );
       await ctx.step("web:1", plan, async () => storeWeb(d, job0.id, plan));
@@ -492,19 +506,36 @@ async function runTasks(d: EyeDeps, ctx: JobContext, where: Where, parallel = fa
       const all = taskRows(d.db, ctx.jobId);
       const unfinished = all.filter((t) => t.state !== "done" && t.state !== "skipped");
       if (unfinished.length === 0 && running.size === 0) return;
-      const ready = readyTasks(
+      const startable = readyTasks(
         all.filter((t) => !t.ownerHeld && t.state !== "failed" && t.state !== "paused"),
       ).filter((t) => !running.has(t.id));
+      // Evaluation steps are mine, not an agent's (ADR-064 §1): each opens its review and waits.
+      const ready = startable.filter((t) => t.kind !== "evaluation");
+      const reviews: Extract<Advance, { kind: "waiting" }>[] = [];
+      let settled = false;
+      for (const t of startable.filter((x) => x.kind === "evaluation")) {
+        if (run.failure || run.cancelled || ctx.signal.aborted) break;
+        const a = await advanceEvaluation(d, ctx, job, t, where.cwd);
+        if (a.kind === "settled") settled = true;
+        else reviews.push(a);
+      }
+      // Approved, or my notes became tasks: the Web changed, look again.
+      if (settled) continue;
+      const forMe = reviewWait(d, reviews);
       // A task no longer ready no longer waits for anything.
       const readyIds = new Set(ready.map((t) => t.id));
       for (const t of all) if (!readyIds.has(t.id)) work.clear(job.id, t.id);
       if (ready.length === 0 && running.size > 0) {
-        await Promise.race(running.values());
+        await Promise.race([...running.values(), ...forMe.wait]);
+        forMe.cancel();
         if (run.cancelled) return await cancelled();
         continue;
       }
       if (ready.length === 0) {
+        forMe.cancel();
         if (run.failure) throw run.failure.error;
+        // Nothing else can go on: the job waits for me, saying for what (ADR-064 §1).
+        if (reviews.length) throw new AwaitingOwner(reviews[0]?.reviewId as string, forMe.reason);
         const held = unfinished.filter((t) => t.ownerHeld).map((t) => t.title);
         throw new Error(
           held.length
@@ -581,15 +612,51 @@ async function runTasks(d: EyeDeps, ctx: JobContext, where: Where, parallel = fa
       if (running.size === 0) {
         if (run.failure) throw run.failure.error;
         if (ctx.signal.aborted) throw ctx.signal.reason ?? new Error("Stopped.");
-        if (!waiting) return;
+        if (!waiting) {
+          forMe.cancel();
+          if (reviews.length) throw new AwaitingOwner(reviews[0]?.reviewId as string, forMe.reason);
+          return;
+        }
       }
-      // A task ending, room coming back, or a setting changing: look again.
-      await Promise.race([...running.values(), ...(waiting ? [work.changed(2000)] : [])]);
+      // A task ending, room coming back, a setting changing, or my word on a review: look again.
+      await Promise.race([
+        ...running.values(),
+        ...(waiting ? [work.changed(2000)] : []),
+        ...forMe.wait,
+      ]);
+      forMe.cancel();
       if (run.cancelled) return await cancelled();
     }
   } finally {
     work.forgetJob(ctx.jobId);
   }
+}
+
+/**
+ * The reviews a job waits on (ADR-064 §1): a promise that settles when I
+ * say something on one, or when one passes by itself; and the job's
+ * waiting words. `cancel` stops listening.
+ */
+function reviewWait(d: EyeDeps, reviews: Extract<Advance, { kind: "waiting" }>[]) {
+  if (!reviews.length) return { wait: [] as Promise<unknown>[], cancel: () => {}, reason: "" };
+  const stop = new AbortController();
+  const port = reviewPortFallback(d);
+  const passAt = Math.min(...reviews.map((r) => r.passAt ?? Number.POSITIVE_INFINITY));
+  const waits: Promise<unknown>[] = reviews.map((r) =>
+    port.waitForOutcome(r.reviewId, stop.signal).catch(() => {}),
+  );
+  if (Number.isFinite(passAt))
+    waits.push(
+      new Promise<void>((resolve) => {
+        const t = setTimeout(resolve, Math.max(0, passAt - d.now()));
+        stop.signal.addEventListener("abort", () => clearTimeout(t), { once: true });
+      }),
+    );
+  return {
+    wait: [Promise.race(waits)],
+    cancel: () => stop.abort(),
+    reason: reviews.map((r) => r.reason).join("; "),
+  };
 }
 
 /** The work every job's tasks ask before starting (ADR-050); one of its own when none is given. */

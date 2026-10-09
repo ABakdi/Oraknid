@@ -18,6 +18,7 @@ import { legLimits, stopWaiting } from "../eye/leg-work.ts";
 import type { LegRegistry } from "../legs/registry.ts";
 import { legSessionLimit } from "../resources/work.ts";
 import { CLAUDE_SHARE, readSetting } from "../settings.ts";
+import { askOnceToUnpause, pausedAbove } from "./ladder.ts";
 import type { AttemptDeps, AttemptJob, AttemptOutcome, TaskRow } from "./types.ts";
 
 // Routing and admission for a task's attempt (ADR-052 §3, ADR-016, ADR-050;
@@ -53,7 +54,7 @@ export interface Routed {
 }
 
 /**
- * The model that takes the task now, waiting while its Leg is paused or
+ * The model that takes the task now (a paused Leg's task waits for it only when no other can take it, ADR-064 §7), waiting while
  * every Leg that could take it is busy; or, when none can, the attempt's
  * outcome: blocked, with why and until when.
  */
@@ -65,28 +66,7 @@ export async function pickRoute(
 ): Promise<Routed | Extract<AttemptOutcome, { kind: "blocked" }>> {
   const now = d.now;
   const taskId = task.id;
-  // ── A paused Leg's task waits for it (unless I reassign it) ─────
   let waitedFor = legLimits(d.db, job.id, taskId).waitFor;
-  let saidWaitingFor = false;
-  for (;;) {
-    waitedFor = legLimits(d.db, job.id, taskId).waitFor;
-    const leg = waitedFor ? d.registry.get(waitedFor) : null;
-    if (!leg?.paused) break;
-    if (!saidWaitingFor) {
-      saidWaitingFor = true;
-      d.bus.publish({
-        type: "task.waiting-for-leg",
-        topic: `job:${job.id}`,
-        jobId: job.id,
-        payload: {
-          taskId,
-          legId: leg.id,
-          reason: `It waits for ${leg.name}, paused; it goes on when the Leg is resumed, or on another Leg if I reassign it.`,
-        },
-      });
-    }
-    await pause(1000, signal);
-  }
 
   // ADR-009: after a usage limit, another account of the same provider is not a fallback unless I allowed it.
   const sameProvider = new Set(readSetting(d.db, SAME_PROVIDER_FALLBACK, z.array(z.string()), []));
@@ -101,10 +81,70 @@ export async function pickRoute(
   const { avoid: avoidLegs } = legLimits(d.db, job.id, taskId);
   const usable = (c: RouteCandidate) =>
     !blockedKinds.has(d.registry.require(c.legId).kind) || limitedLegs.has(c.legId);
+  // The task as routing sees it (ADR-052 §3).
+  const routeTask = () => ({
+    kind: task.kind as TaskKind,
+    difficulty: task.difficulty as Difficulty,
+    requiredCapabilities: task.requiredCapabilities as never,
+    estimatedTokens: 20_000 + Math.ceil(task.instructions.length / 4),
+    stepUp: task.stepUp,
+    pinnedModelId: task.pinnedModelId,
+    avoid: task.avoid,
+    work: (job.serverJob ? "server" : workKindOf(task)) as WorkKind,
+  });
+  // ── A paused Leg's task never waits for it while another can take it (ADR-064 §7) ──
+  let saidWaitingFor = false;
+  for (;;) {
+    waitedFor = legLimits(d.db, job.id, taskId).waitFor;
+    const leg = waitedFor ? d.registry.get(waitedFor) : null;
+    if (!leg?.paused) break;
+    const others = candidatesFor(d.registry, job.allowedLegIds).filter(
+      (c) => c.legId !== leg.id && !avoidLegs.has(c.legId) && usable(c),
+    );
+    if (
+      route(routeTask(), others, { moneyAllowed: job.moneyAllowed, quotaShare: null }).ranked[0]
+    ) {
+      stopWaiting(d.db, job.id, taskId);
+      waitedFor = null;
+      d.bus.publish({
+        type: "task.leg-paused-goes-on",
+        topic: `job:${job.id}`,
+        jobId: job.id,
+        payload: {
+          taskId,
+          legId: leg.id,
+          reason: `${leg.name} is paused: the strongest model available takes the task for now.`,
+        },
+      });
+      break;
+    }
+    if (!saidWaitingFor) {
+      saidWaitingFor = true;
+      d.bus.publish({
+        type: "task.waiting-for-leg",
+        topic: `job:${job.id}`,
+        jobId: job.id,
+        payload: {
+          taskId,
+          legId: leg.id,
+          reason: `It waits for ${leg.name}, paused, as no other Leg can take it; it goes on when the Leg is resumed.`,
+        },
+      });
+    }
+    await pause(1000, signal);
+  }
+  // Read after the wait: a Leg resumed meanwhile is a candidate again.
   const allowed = candidatesFor(d.registry, job.allowedLegIds).filter(
     (c) => !avoidLegs.has(c.legId),
   );
-  const back = waitedFor ? allowed.filter((c) => c.legId === waitedFor) : [];
+  const backTo = waitedFor ? allowed.filter((c) => c.legId === waitedFor) : [];
+  // Back to its Leg when that Leg can take it; one out of quota or failing hands it to the others.
+  const back =
+    backTo.length &&
+    route(routeTask(), backTo.filter(usable), { moneyAllowed: job.moneyAllowed, quotaShare: null })
+      .ranked[0]
+      ? backTo
+      : [];
   const all = back.length ? back : allowed;
   const candidates = all.filter(usable);
   const heldBack = all.length - candidates.length;
@@ -112,19 +152,9 @@ export async function pickRoute(
   const budget = d.db.select({ budget: jobs.budget }).from(jobs).where(eq(jobs.id, job.id)).get()
     ?.budget as Budget | undefined;
   const quotaShare = budget?.quotaShare ?? null;
-  const estimatedTokens = 20_000 + Math.ceil(task.instructions.length / 4);
   // The kind of work, for the ladder's rungs (ADR-052 §3).
   const work: WorkKind = job.serverJob ? "server" : workKindOf(task);
-  const routeTask = {
-    kind: task.kind as TaskKind,
-    difficulty: task.difficulty as Difficulty,
-    requiredCapabilities: task.requiredCapabilities as never,
-    estimatedTokens,
-    stepUp: task.stepUp,
-    pinnedModelId: task.pinnedModelId,
-    avoid: task.avoid,
-    work,
-  };
+  const forRoute = routeTask();
   const routeOptions = {
     moneyAllowed: job.moneyAllowed,
     quotaShare,
@@ -145,9 +175,9 @@ export async function pickRoute(
     ...c,
     sessions: { running: d.supervisor.busy(c.legId), limit: legSessionLimit(d.registry, c.legId) },
   });
-  let routed = route(routeTask, candidates.filter(free).map(withSessions), routeOptions);
+  let routed = route(forRoute, candidates.filter(free).map(withSessions), routeOptions);
   let saidWaiting: string | null = null;
-  while (!routed.ranked[0] && route(routeTask, candidates, routeOptions).ranked[0]) {
+  while (!routed.ranked[0] && route(forRoute, candidates, routeOptions).ranked[0]) {
     const reason = machineBusy
       ? `It waits for room: ${machineBusy}.`
       : "Every Leg that could take it is busy; it starts when one is free.";
@@ -162,7 +192,7 @@ export async function pickRoute(
     }
     machineBusy = null;
     await pause(1000, signal);
-    routed = route(routeTask, candidates.filter(free).map(withSessions), routeOptions);
+    routed = route(forRoute, candidates.filter(free).map(withSessions), routeOptions);
   }
   const pick = routed.ranked[0];
   if (!pick) {
@@ -208,15 +238,23 @@ export async function pickRoute(
       const open = candidatesFor(d.registry, job.allowedLegIds).filter(
         (c) => !avoidLegs.has(c.legId) && usable(c),
       );
-      const r = route(
-        { ...routeTask, avoid: [...new Set([...task.avoid, leg.legModelId])] },
-        open,
-        {
-          ...routeOptions,
-          claudeShare: claudeShareOf(d, job.id, budget),
-        },
-      );
-      const up = nextRung(mine, r.ranked, !!task.pinnedModelId || back.length > 0);
+      const r = route({ ...forRoute, avoid: [...new Set([...task.avoid, leg.legModelId])] }, open, {
+        ...routeOptions,
+        claudeShare: claudeShareOf(d, job.id, budget),
+      });
+      const held = !!task.pinnedModelId || back.length > 0;
+      const up = nextRung(mine, r.ranked, held);
+      // The top available, failed: a stronger model only paused is asked about once (ADR-064 §7).
+      if (up === "top" && !held) {
+        const paused = pausedAbove(
+          candidatesFor(d.registry, job.allowedLegIds).filter((c) => !avoidLegs.has(c.legId)),
+          mine,
+          work,
+          task.kind as TaskKind,
+        );
+        if (paused)
+          askOnceToUnpause(d, job.id, taskId, paused, { legName: leg.legName, model: leg.model });
+      }
       return up === "top" ? null : up;
     },
   };
