@@ -467,3 +467,40 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     await s.kill();
   });
 });
+
+describe("a hosted catalog of hundreds of models (OpenRouter, 2026-10-09)", () => {
+  it("lists them quickly from what the catalog says, spending no request per model", async () => {
+    const asked: string[] = [];
+    const data = Array.from({ length: 300 }, (_, i) => ({
+      id: `vendor/model-${i}`,
+      name: `Model ${i}`,
+      context_length: 8192 * (1 + (i % 4)),
+      supported_parameters: i % 3 ? ["tools", "temperature"] : ["temperature"],
+    }));
+    const fakeFetch = (async (url: string | URL) => {
+      asked.push(String(url));
+      if (String(url).endsWith("/models")) return new Response(JSON.stringify({ data }));
+      return new Response("nope", { status: 404 });
+    }) as typeof fetch;
+    const t = Date.now();
+    const p = await createOraknidAgentAdapter({ fetch: fakeFetch }).probe(
+      {
+        id: "or",
+        name: "OpenRouter",
+        kind: "oraknid-agent",
+        config: { baseUrl: "https://openrouter.ai/api/v1" },
+      },
+      null,
+    );
+    expect(Date.now() - t).toBeLessThan(2000);
+    expect(asked).toEqual(["https://openrouter.ai/api/v1/models"]);
+    expect(p.ok).toBe(true);
+    expect(p.models).toHaveLength(300);
+    expect(p.models[1]).toMatchObject({
+      displayName: "Model 1",
+      contextWindow: 16384,
+      toolCalls: "native",
+    });
+    expect(p.models[0]?.toolCalls).toBe("none");
+  });
+});

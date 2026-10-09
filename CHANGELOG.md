@@ -3,6 +3,11 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.6.2 — 2026-10-09 (pre-release)
+
+- **A design with no `index.html` opens for review:** Oraknid shows its screens by name, and the one that fits the device you picked (phone, landscape, tablet, desktop) opens by itself. Before, the review said "Not in the design".
+- **Adding a hosted model catalog (OpenRouter) no longer hangs on "testing":** each model's context window and tool support are read from the catalog itself, with no request per model and nothing spent testing tools. Only a server on this computer or your network is asked further, within a 20-second budget.
+
 ## 0.6.1 — 2026-10-09 (pre-release)
 
 - **Fixed: a fresh install or an update to 0.6.0 failed while building the guide** (a punctuation rule of the product site, broken by the new reviews page). An update that hit it rolled back by itself.

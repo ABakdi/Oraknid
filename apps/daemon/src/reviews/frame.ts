@@ -1,4 +1,11 @@
-import { createReadStream, readFileSync, realpathSync, statSync } from "node:fs";
+import {
+  createReadStream,
+  existsSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import {
   request as httpRequest,
   type IncomingHttpHeaders,
@@ -147,6 +154,69 @@ export function designFile(root: string, urlPath: string): string | null {
   }
 }
 
+/**
+ * A design folder with no index.html (2026-10-09: the Keys design had
+ * desktop.html, phone-landscape.html, phone-portrait.html and brand/ only,
+ * and the review opened on "Not in the design"): a page of its screens,
+ * made by Oraknid, nothing written into the design. Each screen links; the
+ * one whose name fits the frame's size (phone, landscape, tablet, desktop)
+ * opens by itself.
+ */
+export function designIndex(root: string, urlPath: string): string | null {
+  let path: string;
+  try {
+    path = decodeURIComponent(urlPath.split("?")[0] ?? "/");
+  } catch {
+    return null;
+  }
+  if (path.includes("\0") || path.includes("\\")) return null;
+  const parts = path.split("/").filter(Boolean);
+  if (parts.some((p) => p.startsWith("."))) return null;
+  let dir: string;
+  try {
+    dir = realpathSync(join(root, ...parts));
+    if (dir !== root && !dir.startsWith(root + sep)) return null;
+    if (!statSync(dir).isDirectory()) return null;
+  } catch {
+    return null;
+  }
+  const pages: string[] = [];
+  for (const name of readdirSync(dir).sort()) {
+    if (name.startsWith(".")) continue;
+    const full = join(dir, name);
+    try {
+      const st = statSync(full);
+      if (st.isFile() && /\.html?$/i.test(name)) pages.push(name);
+      else if (st.isDirectory() && existsSync(join(full, "index.html"))) pages.push(`${name}/`);
+    } catch {}
+  }
+  if (!pages.length) return null;
+  const esc = (t: string) =>
+    t.replace(
+      /[&<>"]/g,
+      (c) =>
+        `&${({ "&": "amp", "<": "lt", ">": "gt", '"': "quot" } as Record<string, string>)[c]};`,
+    );
+  const label = (n: string) =>
+    n
+      .replace(/\/$/, "")
+      .replace(/\.html?$/i, "")
+      .replace(/[-_]+/g, " ");
+  const items = pages
+    .map((n) => `<li><a href="${encodeURI(n)}">${esc(label(n))}</a></li>`)
+    .join("");
+  return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>The design's screens</title>
+<style>body{font:15px system-ui,sans-serif;margin:2rem;color:#ddd;background:#16161a}a{color:#9cf}li{margin:.4rem 0}small{color:#999}</style>
+<h1>The design's screens</h1><small>This design has no index.html: its pages, by name. The one that fits this size opens by itself.</small>
+<ul>${items}</ul>
+<script>
+(function(){var w=innerWidth,h=innerHeight,land=w>h;
+var want=w<600||h<500?(land?["phone-landscape","landscape","phone","mobile"]:["phone-portrait","portrait","phone","mobile"]):w<1100?(land?["tablet-landscape","tablet","desktop"]:["tablet-portrait","tablet","phone"]):["desktop","laptop","index","main","home"];
+var links=[].slice.call(document.querySelectorAll("a"));
+for(var i=0;i<want.length;i++){for(var j=0;j<links.length;j++){var t=links[j].textContent.toLowerCase().replace(/ /g,"-");if(t===want[i]||t.indexOf(want[i])===0){location.replace(links[j].href);return;}}}})();
+</script>`;
+}
+
 export interface FrameOptions {
   reviews: Reviews;
   /** The daemon's port, known once it listens. */
@@ -231,6 +301,12 @@ export function reviewFrames(o: FrameOptions) {
     }
     const root = o.reviews.designRoot(row);
     const file = root ? designFile(root, req.url ?? "/") : null;
+    const listing = !file && root ? designIndex(root, req.url ?? "/") : null;
+    if (listing) {
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(req.method === "HEAD" ? undefined : injectInto(listing, OVERLAY_TAG));
+      return;
+    }
     if (!file) {
       res.statusCode = 404;
       res.setHeader("Content-Type", "text/html; charset=utf-8");

@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  realpathSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -25,7 +26,7 @@ import { resolvePaths } from "../paths.ts";
 import { fakeOs } from "../testing/fake-os.ts";
 import { seedJob } from "../testing/fixtures.ts";
 import { readsAsFeedback } from "./feedback.ts";
-import { designFile, injectInto, OVERLAY_TAG, reviewKeyOf } from "./frame.ts";
+import { designFile, designIndex, injectInto, OVERLAY_TAG, reviewKeyOf } from "./frame.ts";
 import { OVERLAY_JS, OVERLAY_PATH } from "./overlay.ts";
 
 // Reviews (ADR-064, M16.1): the API and its rounds, the frame's own origin
@@ -519,5 +520,29 @@ describe("feedback in the chat", () => {
     expect(readsAsFeedback("stop the job")).toBe(false);
     expect(readsAsFeedback("cancel, the layout is wrong")).toBe(false);
     expect(readsAsFeedback("how far along are you?")).toBe(false);
+  });
+});
+
+describe("a design without index.html (2026-10-09, the Keys design)", () => {
+  it("lists its screens instead of 'Not in the design', and picks the one that fits the size", () => {
+    const root = mkdtempSync(join(tmpdir(), "oraknid-design-"));
+    for (const f of ["desktop.html", "phone-landscape.html", "phone-portrait.html", "styles.css"])
+      writeFileSync(join(root, f), "<p>x</p>");
+    mkdirSync(join(root, "brand"));
+    writeFileSync(join(root, "brand", "index.html"), "<p>logo</p>");
+    mkdirSync(join(root, ".git"));
+    const page = designIndex(root, "/") ?? "";
+    expect(page).toContain('href="desktop.html"');
+    expect(page).toContain('href="phone-landscape.html"');
+    expect(page).toContain('href="brand/"');
+    expect(page).not.toContain("styles.css");
+    expect(page).not.toContain(".git");
+    expect(page).toContain("phone-landscape");
+    // Only folders inside the design, never outside it.
+    expect(designIndex(root, "/../")).toBeNull();
+    expect(designIndex(root, "/.git/")).toBeNull();
+    // A design with an index.html serves it as before.
+    writeFileSync(join(root, "index.html"), "<p>home</p>");
+    expect(designFile(root, "/")).toBe(join(realpathSync(root), "index.html"));
   });
 });

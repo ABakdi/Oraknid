@@ -101,6 +101,8 @@ export interface OraknidAgentDeps {
   sessionsDir?: string;
   /** How many of a server's models the probe tests (each test is one tiny request). */
   probeLimit?: number;
+  /** How long the probe may spend testing models (tool calls, context windows) before it lists the rest as they are. */
+  probeBudgetMs?: number;
   /** The Leg's API key for the probe's test request (sessions get theirs at start). */
   credentialOf?: (leg: LegConfig) => Promise<string | null>;
 }
@@ -206,19 +208,32 @@ export function createOraknidAgentAdapter(deps: OraknidAgentDeps = {}): LegAdapt
           };
         }
       }
+      // A hosted catalog (OpenRouter lists hundreds) says each model's window and tools itself:
+      // nothing is asked per model there, and no request is spent testing tools. Only a server on
+      // this computer or the network is asked its own routes, and only the first few models
+      // without a listed answer are tried with a tool call, within one time budget (2026-10-09:
+      // an OpenRouter Leg "stuck in testing" for minutes, 350 models asked one by one).
       const limit = deps.probeLimit ?? 8;
+      const budgetEnds = Date.now() + (deps.probeBudgetMs ?? 20_000);
       const models: ModelOffer[] = [];
-      for (const [i, e] of found.entries()) {
+      let tried = 0;
+      for (const e of found) {
+        const inTime = Date.now() < budgetEnds;
+        const local = isLocal(e.baseUrl);
         const toolCalls =
-          i < limit ? await toolCalling(e.baseUrl, e.model, credential, e.toolCalls) : undefined;
+          e.toolCalls ??
+          (inTime && tried++ < limit
+            ? await toolCalling(e.baseUrl, e.model, credential, e.toolCalls)
+            : undefined);
+        const window =
+          e.contextWindow ??
+          (local && inTime ? await contextWindowOf(http, e.baseUrl, e.model) : null) ??
+          cfg.contextWindow;
         models.push({
           model: e.model,
           displayName: e.displayName ?? e.model,
           effortLevels: [],
-          contextWindow:
-            e.contextWindow ??
-            (await contextWindowOf(http, e.baseUrl, e.model)) ??
-            cfg.contextWindow,
+          contextWindow: window ?? null,
           ...(toolCalls ? { toolCalls } : {}),
         });
       }
@@ -680,30 +695,71 @@ function mechanical(messages: ModelMessage[]): string {
   return `Tool calls made so far (the model could not summarise them):\n${calls.slice(-60).join("\n")}`;
 }
 
+/** A model as a server's /models lists it: vLLM's `max_model_len`, OpenRouter's `context_length` and `supported_parameters`. */
+interface Listed {
+  id: string;
+  name?: string;
+  max_model_len?: number;
+  context_length?: number;
+  context_window?: number;
+  supported_parameters?: string[];
+}
+
+/** What the listing already says about a model: its window, and whether it takes tools (no request spent). */
+function endpointOf(baseUrl: string, model: string, m: Listed | undefined): Endpoint {
+  const window = m?.max_model_len ?? m?.context_length ?? m?.context_window;
+  const params = m?.supported_parameters;
+  return {
+    model,
+    baseUrl,
+    ...(m?.name && m.name !== model ? { displayName: m.name } : {}),
+    ...(window ? { contextWindow: window } : {}),
+    ...(params
+      ? { toolCalls: params.includes("tools") ? ("native" as const) : ("none" as const) }
+      : {}),
+  };
+}
+
+/** A server on this computer or the local network: the only kind asked its own context-window routes. */
+function isLocal(baseUrl: string): boolean {
+  try {
+    const h = new URL(baseUrl).hostname;
+    return (
+      h === "localhost" ||
+      h === "::1" ||
+      h.endsWith(".local") ||
+      /^127\./.test(h) ||
+      /^10\./.test(h) ||
+      /^192\.168\./.test(h) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(h)
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** A server's models: from /models, or the ones configured when it doesn't list them. */
 async function listModels(
   http: typeof fetch,
   baseUrl: string,
   wanted: string[],
 ): Promise<Endpoint[]> {
-  let listed: { id: string; max_model_len?: number }[] = [];
+  let listed: Listed[] = [];
   try {
-    const res = await http(`${baseUrl}/models`, { signal: AbortSignal.timeout(5000) });
+    const res = await http(`${baseUrl}/models`, { signal: AbortSignal.timeout(10_000) });
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-    listed = ((await res.json()) as { data?: { id: string; max_model_len?: number }[] }).data ?? [];
+    listed = ((await res.json()) as { data?: Listed[] }).data ?? [];
   } catch (error) {
     if (!wanted.length) throw error;
   }
-  if (!wanted.length)
-    return listed.map((m) => ({
-      model: m.id,
+  if (!wanted.length) return listed.map((m) => endpointOf(baseUrl, m.id, m));
+  return wanted.map((model) =>
+    endpointOf(
       baseUrl,
-      ...(m.max_model_len ? { contextWindow: m.max_model_len } : {}),
-    }));
-  return wanted.map((model) => {
-    const m = listed.find((x) => x.id === model);
-    return { model, baseUrl, ...(m?.max_model_len ? { contextWindow: m.max_model_len } : {}) };
-  });
+      model,
+      listed.find((x) => x.id === model),
+    ),
+  );
 }
 
 /**
