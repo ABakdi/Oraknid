@@ -247,7 +247,7 @@ describe("skills library over the API", () => {
       expect(edited.skill.version).toBe(2);
       expect((await api.skills.get({ id: up.skill.id, version: 1 })).body).toBe("Read, classify.");
       await api.skills.remove({ id: up.skill.id });
-      expect(await api.skills.list()).toHaveLength(3);
+      expect(await api.skills.list()).toHaveLength(6);
     } finally {
       await d.close();
     }

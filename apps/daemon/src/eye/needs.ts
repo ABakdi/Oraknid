@@ -291,7 +291,10 @@ export async function chooseJobNeeds(d: NeedsDeps, ctx: JobContext, cwd: string)
     }
   });
   if (!proposal) return;
-  const { offer, missing } = offerOf(d, job, proposal);
+  // What is new to the job, as it was when asked: applying it changes the job, not this.
+  const { offer, missing } = await ctx.step("needs:offer", null, async () =>
+    offerOf(d, job, proposal),
+  );
   if (!offer.length && !missing.length) {
     await ctx.step("needs:none", null, async () => {
       writeSetting(d.db, jobNeedsKey(job.id), JobNeeds, { skills: [], ui: proposal.ui });
