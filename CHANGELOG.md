@@ -3,7 +3,9 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
-## Unreleased
+## 0.7.0 — 2026-10-10 (pre-release)
+
+The token economy ([ADR-066](docs/04-Decisions/ADR-066-Token-Economy.md)): agents hit their limits far more slowly under Oraknid.
 
 - **A request too large is no longer "Out of quota":** when a provider refuses one request for its size (Groq's free tier: "Request too large … Limit 8000, Requested 12446"), Oraknid remembers that model's largest request, sends bigger work to a model with room, and keeps the agent healthy for everything that fits.
 - **A job is named once:** when it is made, again only if you changed its goal before starting it, and described once when it ends. Before, a draft was renamed after every pause in your typing and a job "ended" again at each block, each one a full agent session.
