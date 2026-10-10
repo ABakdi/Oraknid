@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { QuotaWindow, WebPlan } from "@oraknid/contracts";
 import { and, eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
-import { attempts, legModels, legs, sessions } from "../db/schema.ts";
+import { attemptEvents, attempts, legModels, legs, sessions } from "../db/schema.ts";
 import { type Harness, harness } from "../testing/harness-rig.ts";
 import { type Action, scriptedLeg, type TurnContext } from "../testing/scripted-leg.ts";
 
@@ -279,6 +279,44 @@ describe("agents that aren't available (ADR-052 §4)", () => {
       /Opencode · big-pickle: rate-limited/,
     );
     expect(free.log).toHaveLength(1);
+    expect(await rig.asked(id)).toEqual([]);
+  }, 60_000);
+
+  it("a request too large for a model (Groq's 413) is its size, not its quota: remembered, the Leg healthy, another model takes it (ADR-066 §1)", async () => {
+    const said =
+      'The model server answered 413: {"error":{"message":"Request too large for model `big-pickle` in organization `org_1` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Requested 12446, please reduce your message size and try again.","type":"tokens","code":"rate_limit_exceeded"}}';
+    const free = scriptedLeg(() => [{ fail: said }], { kind: "opencode", models: ["big-pickle"] });
+    rig = await withFree(free, "big-pickle");
+    const { id } = await rig.repoJob("Pick the audio library");
+    const done = await rig.ended(id);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+    expect(tried(rig, id)).toEqual([
+      ["big-pickle", "unavailable"],
+      ["sonnet", "succeeded"],
+    ]);
+    const oc = rig.d.registry.require(rig.legIds.Opencode as string);
+    expect(oc.health).toBe("healthy");
+    expect(oc.limitedUntil).toBeNull();
+    const model = rig.d.registry.models(oc.id)[0];
+    expect(rig.d.registry.maxRequestOf(model?.id ?? "")).toBe(8000);
+    const running = rig
+      .events(id, "task.state")
+      .filter((p) => p.to === "running")
+      .map((p) => p.routing as { excluded: { why: string }[] });
+    expect(running[1]?.excluded.map((e) => e.why).join(" ")).toMatch(
+      /big-pickle: it takes at most 8000 tokens in one request/,
+    );
+    // What each session was told, by part, is on record; and the report says what each Leg spent.
+    const sizes = rig.d.db
+      .select()
+      .from(attemptEvents)
+      .where(and(eq(attemptEvents.jobId, id), eq(attemptEvents.kind, "ContextSize")))
+      .all()
+      .map((e) => e.data as { pack: number; task: number; first: number });
+    expect(sizes.length).toBeGreaterThanOrEqual(2);
+    expect(sizes.every((s) => s.pack > 0 && s.pack <= 4000 && s.task > 0 && s.first > 0)).toBe(
+      true,
+    );
     expect(await rig.asked(id)).toEqual([]);
   }, 60_000);
 

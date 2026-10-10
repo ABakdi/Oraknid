@@ -37,6 +37,20 @@ profile. I can change it any time in Settings, or per job.
   check repaired, a review of a result) run on the strongest model it may
   use, a known family before an unproven one at the same level, never on
   a model resting after its provider failed.
+- **Light calls go to a direct model** (2026-10-10,
+  [[ADR-066-Token-Economy]] §3): naming a job, my message's triage while
+  the job has a plan, the judges' first stage, summaries, fixing my
+  wording and picking a skill are one chat completion to a model behind
+  an OpenAI-compatible API (Oraknid's agent on Groq, OpenRouter, xAI, a
+  local model), free and local first, with a compact prompt (under about
+  2,000 tokens) and no tools. With none, or when all of them fail, an
+  agent session as before. Settings → The Eye → **Light calls**: a direct
+  model when there is one (default), always an agent session, or one
+  direct model first. Their tokens count as the job's.
+- **A job is named once** ([[ADR-066-Token-Economy]] §2): when it is
+  made; again only as it starts, if I changed its goal as a draft; and
+  described once when it is completed or stopped with work done, never at
+  a block.
 - A **shadow planner** can also plan every job, in the background,
   never used: the job page shows its plans beside the ones that ran,
   with their measures and how the real ones fared, so I can judge a

@@ -2,6 +2,7 @@ import { claimsDone, type Escalation, nextEscalation, worstDrift } from "../drif
 import { deprecationOf, saysCheckBroken, usageLimitOf } from "../harness.ts";
 import { type ProviderFailure, providerFailure } from "../provider-failures.ts";
 import { fence } from "../scrub.ts";
+import { type TooLarge, tooLargeOf } from "../tokens.ts";
 import { type Drift, driftOf, isSuspicion, type Signal, signalKey } from "./monitors.ts";
 
 // The only place an attempt's turn is decided (ADR-056 §6): pure, from the
@@ -24,6 +25,8 @@ export type StopReason =
 export type Unusable =
   | { kind: "deprecated"; model: string | null; replacement: string | null }
   | { kind: "limit"; until: number | null; reason: string }
+  /** A request larger than the model takes (ADR-066 §1): another model, never a quota. */
+  | ({ kind: "too-large" } & TooLarge)
   | { kind: "provider"; failure: ProviderFailure };
 
 /**
@@ -42,6 +45,8 @@ export function unusableOf(
   const old = deprecationOf(error);
   if (old && (!old.model || model === old.model || model.endsWith(`/${old.model}`)))
     return { kind: "deprecated", ...old };
+  const big = tooLargeOf(error);
+  if (big) return { ...big, kind: "too-large" };
   const limit = usageLimitOf(error, now);
   if (limit) return { kind: "limit", ...limit };
   const failure =

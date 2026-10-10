@@ -31,6 +31,13 @@ import type { AttemptDeps, AttemptJob, AttemptOutcome, TaskRow } from "./types.t
 /** The providers (Leg kinds) for which I allowed same-provider fallback (ADR-009). */
 export const SAME_PROVIDER_FALLBACK = "fallback.sameProvider";
 
+/**
+ * About how large one request of an agent's session is before its own work
+ * piles up: the agent's own prompt and tools (3–6k tokens for the CLIs) and
+ * the context pack (under 4k, ADR-066 §4).
+ */
+export const TASK_REQUEST_TOKENS = 9_000;
+
 /** A task routed: the model that takes it, how, and the ladder above it. */
 export interface Routed {
   pick: Route;
@@ -91,6 +98,8 @@ export async function pickRoute(
     pinnedModelId: task.pinnedModelId,
     avoid: task.avoid,
     work: (job.serverJob ? "server" : workKindOf(task)) as WorkKind,
+    // One request of an agent's session: its own prompt and tools, the context pack, the task (ADR-066 §1).
+    requestTokens: TASK_REQUEST_TOKENS + Math.ceil(task.instructions.length / 4),
   });
   // ── A paused Leg's task never waits for it while another can take it (ADR-064 §7) ──
   let saidWaitingFor = false;
@@ -149,8 +158,12 @@ export async function pickRoute(
   const candidates = all.filter(usable);
   const heldBack = all.length - candidates.length;
   // Read now, so a budget I changed while the job runs applies to the next task.
-  const budget = d.db.select({ budget: jobs.budget }).from(jobs).where(eq(jobs.id, job.id)).get()
-    ?.budget as Budget | undefined;
+  const row = d.db
+    .select({ budget: jobs.budget, priority: jobs.priority })
+    .from(jobs)
+    .where(eq(jobs.id, job.id))
+    .get();
+  const budget = row?.budget as Budget | undefined;
   const quotaShare = budget?.quotaShare ?? null;
   // The kind of work, for the ladder's rungs (ADR-052 §3).
   const work: WorkKind = job.serverJob ? "server" : workKindOf(task);
@@ -159,6 +172,8 @@ export async function pickRoute(
     moneyAllowed: job.moneyAllowed,
     quotaShare,
     claudeShare: claudeShareOf(d, job.id, budget),
+    // A job I put ahead may spend its Legs' windows ahead of their time (ADR-066 §5).
+    urgent: (row?.priority ?? 0) > 0,
   };
   // A Leg runs at most its limit of task sessions at once (ADR-016). When only busy Legs could
   // take the task, it waits for one, without blocking its job.
@@ -296,6 +311,7 @@ export function candidatesFor(registry: LegRegistry, allowed: string[]): RouteCa
         cooldown: registry.cooldownOf(leg.id, m.id),
         legProviderFailures: registry.providerStreak(leg.id),
         legKind: leg.kind,
+        maxRequestTokens: registry.maxRequestOf(m.id),
       });
     }
   }

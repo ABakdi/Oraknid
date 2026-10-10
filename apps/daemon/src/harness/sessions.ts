@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
-import { HANDOFF_REQUEST, type RouteCandidate } from "@oraknid/core";
+import {
+  aheadOfPace,
+  estimateTokens,
+  HANDOFF_REQUEST,
+  PACE_GRACE,
+  type RouteCandidate,
+} from "@oraknid/core";
 import {
   asRequest,
   type Capabilities,
@@ -18,7 +24,7 @@ import { EndAttempt, markUnusable } from "./apply.ts";
 import type { AttemptState, TurnEnded } from "./facts.ts";
 import { asPermission, asPreTool, type Gate } from "./gate.ts";
 import type { AttemptLog } from "./log.ts";
-import { contextPack } from "./pack.ts";
+import { contextPackSized } from "./pack.ts";
 import { handoffFromAttempt, recordEvents } from "./record.ts";
 import { jobTools } from "./tools.ts";
 import type { AttemptDeps, AttemptJob, AttemptWhere, TaskRow } from "./types.ts";
@@ -57,6 +63,20 @@ export function legServers(d: AttemptDeps, job: AttemptJob, legId: string) {
       text = await serversForLeg(d, job, legId, list);
     },
   };
+}
+
+/** Where a session on a Leg short of tokens compacts, as a share of its window (ADR-066 §5). */
+export const SCARCE_COMPACT_AT = 0.5;
+
+/**
+ * A Leg short of tokens (ADR-066 §5): a window with less than a quarter
+ * left, or used well ahead of its time.
+ */
+export function scarce(leg: Pick<RouteCandidate, "windows">, now: number): boolean {
+  return leg.windows.some(
+    (w) =>
+      (w.utilization !== null && w.utilization > 0.75) || (aheadOfPace(w, now) ?? 0) > PACE_GRACE,
+  );
 }
 
 export interface SessionSpec {
@@ -184,6 +204,12 @@ export function createSessionManager(s: SessionSpec) {
       st.tokensBaseline = 0;
       // Its own auto mode only with Oraknid's hook in it; careful keeps every prompt Oraknid's (ADR-053).
       const auto = caps.preToolHook && job.autonomy !== "careful";
+      const packed = contextPackSized(d, job, task, {
+        contextWindow: leg.profile.contextWindow ?? null,
+        ws: s.ws,
+        toolRows: s.toolRows,
+        serversText: s.servers.text(),
+      });
       try {
         session = await d.supervisor.start({
           legId: leg.legId,
@@ -193,12 +219,7 @@ export function createSessionManager(s: SessionSpec) {
           taskId: task.id,
           attemptId: s.attemptId,
           cwd: s.ws.cwd,
-          systemPrompt: contextPack(d, job, task, {
-            contextWindow: leg.profile.contextWindow ?? null,
-            ws: s.ws,
-            toolRows: s.toolRows,
-            serversText: s.servers.text(),
-          }),
+          systemPrompt: packed.text,
           prompt,
           ...(resume ? { resumeFrom: resume } : {}),
           unsandboxed: job.unsandboxed,
@@ -211,6 +232,8 @@ export function createSessionManager(s: SessionSpec) {
           permissionMode: auto ? "auto" : "ask",
           ...(auto ? { onPreToolUse } : {}),
           ...(mcp ? { tools: mcp } : {}),
+          // A Leg whose tokens are scarce compacts its history earlier (ADR-066 §5).
+          ...(scarce(leg, d.now()) ? { compactAt: SCARCE_COMPACT_AT } : {}),
         });
       } catch (error) {
         if (signal.aborted) throw error;
@@ -236,6 +259,15 @@ export function createSessionManager(s: SessionSpec) {
         legId: leg.legId,
         model: leg.model,
         resumed: resume,
+      });
+      // What it was told, by part, before its first message (ADR-066 §4).
+      trail.append("ContextSize", {
+        sessionId: session.id,
+        system: estimateTokens(packed.text),
+        pack: packed.pack,
+        ...packed.size,
+        rest: packed.rest,
+        first: estimateTokens(prompt),
       });
       return session;
     },

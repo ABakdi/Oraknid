@@ -5,6 +5,7 @@ import type {
   LegHealth,
   TaskKind,
 } from "@oraknid/contracts";
+import { aheadOfPace, PACE_GRACE } from "./tokens.ts";
 
 // Model-aware routing (The-Eye → Routing, ADR-013, BR-21): the smallest
 // model and effort that will reliably do the task, sparing scarce windows.
@@ -29,6 +30,8 @@ export interface RouteCandidate {
   sessions?: { running: number; limit: number };
   /** Its Leg's kind ("claude-code"…), for a job's Claude share (ADR-052 §3). */
   legKind?: string;
+  /** The most it takes in one request, as its provider said refusing a larger one (ADR-066 §1). */
+  maxRequestTokens?: number | null;
 }
 
 /**
@@ -53,6 +56,8 @@ export interface RouteTask {
   avoid?: string[];
   /** The kind of work, for the ladder's rungs (ADR-052 §3); from `kind` when unset. */
   work?: WorkKind;
+  /** About how large one request of it is, in tokens: models that take less are left out (ADR-066 §1). */
+  requestTokens?: number;
 }
 
 export interface RouteOptions {
@@ -71,6 +76,12 @@ export interface RouteOptions {
    * only when nothing else can.
    */
   claudeShare?: { limit: number; used: number } | null;
+  /**
+   * The work is urgent (a job I marked so): windows may be spent ahead of
+   * their time (ADR-066 §5). Otherwise a window used faster than its time
+   * goes by scores lower.
+   */
+  urgent?: boolean;
 }
 
 export interface Route {
@@ -217,6 +228,14 @@ export function route(task: RouteTask, candidates: RouteCandidate[], o: RouteOpt
       out(`its context window (${window}) is too small for this task.`);
       continue;
     }
+    // A model whose provider refused a request this size takes none like it (ADR-066 §1).
+    const max = c.maxRequestTokens;
+    if (max && task.requestTokens && task.requestTokens > max) {
+      out(
+        `it takes at most ${max} tokens in one request, and this one needs about ${task.requestTokens}.`,
+      );
+      continue;
+    }
 
     score += gap === 0 ? 3 : gap === 1 ? 1 : -1;
     reasons.push(
@@ -231,6 +250,20 @@ export function route(task: RouteTask, candidates: RouteCandidate[], o: RouteOpt
     }
     score += tightest;
     if (tightest < 1) reasons.push(`${Math.round(tightest * 100)}% of its tightest window left`);
+
+    // A window is spent at the pace of its time, unless the work is urgent (ADR-066 §5).
+    if (!o.urgent && !task.pinnedModelId) {
+      const ahead = c.windows
+        .map((w) => ({ w, by: aheadOfPace(w, now) }))
+        .filter((x): x is { w: (typeof c.windows)[number]; by: number } => x.by !== null)
+        .sort((a, b) => b.by - a.by)[0];
+      if (ahead && ahead.by > PACE_GRACE) {
+        score -= ahead.by * 4;
+        reasons.push(
+          `its ${ahead.w.name} window is ${Math.round((ahead.w.utilization ?? 0) * 100)}% used with ${Math.round(((ahead.w.utilization ?? 0) - ahead.by) * 100)}% of its time gone: spared to keep its pace`,
+        );
+      }
+    }
 
     const strengths = task.requiredCapabilities.map((cap) => c.profile.strengths[cap] ?? 0);
     const capability = strengths.length

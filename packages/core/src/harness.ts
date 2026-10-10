@@ -1,4 +1,5 @@
 import { byProductOf } from "./harness/conventions.ts";
+import { tooLargeOf } from "./tokens.ts";
 
 // A harness for any model (ADR-052, Phase 15): what the jobs of 2026-10-06
 // taught. Agents read in their own words (a quota until its reset, a model
@@ -66,12 +67,16 @@ export function resetsAtFrom(text: string, now: number): number | null {
 /**
  * A usage limit in an agent's words ("Individual quota reached",
  * "rate limit", "429", "usage limit"), with its reset when it says one.
+ * A request refused for its size is never one, even when its provider
+ * calls it a rate limit (Groq's 413 "Request too large … rate_limit_exceeded",
+ * ADR-066 §1): `tooLargeOf` reads it.
  */
 export function usageLimitOf(
   text: string | null | undefined,
   now: number,
 ): { until: number | null; reason: string } | null {
   if (!text) return null;
+  if (tooLargeOf(text)) return null;
   if (
     !/quota|rate.?limit|usage limit|resource.?exhausted|\b429\b|too many requests|limit (?:reached|exceeded)|out of credits/i.test(
       text,

@@ -1,9 +1,11 @@
 import { existsSync, mkdirSync } from "node:fs";
 import type { Event, EyeReport } from "@oraknid/contracts";
 import { and, desc, eq } from "drizzle-orm";
+import { z } from "zod";
 import type { Db } from "../db/open.ts";
 import { eyeMessages, jobs, projects, silkEntries, tasks } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
+import { readSetting, writeSetting } from "../settings.ts";
 import { firstLine } from "../workspace/projects.ts";
 import type { EyeBrain } from "./brain.ts";
 
@@ -16,6 +18,14 @@ import type { EyeBrain } from "./brain.ts";
 // line stays, and the call is tried again when a Leg or The Eye's models
 // change, or every few minutes. At start, older jobs still named by their
 // first line are named too, slowly, on the quick model I chose only.
+//
+// Once (ADR-066 §2): a job is named when it is made, and again only when its
+// goal changed before it started (named as it starts, never as I type); it
+// is described once when it is completed or stopped, never each time it is
+// blocked. The backfill tries a job once a week at most, so a job its model
+// can't name isn't asked again at every restart. (43 namings in three days,
+// 2026-10-10: a draft renamed after every pause in my typing, and a job
+// "ended" again at each of its blocks, each one an agent session.)
 
 export interface NamingDeps {
   db: Db;
@@ -28,8 +38,6 @@ export interface NamingDeps {
   gapMs?: number;
   /** How often calls that found no model are tried again. */
   retryMs?: number;
-  /** A draft's goal changes as I type: named once it has rested this long. */
-  draftDelayMs?: number;
   /** When the backfill of older jobs starts, after the daemon is up. */
   backfillDelayMs?: number;
 }
@@ -52,6 +60,10 @@ export interface JobNaming {
 }
 
 const ENDED = new Set(["completed", "cancelled"]);
+/** When the backfill last tried each job (ADR-066 §2): not again within a week. */
+const TRIED = "eye.namingTried";
+const Tried = z.record(z.string(), z.number());
+const TRY_AGAIN_MS = 7 * 86_400_000;
 /** What may bring a model back: a Leg added, changed or healthy again, The Eye's models chosen. */
 const RETRY_ON = new Set([
   "leg.created",
@@ -64,7 +76,6 @@ const RETRY_ON = new Set([
 export function startJobNaming(d: NamingDeps): JobNaming {
   const queue = new Map<string, Item>();
   const waiting = new Map<string, Item>();
-  const timers = new Map<string, ReturnType<typeof setTimeout>>();
   let running: Promise<void> | null = null;
   let stopped = false;
 
@@ -81,16 +92,6 @@ export function startJobNaming(d: NamingDeps): JobNaming {
     running ??= drain().finally(() => {
       running = null;
     });
-  };
-
-  const later = (jobId: string, ms: number, item: Item) => {
-    clearTimeout(timers.get(jobId));
-    const t = setTimeout(() => {
-      timers.delete(jobId);
-      enqueue(item);
-    }, ms);
-    t.unref();
-    timers.set(jobId, t);
   };
 
   async function drain() {
@@ -115,6 +116,25 @@ export function startJobNaming(d: NamingDeps): JobNaming {
     if (!wantsTitle && !wantsDescription) return;
     const project = d.db.select().from(projects).where(eq(projects.id, job.projectId)).get();
     const outcome = item.kind === "end" ? outcomeOf(d.db, job.id) : undefined;
+    if (item.backfill) {
+      const tried = readSetting(d.db, TRIED, Tried, {});
+      const ids = new Set(
+        d.db
+          .select({ id: jobs.id })
+          .from(jobs)
+          .all()
+          .map((j) => j.id),
+      );
+      writeSetting(
+        d.db,
+        TRIED,
+        Tried,
+        Object.fromEntries([
+          ...Object.entries(tried).filter(([id]) => ids.has(id)),
+          [job.id, d.now()],
+        ]),
+      );
+    }
     let named: Awaited<ReturnType<NonNullable<EyeBrain["nameJob"]>>>;
     try {
       named = await brain.nameJob({
@@ -170,20 +190,14 @@ export function startJobNaming(d: NamingDeps): JobNaming {
     const p = (e.payload ?? {}) as Record<string, unknown>;
     if (e.type === "job.created" && e.jobId)
       enqueue({ jobId: e.jobId, kind: "name", backfill: false });
-    else if (
-      e.type === "job.draft-updated" &&
-      e.jobId &&
-      Array.isArray(p.fields) &&
-      p.fields.includes("title")
-    )
-      // The goal changed and the first line is back: named once I stop typing.
-      later(e.jobId, d.draftDelayMs ?? 15_000, { jobId: e.jobId, kind: "name", backfill: false });
+    else if (e.type === "job.state" && e.jobId && p.from === "draft")
+      // Its goal changed while it was a draft (its first line is back): named once, as it starts.
+      // A job already named is left as it is (`run` asks nothing).
+      enqueue({ jobId: e.jobId, kind: "name", backfill: false });
     else if (e.type === "eye.replied" && e.jobId && p.intent === "report") {
+      // Its ending, once: completed, or stopped with work done; a block is no ending (ADR-066 §2).
       const kind = reportKind(d.db, String(p.id));
-      if (
-        kind === "job-done" ||
-        ((kind === "cancelled" || kind === "blocked") && didWork(d.db, e.jobId))
-      )
+      if (kind === "job-done" || (kind === "cancelled" && didWork(d.db, e.jobId)))
         enqueue({ jobId: e.jobId, kind: "end", backfill: false });
     } else if (waiting.size && RETRY_ON.has(e.type)) retry();
   };
@@ -193,7 +207,11 @@ export function startJobNaming(d: NamingDeps): JobNaming {
   }
 
   function backfill() {
+    const tried = readSetting(d.db, TRIED, Tried, {});
     for (const job of d.db.select().from(jobs).all()) {
+      // A draft is named as it starts; a job tried lately isn't asked again so soon.
+      if (job.state === "draft") continue;
+      if ((tried[job.id] ?? 0) > d.now() - TRY_AGAIN_MS) continue;
       const worked = didWork(d.db, job.id);
       const ended = job.state === "completed" || (ENDED.has(job.state) && worked);
       if (job.namedBy === null && job.title !== firstLine(job.goal)) {
@@ -228,10 +246,7 @@ export function startJobNaming(d: NamingDeps): JobNaming {
 
   return {
     async idle() {
-      while (running || [...timers.keys()].length) {
-        if (running) await running;
-        else await new Promise((r) => setTimeout(r, 5));
-      }
+      while (running) await running;
     },
     retry,
     backfill,
@@ -240,8 +255,6 @@ export function startJobNaming(d: NamingDeps): JobNaming {
       off();
       clearInterval(retryTimer);
       if (backfillTimer) clearTimeout(backfillTimer);
-      for (const t of timers.values()) clearTimeout(t);
-      timers.clear();
       queue.clear();
     },
   };

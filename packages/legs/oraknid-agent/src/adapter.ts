@@ -433,7 +433,7 @@ export function createOraknidAgentAdapter(deps: OraknidAgentDeps = {}): LegAdapt
             const u = done.at(-1)?.usage;
             const used =
               u?.inputTokens != null ? u.inputTokens + (u.outputTokens ?? 0) : estimate(messages);
-            if (used < contextWindow * 0.8) return {};
+            if (used < contextWindow * (s.compactAt ?? 0.8)) return {};
             const compacted = await compact(messages, signal);
             base = { messages: compacted, offset: responseMessages.length };
             return { messages: compacted };

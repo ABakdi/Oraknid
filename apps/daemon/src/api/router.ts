@@ -234,6 +234,7 @@ import {
   DEFAULT_RUNNING_JOBS,
   followUpKey,
   INTERVIEW_ROUNDS,
+  LIGHT_CALLS,
   MAX_RUNNING_JOBS,
   MAX_TASKS_PER_JOB,
   projectPorts,
@@ -2329,6 +2330,29 @@ export const router = {
             topic: "overview",
             jobId: null,
             payload: { interviewRounds: input.rounds },
+            actor: "owner",
+          });
+        }),
+      ),
+    /**
+     * How The Eye's light calls go (ADR-066 §3): "auto" (a direct model when
+     * there is one), "agent", or a direct model's id.
+     */
+    lightCalls: base
+      .output(z.string())
+      .handler(({ context: c }) => readSetting(c.jobs.db, LIGHT_CALLS, z.string(), "auto")),
+    setLightCalls: base
+      .input(z.object({ mode: z.string().min(1).max(200) }))
+      .handler(({ context: c, input }) =>
+        guard(() => {
+          if (input.mode !== "auto" && input.mode !== "agent" && !c.registry.model(input.mode))
+            throw new Error(`No model ${input.mode}.`);
+          writeSetting(c.jobs.db, LIGHT_CALLS, z.string(), input.mode);
+          c.bus.publish({
+            type: "settings.updated",
+            topic: "overview",
+            jobId: null,
+            payload: { lightCalls: input.mode },
             actor: "owner",
           });
         }),

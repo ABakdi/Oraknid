@@ -97,7 +97,7 @@ async function harness() {
     brain,
     metricsIntervalMs: 50,
     stallCheckMs: 100,
-    naming: { backfillDelayMs: -1, gapMs: 0, draftDelayMs: 20, retryMs: 60_000 },
+    naming: { backfillDelayMs: -1, gapMs: 0, retryMs: 60_000 },
   });
   const api = createORPCClient<RouterClient<Router>>(
     new RPCLink({
@@ -152,6 +152,21 @@ describe("a job's name and description (Jobs-and-Projects)", () => {
     expect(end?.quickOnly).toBeUndefined();
     expect(named).toContainEqual(
       expect.objectContaining({ id: jobId, describedAs: "purpose", namedBy: "eye" }),
+    );
+    // The report says what each Leg spent on the job (ADR-066 §6).
+    const report = d.db
+      .select()
+      .from(eyeMessages)
+      .where(eq(eyeMessages.jobId, jobId))
+      .all()
+      .map(
+        (m) =>
+          (m.action as { report?: { kind: string; facts: { label: string; value: string }[] } })
+            ?.report,
+      )
+      .find((r) => r?.kind === "job-done");
+    expect(report?.facts.find((f) => f.label === "Tokens · Claude A")?.value).toMatch(
+      /^[\d.]+k? in · [\d.]+k? from cache · [\d.]+k? out$/,
     );
   }, 30_000);
 
@@ -208,18 +223,51 @@ describe("a job's name and description (Jobs-and-Projects)", () => {
     expect(j).toMatchObject({ title: "Write the a file", namedBy: "eye" });
   });
 
-  it("names a draft again when its goal changes, once I stop typing", async () => {
+  it("names a draft whose goal I changed once, as it starts, never as I type (ADR-066 §2)", async () => {
     const { api, projectId, d, calls } = await harness();
     const { id } = await api.jobs.create({ projectId, goal: "first idea" });
     await d.naming.idle();
-    await api.jobs.updateDraft({ id, goal: "second idea\nmore" });
-    // Its first line at once, unless the (20 ms, in this test) quiet time has already
-    // passed on a busy machine and it is named again: what counts is the new goal below.
-    expect(["second idea", "Write the a file"]).toContain((await api.jobs.get({ id })).title);
+    // Typing: saved again and again, each a goal change; nobody is asked while it is a draft.
+    for (const goal of ["second", "second idea", "second idea\nmore"]) {
+      await api.jobs.updateDraft({ id, goal });
+      await new Promise((r) => setTimeout(r, 30));
+    }
     await d.naming.idle();
-    expect((await api.jobs.get({ id })).title).toBe("Write the a file");
-    expect(calls.map((c) => c.goal)).toEqual(["first idea", "second idea\nmore"]);
-  });
+    expect((await api.jobs.get({ id })).title).toBe("second idea");
+    expect(calls.map((c) => c.goal)).toEqual(["first idea"]);
+    await api.jobs.start({ id });
+    await until(api, id, (x) => x.state === "completed");
+    await until(api, id, (x) => x.describedAs === "outcome");
+    await d.naming.idle();
+    // Named for the goal it started with, then described once when it ended: three calls in all.
+    expect(calls.map((c) => [c.goal, !!c.outcome])).toEqual([
+      ["first idea", false],
+      ["second idea\nmore", false],
+      ["second idea\nmore", true],
+    ]);
+  }, 30_000);
+
+  it("names a job once in its whole life: made, started, blocked, resumed, done (ADR-066 §2)", async () => {
+    const { api, projectId, d, calls } = await harness();
+    const { jobId } = await api.projects.talk({ id: projectId, text: GOAL });
+    await until(api, jobId, (j) => j.state === "completed");
+    await until(api, jobId, (x) => x.describedAs === "outcome");
+    await d.naming.idle();
+    // A block on the way (a quota, a question) is no ending: nothing more is asked for it.
+    d.bus.publish({
+      type: "job.state",
+      topic: `job:${jobId}`,
+      jobId,
+      payload: { from: "running", to: "blocked", reason: "Groq is out of quota until 14:05." },
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    await d.naming.idle();
+    // The backfill at a restart leaves a named job alone.
+    d.naming.backfill();
+    await d.naming.idle();
+    expect(calls.filter((c) => !c.outcome)).toHaveLength(1);
+    expect(calls.filter((c) => c.outcome)).toHaveLength(1);
+  }, 30_000);
 
   it("names older jobs at start: slowly, on the quick model, what they did when ended", async () => {
     const { api, projectId, d, calls } = await harness();
@@ -232,12 +280,12 @@ describe("a job's name and description (Jobs-and-Projects)", () => {
     for (const id of [old, typed, ended])
       d.db
         .update(jobs)
-        .set({ namedBy: null, description: null, describedAs: null })
+        .set({ namedBy: null, description: null, describedAs: null, state: "paused" })
         .where(eq(jobs.id, id))
         .run();
     d.db
       .update(jobs)
-      .set({ title: "now you shoudl take a look and make sure everything is in…" })
+      .set({ title: "now you shoudl take a look and make sure everything is in…", state: "paused" })
       .where(eq(jobs.id, old))
       .run();
     d.db
@@ -299,6 +347,12 @@ describe("a job's name and description (Jobs-and-Projects)", () => {
       title: "Write the a file",
       describedAs: "outcome",
     });
+    // A job the backfill tried isn't tried again at the next restart, even if it stayed unnamed.
+    d.db.update(jobs).set({ namedBy: null }).where(eq(jobs.id, old)).run();
+    const before = calls.length;
+    d.naming.backfill();
+    await d.naming.idle();
+    expect(calls.slice(before).some((c) => c.jobId === old)).toBe(false);
   });
 });
 

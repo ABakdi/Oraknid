@@ -27,6 +27,26 @@ export interface CheckLine {
 /** Each kind of event and its data. */
 export interface AttemptEventData {
   SessionOpened: { sessionId: string; legId: string; model: string; resumed: string | null };
+  /**
+   * What a session was told before its first message, in tokens (ADR-066
+   * §4): Oraknid's whole system prompt, its context pack and each part of
+   * it, the rest (repos, git, servers, GitHub) and the opening message. The
+   * agent's own prompt and tools come on top and aren't counted here.
+   */
+  ContextSize: {
+    sessionId: string;
+    system: number;
+    pack: number;
+    task: number;
+    checks: number;
+    goal: number;
+    skill: number;
+    silk: number;
+    handoff: number;
+    digest: number;
+    rest: number;
+    first: number;
+  };
   /** What the agent said in a turn, condensed: once per turn, not every delta. */
   AgentText: { text: string; reason: string };
   ActionRequested: { id: string; tool: string; input: string };

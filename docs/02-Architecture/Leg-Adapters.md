@@ -141,12 +141,13 @@ one stays for plain servers.
 | Tools | `read` (line numbers, `offset`/`limit`), `edit` (exact, unique or `replace_all`), `write`, `glob`, `grep` (ripgrep when found), `bash` (in the sandbox, like any Leg's commands, with a timeout), `todo_write`, `web_fetch` (HTML to text, marked as data). File tools stay inside the worktree by real path; errors say what to do next. The job's MCP servers (Oraknid's bridges) add their tools as `mcp__<server>__<tool>`. |
 | Permissions | Write, Edit, Bash and WebFetch ask the policy by those names, before they run; reads and the todo list don't. A denial goes back to the model with "don't repeat this call". |
 | Stream | `text-delta` → `text.delta`, reasoning → `thinking.delta`, `tool-call` → `tool.called`; the permission and the result are given out in the stream's order when the call's result arrives; `finish-step` → `usage`. |
-| Compaction | In `prepareStep`: past 80% of the window (the last step's reported tokens, else estimated), the middle is summarised by the same model (a list of the calls if it can't) and the task kept word for word, roles alternating. |
+| Compaction | In `prepareStep`: past 80% of the window (`SessionStart.compactAt` when Oraknid sets it: 50% on a Leg short of tokens, [[ADR-066-Token-Economy]] §5) (the last step's reported tokens, else estimated), the middle is summarised by the same model (a list of the calls if it can't) and the task kept word for word, roles alternating. |
 | Checks | At a turn's end it asks `onStop` (Oraknid runs the task's checks, as for Claude Code's Stop hook); without one, `SessionStart.checks` run in the sandbox. A failing check is handed back (three rounds at most). |
 | Resume | Native: `nativeSessionId()` is `oa-<uuid>`; the messages and todo list are kept in `<data>/legs/oraknid-agent-sessions/<id>.json` after each turn and read back on `resumeFrom`. |
 | Interrupt / kill | Abort the request and the command running; what the model said is kept, marked interrupted. |
 | Probe | Lists the models; tests tool calling: native calls, else a JSON grammar (`response_format: json_schema`, enforced by llama.cpp and Ollama, the answer turned back into a tool call by a fetch shim), else none (`toolCalls` on each model; the profile's `probed` keeps it to text work). Context from `/props` (llama.cpp), `/api/show` (Ollama) or LM Studio's `/api/v1/models`. |
-| Quota | A 429 is a `rate_limit` with `retry-after`. |
+| Quota | A 429 is a `rate_limit` with `retry-after`. A 413 or a "too large" refusal ends the turn as an error that is the request's size, not a quota ([[ADR-066-Token-Economy]] §1): the model's largest request is remembered and the Leg stays healthy. |
+| Direct calls | Not the adapter's: The Eye's light calls go to the same address (`endpoints[].baseUrl`, else `baseUrl`) with the Leg's key as one plain `POST /chat/completions`, no tools, no session ([[ADR-066-Token-Economy]] §3, `eye/direct.ts`); `openai-compatible` Legs too. |
 
 ## OpenCode — Phase 2
 

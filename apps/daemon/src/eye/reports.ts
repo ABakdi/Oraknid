@@ -6,9 +6,9 @@ import {
   normalizeQuestions,
   type Question,
 } from "@oraknid/contracts";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sum } from "drizzle-orm";
 import type { Db } from "../db/open.ts";
-import { events, eyeMessages, jobs, tasks } from "../db/schema.ts";
+import { events, eyeMessages, jobs, legs, sessions, tasks } from "../db/schema.ts";
 import type { EventBus } from "../events/bus.ts";
 import type { InboxStore } from "../inbox/store.ts";
 import { serverOf, stateDiff } from "../servers/server-jobs.ts";
@@ -301,7 +301,10 @@ function cancelled(d: ReportDeps, jobId: string, reason: string) {
     jobId,
     `The job is stopped${reason ? `: ${reason.replace(/\.$/, "")}` : ""}. ${kept}`,
     report("cancelled", {
-      facts: job.branch ? [{ label: "Branch", value: job.branch, href: null }] : [],
+      facts: [
+        ...(job.branch ? [{ label: "Branch", value: job.branch, href: null }] : []),
+        ...tokenFacts(d.db, jobId),
+      ],
     }),
   );
 }
@@ -369,7 +372,49 @@ export async function jobDone(d: ReportDeps, jobId: string) {
     }
   }
   if (serverId && d.servers) summary += await serverChanges(d, serverId, jobId, facts, todo);
+  // What each Leg spent on it (ADR-066 §6): The Eye's calls and the agents' sessions alike.
+  facts.push(...tokenFacts(d.db, jobId));
   say(d, jobId, summary, report("job-done", { facts, todo }));
+}
+
+/** A count of tokens, short: 950, 12.4k, 1.5M. */
+export function tokenCount(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
+}
+
+/**
+ * A job's tokens per Leg (ADR-066 §6), as its report shows them: what went
+ * in, what was read from cache, what came out; the most first.
+ */
+export function tokenFacts(db: Db, jobId: string): EyeReport["facts"] {
+  const rows = db
+    .select({
+      legId: sessions.legId,
+      name: legs.name,
+      input: sum(sessions.inputTokens),
+      cache: sum(sessions.cacheReadTokens),
+      output: sum(sessions.outputTokens),
+    })
+    .from(sessions)
+    .leftJoin(legs, eq(legs.id, sessions.legId))
+    .where(eq(sessions.jobId, jobId))
+    .groupBy(sessions.legId)
+    .all()
+    .map((r) => ({
+      name: r.name ?? "A Leg removed since",
+      input: Number(r.input ?? 0),
+      cache: Number(r.cache ?? 0),
+      output: Number(r.output ?? 0),
+    }))
+    .filter((r) => r.input + r.cache + r.output > 0)
+    .sort((a, b) => b.input + b.cache + b.output - (a.input + a.cache + a.output));
+  return rows.map((r) => ({
+    label: `Tokens · ${r.name}`,
+    value: `${tokenCount(r.input)} in · ${tokenCount(r.cache)} from cache · ${tokenCount(r.output)} out`,
+    href: null,
+  }));
 }
 
 /** How many actions auto mode blocked in a job, by layer, in words; null when none (ADR-053). */

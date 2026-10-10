@@ -3,6 +3,15 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## Unreleased
+
+- **A request too large is no longer "Out of quota":** when a provider refuses one request for its size (Groq's free tier: "Request too large … Limit 8000, Requested 12446"), Oraknid remembers that model's largest request, sends bigger work to a model with room, and keeps the agent healthy for everything that fits.
+- **A job is named once:** when it is made, again only if you changed its goal before starting it, and described once when it ends. Before, a draft was renamed after every pause in your typing and a job "ended" again at each block, each one a full agent session.
+- **The Eye's short questions go to a model directly:** naming a job, reading your message, summaries and the judges' first look are one plain request to a model behind an API (Groq, OpenRouter, xAI, a local model) when you have one, free and local first, instead of an agent session with its tools. Settings → Eye & jobs → Light calls.
+- **Leaner briefs for agents:** a task's context is mostly under 4,000 tokens (about half before on a large job); the job's memory and the whole method stay in its folder for the agent to read when needed. What each session was told is measured in the attempt log.
+- **Windows spent at their pace:** an account whose five-hour or weekly window is being used much faster than its time is spared while another can take the work; per-minute limits are waited for, not hit; a session on an account short of tokens compacts sooner.
+- **The job's report shows what each agent spent:** tokens in, from cache and out.
+
 ## 0.6.6 — 2026-10-10 (pre-release)
 
 - **An agent's API key is trimmed:** a space or line break pasted with it is no longer sent with the key.
