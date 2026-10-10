@@ -3,6 +3,12 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.6.3 — 2026-10-10 (pre-release)
+
+- **Reviews of a design with a page per device:** switching the device now loads that device's page (phone portrait, phone landscape, tablet, desktop), every time, at home and away from home. Before, the desktop page stayed and showed black at phone sizes.
+- **A Screen picker** next to the device switcher opens any page of the design, the brand page included.
+- **Away from home,** a design without an index page opens on its screens instead of "No page /".
+
 ## 0.6.2 — 2026-10-09 (pre-release)
 
 - **A design with no `index.html` opens for review:** Oraknid shows its screens by name, and the one that fits the device you picked (phone, landscape, tablet, desktop) opens by itself. Before, the review said "Not in the design".
