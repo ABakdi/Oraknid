@@ -209,6 +209,12 @@ export interface SessionStart {
    * the sandbox and keeps working while they fail.
    */
   checks?: string[];
+  /**
+   * The share of the model's context window (0–1) past which the session
+   * compacts its history, where the adapter compacts itself (ADR-066 §5):
+   * lower when the Leg's tokens are scarce. Unset: the adapter's own (0.8).
+   */
+  compactAt?: number;
 }
 
 /** A stdio MCP server a Leg starts: here always Oraknid's bridge. */

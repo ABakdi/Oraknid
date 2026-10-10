@@ -62,6 +62,10 @@ const WINDOW_MS: Record<string, number> = {
 
 const secretName = (legId: string) => `leg.${legId}`;
 
+/** Each model's largest request, by Leg model id (ADR-066 §1). */
+export const MAX_REQUEST = "models.maxRequest";
+const MaxRequests = z.record(z.string(), z.number().int().positive());
+
 /** The pool of Legs (Legs-and-Capability-Profiles): config, models, health, quota and profiles. */
 export class LegRegistry {
   /** VRAM per loaded model, from the last health check (memory only). */
@@ -86,6 +90,24 @@ export class LegRegistry {
     private readonly legsDir: string,
     private readonly now: () => number = Date.now,
   ) {}
+
+  /**
+   * The most a model takes in one request, as its provider said when it
+   * refused a larger one (ADR-066 §1); null when none was refused.
+   */
+  maxRequestOf(legModelId: string): number | null {
+    return readSetting(this.db, MAX_REQUEST, MaxRequests, {})[legModelId] ?? null;
+  }
+
+  /** Remembers a model's largest request, the smaller of what was known and what it said. */
+  setMaxRequest(legModelId: string, tokens: number, reason: string) {
+    const all = readSetting(this.db, MAX_REQUEST, MaxRequests, {});
+    const known = all[legModelId];
+    if (known !== undefined && known <= tokens) return;
+    writeSetting(this.db, MAX_REQUEST, MaxRequests, { ...all, [legModelId]: Math.round(tokens) });
+    const row = this.model(legModelId);
+    if (row) this.#event(row.legId, "leg.max-request", { legModelId, tokens, reason });
+  }
 
   /** Kept from a probe, so a restart knows it before the next one. */
   setFeatures(legId: string, features: LegFeatures) {

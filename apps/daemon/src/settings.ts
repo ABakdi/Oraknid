@@ -65,6 +65,13 @@ export const CLAUDE_SHARE = "work.claudeShare";
 export const INTERVIEW_ROUNDS = "eye.interviewRounds";
 export const DEFAULT_INTERVIEW_ROUNDS = 3;
 
+/**
+ * How The Eye's light calls go (ADR-066 §3, Settings → The Eye → Light
+ * calls): "auto" (a direct model when there is one), "agent" (always an
+ * agent session), or the id of a direct model to ask first.
+ */
+export const LIGHT_CALLS = "eye.lightCalls";
+
 /** The branch a follow-up job starts from: the one the job it follows built (Jobs-and-Projects). */
 export const followUpKey = (jobId: string) => `job.startFrom.${jobId}`;
 

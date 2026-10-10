@@ -33,6 +33,27 @@ export interface PackInput {
   inputs?: string;
   /** Default: 15% of the receiving model's context window. */
   capTokens: number;
+  /**
+   * Silk's own share of the pack (ADR-066 §4): decisions, constraints and
+   * my words first, then the latest; the rest by title only, whole in the
+   * mirror. Unset: only `capTokens` limits it.
+   */
+  silkTokens?: number;
+  /** The handoff's cap, its start and its end kept (ADR-066 §4). Unset: whole. */
+  handoffTokens?: number;
+  /** Where the agent reads the whole memory (the mirror), named when entries are shortened. */
+  memoryPath?: string;
+}
+
+/** What each part of a pack weighs, in tokens (ADR-066 §4: the `ContextSize` event). */
+export interface PackSize {
+  task: number;
+  checks: number;
+  goal: number;
+  skill: number;
+  silk: number;
+  handoff: number;
+  digest: number;
 }
 
 export interface Pack {
@@ -42,6 +63,8 @@ export interface Pack {
   included: string[];
   /** The job's own entries cut down to their title to fit: candidates for a summary entry. */
   shortened: string[];
+  /** Each part's weight. */
+  size: PackSize;
 }
 
 const byNewest = (a: SilkEntry, b: SilkEntry) => b.createdAt - a.createdAt;
@@ -85,21 +108,22 @@ export function buildContextPack(p: PackInput): Pack {
     )
     .sort(byNewest);
 
+  const checksPart = p.task.verify.length
+    ? `**It is done when these checks pass. Run them yourself as you work and keep going until they pass; Oraknid runs them again after you finish:**\n${p.task.verify
+        .map((v) =>
+          OWN_CHECK.test(v)
+            ? `- \`${v}\` — Oraknid's own check of GitHub, run after you finish; there is no \`oraknid\` command for you, so don't run it`
+            : `- \`${v}\``,
+        )
+        .join(
+          "\n",
+        )}\n\nIf a check itself looks wrong (it fails for a reason that has nothing to do with your work), don't investigate it: finish the work, then say DONE and why the check is wrong. Oraknid reviews its checks.`
+    : "";
   const taskPart = [
     `# Your task: ${p.task.title}`,
     p.task.instructions,
     `**You may change only:** ${p.task.scope.length ? p.task.scope.join(", ") : "(nothing — this task changes no files)"}`,
-    p.task.verify.length
-      ? `**It is done when these checks pass. Run them yourself as you work and keep going until they pass; Oraknid runs them again after you finish:**\n${p.task.verify
-          .map((v) =>
-            OWN_CHECK.test(v)
-              ? `- \`${v}\` — Oraknid's own check of GitHub, run after you finish; there is no \`oraknid\` command for you, so don't run it`
-              : `- \`${v}\``,
-          )
-          .join(
-            "\n",
-          )}\n\nIf a check itself looks wrong (it fails for a reason that has nothing to do with your work), don't investigate it: finish the work, then say DONE and why the check is wrong. Oraknid reviews its checks.`
-      : "",
+    checksPart,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -119,10 +143,19 @@ export function buildContextPack(p: PackInput): Pack {
   const full = new Set(ranked.map((e) => e.id));
   const past = new Set(earlier.map((e) => e.id));
   let digest = p.digest;
+  // The handoff, capped: its start (the goal, what was done) and its end (the state, the traps).
+  const handoffBody = (body: string) => {
+    const max = (p.handoffTokens ?? 0) * 4;
+    if (!max || body.length <= max) return body;
+    const head = Math.floor(max * 0.6);
+    return `${body.slice(0, head)}\n… (shortened)\n${body.slice(-(max - head))}`;
+  };
 
   const render = () => {
     const show = (e: SilkEntry) =>
-      full.has(e.id) ? `## ${e.title}\n${e.body}` : `## ${e.title} (shortened)`;
+      full.has(e.id)
+        ? `## ${e.title}\n${e === handoff ? handoffBody(e.body) : e.body}`
+        : `## ${e.title} (shortened)`;
     const section = (title: string, list: SilkEntry[]) =>
       list.length ? `# ${title}\n${list.map(show).join("\n\n")}` : "";
     return [
@@ -134,11 +167,32 @@ export function buildContextPack(p: PackInput): Pack {
       section("Known issues", issues),
       section("Facts", facts),
       section("From earlier jobs in this project", earlier),
+      p.memoryPath && ranked.some((e) => !full.has(e.id))
+        ? `Entries marked (shortened) are whole in ${p.memoryPath} (decisions.md, architecture.md, facts.md, issues.md, interview.md, handoffs/): read one there when you need it.`
+        : "",
       digest ? `# The files in scope\n${digest}` : "",
     ]
       .filter(Boolean)
       .join("\n\n");
   };
+  /** What Silk's sections weigh now (the handoff apart). */
+  const silkWeight = () => {
+    const show = (e: SilkEntry) =>
+      full.has(e.id) ? `## ${e.title}\n${e.body}` : `## ${e.title} (shortened)`;
+    return estimateTokens(
+      [...answers, ...standing, ...issues, ...facts, ...earlier].map(show).join("\n\n"),
+    );
+  };
+
+  // Silk as a digest (ADR-066 §4): past its share, the least important and oldest go to their
+  // titles first; my words in this job stay whole.
+  if (p.silkTokens)
+    for (let i = ranked.length - 1; i >= 0 && silkWeight() > p.silkTokens; i--) {
+      const entry = ranked[i] as SilkEntry;
+      if (entry === handoff) continue;
+      if (entry.authoredBy === "owner" && entry.kind !== "issue" && !past.has(entry.id)) continue;
+      full.delete(entry.id);
+    }
 
   let text = render();
   // Shorten from the least important, oldest end.
@@ -158,6 +212,15 @@ export function buildContextPack(p: PackInput): Pack {
     tokens: estimateTokens(text),
     included: ranked.filter((e) => full.has(e.id)).map((e) => e.id),
     shortened: ranked.filter((e) => !full.has(e.id) && !past.has(e.id)).map((e) => e.id),
+    size: {
+      task: estimateTokens(taskPart) - estimateTokens(checksPart),
+      checks: estimateTokens(checksPart),
+      goal: estimateTokens(goalPart) - estimateTokens(p.skill),
+      skill: estimateTokens(p.skill),
+      silk: silkWeight(),
+      handoff: handoff && full.has(handoff.id) ? estimateTokens(handoffBody(handoff.body)) : 0,
+      digest: estimateTokens(digest),
+    },
   };
 }
 

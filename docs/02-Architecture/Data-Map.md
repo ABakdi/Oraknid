@@ -64,6 +64,9 @@ no row.
 | `work.claudeShare` | Every job's Claude share when its tasks climb (0–1; absent: as needed), a job's budget `claudeShare` winning ([[ADR-052-A-Harness-For-Any-Model]] §3). |
 | `fallback.sameProvider` | Same-provider fallback ([[ADR-009-Multiple-Accounts-Per-Provider]]). |
 | `eye.legModelId`, `eye.models` | The Eye's Leg model; the pins per kind of decision and the shadow ([[ADR-022-Eye-Decision-Models]]). |
+| `eye.lightCalls` | How The Eye's light calls go: `auto` (a direct model when there is one), `agent`, or a direct model's id ([[ADR-066-Token-Economy]] §3). |
+| `eye.namingTried` | When the naming backfill last tried each job, by job id: not again within a week ([[ADR-066-Token-Economy]] §2). |
+| `models.maxRequest` | Each model's largest request in tokens, by Leg model id, as its provider said refusing a larger one ([[ADR-066-Token-Economy]] §1). |
 | `eye.interviewRounds` | The rounds an interview may take (1–12, 3 unless set; [[Skills]] → The interview). |
 | `eye.checksTried.<task>`, `eye.mergeFailures.<task>` | That a task's checks were tried once before its first attempt ([[ADR-052-A-Harness-For-Any-Model]] §2); how many times a task verified alone failed to merge (three stop the job, [[ADR-056-The-Harness]] stage 1). |
 | `task.memory.<task>` | What a task's attempts learned that outlives one of them and a restart: untrusted, grants, what I refused, the stuck count, what it asked me; removed when the task settles ([[ADR-056-The-Harness]]). |

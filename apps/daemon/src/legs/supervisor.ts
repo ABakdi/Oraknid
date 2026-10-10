@@ -76,6 +76,8 @@ export interface StartRequest {
   tools?: { servers: Record<string, McpServer>; writable: string[]; readonly: string[] };
   /** Folders it may read and never write (ADR-025: a chat's projects). */
   readonly?: string[];
+  /** Compact past this share of the window, where the adapter compacts itself (ADR-066 §5). */
+  compactAt?: number;
 }
 
 export interface Supervised {
@@ -161,6 +163,60 @@ export class LegSupervisor {
     await s.session.kill();
   }
 
+  /**
+   * A direct call of The Eye's (ADR-066 §3): no process and no stream, its
+   * tokens on record like a session's, so quotas, budgets and the job's
+   * report count them.
+   */
+  recordDirect(r: {
+    legId: string;
+    legModelId: string;
+    jobId: string | null;
+    call: string;
+    startedAt: number;
+    usage: { input: number; output: number; cacheRead: number; estimated: boolean } | null;
+    error: string | null;
+  }) {
+    const id = newId(this.#now());
+    this.o.db
+      .insert(sessions)
+      .values({
+        id,
+        attemptId: `eye:${r.call}:direct`,
+        jobId: r.jobId,
+        taskId: null,
+        legId: r.legId,
+        legModelId: r.legModelId,
+        effort: null,
+        logFile: "",
+        startedAt: r.startedAt,
+        endedAt: this.#now(),
+        endReason: r.error ? "error" : "completed",
+        endError: r.error,
+        inputTokens: r.usage?.input ?? 0,
+        outputTokens: r.usage?.output ?? 0,
+        cacheReadTokens: r.usage?.cacheRead ?? 0,
+        contextTokens: r.usage ? r.usage.input + r.usage.output : null,
+        usageEstimated: r.usage?.estimated ?? false,
+      })
+      .run();
+    if (r.usage && r.jobId)
+      this.o.bus.publish({
+        type: "session.usage",
+        topic: `job:${r.jobId}`,
+        jobId: r.jobId,
+        payload: {
+          sessionId: id,
+          direct: true,
+          inputTokens: r.usage.input,
+          outputTokens: r.usage.output,
+          cacheReadTokens: r.usage.cacheRead,
+        },
+        actor: `leg:${r.legId}`,
+      });
+    return id;
+  }
+
   async start(req: StartRequest): Promise<Supervised> {
     const { registry } = this.o;
     const leg = registry.require(req.legId);
@@ -220,6 +276,7 @@ export class LegSupervisor {
         ...(req.onPreToolUse ? { onPreToolUse: req.onPreToolUse } : {}),
         ...(req.onStop ? { onStop: req.onStop } : {}),
         ...(req.checks?.length ? { checks: req.checks } : {}),
+        ...(req.compactAt ? { compactAt: req.compactAt } : {}),
         ...(req.tools ? { mcpServers: req.tools.servers } : {}),
       });
     } catch (error) {

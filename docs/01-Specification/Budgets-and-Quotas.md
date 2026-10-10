@@ -99,6 +99,27 @@ Legs and accounts (a Leg with sessions running scores a little lower),
 and the rules above still hold: a scarce window is kept for hard tasks,
 and a job's quota share stops routing to a Leg past it.
 
+## Size, pace and what a job spent (2026-10-10, [[ADR-066-Token-Economy]])
+
+- **A request too large is not a quota.** A provider refusing one
+  request for its size (Groq's 413 "Request too large … Limit 8000,
+  Requested 12446", "context length exceeded") leaves its Leg healthy:
+  the model's largest request is remembered (`models.maxRequest`) and
+  requests larger than that go to a model with room. Only a used-up
+  window or a limit the minute's use filled is a quota.
+- **Windows at the pace of their time.** A Leg whose five-hour, daily or
+  weekly window is used well ahead of the time gone by is spared by
+  routing while another Leg can take the work; a job I put ahead
+  (priority above 0) may spend ahead.
+- **Per-minute limits are spaced.** The Eye's direct calls to a model
+  wait for room under its tokens a minute (from its headers or its own
+  words) instead of failing.
+- **Scarce Legs compact earlier**: a session on a Leg with a window past
+  75% or ahead of its pace compacts its history at half its window
+  (Oraknid's own agent).
+- **What each Leg spent** shows in the job's report when it ends: tokens
+  in, from cache and out, per Leg.
+
 ## When everything runs out
 
 When no allowed Leg has quota, the job goes `blocked` with the earliest

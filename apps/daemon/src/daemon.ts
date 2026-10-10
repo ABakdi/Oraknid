@@ -100,7 +100,7 @@ import { ENV_TOOL_NAME, envServer, envTool } from "./secrets/tool.ts";
 import { startRefreshAfterStop } from "./servers/after-end.ts";
 import { resumeServerConversations, serverJobsDir } from "./servers/server-jobs.ts";
 import { Servers } from "./servers/service.ts";
-import { DEFAULT_RUNNING_JOBS, MAX_RUNNING_JOBS, readSetting } from "./settings.ts";
+import { DEFAULT_RUNNING_JOBS, LIGHT_CALLS, MAX_RUNNING_JOBS, readSetting } from "./settings.ts";
 import { SilkStore } from "./silk/store.ts";
 import { Sites, type SitesDeps } from "./sites/service.ts";
 import { SkillStore } from "./skills/store.ts";
@@ -162,7 +162,7 @@ export interface DaemonOptions {
   /** The visual check's renderer and judge (tests give stand-ins; ADR-064 §5). */
   visual?: Partial<Pick<VisualDeps, "renderer" | "judge">>;
   /** Naming jobs' timings (tests): the backfill's start (-1: never) and pace. */
-  naming?: Pick<NamingDeps, "gapMs" | "retryMs" | "draftDelayMs" | "backfillDelayMs">;
+  naming?: Pick<NamingDeps, "gapMs" | "retryMs" | "backfillDelayMs">;
   /** Opens a folder on this machine; tests replace it. */
   openPath?: (path: string) => void;
   stallCheckMs?: number;
@@ -461,6 +461,7 @@ export async function startDaemon(options: DaemonOptions) {
           payload: { call, model },
         }),
       thinking,
+      lightCalls: () => readSetting(db, LIGHT_CALLS, z.string(), "auto"),
     });
   // Evaluation steps' reviews (ADR-064 §1): the review page (M16.1), unless a test gives its own.
   const reviews = (options.reviews ?? ((d) => pageReviews(reviewPage, d)))({ bus, inbox });

@@ -9,6 +9,7 @@ import {
   keepsGoingWrongAnswer,
   type LadderStep,
   LEAVE_IT_OUT,
+  maxRequestFrom,
   type Outcome,
   outsideScope,
   type Signal,
@@ -364,7 +365,7 @@ async function escalate(x: AttemptCtx, o: Extract<Outcome, { kind: "Escalate" }>
 const lastLogged = (x: AttemptCtx) => x.log.attempt(x.attemptId, { limit: 1 })[0]?.id ?? 0;
 
 /** The model that didn't get it done isn't routed to for this task again (ADR-052 §3). */
-function avoidThisModel(x: AttemptCtx) {
+function avoidThisModel(x: Pick<AttemptCtx, "d" | "task" | "leg">) {
   x.task.avoid = [...new Set([...x.task.avoid, x.leg.legModelId])];
   x.d.db.update(tasks).set({ avoid: x.task.avoid }).where(eq(tasks.id, x.task.id)).run();
 }
@@ -698,6 +699,23 @@ export function markUnusable(
     return {
       kind: "retry",
       reason: `${what} was deprecated by its provider${u.replacement ? `; ${u.replacement} takes its place` : "; it is hidden"}, and the attempt doesn't count against the task`,
+    };
+  }
+  if (u.kind === "too-large") {
+    // Its size, not a quota (ADR-066 §1): the model is kept for smaller requests, the Leg stays healthy.
+    const max = maxRequestFrom(u, null);
+    if (max) d.registry.setMaxRequest(leg.legModelId, max, u.reason);
+    else avoidThisModel(x);
+    x.event("task.request-too-large", {
+      legId: leg.legId,
+      legModelId: leg.legModelId,
+      limit: u.limit,
+      requested: u.requested,
+      reason: u.reason,
+    });
+    return {
+      kind: "retry",
+      reason: `${what} refused a request this size${max ? ` (it takes at most ${max} tokens in one)` : ""}; a model with room takes it, and the attempt doesn't count against the task`,
     };
   }
   if (u.kind === "limit") {

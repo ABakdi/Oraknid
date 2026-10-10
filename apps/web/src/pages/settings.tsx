@@ -350,9 +350,55 @@ function EyeCard() {
         >
           {t("Save")}
         </Button>
+        <LightCalls />
         <InterviewRounds />
       </CardContent>
     </Card>
+  );
+}
+
+/** The Legs that are a model behind an API, which The Eye can ask in one plain request (ADR-066 §3). */
+const DIRECT_KINDS = new Set(["oraknid-agent", "openai-compatible"]);
+
+/** How The Eye's light calls go: a direct model, or an agent session. */
+function LightCalls() {
+  const legs = useLive(() => api.legs.list(), { topics: ["overview"] });
+  const mode = useLive(() => api.settings.lightCalls(), {
+    topics: ["overview"],
+    refreshOn: (e) => e.type === "settings.updated",
+  });
+  return (
+    <div className="grid gap-1.5 border-t pt-3 sm:grid-cols-[10rem_1fr] sm:items-center">
+      <Label htmlFor="eye-light-calls">{t("Light calls")}</Label>
+      <div className="min-w-0 space-y-1">
+        <Select
+          value={mode.data ?? "auto"}
+          onValueChange={(v) => act(() => api.settings.setLightCalls({ mode: v }), t("Saved."))}
+        >
+          <SelectTrigger id="eye-light-calls" className="w-full sm:w-80">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="auto">{t("A direct model when there is one")}</SelectItem>
+            <SelectItem value="agent">{t("Always an agent session")}</SelectItem>
+            {(legs.data ?? [])
+              .filter((l) => DIRECT_KINDS.has(l.kind))
+              .flatMap((l) =>
+                l.models.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {l.name} · {m.model}
+                  </SelectItem>
+                )),
+              )}
+          </SelectContent>
+        </Select>
+        <div className="text-xs text-muted-foreground">
+          {t(
+            "Naming a job, your messages, summaries and the judges' first look are short questions: asked of a model behind an API in one request, not in an agent's session with its tools. Free and local models first.",
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -44,3 +44,12 @@ An error from the model's provider ("Internal server error", "Model is unavailab
 ## The Eye's own models
 
 The Eye borrows a Leg for its reasoning. In **Settings → Eye & jobs** you can pin a model per kind of decision: planning, judging, quick calls, and a shadow planner that plans every job too, for comparison only.
+
+**Light calls.** Short questions (naming a job, reading your message, a summary, the judges' first look) don't need an agent with its tools. When you have a model behind an API (Oraknid's own agent on Groq, OpenRouter or xAI, or a local model), The Eye asks it in one plain request, free and local models first, and uses an agent only when none can answer. **Settings → Eye & jobs → Light calls** chooses: a direct model when there is one (the default), always an agent session, or one model you pick. A job is named once when you make it, again only if you changed its goal before it started, and described once when it ends.
+
+## Spending tokens wisely
+
+- **Too large is not out of quota.** When a provider refuses one request for its size (Groq's free tier answers "Request too large" past its tokens a minute), Oraknid remembers the model's largest request and sends bigger ones elsewhere. The Leg stays healthy and keeps the work that fits it.
+- **Windows at their pace.** A Leg whose five-hour or weekly window is being used much faster than its time goes by is spared while another can take the work, so it isn't empty by the morning. Give a job a higher priority to let it spend ahead.
+- **A lean context.** Each session gets a short brief (the task, the goal, the method's relevant part, the job's memory as a digest, the last handoff), mostly under 4,000 tokens; the rest stays in the job's folder (`.oraknid/silk/`, `.oraknid/skill.md`) for the agent to read when it needs it.
+- **What each Leg spent** is in the job's report when it ends: tokens in, from cache and out, per Leg.
