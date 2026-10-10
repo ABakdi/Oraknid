@@ -2749,8 +2749,13 @@ export const router = {
             fresh.kind === "claude-code" || fresh.kind === "antigravity" || fresh.kind === "codex";
           let failed: string | null = null;
           if (!signsIn && c.health.trial) {
-            const r = await c.health.trial(c.registry.trialRow(fresh));
-            if (!r.ok) failed = r.detail;
+            const trial = c.registry.trialRow(fresh);
+            try {
+              const r = await c.health.trial(trial);
+              if (!r.ok) failed = r.detail;
+            } finally {
+              c.registry.forgetTrial(trial.id);
+            }
           }
           if (failed && !saveDisabled)
             throw new Error(

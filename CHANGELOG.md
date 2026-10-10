@@ -3,6 +3,10 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.6.5 — 2026-10-10 (pre-release)
+
+- **Fixed: adding an agent with an API key failed its test with "401"** even with the right key. The test runs before the agent is saved, when no key is stored yet, and sent none. The key typed in the form is now used for that test, kept in memory only for it. Both Oraknid's own agent and the OpenAI-compatible agent send it.
+
 ## 0.6.4 — 2026-10-10 (pre-release)
 
 - **Hosted APIs that need a key to list their models work:** xAI (Grok), Groq, OpenAI and the like. The agent's API key now goes with the model listing too, and a refused key says so.

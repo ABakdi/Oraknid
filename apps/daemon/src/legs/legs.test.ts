@@ -1,11 +1,13 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LegKind } from "@oraknid/contracts";
 import { FAKE_AGY } from "@oraknid/leg-antigravity/fake";
 import { createCodexAdapter } from "@oraknid/leg-codex";
 import { FAKE_CODEX } from "@oraknid/leg-codex/fake";
+import { createOraknidAgentAdapter } from "@oraknid/leg-oraknid-agent";
 import type { LegAdapter } from "@oraknid/leg-sdk";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
@@ -539,5 +541,50 @@ describe("a Codex Leg (ADR-057)", () => {
     expect([...store.values()]).toContain("sk-test-123");
     expect(leg.models.map((m) => m.model)).toEqual(["gpt-6-sol"]);
     await expect(api.legs.loginStart({ id: leg.id })).rejects.toThrow(/API key/);
+  });
+});
+
+describe("a hosted API's key in the test before saving (2026-10-10, xAI answered 401)", () => {
+  it("tests with the key I typed, and saves the Leg when the server takes it", async () => {
+    const server = createServer((req, res) => {
+      if (req.url !== "/v1/models") return res.writeHead(404).end();
+      if (req.headers.authorization !== "Bearer xai-k-123")
+        return res.writeHead(401).end('{"error":"no key"}');
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          data: [{ id: "grok-4", context_length: 256000, supported_parameters: ["tools"] }],
+        }),
+      );
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+    const port = (server.address() as { port: number }).port;
+    try {
+      // The real adapter, its keys read as the daemon reads them (daemon.ts).
+      const agent = createOraknidAgentAdapter({
+        credentialOf: async (leg) => {
+          const reg = (daemon as Daemon).registry;
+          const row = reg.get(leg.id);
+          return row ? reg.credential(row) : reg.trialCredential(leg.id);
+        },
+      });
+      const { api } = await start(fakeLeg(), { "oraknid-agent": agent });
+      const wrong = api.legs.create({
+        kind: "oraknid-agent",
+        name: "Grok",
+        config: { baseUrl: `http://127.0.0.1:${port}/v1/responses` },
+        secret: "wrong",
+      } as never);
+      await expect(wrong).rejects.toThrow(/refused the API key/);
+      const leg = await api.legs.create({
+        kind: "oraknid-agent",
+        name: "Grok",
+        config: { baseUrl: `http://127.0.0.1:${port}/v1/responses` },
+        secret: "xai-k-123",
+      } as never);
+      expect(leg.enabled).toBe(true);
+    } finally {
+      server.close();
+    }
   });
 });

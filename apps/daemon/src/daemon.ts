@@ -266,7 +266,12 @@ export async function startDaemon(options: DaemonOptions) {
   const registry = new LegRegistry(db, bus, secrets, paths.legs, now);
   const adapters: Partial<Record<LegKind, LegAdapter>> = options.adapters ?? {
     "claude-code": createClaudeCodeAdapter(),
-    "openai-compatible": createOpenAICompatibleAdapter(),
+    "openai-compatible": createOpenAICompatibleAdapter({
+      credentialOf: async (leg) => {
+        const row = registry.get(leg.id);
+        return row ? registry.credential(row) : registry.trialCredential(leg.id);
+      },
+    }),
     opencode: createOpenCodeAdapter(),
     antigravity: createAntigravityAdapter(),
     // OpenAI's Codex CLI, headless, its hooks through Oraknid's policy (ADR-057).
@@ -276,7 +281,8 @@ export async function startDaemon(options: DaemonOptions) {
       sessionsDir: join(paths.legs, "oraknid-agent-sessions"),
       credentialOf: async (leg) => {
         const row = registry.get(leg.id);
-        return row ? registry.credential(row) : null;
+        // A Leg tested before it is saved has no stored key yet: the one typed for it.
+        return row ? registry.credential(row) : registry.trialCredential(leg.id);
       },
     }),
   };

@@ -45,16 +45,21 @@ interface ToolCall {
 const estimateTokens = (s: string) => Math.ceil(s.length / 4);
 
 export function createOpenAICompatibleAdapter(
-  deps: { fetch?: typeof fetch; probeLimit?: number } = {},
+  deps: {
+    fetch?: typeof fetch;
+    probeLimit?: number;
+    /** The Leg's API key for its probe (a hosted API lists models only with it). */
+    credentialOf?: (leg: LegConfig) => Promise<string | null>;
+  } = {},
 ): LegAdapter {
   const http = deps.fetch ?? fetch;
   /** Tool calling per model as tested, once a day: this loop takes native calls only. */
   const tested = new Map<string, { native: boolean; at: number }>();
-  const nativeTools = async (baseUrl: string, model: string) => {
+  const nativeTools = async (baseUrl: string, model: string, auth: Record<string, string>) => {
     const key = `${baseUrl}\n${model}`;
     const hit = tested.get(key);
     if (hit && Date.now() - hit.at < 86400_000) return hit.native;
-    const { mode } = await testToolCalling(http, baseUrl, model, {});
+    const { mode } = await testToolCalling(http, baseUrl, model, auth);
     tested.set(key, { native: mode === "native", at: Date.now() });
     return mode === "native";
   };
@@ -75,8 +80,16 @@ export function createOpenAICompatibleAdapter(
         stopHook: false,
         steer: false,
       };
+      let auth: Record<string, string> = {};
       try {
-        const res = await http(`${cfg.baseUrl}/models`, { signal: AbortSignal.timeout(5000) });
+        const key = (await deps.credentialOf?.(leg)) ?? null;
+        auth = key ? { authorization: `Bearer ${key}` } : {};
+        const res = await http(`${cfg.baseUrl}/models`, {
+          signal: AbortSignal.timeout(10_000),
+          headers: auth,
+        });
+        if (res.status === 401 || res.status === 403)
+          throw new Error(`${res.status}: the server refused the API key (or it needs one)`);
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
         const body = (await res.json()) as { data?: { id: string; max_model_len?: number }[] };
         const limit = deps.probeLimit ?? 8;
@@ -88,7 +101,7 @@ export function createOpenAICompatibleAdapter(
             contextWindow: m.max_model_len ?? (await contextWindowOf(http, cfg.baseUrl, m.id)),
             // Tested with one tiny request (ADR-052 §6); untested beyond the first few.
             ...(i < limit
-              ? { toolCalls: (await nativeTools(cfg.baseUrl, m.id)) ? "native" : "none" }
+              ? { toolCalls: (await nativeTools(cfg.baseUrl, m.id, auth)) ? "native" : "none" }
               : {}),
           })),
         );

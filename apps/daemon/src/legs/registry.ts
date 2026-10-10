@@ -73,6 +73,11 @@ export class LegRegistry {
   readonly #rest = new Map<string, { until: number; reason: string; count: number }>();
   /** Provider failures in a row on each Leg, none since one of its turns went through. */
   readonly #streak = new Map<string, number>();
+  /**
+   * The key typed for a Leg being tested before it is saved, in memory only
+   * for that test (2026-10-10: the test sent none, and xAI answered 401).
+   */
+  readonly #trialSecrets = new Map<string, string>();
 
   constructor(
     private readonly db: Db,
@@ -97,8 +102,11 @@ export class LegRegistry {
    * spec → Adding a Leg). Its id is a trial's, its home removed after.
    */
   trialRow(input: NewLeg): LegRow {
+    const id = `trial-${newId(this.now())}`;
+    const secret = "secret" in input && typeof input.secret === "string" ? input.secret : null;
+    if (secret) this.#trialSecrets.set(id, secret);
     return {
-      id: `trial-${newId(this.now())}`,
+      id,
       name: input.name,
       kind: input.kind,
       config: { ...input.config },
@@ -200,7 +208,19 @@ export class LegRegistry {
   }
 
   async credential(leg: LegRow): Promise<string | null> {
+    const trial = this.#trialSecrets.get(leg.id);
+    if (trial) return trial;
     return leg.secretRef ? ((await this.secrets.get(leg.secretRef)) ?? null) : null;
+  }
+
+  /** A trial Leg's key, for its test before saving; null for any other id. */
+  trialCredential(id: string): string | null {
+    return this.#trialSecrets.get(id) ?? null;
+  }
+
+  /** The test before saving is over: its key forgotten. */
+  forgetTrial(id: string): void {
+    this.#trialSecrets.delete(id);
   }
 
   /**
