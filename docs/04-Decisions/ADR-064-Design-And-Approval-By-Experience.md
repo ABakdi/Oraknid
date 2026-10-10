@@ -317,3 +317,41 @@ the person the work is for, as part of the work.
   Also on the API: `reviews.open({jobId, taskId?, kind, target, entry?,
   title?})` → `{id, url, round}`; `Reviews.notes(id, round?)` reads a
   round's notes whole; `withdraw(id)` when the step is dropped.
+
+## As built (screens per device, 2026-10-10)
+- **The case**: the Keys design was `desktop.html`, `phone-landscape.html`,
+  `phone-portrait.html`, `styles.css` and `brand/`, no `index.html`.
+  v0.6.2 served "/" as a generated list of its screens whose script
+  replaced itself, once, with the page fitting the frame's size: the
+  review opened at Laptop on `desktop.html`, and a device change only
+  resized the frame, so every other device showed `desktop.html` hidden
+  at that size (black). Away from home "/" was "No page /".
+- **`reviews.screens({id})`** → `{index, screens: [{path, name,
+  profile}]}` (`reviews/screens.ts`; read anywhere, as `reviews.get`): a
+  design's pages at its top (`.html` files, folders with an
+  `index.html` as `/brand/`, its `index.html` as `/`), each with the
+  device its name speaks of: `phone-portrait`, `phone-landscape`,
+  `phone`, `tablet-portrait`, `tablet-landscape`, `tablet`, `laptop`,
+  `desktop` or `other` (words: phone, mobile, iphone, android; tablet,
+  ipad; laptop, notebook; desktop, wide, pc, monitor; portrait,
+  landscape, alone a phone's). An app is one screen, its entry: it fits
+  each device itself.
+- **The review page picks the screen**, at every device change: a phone
+  (under 600 wide or 500 high) its orientation's page, then `phone`,
+  then a tablet's; a tablet (under 1200 wide) its own, then the phone's
+  when narrow (under 900) or the desktop's when wide; a laptop or a
+  desktop `laptop`/`desktop`. Loaded at home as the frame's origin plus
+  the screen's path, away from home as `reviews.frame({id, path})`. A
+  link followed in the frame stays until the device changes, then the
+  fitting page comes back. **Screen** (beside the device, when there is
+  more than one page) lists every page and **Match device**; a page
+  picked stays until the device changes. A design without pages per
+  device (its `index.html`, or pages of no device) and an app are not
+  moved: as before. A note shown from the list opens its device and,
+  for a design, its page; notes and pins keep the screen's path as
+  their page.
+- **The generated list stays** at a folder without `index.html` (at home
+  and away, `snapshot.ts` falls back to it, so "/" never says "No page"),
+  links from the design's top, and **has no script any more**: the
+  review page chooses, and a script in it could only run once and, away
+  from home, can't move its frame.

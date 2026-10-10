@@ -1,4 +1,4 @@
-import type { ReviewDetail, ReviewNote } from "@oraknid/contracts";
+import type { ReviewDetail, ReviewNote, ReviewScreens } from "@oraknid/contracts";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
@@ -60,6 +60,26 @@ const fresh = (notes: ReviewNote[] = []): ReviewDetail => ({
 const add = vi.fn(async (x: { text: string }) =>
   note({ id: "01J00000000000000000000011", text: x.text }),
 );
+const framePage = vi.fn(async (x: { path?: string }) => ({
+  path: x.path ?? "/",
+  html: `<p>page ${x.path}</p>`,
+  missing: [] as string[],
+}));
+let screens: ReviewScreens;
+const indexOnly = (): ReviewScreens => ({
+  index: true,
+  screens: [{ path: "/", name: "index", profile: "other" }],
+});
+/** The Keys design (2026-10-10): a page per device, brand/, no index.html. */
+const keysScreens = (): ReviewScreens => ({
+  index: false,
+  screens: [
+    { path: "/brand/", name: "brand", profile: "other" },
+    { path: "/desktop.html", name: "desktop", profile: "desktop" },
+    { path: "/phone-landscape.html", name: "phone landscape", profile: "phone-landscape" },
+    { path: "/phone-portrait.html", name: "phone portrait", profile: "phone-portrait" },
+  ],
+});
 const sendNotes = vi.fn(async (_: unknown) => ({ round: 1, notes: 1 }));
 const approve = vi.fn(async (_: unknown) => ({ ok: true }));
 
@@ -67,7 +87,8 @@ vi.mock("@/lib/api", () => ({
   api: {
     reviews: {
       get: async () => review,
-      frame: async () => ({ path: "/", html: "<p>x</p>", missing: [] }),
+      frame: (x: { path?: string }) => framePage(x),
+      screens: async () => screens,
       notes: {
         add: (x: { text: string }) => add(x),
         edit: async () => ({}),
@@ -85,6 +106,7 @@ vi.mock("@/lib/api", () => ({
 const { ReviewPage } = await import("./review");
 
 beforeAll(() => {
+  screens = indexOnly();
   // jsdom has neither: the stage measures nothing, and this is a wide screen.
   globalThis.ResizeObserver ??= class {
     observe() {}
@@ -103,6 +125,7 @@ beforeAll(() => {
 
 afterEach(() => {
   cleanup();
+  screens = indexOnly();
   vi.clearAllMocks();
 });
 
@@ -134,6 +157,7 @@ describe("the review page", () => {
   it("shows the target in its own origin's frame at the device's size, and switches device", async () => {
     review = fresh();
     draw();
+    await screen.findByTitle("What is reviewed");
     await screen.findByText("The design");
     expect(frame().src).toBe("http://rv-abc.localhost:7517/");
     expect(frame().getAttribute("sandbox")).not.toContain("allow-top-navigation");
@@ -155,6 +179,7 @@ describe("the review page", () => {
   it("selects a part, writes the note and saves it with its selector, device and picture", async () => {
     review = fresh();
     draw();
+    await screen.findByTitle("What is reviewed");
     await screen.findByText("The design");
     const posted = vi.spyOn(frame().contentWindow as Window, "postMessage");
     fireEvent.click(screen.getByRole("button", { name: /Select/ }));
@@ -202,6 +227,7 @@ describe("the review page", () => {
       }),
     ]);
     draw();
+    await screen.findByTitle("What is reviewed");
     await screen.findByText("Bigger knobs");
     const posted = vi.spyOn(frame().contentWindow as Window, "postMessage");
     fromFrame({ op: "ready", page: "/", title: "Keys", snapshot: false });
@@ -234,6 +260,7 @@ describe("the review page", () => {
   it("sends the round's notes, and approves", async () => {
     review = fresh([note({ kind: "keep" })]);
     draw();
+    await screen.findByTitle("What is reviewed");
     await screen.findByText("Bigger knobs");
     fireEvent.click(screen.getByRole("button", { name: "Send notes (1)" }));
     await waitFor(() => expect(sendNotes).toHaveBeenCalledWith({ id: R }));
@@ -245,6 +272,7 @@ describe("the review page", () => {
   it("asks before approving with notes that would only be kept", async () => {
     review = fresh([note({ kind: "change" })]);
     draw();
+    await screen.findByTitle("What is reviewed");
     await screen.findByText("Bigger knobs");
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     const dialog = await screen.findByRole("dialog");
@@ -255,6 +283,7 @@ describe("the review page", () => {
   it("an ended round can't be noted, sent or approved", async () => {
     review = { ...fresh([note({})]), state: "notes-sent" };
     draw();
+    await screen.findByTitle("What is reviewed");
     await screen.findByText("Notes sent");
     expect((screen.getByRole("button", { name: "Approve" }) as HTMLButtonElement).disabled).toBe(
       true,
@@ -265,5 +294,126 @@ describe("the review page", () => {
     expect((screen.getByRole("button", { name: /Select/ }) as HTMLButtonElement).disabled).toBe(
       true,
     );
+  });
+
+  it("a design with a page per device shows the one that fits, at every device change, at home", async () => {
+    review = fresh([
+      note({
+        id: "01J00000000000000000000013",
+        text: "The keys are cut off",
+        device: { name: "Phone", width: 390, height: 844, orientation: "portrait" },
+        page: "/phone-portrait.html",
+      }),
+    ]);
+    screens = keysScreens();
+    draw();
+    await screen.findByTitle("What is reviewed");
+    // A laptop: the desktop page, not the generated list at "/".
+    expect(frame().src).toBe("http://rv-abc.localhost:7517/desktop.html");
+    fireEvent.change(screen.getByLabelText("Device"), { target: { value: "1" } });
+    expect(frame().src).toBe("http://rv-abc.localhost:7517/phone-landscape.html");
+    fireEvent.change(screen.getByLabelText("Device"), { target: { value: "0" } });
+    expect(frame().src).toBe("http://rv-abc.localhost:7517/phone-portrait.html");
+    // A tablet with no page of its own: narrow takes the phone's, wide the desktop's.
+    fireEvent.change(screen.getByLabelText("Device"), { target: { value: "2" } });
+    expect(frame().src).toBe("http://rv-abc.localhost:7517/phone-portrait.html");
+    fireEvent.change(screen.getByLabelText("Device"), { target: { value: "3" } });
+    expect(frame().src).toBe("http://rv-abc.localhost:7517/desktop.html");
+    // The Screen picker lists every page; one picked stays until the device changes.
+    const picker = screen.getByLabelText("Screen") as HTMLSelectElement;
+    expect([...picker.options].map((o) => o.textContent)).toEqual([
+      "Match device (Desktop)",
+      "Brand",
+      "Desktop",
+      "Phone landscape",
+      "Phone portrait",
+    ]);
+    fireEvent.change(picker, { target: { value: "/brand/" } });
+    expect(frame().src).toBe("http://rv-abc.localhost:7517/brand/");
+    fireEvent.change(screen.getByLabelText("Device"), { target: { value: "4" } });
+    expect(frame().src).toBe("http://rv-abc.localhost:7517/desktop.html");
+    expect((screen.getByLabelText("Screen") as HTMLSelectElement).value).toBe("");
+    // A link followed in the frame: a device change brings the fitting page back.
+    fromFrame({ op: "ready", page: "/brand/", title: "Brand", snapshot: false });
+    const before = frame();
+    fireEvent.change(screen.getByLabelText("Device"), { target: { value: "5" } });
+    expect(frame()).not.toBe(before);
+    expect(frame().src).toBe("http://rv-abc.localhost:7517/desktop.html");
+    // The same, picking the page the frame is already addressed to.
+    fromFrame({ op: "ready", page: "/brand/", title: "Brand", snapshot: false });
+    const again = frame();
+    fireEvent.change(screen.getByLabelText("Screen"), { target: { value: "/desktop.html" } });
+    expect(frame()).not.toBe(again);
+    expect(frame().src).toBe("http://rv-abc.localhost:7517/desktop.html");
+    // A note shows its device and the page it was written on; its pin is keyed by that page.
+    fireEvent.click(screen.getByText("The keys are cut off"));
+    expect(box().style.width).toBe("390px");
+    expect(frame().src).toBe("http://rv-abc.localhost:7517/phone-portrait.html");
+    const posted = vi.spyOn(frame().contentWindow as Window, "postMessage");
+    fromFrame({ op: "ready", page: "/phone-portrait.html", title: "Keys", snapshot: false });
+    const pins = posted.mock.calls
+      .map((c) => c[0] as { op: string; pins?: { id: string }[] })
+      .filter((m) => m.op === "pins")
+      .at(-1)?.pins;
+    expect(pins?.map((p) => p.id)).toEqual(["01J00000000000000000000013"]);
+  });
+
+  it("away from home, asks for the page that fits the device, at every change", async () => {
+    review = { ...fresh(), frameUrl: null };
+    screens = keysScreens();
+    draw();
+    await screen.findByTitle("What is reviewed");
+    await waitFor(() =>
+      expect(framePage).toHaveBeenLastCalledWith({ id: R, path: "/desktop.html" }),
+    );
+    // Never the generated list first.
+    expect(framePage).not.toHaveBeenCalledWith({ id: R, path: "/" });
+    await waitFor(() => expect(frame().getAttribute("srcdoc")).toContain("page /desktop.html"));
+    fireEvent.change(screen.getByLabelText("Device"), { target: { value: "1" } });
+    await waitFor(() =>
+      expect(frame().getAttribute("srcdoc")).toContain("page /phone-landscape.html"),
+    );
+    fireEvent.change(screen.getByLabelText("Device"), { target: { value: "0" } });
+    await waitFor(() =>
+      expect(frame().getAttribute("srcdoc")).toContain("page /phone-portrait.html"),
+    );
+    // A link followed, then a device change: the fitting page again.
+    fromFrame({ op: "navigate", href: "/brand/" });
+    await waitFor(() => expect(frame().getAttribute("srcdoc")).toContain("page /brand/"));
+    fireEvent.change(screen.getByLabelText("Device"), { target: { value: "1" } });
+    await waitFor(() =>
+      expect(frame().getAttribute("srcdoc")).toContain("page /phone-landscape.html"),
+    );
+    fireEvent.change(screen.getByLabelText("Screen"), { target: { value: "/brand/" } });
+    await waitFor(() => expect(frame().getAttribute("srcdoc")).toContain("page /brand/"));
+  });
+
+  it("a design with its index.html and no page per device stays on it as before", async () => {
+    review = fresh();
+    screens = {
+      index: true,
+      screens: [
+        { path: "/", name: "index", profile: "other" },
+        { path: "/about.html", name: "about", profile: "other" },
+      ],
+    };
+    draw();
+    await screen.findByTitle("What is reviewed");
+    expect(frame().src).toBe("http://rv-abc.localhost:7517/");
+    const before = frame();
+    fireEvent.change(screen.getByLabelText("Device"), { target: { value: "0" } });
+    fireEvent.change(screen.getByLabelText("Device"), { target: { value: "1" } });
+    expect(frame()).toBe(before);
+    expect(frame().src).toBe("http://rv-abc.localhost:7517/");
+    // Its other page, on demand.
+    fireEvent.change(screen.getByLabelText("Screen"), { target: { value: "/about.html" } });
+    expect(frame().src).toBe("http://rv-abc.localhost:7517/about.html");
+  });
+
+  it("an app, or a design of one page, has no Screen picker", async () => {
+    review = fresh();
+    draw();
+    await screen.findByTitle("What is reviewed");
+    expect(screen.queryByLabelText("Screen")).toBeNull();
   });
 });

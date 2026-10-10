@@ -881,6 +881,15 @@ too. Lazy-loaded: the rest of the UI doesn't carry it.
   **100%** (wide screens); **Select** (select mode, Esc stops) and
   **General note**; on a phone the notes' count opens them. A phone
   opens on Phone, anything else on Laptop.
+- **Screens per device** (2026-10-10): a design made of a page per
+  device (`phone-portrait.html`, `phone-landscape.html`, `desktop.html`,
+  `reviews.screens`) shows the page that fits the device, at every
+  device change (a phone its orientation's, a tablet its own else the
+  phone's when narrow or the desktop's when wide, a laptop or desktop
+  the desktop's). **Screen**, beside the device when there is more than
+  one page, lists **Match device** and every page (`brand/` too); a page
+  picked stays until the device changes. A design with its `index.html`
+  and no device pages, and an app, stay on what they show.
 - **The stage**: the target in a frame at the device's size, scaled to
   fit (never above 100%), its device and zoom in a corner. The frame
   is the review's own origin (`rv-<key>.localhost`), sandboxed without

@@ -7,7 +7,11 @@
  * select → composer → save makes a note with its selector and picture,
  * that its pin is drawn in the frame, that the page doesn't scroll
  * sideways, and that the app's console error and failed request are
- * captured. Prints one line per check; exits 1 if any failed.
+ * captured; and that a design made of a page per device, with no
+ * index.html, shows the page that fits each device as the device changes
+ * (Laptop, Desktop, Phone landscape, Phone), never the desktop page hidden
+ * at a phone's size, and that the Screen picker opens another. Prints one
+ * line per check; exits 1 if any failed.
  *
  *   pnpm --filter @oraknid/web exec vite build   # the UI the daemon serves
  *   node scripts/review-check.mjs [--port 7518] [--shots dir] [--chromium /path]
@@ -175,6 +179,73 @@ for (const [width, height] of [
   check(`${tag}: the app's console error and failed request are captured`, heard);
   if (shots) await page.screenshot({ path: join(shots, `app-${width}.png`) });
   check(`${tag}: no errors on the page`, errors.length === 0, errors.join(" | ").slice(0, 200));
+  await context.close();
+}
+
+// A design made of a page per device, no index.html (2026-10-10, the Keys design): each device
+// shows its own page, never the desktop page hidden at a phone's size (black).
+{
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  await context.addInitScript(
+    ({ token, session }) => {
+      localStorage.setItem("oraknid.token", token);
+      sessionStorage.setItem("oraknid.unlock", session);
+    },
+    { token: info.token, session: info.session },
+  );
+  const page = await context.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await page.goto(`${info.url}/review/${info.screens}`);
+  const frameEl = page.locator('iframe[title="What is reviewed"]');
+  await frameEl.waitFor({ timeout: 15_000 });
+  /** The screen the frame shows once it is on `want`, and whether its content is visible. */
+  const shown = async (want) => {
+    await page.waitForFunction(
+      (w) =>
+        document
+          .querySelector('iframe[title="What is reviewed"]')
+          ?.getAttribute("src")
+          ?.endsWith(w),
+      want,
+      { timeout: 10_000 },
+    );
+    const f = await (await frameEl.elementHandle()).contentFrame();
+    await f.waitForFunction(
+      (w) => location.pathname === w && !!document.querySelector("#screen"),
+      want,
+      { timeout: 10_000 },
+    );
+    return f.evaluate(() => {
+      const el = document.querySelector("#screen");
+      const r = el.getBoundingClientRect();
+      return {
+        name: el.dataset.screen,
+        visible: getComputedStyle(el).display !== "none" && r.width > 0 && r.height > 0,
+        size: `${innerWidth}×${innerHeight}`,
+      };
+    });
+  };
+  for (const [label, value, want, name] of [
+    ["Laptop", "", "/desktop.html", "desktop"],
+    ["Desktop", "5", "/desktop.html", "desktop"],
+    ["Phone landscape", "1", "/phone-landscape.html", "phone-landscape"],
+    ["Phone", "0", "/phone-portrait.html", "phone-portrait"],
+  ]) {
+    if (value) await page.getByLabel("Device").selectOption(value);
+    const s = await shown(want);
+    check(
+      `screens: ${label} shows ${name}, not black`,
+      s.name === name && s.visible,
+      `${s.name} at ${s.size}${s.visible ? "" : ", hidden"}`,
+    );
+    if (shots)
+      await page.screenshot({ path: join(shots, `screens-${label.replace(" ", "-")}.png`) });
+  }
+  await page.getByLabel("Screen").selectOption("/brand/");
+  const brand = await shown("/brand/");
+  check("screens: the Screen picker opens brand/", brand.name === "brand" && brand.visible);
+  check("screens: no errors on the page", errors.length === 0, errors.join(" | ").slice(0, 200));
   await context.close();
 }
 

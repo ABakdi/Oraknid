@@ -6,6 +6,7 @@ import type {
   ReviewFailedRequest,
   ReviewNote,
   ReviewNoteKind,
+  ReviewScreens,
 } from "@oraknid/contracts";
 import {
   Check,
@@ -51,6 +52,7 @@ import {
   OVERLAY_NS,
   pinsFor,
   sameDevice,
+  screenFor,
   turn,
 } from "@/lib/review";
 import { cn } from "@/lib/utils";
@@ -151,13 +153,63 @@ function Review({ review: r, reload }: { review: ReviewDetail; reload: () => voi
   useEffect(() => post({ op: "pins", pins }), [post, pins]);
   useEffect(() => post({ op: "select", on: selecting && open }), [post, selecting, open]);
 
+  // The screens (2026-10-10): a design made of a page per device shows the
+  // one that fits the device, at every device change, unless I picked one
+  // (until the device changes again). Without such pages (an index.html,
+  // or the app) the frame stays on what it shows.
+  const screens = useLive(() => api.reviews.screens({ id: r.id }), {
+    topics: [],
+    deps: [r.id, r.round],
+  });
+  const screensKnown = !!screens.data || !!screens.error;
+  const [pick, setPick] = useState<string | null>(null);
+  const auto = useMemo(() => screenFor(screens.data ?? null, device), [screens.data, device]);
+  const want = pick ?? auto;
+  const changeDevice = useCallback((d: ReviewDevice) => {
+    setPick(null);
+    setDevice(d);
+  }, []);
+
   // Away from home: the page of the target, inlined, in a sandboxed frame.
   const away = !r.frameUrl;
-  const [awayPath, setAwayPath] = useState(r.entry);
+  // A link followed in the frame away from home, until the screen changes.
+  const [awayNav, setAwayNav] = useState<string | null>(null);
+  const awayPath = awayNav ?? want ?? r.entry;
   const awayPage = useLive(
-    () => (away ? api.reviews.frame({ id: r.id, path: awayPath }) : Promise.resolve(null)),
-    { topics: [], deps: [r.id, awayPath, away, r.round] },
+    () =>
+      away && screensKnown
+        ? api.reviews.frame({ id: r.id, path: awayPath })
+        : Promise.resolve(null),
+    { topics: [], deps: [r.id, awayPath, away, r.round, screensKnown] },
   );
+  // At home: the frame on the screen's address; reloaded when the device
+  // changes while it shows another page than the screen (a link followed).
+  const [reloads, setReloads] = useState(0);
+  const pageRef = useRef(page);
+  pageRef.current = page;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a device change counts even when the screen stays
+  useEffect(() => {
+    setAwayNav(null);
+    const shown = pageRef.current;
+    if (want && shown !== null && shown !== want) setReloads((n) => n + 1);
+  }, [want, device]);
+  // A screen picked (or Match device): shown, even when it is already the
+  // frame's address and a link took the frame elsewhere.
+  const pickScreen = (path: string | null) => {
+    setPick(path);
+    setAwayNav(null);
+    const next = path ?? auto;
+    if (next && next === want && pageRef.current !== null && pageRef.current !== next)
+      setReloads((n) => n + 1);
+  };
+  const frameSrc = useMemo(() => {
+    if (!r.frameUrl || !want) return r.frameUrl;
+    try {
+      return new URL(want, r.frameUrl).href;
+    } catch {
+      return r.frameUrl;
+    }
+  }, [r.frameUrl, want]);
 
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
@@ -191,7 +243,7 @@ function Review({ review: r, reload }: { review: ReviewDetail; reload: () => voi
           setProblems({ console: m.console, requests: m.requests });
           break;
         case "navigate":
-          setAwayPath(m.href);
+          setAwayNav(m.href);
           break;
         case "escape":
           setSelecting(false);
@@ -208,7 +260,9 @@ function Review({ review: r, reload }: { review: ReviewDetail; reload: () => voi
 
   const showNote = (n: ReviewNote) => {
     setActive(n.id);
-    if (n.device && !sameDevice(n.device, device)) setDevice(n.device);
+    if (n.device && !sameDevice(n.device, device)) changeDevice(n.device);
+    // A design's note shows the page it was written on.
+    if (r.kind === "design" && n.page && n.page !== page) pickScreen(n.page);
     post({ op: "highlight", id: n.id });
     if (phone) setSheet(false);
   };
@@ -323,7 +377,10 @@ function Review({ review: r, reload }: { review: ReviewDetail; reload: () => voi
 
       {/* The devices, select mode and a general note. */}
       <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b bg-muted/30 px-2 py-1.5 sm:px-3">
-        <DeviceSwitcher device={device} onDevice={setDevice} />
+        <DeviceSwitcher device={device} onDevice={changeDevice} />
+        {screens.data && screens.data.screens.length > 1 ? (
+          <ScreenPicker screens={screens.data} pick={pick} auto={auto} onPick={pickScreen} />
+        ) : null}
         <span className="flex-1" />
         <Button
           size="sm"
@@ -369,7 +426,9 @@ function Review({ review: r, reload }: { review: ReviewDetail; reload: () => voi
 
       <div className="flex min-h-0 flex-1">
         <Stage device={device} fit={fit || phone}>
-          {away ? (
+          {!screensKnown ? (
+            <div className="p-4 text-sm text-muted-foreground">{t("Loading…")}</div>
+          ) : away ? (
             awayPage.data ? (
               <iframe
                 ref={frameRef}
@@ -389,9 +448,9 @@ function Review({ review: r, reload }: { review: ReviewDetail; reload: () => voi
             <iframe
               ref={frameRef}
               // A new round shows its work fresh.
-              key={`${r.round}`}
+              key={`${r.round}:${reloads}`}
               title={t("What is reviewed")}
-              src={r.frameUrl ?? undefined}
+              src={frameSrc ?? undefined}
               // Its own origin; it may not move this page elsewhere.
               sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads"
               className="size-full border-0 bg-white"
@@ -543,6 +602,52 @@ function DeviceSwitcher({
           {t("Set")}
         </Button>
       </form>
+    </div>
+  );
+}
+
+/**
+ * The design's pages: Match device (the one that fits, shown by itself) or
+ * one of my choosing, until the device changes.
+ */
+function ScreenPicker({
+  screens,
+  pick,
+  auto,
+  onPick,
+}: {
+  screens: ReviewScreens;
+  pick: string | null;
+  auto: string | null;
+  onPick: (path: string | null) => void;
+}) {
+  const nameOf = (path: string | null) => {
+    const s = screens.screens.find((x) => x.path === path);
+    return s ? s.name.charAt(0).toUpperCase() + s.name.slice(1) : (path ?? "");
+  };
+  const listed = pick === null || screens.screens.some((x) => x.path === pick);
+  return (
+    <div className="flex shrink-0 items-center gap-1.5" data-help="review.screens">
+      <label className="hidden text-xs text-muted-foreground lg:inline" htmlFor="review-screen">
+        {t("Screen")}
+      </label>
+      <select
+        id="review-screen"
+        aria-label={t("Screen")}
+        className="h-8 w-36 rounded-md border bg-card px-2 text-[13px] sm:w-auto"
+        value={pick ?? ""}
+        onChange={(e) => onPick(e.target.value || null)}
+      >
+        <option value="">
+          {auto ? t("Match device ({name})", { name: nameOf(auto) }) : t("Match device")}
+        </option>
+        {screens.screens.map((s) => (
+          <option key={s.path} value={s.path}>
+            {nameOf(s.path)}
+          </option>
+        ))}
+        {listed ? null : <option value={pick ?? ""}>{pick}</option>}
+      </select>
     </div>
   );
 }

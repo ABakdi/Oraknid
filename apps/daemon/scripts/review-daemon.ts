@@ -2,13 +2,14 @@
  * A daemon with reviews open, for checking the review page in headless
  * Chromium (scripts/review-check.mjs): its own data folder and port, a
  * project with a small design in design/, a stand-in "app" on a local port
- * whose page logs an error and fails a request, and a review open on each.
+ * whose page logs an error and fails a request, a design made of a page per
+ * device with no index.html, and a review open on each.
  * No agent runs.
  *
  *   pnpm --filter @oraknid/daemon exec tsx scripts/review-daemon.ts [--port 7518] [--dir <folder>]
  *
  * Prints one JSON line on stdout once it listens: { url, token, session,
- * design, app }. Never point it at ~/.local/share/oraknid or 7417.
+ * design, app, screens }. Never point it at ~/.local/share/oraknid or 7417.
  */
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -57,6 +58,25 @@ writeFileSync(
   `<!doctype html><title>About</title><link rel="stylesheet" href="style.css"><p style="padding:20px">A synth.</p><a href="index.html">Back</a>`,
 );
 
+// The Keys design as it came (2026-10-10): a page per device and brand/, no
+// index.html. The desktop page hides itself on a narrow screen, as the real
+// one did: shown on a phone, it is black.
+const keys = join(dir, "keys-screens");
+mkdirSync(join(keys, "design", "brand"), { recursive: true });
+const screenPage = (name: string, extra = "") =>
+  `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${name}</title><link rel="stylesheet" href="styles.css"><style>${extra}</style></head><body><main id="screen" data-screen="${name}"><h1>Keys</h1><p>${name}</p></main></body></html>`;
+writeFileSync(
+  join(keys, "design", "desktop.html"),
+  screenPage("desktop", "@media (max-width: 899px) { #screen { display: none } }"),
+);
+writeFileSync(join(keys, "design", "phone-landscape.html"), screenPage("phone-landscape"));
+writeFileSync(join(keys, "design", "phone-portrait.html"), screenPage("phone-portrait"));
+writeFileSync(
+  join(keys, "design", "styles.css"),
+  "html,body{margin:0;height:100%;background:#000;color:#fff;font:16px system-ui,sans-serif}#screen{padding:24px;background:#7c3aed;min-height:200px}",
+);
+writeFileSync(join(keys, "design", "brand", "index.html"), screenPage("brand"));
+
 // The "app": a page that says an error and asks for something missing.
 const app = createServer((req, res) => {
   if (req.url === "/") {
@@ -100,6 +120,13 @@ const appReview = await api.reviews.open({
   title: "The running app",
 });
 
+const screensReview = await api.reviews.open({
+  jobId: seedJob(daemon.db, "running", keys),
+  kind: "design",
+  target: "design",
+  title: "The Keys screens",
+});
+
 console.log(
   JSON.stringify({
     url: daemon.url,
@@ -109,6 +136,7 @@ console.log(
     jobId,
     design: design.id,
     app: appReview.id,
+    screens: screensReview.id,
   }),
 );
 

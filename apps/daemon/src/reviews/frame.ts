@@ -1,11 +1,4 @@
-import {
-  createReadStream,
-  existsSync,
-  readdirSync,
-  readFileSync,
-  realpathSync,
-  statSync,
-} from "node:fs";
+import { createReadStream, readFileSync, realpathSync, statSync } from "node:fs";
 import {
   request as httpRequest,
   type IncomingHttpHeaders,
@@ -17,6 +10,7 @@ import { extname, join, sep } from "node:path";
 import type { Duplex } from "node:stream";
 import { brotliDecompressSync, gunzipSync, inflateSync } from "node:zlib";
 import { OVERLAY_JS, OVERLAY_PATH } from "./overlay.ts";
+import { pagesIn, screenName } from "./screens.ts";
 import type { ReviewRow, Reviews } from "./service.ts";
 
 // The review's frame (ADR-064 §2–3): what I review, served on the review's
@@ -158,9 +152,11 @@ export function designFile(root: string, urlPath: string): string | null {
  * A design folder with no index.html (2026-10-09: the Keys design had
  * desktop.html, phone-landscape.html, phone-portrait.html and brand/ only,
  * and the review opened on "Not in the design"): a page of its screens,
- * made by Oraknid, nothing written into the design. Each screen links; the
- * one whose name fits the frame's size (phone, landscape, tablet, desktop)
- * opens by itself.
+ * made by Oraknid, nothing written into the design, each a link. It only
+ * lists (2026-10-10): the review page picks the screen that fits the
+ * device it shows (`reviews.screens`) at every device change, which a
+ * script here could not (it ran once, on first load; inlined away from
+ * home it can't move its frame).
  */
 export function designIndex(root: string, urlPath: string): string | null {
   let path: string;
@@ -180,41 +176,20 @@ export function designIndex(root: string, urlPath: string): string | null {
   } catch {
     return null;
   }
-  const pages: string[] = [];
-  for (const name of readdirSync(dir).sort()) {
-    if (name.startsWith(".")) continue;
-    const full = join(dir, name);
-    try {
-      const st = statSync(full);
-      if (st.isFile() && /\.html?$/i.test(name)) pages.push(name);
-      else if (st.isDirectory() && existsSync(join(full, "index.html"))) pages.push(`${name}/`);
-    } catch {}
-  }
+  const pages = pagesIn(dir);
   if (!pages.length) return null;
-  const esc = (t: string) =>
-    t.replace(
-      /[&<>"]/g,
-      (c) =>
-        `&${({ "&": "amp", "<": "lt", ">": "gt", '"': "quot" } as Record<string, string>)[c]};`,
-    );
-  const label = (n: string) =>
-    n
-      .replace(/\/$/, "")
-      .replace(/\.html?$/i, "")
-      .replace(/[-_]+/g, " ");
+  // From the top of the design, so "/brand" (no slash) links as "/brand/" does.
+  const folder = parts.map((p) => `${p}/`).join("");
   const items = pages
-    .map((n) => `<li><a href="${encodeURI(n)}">${esc(label(n))}</a></li>`)
+    .map(
+      (n) =>
+        `<li><a href="${escapeHtml(encodeURI(`/${folder}${n}`))}">${escapeHtml(screenName(n))}</a></li>`,
+    )
     .join("");
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>The design's screens</title>
 <style>body{font:15px system-ui,sans-serif;margin:2rem;color:#ddd;background:#16161a}a{color:#9cf}li{margin:.4rem 0}small{color:#999}</style>
-<h1>The design's screens</h1><small>This design has no index.html: its pages, by name. The one that fits this size opens by itself.</small>
-<ul>${items}</ul>
-<script>
-(function(){var w=innerWidth,h=innerHeight,land=w>h;
-var want=w<600||h<500?(land?["phone-landscape","landscape","phone","mobile"]:["phone-portrait","portrait","phone","mobile"]):w<1100?(land?["tablet-landscape","tablet","desktop"]:["tablet-portrait","tablet","phone"]):["desktop","laptop","index","main","home"];
-var links=[].slice.call(document.querySelectorAll("a"));
-for(var i=0;i<want.length;i++){for(var j=0;j<links.length;j++){var t=links[j].textContent.toLowerCase().replace(/ /g,"-");if(t===want[i]||t.indexOf(want[i])===0){location.replace(links[j].href);return;}}}})();
-</script>`;
+<h1>The design's screens</h1><small>This design has no index.html: its pages, by name. The review page opens the one that fits its device; Screen picks another.</small>
+<ul>${items}</ul>`;
 }
 
 export interface FrameOptions {

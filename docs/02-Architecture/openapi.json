@@ -29778,6 +29778,84 @@
         }
       }
     },
+    "/reviews/screens": {
+      "post": {
+        "operationId": "reviews.screens",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "index": {
+                      "type": "boolean"
+                    },
+                    "screens": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "profile": {
+                            "enum": [
+                              "phone-portrait",
+                              "phone-landscape",
+                              "phone",
+                              "tablet-portrait",
+                              "tablet-landscape",
+                              "tablet",
+                              "laptop",
+                              "desktop",
+                              "other"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "name",
+                          "profile"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "index",
+                    "screens"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/reviews/list": {
       "post": {
         "operationId": "reviews.list",

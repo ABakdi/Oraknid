@@ -7,11 +7,13 @@ import {
   ReviewNoteEdit,
   ReviewOpen,
   ReviewOpened,
+  ReviewScreens,
   ReviewState,
   ReviewView,
 } from "@oraknid/contracts";
 import { ORPCError, os } from "@orpc/server";
 import { z } from "zod";
+import { reviewScreens } from "../reviews/screens.ts";
 import { ReviewError, type Reviews } from "../reviews/service.ts";
 import { framePage } from "../reviews/snapshot.ts";
 
@@ -46,6 +48,13 @@ export const reviewsRouter = {
     .input(ById)
     .output(ReviewDetail)
     .handler(({ context: c, input }) => guard(() => c.reviews.get(input.id, c.remote))),
+  /** The pages the review page can show, each with the device its name speaks of (2026-10-10). */
+  screens: base
+    .input(ById)
+    .output(ReviewScreens)
+    .handler(({ context: c, input }) =>
+      guard(() => reviewScreens(c.reviews, c.reviews.row(input.id))),
+    ),
   list: base
     .input(
       z

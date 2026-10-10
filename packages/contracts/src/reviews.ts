@@ -171,3 +171,37 @@ export const ReviewFramePage = z.object({
   missing: z.array(z.string()),
 });
 export type ReviewFramePage = z.infer<typeof ReviewFramePage>;
+
+/** The device a screen of a design is drawn for, guessed from its name; "other" for none. */
+export const ReviewScreenProfile = z.enum([
+  "phone-portrait",
+  "phone-landscape",
+  "phone",
+  "tablet-portrait",
+  "tablet-landscape",
+  "tablet",
+  "laptop",
+  "desktop",
+  "other",
+]);
+export type ReviewScreenProfile = z.infer<typeof ReviewScreenProfile>;
+
+/** A page of what is reviewed the review page can show: "/phone-portrait.html", "/brand/". */
+export const ReviewScreen = z.object({
+  path: z.string(),
+  /** Its name in words ("phone portrait"). */
+  name: z.string(),
+  profile: ReviewScreenProfile,
+});
+export type ReviewScreen = z.infer<typeof ReviewScreen>;
+
+/**
+ * A review's screens (2026-10-10): a design's pages at its top (its
+ * index.html as "/"), each with the device its name speaks of; an app is
+ * one screen, its entry. `index`: the design has an index.html (an app: true).
+ */
+export const ReviewScreens = z.object({
+  index: z.boolean(),
+  screens: z.array(ReviewScreen),
+});
+export type ReviewScreens = z.infer<typeof ReviewScreens>;
