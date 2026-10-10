@@ -3,6 +3,11 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.6.6 — 2026-10-10 (pre-release)
+
+- **An agent's API key is trimmed:** a space or line break pasted with it is no longer sent with the key.
+- **A server's own reason shows when it refuses:** for example xAI's "400: the server refused the API key: Incorrect API key provided…", instead of "No OpenAI-compatible server answers: 400 Bad Request".
+
 ## 0.6.5 — 2026-10-10 (pre-release)
 
 - **Fixed: adding an agent with an API key failed its test with "401"** even with the right key. The test runs before the agent is saved, when no key is stored yet, and sent none. The key typed in the form is now used for that test, kept in memory only for it. Both Oraknid's own agent and the OpenAI-compatible agent send it.

@@ -88,9 +88,7 @@ export function createOpenAICompatibleAdapter(
           signal: AbortSignal.timeout(10_000),
           headers: auth,
         });
-        if (res.status === 401 || res.status === 403)
-          throw new Error(`${res.status}: the server refused the API key (or it needs one)`);
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        if (!res.ok) throw new Error(await refusal(res));
         const body = (await res.json()) as { data?: { id: string; max_model_len?: number }[] };
         const limit = deps.probeLimit ?? 8;
         const models: ModelOffer[] = await Promise.all(
@@ -117,7 +115,9 @@ export function createOpenAICompatibleAdapter(
       } catch (error) {
         return {
           ok: false,
-          detail: `No OpenAI-compatible server answers at ${cfg.baseUrl}: ${(error as Error).message}`,
+          detail: /^\d{3}\b/.test((error as Error).message)
+            ? `The server at ${cfg.baseUrl} answered ${(error as Error).message}`
+            : `No OpenAI-compatible server answers at ${cfg.baseUrl}: ${(error as Error).message}`,
           models: [],
           features,
         };
@@ -366,4 +366,35 @@ async function* sse(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
       if (line.startsWith("data:")) yield line.slice(5).trim();
     }
   }
+}
+
+/**
+ * What a server said when it refused: its status and its own message
+ * (xAI answers 400 "Incorrect API key provided" for a wrong key, 401 for
+ * none), so the reason shows instead of "400 Bad Request".
+ */
+async function refusal(res: Response): Promise<string> {
+  let said = "";
+  try {
+    const text = (await res.text()).trim();
+    try {
+      const j = JSON.parse(text) as { error?: unknown; message?: unknown };
+      const e = j.error;
+      said = String(
+        (typeof e === "object" && e && "message" in e ? (e as { message: unknown }).message : e) ??
+          j.message ??
+          "",
+      );
+    } catch {
+      said = text;
+    }
+  } catch {}
+  said = said.replace(/\s+/g, " ").slice(0, 200);
+  const key =
+    res.status === 401 ||
+    res.status === 403 ||
+    /api[ _-]?key|credential|unauthori[sz]ed/i.test(said)
+      ? "the server refused the API key (or it needs one)"
+      : "";
+  return [`${res.status}`, key, said].filter(Boolean).join(": ");
 }

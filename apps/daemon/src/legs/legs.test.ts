@@ -548,8 +548,17 @@ describe("a hosted API's key in the test before saving (2026-10-10, xAI answered
   it("tests with the key I typed, and saves the Leg when the server takes it", async () => {
     const server = createServer((req, res) => {
       if (req.url !== "/v1/models") return res.writeHead(404).end();
+      // As xAI answers: 401 with no key, 400 "Incorrect API key provided" with a wrong one.
+      if (!req.headers.authorization)
+        return res
+          .writeHead(401)
+          .end('{"code":"unauthenticated:no-credentials","error":"No credentials presented."}');
       if (req.headers.authorization !== "Bearer xai-k-123")
-        return res.writeHead(401).end('{"error":"no key"}');
+        return res
+          .writeHead(400)
+          .end(
+            '{"code":"invalid-argument","error":"Incorrect API key provided. You can obtain an API key from https://console.x.ai."}',
+          );
       res.writeHead(200, { "content-type": "application/json" });
       res.end(
         JSON.stringify({
@@ -575,12 +584,15 @@ describe("a hosted API's key in the test before saving (2026-10-10, xAI answered
         config: { baseUrl: `http://127.0.0.1:${port}/v1/responses` },
         secret: "wrong",
       } as never);
-      await expect(wrong).rejects.toThrow(/refused the API key/);
+      await expect(wrong).rejects.toThrow(
+        /answered 400: the server refused the API key.*Incorrect API key provided/,
+      );
       const leg = await api.legs.create({
         kind: "oraknid-agent",
         name: "Grok",
         config: { baseUrl: `http://127.0.0.1:${port}/v1/responses` },
-        secret: "xai-k-123",
+        // Pasted with a space and a line break: trimmed.
+        secret: " xai-k-123\n",
       } as never);
       expect(leg.enabled).toBe(true);
     } finally {

@@ -104,14 +104,14 @@ export const NewLeg = z.discriminatedUnion("kind", [
     name: z.string().min(1),
     config: OpenAICompatibleLegConfig,
     /** An API key, if the server needs one. Goes to the secret store, never the database. */
-    secret: z.string().min(1).optional(),
+    secret: z.string().trim().min(1).optional(),
   }),
   z.object({
     kind: z.literal("opencode"),
     name: z.string().min(1),
     config: OpenCodeLegConfig,
     /** The provider's API key. Goes to the secret store, never the database. */
-    secret: z.string().min(1).optional(),
+    secret: z.string().trim().min(1).optional(),
   }),
   z.object({
     kind: z.literal("antigravity"),
@@ -123,14 +123,14 @@ export const NewLeg = z.discriminatedUnion("kind", [
     name: z.string().min(1),
     config: OraknidAgentLegConfig,
     /** The endpoint's API key, if it needs one. Goes to the secret store, never the database. */
-    secret: z.string().min(1).optional(),
+    secret: z.string().trim().min(1).optional(),
   }),
   z.object({
     kind: z.literal("codex"),
     name: z.string().min(1),
     config: CodexLegConfig,
     /** An OpenAI API key instead of a ChatGPT sign-in. Goes to the secret store, never the database. */
-    secret: z.string().min(1).optional(),
+    secret: z.string().trim().min(1).optional(),
   }),
 ]);
 export type NewLeg = z.infer<typeof NewLeg>;
