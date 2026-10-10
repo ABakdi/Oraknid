@@ -1,4 +1,11 @@
-import type { Event, ReviewDevice, ReviewNote, ReviewNoteKind } from "@oraknid/contracts";
+import type {
+  Event,
+  ReviewDevice,
+  ReviewNote,
+  ReviewNoteKind,
+  ReviewScreenProfile,
+  ReviewScreens,
+} from "@oraknid/contracts";
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { t } from "./i18n";
@@ -49,6 +56,46 @@ export function customDevice(width: number, height: number): ReviewDevice | null
     height,
     orientation: width > height ? "landscape" : "portrait",
   };
+}
+
+/**
+ * The screens a device would rather show, best first (2026-10-10, the Keys
+ * design: a page per device, no index.html). A phone is under 600 pixels
+ * wide or 500 high; a tablet under 1200 wide, falling back to the phone's
+ * page when it is narrow (under 900) and to the desktop's when wide.
+ */
+export function profilesFor(d: Pick<ReviewDevice, "width" | "height">): ReviewScreenProfile[] {
+  const land = d.width > d.height;
+  if (d.width < 600 || d.height < 500)
+    return land
+      ? ["phone-landscape", "phone", "tablet-landscape", "tablet", "phone-portrait"]
+      : ["phone-portrait", "phone", "tablet-portrait", "tablet", "phone-landscape"];
+  if (d.width < 1200) {
+    const own: ReviewScreenProfile[] = land
+      ? ["tablet-landscape", "tablet", "tablet-portrait"]
+      : ["tablet-portrait", "tablet", "tablet-landscape"];
+    const phone: ReviewScreenProfile[] = land
+      ? ["phone-landscape", "phone", "phone-portrait"]
+      : ["phone-portrait", "phone", "phone-landscape"];
+    const desk: ReviewScreenProfile[] = ["desktop", "laptop"];
+    return d.width < 900 ? [...own, ...phone, ...desk] : [...own, ...desk, ...phone];
+  }
+  return d.width < 1600 ? ["laptop", "desktop"] : ["desktop", "laptop"];
+}
+
+/**
+ * The screen to show on a device: the design's page for it when it has
+ * pages per device; null when it has none (its index.html, or the app,
+ * fits each device itself) and the frame stays on what it shows.
+ */
+export function screenFor(s: ReviewScreens | null, d: ReviewDevice): string | null {
+  if (!s?.screens.some((x) => x.profile !== "other")) return null;
+  for (const p of profilesFor(d)) {
+    const hit = s.screens.find((x) => x.profile === p);
+    if (hit) return hit.path;
+  }
+  // Pages for some devices but none near this one: the design's own start.
+  return s.index ? "/" : null;
 }
 
 export const sameDevice = (a: ReviewDevice | null, b: ReviewDevice | null) =>

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import type { ReviewFramePage } from "@oraknid/contracts";
-import { designFile, injectInto, typeOf } from "./frame.ts";
+import { designFile, designIndex, injectInto, typeOf } from "./frame.ts";
 import { OVERLAY_JS } from "./overlay.ts";
 import { ReviewError, type ReviewRow, type Reviews } from "./service.ts";
 
@@ -119,9 +119,12 @@ function getter(reviews: Reviews, row: ReviewRow): (path: string) => Promise<Got
   if (row.kind === "design") {
     const root = reviews.designRoot(row);
     return async (path) => {
-      const file = root ? designFile(root, path) : null;
-      if (!file) return null;
-      return { type: typeOf(file), body: readFileSync(file) };
+      if (!root) return null;
+      const file = designFile(root, path);
+      if (file) return { type: typeOf(file), body: readFileSync(file) };
+      // A folder without index.html: its screens listed, as the frame at home does.
+      const listing = designIndex(root, path);
+      return listing ? { type: "text/html; charset=utf-8", body: Buffer.from(listing) } : null;
     };
   }
   const port = Number(row.target);

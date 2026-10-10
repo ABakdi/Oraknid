@@ -11,6 +11,7 @@ When a design or the app is ready, Oraknid opens the **review page in a new tab*
 The top bar names the project, what is reviewed and the round, with **Send notes (n)** and **Approve**. Under it:
 
 - **Device**: Phone 390×844, Tablet 820×1180, Laptop 1440×900, Desktop 1920×1080, each turned to landscape with the turn button, or a width and height of your own. The page is shown at that size, zoomed to fit (**Fit**, or **100%** to see it at its real size and scroll).
+- **Screen**: a design made of one page per device (say `phone-portrait.html`, `phone-landscape.html` and `desktop.html`) shows the page that fits the device you picked, each time you change it. **Screen** lists all its pages, so you can open any of them; your pick stays until you change the device, or pick **Match device**.
 - **Select**: point at the page and its parts are outlined; click one to note it. While selecting, the page's own buttons don't react; **Esc** stops.
 - **General note**: a note about the whole of it.
 

@@ -581,6 +581,14 @@ export const CONTROLS: HelpControl[] = [
     where: "The review page, the bar under its title, on the left",
   },
   {
+    id: "review.screens",
+    page: "review",
+    needsItem: true,
+    name: "Screen",
+    does: "A design made of a page per device (phone-portrait.html, desktop.html): the page that fits the device is shown by itself at every device change. Pick another page here; Match device goes back to the fitting one, as does changing the device.",
+    where: "The review page, beside the device, when the design has more than one page",
+  },
+  {
     id: "review.select",
     page: "review",
     needsItem: true,

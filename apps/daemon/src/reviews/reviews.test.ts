@@ -28,6 +28,7 @@ import { seedJob } from "../testing/fixtures.ts";
 import { readsAsFeedback } from "./feedback.ts";
 import { designFile, designIndex, injectInto, OVERLAY_TAG, reviewKeyOf } from "./frame.ts";
 import { OVERLAY_JS, OVERLAY_PATH } from "./overlay.ts";
+import { screenProfile } from "./screens.ts";
 
 // Reviews (ADR-064, M16.1): the API and its rounds, the frame's own origin
 // (a design's folder and nothing outside it; the job's app on its port and
@@ -524,25 +525,139 @@ describe("feedback in the chat", () => {
 });
 
 describe("a design without index.html (2026-10-09, the Keys design)", () => {
-  it("lists its screens instead of 'Not in the design', and picks the one that fits the size", () => {
-    const root = mkdtempSync(join(tmpdir(), "oraknid-design-"));
-    for (const f of ["desktop.html", "phone-landscape.html", "phone-portrait.html", "styles.css"])
-      writeFileSync(join(root, f), "<p>x</p>");
+  /** The Keys design: a page per device, a stylesheet, brand/ with its own index.html. */
+  function keys(root: string) {
+    for (const f of ["desktop.html", "phone-landscape.html", "phone-portrait.html"])
+      writeFileSync(
+        join(root, f),
+        `<!doctype html><html><head><link rel="stylesheet" href="styles.css"></head><body><h1 id="name">${f}</h1></body></html>`,
+      );
+    writeFileSync(join(root, "styles.css"), "h1 { color: red; }");
     mkdirSync(join(root, "brand"));
     writeFileSync(join(root, "brand", "index.html"), "<p>logo</p>");
     mkdirSync(join(root, ".git"));
+  }
+
+  it("lists its screens instead of 'Not in the design', and opens none by itself", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "oraknid-design-")));
+    keys(root);
     const page = designIndex(root, "/") ?? "";
-    expect(page).toContain('href="desktop.html"');
-    expect(page).toContain('href="phone-landscape.html"');
-    expect(page).toContain('href="brand/"');
+    expect(page).toContain('href="/desktop.html"');
+    expect(page).toContain('href="/phone-landscape.html"');
+    expect(page).toContain('href="/brand/"');
+    expect(page).toContain(">phone landscape<");
     expect(page).not.toContain("styles.css");
     expect(page).not.toContain(".git");
-    expect(page).toContain("phone-landscape");
+    // The review page picks the screen; the listing doesn't move its frame.
+    expect(page).not.toContain("location.replace");
+    expect(page).not.toContain("<script");
     // Only folders inside the design, never outside it.
     expect(designIndex(root, "/../")).toBeNull();
     expect(designIndex(root, "/.git/")).toBeNull();
     // A design with an index.html serves it as before.
     writeFileSync(join(root, "index.html"), "<p>home</p>");
-    expect(designFile(root, "/")).toBe(join(realpathSync(root), "index.html"));
+    expect(designFile(root, "/")).toBe(join(root, "index.html"));
+  });
+
+  it("guesses the device each screen is for from its name", () => {
+    const cases: Record<string, string> = {
+      "phone-portrait.html": "phone-portrait",
+      "phone-landscape.html": "phone-landscape",
+      "Mobile_Landscape.htm": "phone-landscape",
+      "mobile.html": "phone",
+      "iphone.html": "phone",
+      "portrait.html": "phone-portrait",
+      "landscape.html": "phone-landscape",
+      "tablet.html": "tablet",
+      "tablet-portrait.html": "tablet-portrait",
+      "ipad landscape.html": "tablet-landscape",
+      "laptop.html": "laptop",
+      "desktop.html": "desktop",
+      "wide.html": "desktop",
+      "home-desktop.html": "desktop",
+      "brand/": "other",
+      "about.html": "other",
+      "telephone.html": "other",
+    };
+    for (const [name, profile] of Object.entries(cases))
+      expect(screenProfile(name), name).toBe(profile);
+  });
+
+  it("gives its screens through the API, anywhere; an app is one screen", async () => {
+    const { d, dir, cli, client, jobId, project } = await start();
+    const root = join(project, "keys");
+    mkdirSync(root);
+    keys(root);
+    const { id } = await cli.reviews.open({ jobId, kind: "design", target: root });
+    const s = await cli.reviews.screens({ id });
+    expect(s.index).toBe(false);
+    expect(s.screens).toEqual([
+      { path: "/brand/", name: "brand", profile: "other" },
+      { path: "/desktop.html", name: "desktop", profile: "desktop" },
+      { path: "/phone-landscape.html", name: "phone landscape", profile: "phone-landscape" },
+      { path: "/phone-portrait.html", name: "phone portrait", profile: "phone-portrait" },
+    ]);
+    // A design with an index.html: it is "/", flagged.
+    const p2 = join(dir, "p2");
+    mkdirSync(join(p2, "design"), { recursive: true });
+    writeFileSync(join(p2, "design", "index.html"), "<p>home</p>");
+    writeFileSync(join(p2, "design", "about.html"), "<p>about</p>");
+    const withIndex = await cli.reviews.open({
+      jobId: seedJob(d.db, "running", p2),
+      kind: "design",
+      target: join(p2, "design"),
+    });
+    const w = await cli.reviews.screens({ id: withIndex.id });
+    expect(w.index).toBe(true);
+    expect(w.screens).toContainEqual({ path: "/", name: "index", profile: "other" });
+    // The app: its entry only.
+    const app = createServer((_q, res) => res.end("ok"));
+    await new Promise<void>((r) => app.listen(0, "127.0.0.1", r));
+    closing.push(() => new Promise<void>((r) => app.close(() => r())));
+    const appReview = await cli.reviews.open({
+      jobId: seedJob(d.db, "running", join(dir, "p3")),
+      kind: "app",
+      target: (app.address() as { port: number }).port,
+    });
+    expect(await cli.reviews.screens({ id: appReview.id })).toEqual({
+      index: true,
+      screens: [{ path: "/", name: "app", profile: "other" }],
+    });
+    // Away from home, a standard device reads them too (as it reads the review).
+    const { code } = await cli.devices.pairStart();
+    const tok = (await client().devices.pairComplete({ code, name: "Phone" })).token;
+    const { session } = await client({ authorization: `Bearer ${tok}` }).lock.setPin({
+      current: null,
+      pin: PIN,
+    });
+    const away = client({
+      authorization: `Bearer ${tok}`,
+      "x-oraknid-unlock": session,
+      "x-oraknid-remote": "1",
+    });
+    expect((await away.reviews.screens({ id })).screens).toHaveLength(4);
+  });
+
+  it("serves '/' as the listing at home and away, and each screen inlined away", async () => {
+    const { d, cli, jobId, project } = await start();
+    const root = join(project, "keys");
+    mkdirSync(root);
+    keys(root);
+    const { id } = await cli.reviews.open({ jobId, kind: "design", target: root });
+    const host = `rv-${keyOf(d, id)}.localhost:${d.port}`;
+    const home = await get(d.port, "/", host);
+    expect(home.status).toBe(200);
+    expect(home.body).toContain('href="/phone-portrait.html"');
+    const top = await cli.reviews.frame({ id, path: "/" });
+    expect(top.path).toBe("/");
+    expect(top.html).toContain('href="/phone-landscape.html"');
+    expect(top.html).toContain("window.__oraknidReview=");
+    const phone = await cli.reviews.frame({ id, path: "/phone-landscape.html" });
+    expect(phone.path).toBe("/phone-landscape.html");
+    expect(phone.html).toContain('<h1 id="name">phone-landscape.html</h1>');
+    expect(phone.html).toContain("<style>h1 { color: red; }</style>");
+    const brand = await cli.reviews.frame({ id, path: "/brand/" });
+    expect(brand.html).toContain("<p>logo</p>");
+    await expect(cli.reviews.frame({ id, path: "/nothing.html" })).rejects.toThrow(/No page/);
   });
 });

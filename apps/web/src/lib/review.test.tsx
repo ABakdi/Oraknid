@@ -18,9 +18,8 @@ vi.mock("./live", () => ({
 const toast = Object.assign(vi.fn(), { success: vi.fn() });
 vi.mock("sonner", () => ({ toast }));
 
-const { byDevice, customDevice, DEVICES, fitScale, pinsFor, turn, useReviewOpener } = await import(
-  "./review"
-);
+const { byDevice, customDevice, DEVICES, fitScale, pinsFor, screenFor, turn, useReviewOpener } =
+  await import("./review");
 
 afterEach(() => {
   cleanup();
@@ -145,5 +144,39 @@ describe("opening a review in a new tab", () => {
     render(<Opener />);
     emit(opened("R3", Date.now() - 5 * 60_000));
     expect(open).not.toHaveBeenCalled();
+  });
+});
+
+describe("the screen that fits a device (2026-10-10)", () => {
+  const screens = (profiles: string[], index = false) => ({
+    index,
+    screens: profiles.map((p) => ({ path: `/${p}.html`, name: p, profile: p as "other" })),
+  });
+  const at = (i: number) => DEVICES[i] as (typeof DEVICES)[number];
+  it("picks the design's page for each device", () => {
+    const keys = screens(["desktop", "phone-landscape", "phone-portrait"]);
+    expect(DEVICES.map((d) => screenFor(keys, d))).toEqual([
+      "/phone-portrait.html",
+      "/phone-landscape.html",
+      "/phone-portrait.html",
+      "/desktop.html",
+      "/desktop.html",
+      "/desktop.html",
+    ]);
+    const all = screens(["phone", "tablet", "laptop", "desktop"]);
+    expect(DEVICES.map((d) => screenFor(all, d))).toEqual([
+      "/phone.html",
+      "/phone.html",
+      "/tablet.html",
+      "/tablet.html",
+      "/laptop.html",
+      "/desktop.html",
+    ]);
+  });
+  it("leaves the frame alone without pages per device", () => {
+    expect(screenFor(null, at(0))).toBeNull();
+    expect(screenFor(screens(["about", "contact"].map(() => "other")), at(0))).toBeNull();
+    // Pages for a phone only, an index.html: a desktop shows the index.
+    expect(screenFor(screens(["phone-portrait"], true), at(5))).toBe("/");
   });
 });
