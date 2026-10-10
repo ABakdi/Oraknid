@@ -504,3 +504,43 @@ describe("a hosted catalog of hundreds of models (OpenRouter, 2026-10-09)", () =
     expect(p.models[0]?.toolCalls).toBe("none");
   });
 });
+
+describe("a hosted API that needs its key to list models (xAI, Groq; 2026-10-10)", () => {
+  it("takes a pasted endpoint as its base, sends the key, and says when the key is refused", async () => {
+    const seen: { url: string; auth: string | null }[] = [];
+    const fakeFetch = (async (url: string | URL, init?: RequestInit) => {
+      const auth = new Headers(init?.headers).get("authorization");
+      seen.push({ url: String(url), auth });
+      if (!String(url).endsWith("/models")) return new Response("{}", { status: 404 });
+      if (auth !== "Bearer xai-key") return new Response("no key", { status: 401 });
+      return new Response(
+        JSON.stringify({
+          data: [{ id: "grok-4", context_length: 256000, supported_parameters: ["tools"] }],
+        }),
+      );
+    }) as typeof fetch;
+    const leg = {
+      id: "x",
+      name: "Grok",
+      kind: "oraknid-agent" as const,
+      config: { baseUrl: "https://api.x.ai/v1/responses" },
+    };
+    const ok = await createOraknidAgentAdapter({
+      fetch: fakeFetch,
+      credentialOf: async () => "xai-key",
+    }).probe(leg, null);
+    expect(seen[0]).toEqual({ url: "https://api.x.ai/v1/models", auth: "Bearer xai-key" });
+    expect(ok.ok).toBe(true);
+    expect(ok.models[0]).toMatchObject({
+      model: "grok-4",
+      contextWindow: 256000,
+      toolCalls: "native",
+    });
+    const refused = await createOraknidAgentAdapter({
+      fetch: fakeFetch,
+      credentialOf: async () => "wrong",
+    }).probe(leg, null);
+    expect(refused.ok).toBe(false);
+    expect(refused.detail).toMatch(/refused the API key/);
+  });
+});

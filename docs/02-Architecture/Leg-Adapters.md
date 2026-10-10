@@ -226,3 +226,12 @@ types and its hook protocol; **not yet run on a real job**.
 | MCP | Oraknid's bridges as `-c mcp_servers.<name>={command,args}` on each run; nothing else of mine. |
 
 Related: [[Legs-and-Capability-Profiles]] · [[ADR-011-Claude-Code-Adapter]] · [[ADR-009-Multiple-Accounts-Per-Provider]] · [[Sandboxing]]
+
+**Hosted APIs (2026-10-10).** The address given for an OpenAI-compatible
+server (Oraknid's own agent or the openai-compatible Leg) is taken as its
+base: a pasted endpoint (`…/v1/responses`, `…/v1/chat/completions`,
+`…/v1/models`) is trimmed to `…/v1` (`apiBase` in the Leg SDK). The
+Leg's API key goes with every request, the model listing included, which
+hosted APIs (xAI, Groq, OpenAI) refuse without it; a 401 or 403 says the
+key was refused.
+

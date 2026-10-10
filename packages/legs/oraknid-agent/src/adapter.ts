@@ -5,6 +5,7 @@ import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from "@ai-sdk/mcp/mcp-stdio";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import {
+  apiBase,
   Channel,
   emptyUsage,
   type LegAdapter,
@@ -75,7 +76,7 @@ export interface OraknidAgentConfig {
 export const readConfig = (leg: LegConfig): OraknidAgentConfig => {
   const c = leg.config;
   return {
-    baseUrl: typeof c.baseUrl === "string" && c.baseUrl ? c.baseUrl.replace(/\/+$/, "") : null,
+    baseUrl: typeof c.baseUrl === "string" && c.baseUrl ? apiBase(c.baseUrl) : null,
     models: Array.isArray(c.models) ? c.models.map(String) : [],
     endpoints: Array.isArray(c.endpoints)
       ? (c.endpoints as Endpoint[]).map((e) => ({ ...e, baseUrl: e.baseUrl.replace(/\/+$/, "") }))
@@ -198,7 +199,7 @@ export function createOraknidAgentAdapter(deps: OraknidAgentDeps = {}): LegAdapt
             features: { ...feats, tools: false },
           };
         try {
-          found = await listModels(http, cfg.baseUrl, cfg.models);
+          found = await listModels(http, cfg.baseUrl, cfg.models, credential);
         } catch (error) {
           return {
             ok: false,
@@ -743,10 +744,17 @@ async function listModels(
   http: typeof fetch,
   baseUrl: string,
   wanted: string[],
+  /** The Leg's API key: hosted APIs (xAI, Groq, OpenAI) list their models only with it. */
+  credential: string | null = null,
 ): Promise<Endpoint[]> {
   let listed: Listed[] = [];
   try {
-    const res = await http(`${baseUrl}/models`, { signal: AbortSignal.timeout(10_000) });
+    const res = await http(`${baseUrl}/models`, {
+      signal: AbortSignal.timeout(10_000),
+      ...(credential ? { headers: { authorization: `Bearer ${credential}` } } : {}),
+    });
+    if (res.status === 401 || res.status === 403)
+      throw new Error(`${res.status}: the server refused the API key (or it needs one)`);
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     listed = ((await res.json()) as { data?: Listed[] }).data ?? [];
   } catch (error) {

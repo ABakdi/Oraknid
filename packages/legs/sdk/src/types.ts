@@ -273,3 +273,17 @@ export const emptyUsage = (estimated = false): UsageSnapshot => ({
   contextWindow: null,
   estimated,
 });
+
+/**
+ * An OpenAI-compatible server's base address from what was pasted: an
+ * endpoint (`…/v1/responses`, `…/v1/chat/completions`, `…/v1/models`)
+ * becomes its base (`…/v1`), trailing slashes gone (2026-10-10: xAI's
+ * `https://api.x.ai/v1/responses` given as the address).
+ */
+export function apiBase(url: string): string {
+  return url
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/\/(?:chat\/completions|completions|responses|models|embeddings)$/i, "")
+    .replace(/\/+$/, "");
+}

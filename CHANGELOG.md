@@ -3,6 +3,11 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.6.4 — 2026-10-10 (pre-release)
+
+- **Hosted APIs that need a key to list their models work:** xAI (Grok), Groq, OpenAI and the like. The agent's API key now goes with the model listing too, and a refused key says so.
+- **A pasted endpoint is taken as its base:** `https://api.x.ai/v1/responses` or `…/v1/chat/completions` becomes `https://api.x.ai/v1`.
+
 ## 0.6.3 — 2026-10-10 (pre-release)
 
 - **Reviews of a design with a page per device:** switching the device now loads that device's page (phone portrait, phone landscape, tablet, desktop), every time, at home and away from home. Before, the desktop page stayed and showed black at phone sizes.

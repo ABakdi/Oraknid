@@ -1,5 +1,6 @@
 import { contextWindowOf, testToolCalling } from "@oraknid/leg-oraknid-agent";
 import {
+  apiBase,
   Channel,
   emptyUsage,
   type LegAdapter,
@@ -24,7 +25,7 @@ export interface OpenAICompatibleConfig {
 }
 
 export const readConfig = (leg: LegConfig): OpenAICompatibleConfig => ({
-  baseUrl: String(leg.config.baseUrl ?? "http://localhost:11434/v1").replace(/\/+$/, ""),
+  baseUrl: apiBase(String(leg.config.baseUrl ?? "http://localhost:11434/v1")),
   maxToolCalls: Number(leg.config.maxToolCalls ?? 50),
   commandTimeoutMs: Number(leg.config.commandTimeoutMs ?? 120_000),
 });
