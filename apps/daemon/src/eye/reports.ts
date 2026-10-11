@@ -243,6 +243,9 @@ function folderRestored(d: ReportDeps, jobId: string, p: Payload) {
 
 /** What a blocked job needs from me, in a line. */
 function needs(reason: string): string {
+  // After recoveries that couldn't fix it (ADR-067 §3): the reason ends with what I must do.
+  if (/I tried to fix it/.test(reason))
+    return "Answer here, or say “fix it” to start a recovery with what you tell me.";
   if (/failed \d+ attempts/.test(reason))
     return "Look at the task (its attempts and the inbox), then press Resume: its tasks get eight more tries.";
   // A paused Leg is paused, not out of quota (ADR-052 §4).

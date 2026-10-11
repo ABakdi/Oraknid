@@ -20,7 +20,7 @@ import type { AttemptDeps, AttemptJob, AttemptWhere, TaskRow } from "./types.ts"
 /** What every Leg is told about git: the folder stays a worktree, the repo's part is Oraknid's. */
 const GIT_TEXT = `# Git
 
-This folder is a git worktree of the project, on the job's branch. Oraknid commits your work there when its checks pass; merging into the work branch and pushing to GitHub are Oraknid's own steps when the job ends. So don't commit into other branches, merge, push, or run git init, and never move, delete or edit a .git or the project's worktrees: such commands are refused.`;
+This folder is a git worktree of the project, on the job's branch. Oraknid commits your verified work for you when its checks pass, so don't commit yourself; merging into the work branch and pushing to GitHub are Oraknid's own steps when the job ends. So don't commit into other branches, merge, push, or run git init, and never move, delete or edit a .git or the project's worktrees: such commands are refused. Keep the project's .gitignore correct for what you add: dependencies (node_modules, .venv), build output (dist, build, target) and caches never belong in the repository, nor do .env files or keys.`;
 
 /**
  * The context diet (ADR-066 §4): the pack aims under this many tokens, Silk

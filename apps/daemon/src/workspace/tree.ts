@@ -8,7 +8,6 @@ import {
   addTaskWorktree,
   changedSince,
   checkpoint,
-  commitAll,
   commitStaged,
   createWorktree,
   diffSince,
@@ -20,6 +19,8 @@ import {
   restorePaths,
   restoreWorktree,
   rollback,
+  type StageOptions,
+  type StageResult,
   stageAll,
   worktreeGit,
   worktreeProblem,
@@ -38,6 +39,14 @@ export interface TreeCommit {
   sha: string;
 }
 
+/**
+ * How a commit of a task's work is made (ADR-067 §5): its scope and judge,
+ * and what to do with what each repo's commit left out.
+ */
+export interface CommitOptions extends Omit<StageOptions, "ignoreFile"> {
+  staged?: (repo: string | null, r: StageResult) => void;
+}
+
 export interface WorkTree {
   /** Where Legs work and checks run. */
   cwd: string;
@@ -54,7 +63,10 @@ export interface WorkTree {
   rollback(ref: string, trash: string): Promise<{ restored: string[]; trashed: string[] }>;
   restorePaths(ref: string, paths: string[], trash: string): void;
   /** The work as commits, one per repo that changed, each with its own message. */
-  commit(message: (repo: string | null, several: boolean) => string): Promise<TreeCommit[]>;
+  commit(
+    message: (repo: string | null, several: boolean) => string,
+    o?: CommitOptions,
+  ): Promise<TreeCommit[]>;
   /** A local branch's commit, in the named repo (the only one when left out). */
   localCommit(branch: string, repo?: string | null): string | null;
   /** The plain git handle of a single work tree; null for several repos. */
@@ -112,9 +124,13 @@ export function singleTree(g: Git, tmpDir: string, repoPath?: string): WorkTree 
     diffSince: (ref) => diffSince(g, ref, tmpDir),
     rollback: (ref, trash) => rollback(g, ref, tmpDir, trash),
     restorePaths: (ref, paths, trash) => restorePaths(g, ref, paths, trash),
-    commit: async (message) => {
-      const sha = await commitAll(g, message(null, false));
-      return sha ? [{ repo: null, folder: "", sha }] : [];
+    commit: async (message, o = {}) => {
+      // The ignore file is written only in the project's own repository, never in a shadow's folder.
+      const r = await stageAll(g, { ...o, ignoreFile: !!repoPath });
+      o.staged?.(null, r);
+      if (!r.staged) return [];
+      const sha = await commitStaged(g, message(null, false));
+      return [{ repo: null, folder: "", sha }];
     },
     localCommit: (branch) => {
       try {
@@ -490,9 +506,24 @@ export class MultiTree implements WorkTree {
     this.#trash(outside, trash);
   }
 
-  async commit(message: (repo: string | null, several: boolean) => string) {
+  async commit(
+    message: (repo: string | null, several: boolean) => string,
+    opts: CommitOptions = {},
+  ) {
     const changed: Open[] = [];
-    for (const o of this.#each()) if (await stageAll(this.#g(o))) changed.push(o);
+    for (const o of this.#each()) {
+      // A task's scope names paths of the job's folder; each repo reads its own part.
+      const scope = opts.scope
+        ?.filter((s) => !o.repo.folder || s.startsWith(`${o.repo.folder}/`))
+        .map((s) => (o.repo.folder ? s.slice(o.repo.folder.length + 1) : s));
+      const r = await stageAll(this.#g(o), {
+        ...opts,
+        ...(scope ? { scope } : {}),
+        ignoreFile: true,
+      });
+      opts.staged?.(o.repo.name, r);
+      if (r.staged) changed.push(o);
+    }
     const out: TreeCommit[] = [];
     for (const o of changed)
       out.push({

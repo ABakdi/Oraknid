@@ -397,6 +397,42 @@ need what it shows go on beside it.
 | Take over a task | The task becomes `owner`-held. Oraknid stops touching its scope until I mark it done or hand it back; handed back, it starts with its escalation reset ([[Drift-Control]]). |
 | Answer | Inline in the inbox or on the task. |
 
+### When a job blocks (2026-10-11, [[ADR-067-Self-Recovery]])
+A job blocks only for what is mine to decide, or after Oraknid tried to
+fix what isn't. Mine: an approval or a question it waits for, something
+I denied, tasks I took over, my stop or pause; and no Leg free for the
+work (quota, a paused Leg), where it waits for one as before. Anything
+else (a merge git refused, a check that keeps failing, a worktree that
+can't be made, a task that used its attempts) gets a **recovery** first:
+an agent session in the job's own folder, given the exact failure, the
+folder's git state and the last of the work's log, asked to make the
+work able to go on without losing any of it; then Oraknid does again
+what failed. Two recoveries at most, the second told what the first
+found. Only then the job blocks, saying in plain words what failed,
+what was tried, and the one thing I must decide or do; never a counter.
+Each recovery is in Silk ("Recovered", "Recovery 1 didn't fix it").
+
+On a blocked job, "fix it", "unblock", "continue", "resume", "resolve
+this" or "try again" in the conversation starts a recovery at once, with
+my words; The Eye says what it is doing, and when the recovery ends,
+what it found and did. Resuming a blocked job gives its tasks a fresh
+count of attempts; a task that used its attempts gets two more after a
+recovery.
+
+### The project's repository
+Oraknid keeps the repository clean as it works: generated folders it
+finds tracked (installed dependencies and caches; build output too in a
+repository with no .gitignore) are untracked on the job's branch in one
+commit, "chore: stop tracking generated files", the files left on disk.
+A commit of a task's work takes only what belongs: never what a tool
+makes (lockfiles excepted), build artifacts, secrets or files over
+2 MB (pictures and fonts in an assets folder excepted); a project with
+no .gitignore gets one at the first commit, and an existing one is
+extended, never replaced. What the rules don't settle (a kind of project
+they don't know, new folders, binaries, a large or unusual commit) is
+decided by a light model, remembered per project. What a commit left out
+is said in the task's report.
+
 ## Several jobs (Phase 3)
 
 At most the set number of jobs run at once (Settings → Jobs at once,

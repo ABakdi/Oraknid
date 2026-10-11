@@ -32,6 +32,7 @@ import type { EventBus } from "../events/bus.ts";
 import { newId } from "../ids.ts";
 import type { InboxStore } from "../inbox/store.ts";
 import { readsAsFeedback } from "../reviews/feedback.ts";
+import { RecoverNow, recoverNowKey, writeSetting } from "../settings.ts";
 import type { SilkStore } from "../silk/store.ts";
 import { viewOf } from "../workspace/projects.ts";
 import { isSeveral } from "../workspace/repos.ts";
@@ -622,20 +623,114 @@ function respond(d: TalkDeps, jobId: string, text: string, messageId: string, se
       authoredBy: "owner",
     });
     tellRunning(jobId, text);
-    add(
-      d,
-      jobId,
-      "eye",
-      `I couldn't think about it just now (${error instanceof Error ? error.message : String(error)}), so I kept it as your decision; the agents will read it.`,
-      {
-        intent: "instruction",
-        did: ["Recorded as your decision"],
-        silkIds: [entry.id],
-        taskIds: [],
-        jobId: null,
-      },
-    );
+    add(d, jobId, "eye", cantThinkSaid(error), {
+      intent: "instruction",
+      did: ["Recorded as your decision"],
+      silkIds: [entry.id],
+      taskIds: [],
+      jobId: null,
+    });
   });
+}
+
+/** Words that ask a blocked job to go on, or its block to be fixed (ADR-067 §4). */
+export const GO_ON =
+  /\b(fix|unblock|unstick|continue|resume|resolve|retry|try again|carry on|go on|keep going|proceed|get (it|this|the job) (going|moving|unstuck)|sort (it|this) out)\b/i;
+
+/**
+ * A recovery I asked for on a blocked job (ADR-067 §4): my words and the
+ * block go to the job's program, which resumes into the recovery at once
+ * and tells me here what it found and did. Quota or a paused Leg isn't
+ * fixed by a recovery: the job is resumed and waits for its Legs as before.
+ */
+async function recoverNow(d: TalkDeps, job: typeof jobs.$inferSelect, text: string) {
+  const reason = job.blockedReason ?? "";
+  const waitsForLegs = job.blockedUntil !== null;
+  if (!waitsForLegs)
+    writeSetting(d.db, recoverNowKey(job.id), RecoverNow, {
+      owner: text,
+      blocked: reason,
+      at: (d.now ?? Date.now)(),
+    });
+  const entry = d.silk.add({
+    jobId: job.id,
+    kind: "decision",
+    title: `My instruction: ${firstLine(text)}`,
+    body: text,
+    authoredBy: "owner",
+  });
+  let started = true;
+  let why = "";
+  try {
+    await d.runner.resume(job.id);
+  } catch (e) {
+    started = false;
+    why = e instanceof Error ? e.message : String(e);
+    writeSetting(d.db, recoverNowKey(job.id), RecoverNow, null);
+  }
+  const now = d.db.select().from(jobs).where(eq(jobs.id, job.id)).get();
+  const queued = !!now?.queuedAt;
+  const short = reason.length > 200 ? `${reason.slice(0, 199)}…` : reason.replace(/\.$/, "");
+  const reply = !started
+    ? `I couldn't start the job again: ${why}`
+    : waitsForLegs
+      ? `The job is going again; it was waiting for an agent (${short}), so it waits for one free, then goes on.`
+      : queued
+        ? `I've queued the job: other jobs use all the room now. When it starts, it first looks into what blocked it (${short}), fixes what it can, and tells you here.`
+        : `I'm looking into what blocked the job now (${short}): an agent is diagnosing and fixing it in the job's folder, then the work goes on from where it stopped. What it finds and changes comes here.`;
+  add(d, job.id, "eye", reply, {
+    intent: "instruction",
+    did: started
+      ? waitsForLegs
+        ? ["Resumed the job"]
+        : ["Started a recovery", queued ? "Queued the job" : "Resumed the job"]
+      : ["Not started"],
+    silkIds: [entry.id],
+    taskIds: [],
+    jobId: null,
+  });
+}
+
+/**
+ * Whether a reply promises work ("I'll fix it", "I will resume", "Let me
+ * look"): it may only when that work runs now (ADR-067 §4).
+ */
+export const PROMISES =
+  /\b(I'll|I will|I'm going to|I am going to|Let me|I'll now|I'm about to|I am about to)\b/i;
+
+/**
+ * A reply as sent (ADR-067 §4): one that promises work the job won't do
+ * now (it is blocked, paused, or waiting for me and nothing started) says
+ * what was done and what makes it run instead.
+ */
+export function honestReply(
+  reply: string,
+  o: { jobState: string; started: boolean; did: string[]; blockedReason?: string | null },
+): string {
+  if (!PROMISES.test(reply) || o.started || RUNNING.has(o.jobState) || ENDED.has(o.jobState))
+    return reply;
+  const done = o.did.length ? `${o.did.join("; ")}.` : "Noted.";
+  const how =
+    o.jobState === "blocked"
+      ? `The job is blocked${o.blockedReason ? ` (${o.blockedReason.replace(/\.$/, "").slice(0, 200)})` : ""}, so nothing runs until it goes on: say “fix it” to start a recovery now, or resume it.`
+      : o.jobState === "paused"
+        ? "The job is paused, so nothing runs until you resume it."
+        : o.jobState === "draft"
+          ? "The job hasn't started: start it and it runs."
+          : "Nothing runs on it right now.";
+  return `${done} ${how}`;
+}
+
+/**
+ * My message kept when The Eye couldn't think about it, said in plain
+ * words with what to do (ADR-067 §8): never a list of every model.
+ */
+export function cantThinkSaid(error: unknown): string {
+  const why = error instanceof Error ? error.message : String(error);
+  const plain = /^No Leg can think for The Eye right now: /.test(why)
+    ? why.replace(/^No Leg can think for The Eye right now: /, "")
+    : `the agent I asked failed (${why.length > 300 ? `${why.slice(0, 300)}…` : why}). Try again in a moment.`;
+  return `I can't think about this right now: ${plain} I kept your message as your decision; the agents will read it.`;
 }
 
 async function handle(
@@ -656,6 +751,12 @@ async function handle(
   // "Start now", "enough, the interview is over": over at once, whatever any model thinks.
   if (endsInterview(text) && unplanned && (round || job.state === "interviewing")) {
     endInterview(d, jobId, messageId, text, round ?? null);
+    return;
+  }
+  // "Fix it", "continue", "unblock" on a blocked job: a recovery starts now, never a task waiting
+  // behind the one that is stuck, and whether or not any model can think (ADR-067 §4).
+  if (job.state === "blocked" && GO_ON.test(text)) {
+    await recoverNow(d, job, text);
     return;
   }
   const project = d.db.select().from(projects).where(eq(projects.id, job.projectId)).get();
@@ -1159,6 +1260,14 @@ async function act(
     case "question":
       break;
   }
+  // A promise only when the work runs now (ADR-067 §4).
+  const now = d.db.select().from(jobs).where(eq(jobs.id, jobId)).get();
+  reply = honestReply(reply, {
+    jobState: now?.state ?? jobState,
+    started: !!jobRef || did.some((x) => /^(Passed to|Started|Pausing|Resumed|Taken to)/.test(x)),
+    did,
+    blockedReason: now?.blockedReason ?? null,
+  });
   add(
     d,
     jobId,

@@ -7,6 +7,33 @@ import { settings } from "./db/schema.ts";
 /** Since when a job's failed attempts count: set when I resume it after it hit the limit. */
 export const attemptsFromKey = (jobId: string) => `job.attemptsFrom.${jobId}`;
 
+/**
+ * After a recovery (ADR-067 §3), a task that had used its attempts gets
+ * this many more, not a whole new count; cleared when I resume the job.
+ */
+export const attemptCapKey = (jobId: string) => `job.attemptCap.${jobId}`;
+
+/**
+ * A recovery I asked for in the conversation (ADR-067 §4): my words and
+ * the block they were about, read once by the job's program as it resumes.
+ */
+export const recoverNowKey = (jobId: string) => `job.recoverNow.${jobId}`;
+export const RecoverNow = z
+  .object({ owner: z.string(), blocked: z.string(), at: z.number() })
+  .nullable();
+
+/**
+ * What the repository steward decided for a project (ADR-067 §5), by
+ * folder, and the ignore lines it wrote: `project.steward.<projectId>`.
+ */
+export const StewardMemory = z.object({
+  folders: z.record(z.string(), z.object({ include: z.boolean(), reason: z.string() })),
+  ignore: z.array(z.string()),
+});
+
+/** Oraknid's own care of a project's repository (ADR-067 §1, §2); off only for tests. */
+export const HYGIENE = "workspace.hygiene";
+
 /** Typed access to the settings table: each key has a schema and a default. */
 export function readSetting<T extends z.ZodType>(
   db: Db,
