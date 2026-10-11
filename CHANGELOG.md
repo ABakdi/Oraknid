@@ -3,6 +3,16 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.8.1 — 2026-10-11 (pre-release)
+
+Limits where the provider puts them ([ADR-068](docs/04-Decisions/ADR-068-Limits-Where-The-Provider-Puts-Them.md)): an agent that works in your terminal works in Oraknid too.
+
+- **A rate limit stops the model, not the whole agent:** when one OpenCode model is rate-limited, the agent's other models keep working. The whole agent waits only when its account is out, or when a second of its models is limited too; Oraknid remembers which of the two a provider does.
+- **The models you use come first:** Oraknid reads which models you use in OpenCode (its history and config) and Codex (its config) and prefers them; preview and experimental free models you don't use rank lower for long work. The Legs page marks them "you use this one".
+- **A short limit is a wait, not a block:** when a limit ends within 30 minutes and nothing else can take the work, the task says "Waiting for … until HH:MM, or another model sooner" and goes on by itself.
+- **Free tiers are paced:** a model that refused for its pace gets its requests spaced out (Oraknid's own agent) or one session at a time (other agents).
+- **A provider's error is never lost:** an error now always keeps the provider's status and message, so a request too large goes to a model with room, and an error with no text rests the model briefly instead of failing the task.
+
 ## 0.8.0 — 2026-10-11 (pre-release)
 
 Self-recovery and the repository steward ([ADR-067](docs/04-Decisions/ADR-067-Self-Recovery.md)): a job fixes what goes wrong before it asks you, and Oraknid commits only what belongs in a repository.
