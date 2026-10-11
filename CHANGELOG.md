@@ -3,6 +3,19 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.8.0 — 2026-10-11 (pre-release)
+
+Self-recovery and the repository steward ([ADR-067](docs/04-Decisions/ADR-067-Self-Recovery.md)): a job fixes what goes wrong before it asks you, and Oraknid commits only what belongs in a repository.
+
+- **Commits take only what belongs:** Oraknid no longer commits everything on disk after a task. Dependencies, build output and caches for every known ecosystem, secrets (`.env`, keys, contents matching known patterns) and large binaries are left out, stay on disk and stay out of later commits. What was left out is in the task's history.
+- **A .gitignore from the first commit:** a project without one gets one for the languages and tools it uses; an existing one is extended, never replaced.
+- **A model for what the rules don't settle:** an unknown kind of project, new folders or file types, binaries or an unusual commit are looked at by a light model, which decides what goes in and what is ignored. Its decisions are remembered per project.
+- **Generated folders already committed are untracked:** when a job starts or resumes, and before a merge, in one "chore: stop tracking generated files" commit; the files stay on disk.
+- **An agent on every failed merge:** a conflict, local changes, a lock or anything else git refuses goes to a steward agent working in the job's copy, which keeps both sides' intent and regenerates lock files; its result is accepted only when the checks pass. Two tries, the second on a stronger model. Merge failures say git's real reason, never "conflicted ()".
+- **A job recovers before it blocks:** anything that isn't yours to decide gets up to two recovery sessions first. When it still blocks, it says in plain words what failed, what was tried, and one question.
+- **"fix it" in the chat fixes it:** "fix it", "continue" or "unblock" on a blocked job starts a recovery at once, and The Eye reports what it found. The Eye no longer says "I'll…" when nothing is running.
+- **"Can't think" is one plain line** saying which agents are paused or out of quota and what to do, instead of a list of every model.
+
 ## 0.7.0 — 2026-10-10 (pre-release)
 
 The token economy ([ADR-066](docs/04-Decisions/ADR-066-Token-Economy.md)): agents hit their limits far more slowly under Oraknid.
