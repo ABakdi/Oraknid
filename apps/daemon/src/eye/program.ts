@@ -157,6 +157,8 @@ export interface EyeDeps {
   now: () => number;
   stallCheckMs?: number;
   driftJudgeMs?: number;
+  /** How often a task waiting out a short limit looks again (ADR-068 §3). */
+  routePollMs?: number;
   /** Attempts per task before The Eye stops and asks me. */
   maxAttempts?: number;
   /** Where evaluation steps open their reviews (ADR-064 §1; the inbox until the review page is wired). */
@@ -1432,6 +1434,14 @@ function controllerDeps(d: EyeDeps) {
     ...(d.stallCheckMs ? { stallCheckMs: d.stallCheckMs } : {}),
     ...(d.driftJudgeMs ? { driftJudgeMs: d.driftJudgeMs } : {}),
     ...(d.visual ? { visual: d.visual } : {}),
+    ...(d.routePollMs ? { routePollMs: d.routePollMs } : {}),
+    // A task waiting out a short limit shows why (ADR-068 §3).
+    ...(d.work
+      ? {
+          waiting: (jobId: string, taskId: string, reason: string | null) =>
+            d.work?.note(jobId, taskId, reason),
+        }
+      : {}),
   };
 }
 

@@ -247,7 +247,7 @@ kept until it clears ([[ADR-052-A-Harness-For-Any-Model]] §4):
 
 | Its words | What Oraknid does |
 | :-- | :-- |
-| A quota or usage limit with its reset ("Individual quota reached … Resets in 51h49m11s", "try again in 2 hours", "resets at 2026-10-09T14:00Z", a `reset_at`) | The Leg is `rate-limited` until that moment (`usageLimitOf`, `resetsAtFrom`), kept in its row across restarts; without a time, 15 minutes. Antigravity's own reading of its errors reads the same durations. |
+| A quota or usage limit with its reset ("Individual quota reached … Resets in 51h49m11s", "try again in 2 hours", "resets at 2026-10-09T14:00Z", a `reset_at`) | Kept until that moment (`usageLimitOf`, `resetsAtFrom`) across restarts; without a time, 15 minutes. **The model** that hit it is limited, its Leg healthy and its other models going on; **the Leg** is `rate-limited` only when the words say the account is out ("Individual quota", "upgrade", credits, billing, a plan) or a second model of it hits a limit meanwhile, and what its limits turned out to cover is remembered ([[ADR-068-Limits-Where-The-Provider-Puts-Them]] §1). Antigravity's own reading of its errors reads the same durations. |
 | A deprecated model ("Model mimo-v2.5-free has been deprecated. Use mimo-v2.6-flash-free instead.") | The model is hidden for good (`deprecateModel`) and the one its provider names is offered in its place: a new row the next probe fills in, or its row shown again (`leg.model-deprecated`, `task.model-deprecated`). |
 | A session that can't start | The Leg rests 2 minutes, as a program that broke (above). |
 | Paused by me | Never routed to; a blocked job says it is paused and to unpause it. |
@@ -257,6 +257,27 @@ nothing usable for a task says, per Leg, the real reason and what to do:
 "Claude A is paused in Oraknid: unpause it on its card (Legs) to go on",
 "Antigravity is out of quota until Thursday 14:00", "Opencode can't be
 used: not logged in", and when it goes on by itself.
+
+### Limits where the provider puts them (2026-10-11, [[ADR-068-Limits-Where-The-Provider-Puts-Them]])
+
+- **The model first.** A free model's rate limit ("Rate limit exceeded.
+  Please try again later.") limits that model until its reset; routing
+  leaves it out ("rate-limited until 07:32 today") and tries **another
+  model of the same Leg** first. The Leg is limited only when its words
+  say the account is out, or when a second model of it is limited
+  meanwhile; a Leg whose other model worked meanwhile is known for
+  per-model limits.
+- **The models I use.** OpenCode's own config and database, Codex's
+  config, read only from my home: the models I use with the tool rank
+  first among their Leg's ("you use this one", shown on the Legs page);
+  a preview or experimental free model I don't use ranks lower for an
+  agent's long work.
+- **Paced, not hammered.** A model refused for its pace is spaced (20
+  requests a minute, halved at each limit after, kept a day): Oraknid's
+  agent waits between its requests; another Leg runs one session of it
+  at a time.
+- **Never without words.** A turn's error always carries the provider's
+  status and words; an error with none is the provider's, not the task's.
 
 ### The ladder (M15.3, 2026-10-07)
 

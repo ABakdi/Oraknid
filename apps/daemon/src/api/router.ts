@@ -687,8 +687,10 @@ function jobView(c: ApiContext, id: string): JobView {
       pinnedModelId: t.pinnedModelId,
       ownerHeld: t.ownerHeld,
       waitingForLegId: legWork.waitFor[t.id] ?? null,
+      // A short limit it waits out says so whatever its state shows (ADR-068 §3).
       waitingReason:
-        t.state === "ready" || t.state === "pending" ? c.work.reasonOf(id, t.id) : null,
+        c.work.noteOf(id, t.id) ??
+        (t.state === "ready" || t.state === "pending" ? c.work.reasonOf(id, t.id) : null),
       avoidLegIds: [...new Set([...legWork.avoid, ...(legWork.taskAvoid[t.id] ?? [])])],
       evaluation: t.kind === "evaluation" ? evaluationView(c.jobs.db, t.id, t.state) : null,
     }))

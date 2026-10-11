@@ -21,6 +21,8 @@ export interface Reply {
   slow?: boolean;
   status?: number;
   headers?: Record<string, string>;
+  /** An error's body as the provider sends it (empty for none); a fake one when left out. */
+  body?: string;
   /** Report usage (default true). */
   usage?: boolean;
   promptTokens?: number;
@@ -79,7 +81,7 @@ export async function fakeModelServer(o: FakeOptions): Promise<FakeModelServer> 
       let r = o.respond(body, n);
       if (r.status && r.status !== 200) {
         res.writeHead(r.status, { "content-type": "application/json", ...r.headers });
-        return res.end(JSON.stringify({ error: { message: `fake ${r.status}` } }));
+        return res.end(r.body ?? JSON.stringify({ error: { message: `fake ${r.status}` } }));
       }
       const grammar = body.response_format?.type === "json_schema";
       if (!native && r.toolCalls?.length && !grammar)

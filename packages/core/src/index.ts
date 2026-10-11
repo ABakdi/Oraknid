@@ -14,6 +14,7 @@ export * from "./harness/monitors.ts";
 export * from "./harness/outcome.ts";
 export * from "./harness.ts";
 export * from "./likeness.ts";
+export * from "./limits.ts";
 export * from "./notify.ts";
 export * from "./policy.ts";
 export * from "./profiles.ts";

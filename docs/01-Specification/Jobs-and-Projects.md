@@ -531,7 +531,10 @@ things** on, my own load holds and pauses its work too.
 - **Blocked**: it can't continue. The reason is shown in plain words
   ("All Legs are out of quota until 14:05" / "The tests fail the same
   way after 3 Legs tried"). It resumes on its own when the reason clears
-  (a quota reset) or when I act. A task that failed eight attempts
+  (a quota reset) or when I act. A limit that resets within 30 minutes
+  never blocks: the task waits for it, saying "Waiting for OpenCode ·
+  big-pickle until 07:32 (rate limit), or another model sooner", and the
+  job stays running ([[ADR-068-Limits-Where-The-Provider-Puts-Them]] §3). A task that failed eight attempts
   blocks its job ("Look at it, then resume"); resuming it gives its tasks
   eight more, counted from then (they used to count from the start, so
   the job blocked again at once, 2026-10-03).

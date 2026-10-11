@@ -259,9 +259,32 @@ interface RunEnd {
   error: string | null;
 }
 
+/**
+ * The model I use with Codex myself (ADR-068 §2): the top-level `model` of
+ * my own `~/.codex/config.toml` (or `$CODEX_HOME`'s), read only. Empty when
+ * it names none.
+ */
+export function codexPreferred(home: string, codexHome = process.env.CODEX_HOME): string[] {
+  const file = join(codexHome || join(home, ".codex"), "config.toml");
+  if (!existsSync(file)) return [];
+  try {
+    // Only the keys before the first table are the top level's.
+    const top = readFileSync(file, "utf8").split(/^\s*\[/m)[0] ?? "";
+    const model = /^\s*model\s*=\s*["']([^"'\n]+)["']/m.exec(top)?.[1]?.trim();
+    return model ? [model] : [];
+  } catch {
+    return [];
+  }
+}
+
 export function createCodexAdapter(): LegAdapter {
   return {
     kind: "codex",
+
+    /** The model I use with Codex myself, from its own config (ADR-068 §2). */
+    async preferredModels(_leg, home) {
+      return codexPreferred(home);
+    },
 
     async probe(leg, plan): Promise<ProbeResult> {
       const cfg = readConfig(leg);

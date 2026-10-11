@@ -5,6 +5,8 @@ import type {
   LegHealth,
   TaskKind,
 } from "@oraknid/contracts";
+import { whenSaid } from "./harness.ts";
+import { previewModel } from "./limits.ts";
 import { aheadOfPace, PACE_GRACE } from "./tokens.ts";
 
 // Model-aware routing (The-Eye → Routing, ADR-013, BR-21): the smallest
@@ -32,6 +34,10 @@ export interface RouteCandidate {
   legKind?: string;
   /** The most it takes in one request, as its provider said refusing a larger one (ADR-066 §1). */
   maxRequestTokens?: number | null;
+  /** A usage limit on this model alone, until then (ADR-068 §1): its Leg's other models go on. */
+  limited?: { until: number; reason: string } | null;
+  /** I use this model myself, in the tool's own history or config (ADR-068 §2). */
+  preferred?: boolean;
 }
 
 /**
@@ -58,6 +64,11 @@ export interface RouteTask {
   work?: WorkKind;
   /** About how large one request of it is, in tokens: models that take less are left out (ADR-066 §1). */
   requestTokens?: number;
+  /**
+   * A Leg one of whose models just hit a limit on this task: its other
+   * models go first when they fit (ADR-068 §1).
+   */
+  preferLeg?: string | null;
 }
 
 export interface RouteOptions {
@@ -182,6 +193,10 @@ export function route(task: RouteTask, candidates: RouteCandidate[], o: RouteOpt
       out(`${c.health}.`);
       continue;
     }
+    if (c.limited && c.limited.until > now) {
+      out(`rate-limited until ${whenSaid(c.limited.until, now)} (${c.limited.reason}).`);
+      continue;
+    }
     if (c.cooldown && c.cooldown.until > now) {
       out(
         `resting until ${new Date(c.cooldown.until).toISOString().slice(11, 16)} UTC after a provider failure (${c.cooldown.reason}).`,
@@ -275,6 +290,21 @@ export function route(task: RouteTask, candidates: RouteCandidate[], o: RouteOpt
     const trusted = trust(c.profile, task.kind);
     score += trusted.score;
     if (trusted.reason) reasons.push(trusted.reason);
+
+    // The models I use myself go first among their Leg's (ADR-068 §2); a preview or experimental
+    // free model I don't use has tight limits, poor for an agent's long work.
+    if (c.preferred) {
+      score += 1.5;
+      reasons.push("you use this one");
+    } else if (previewModel(c.model) && task.kind !== "mechanical") {
+      score -= 1;
+      reasons.push("a preview model: tight limits for long agent work");
+    }
+    // A model of this Leg just hit a limit on the task: another of its models first (ADR-068 §1).
+    if (task.preferLeg && c.legId === task.preferLeg) {
+      score += 2;
+      reasons.push(`another model of ${c.legName}, whose model hit a limit`);
+    }
 
     // Its provider failing is not the task failing, but the next try goes elsewhere (M13.22).
     const streak = c.legProviderFailures ?? 0;

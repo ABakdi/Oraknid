@@ -257,7 +257,7 @@ export function factsOf(x: AttemptCtx, t: Turn): OutcomeInput {
   return {
     stop: { reason: t.stop, text: t.text },
     strayed: t.strayed.length ? t.strayed.map((s) => s.problem).join("; ") : null,
-    unusable: t.stop === "error" ? unusableOf(t.end?.error ?? null, x.leg.model, now) : null,
+    unusable: t.stop === "error" ? unusableOfEnd(t.end?.error ?? null, x.leg.model, now) : null,
     ownerWaiting: x.gate.waiting() > 0,
     // Passed on before the work is verified; what comes after waits for the next turn's end.
     guidance: t.checked ? null : t.guidance.text,
@@ -272,5 +272,23 @@ export function factsOf(x: AttemptCtx, t: Turn): OutcomeInput {
     history: { turns: st.turns, level: st.level, nudged: st.nudged },
     policy: { maxTurns: d.maxTurns ?? 25, rotateAt: d.rotateAt ?? 0.6 },
     usage: st.usage,
+  };
+}
+
+/**
+ * What a turn that ended on an error says of its Leg (ADR-052 §4): read
+ * from its words; an error its provider gave no words for is the
+ * provider's, never the task's (ADR-068 §5: a free tier refusing in a
+ * second with nothing said), and its model rests a little.
+ */
+export function unusableOfEnd(error: string | null, model: string, now: number) {
+  if (error?.trim()) return unusableOf(error, model, now);
+  return {
+    kind: "provider" as const,
+    failure: {
+      scope: "model" as const,
+      restMs: 2 * 60_000,
+      reason: "the session ended on an error its provider gave no words for",
+    },
   };
 }

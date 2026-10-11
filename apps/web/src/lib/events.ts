@@ -117,6 +117,8 @@ const TITLES: Record<string, string> = {
   "task.actions-uncertain": "Uncertain actions",
   "task.provider-failed": "Provider failed",
   "task.leg-limited": "Leg at its limit",
+  "task.model-limited": "Model at its limit",
+  "task.limit-goes-on": "Another model takes it",
   "turn.started": "Turn started",
   "turn.ended": "Turn ended",
   "session.started": "Session started",

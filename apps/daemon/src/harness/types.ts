@@ -53,6 +53,13 @@ export interface AttemptDeps {
   maxTurns?: number;
   /** The visual check's renderer and judge (ADR-064 §5); without them it is skipped. */
   visual?: VisualDeps;
+  /**
+   * Shown on a task while it waits out a short limit (ADR-068 §3); null when
+   * it no longer waits.
+   */
+  waiting?: (jobId: string, taskId: string, reason: string | null) => void;
+  /** How often a task waiting out a short limit looks again; a second unless a test says. */
+  routePollMs?: number;
 }
 
 export interface AttemptJob {

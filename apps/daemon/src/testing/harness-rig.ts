@@ -45,6 +45,12 @@ export interface RigOptions {
   driftJudgeMs?: number;
   /** Started again on a database that has its Legs already (a restart). */
   again?: boolean;
+  /** The daemon's clock (a test's fake one). */
+  now?: () => number;
+  /** How often a task waiting out a short limit looks again (ADR-068 §3). */
+  routePollMs?: number;
+  /** The stand-in home whose tools' own history says which models I use (ADR-068 §2). */
+  ownerHome?: string;
 }
 
 const sh = (cwd: string, ...a: string[]) => spawnSync("git", a, { cwd, encoding: "utf8" });
@@ -145,6 +151,10 @@ export async function harness(o: RigOptions) {
     guardIntervalMs: 3_600_000,
     stallCheckMs: 100,
     ...(o.driftJudgeMs ? { driftJudgeMs: o.driftJudgeMs } : {}),
+    ...(o.now ? { now: o.now } : {}),
+    ...(o.routePollMs ? { routePollMs: o.routePollMs } : {}),
+    // Never my own home's tools: a stand-in's, or an empty one (ADR-068 §2).
+    ownerHome: o.ownerHome ?? join(dir, "owner-home"),
     serverSampleSec: 3600,
   });
   closing.unshift(() => d.close());

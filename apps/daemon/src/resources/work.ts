@@ -227,6 +227,20 @@ export class Work {
     return this.#waiting.get(key(jobId, taskId))?.reason ?? null;
   }
 
+  /** What a task admitted to run waits for meanwhile: a short limit (ADR-068 §3). */
+  readonly #notes = new Map<string, string>();
+
+  /** A task admitted to run waits out a short limit; null: it no longer waits. */
+  note(jobId: string, taskId: string, reason: string | null) {
+    if (reason) this.#notes.set(key(jobId, taskId), reason);
+    else this.#notes.delete(key(jobId, taskId));
+  }
+
+  /** What a task admitted to run waits for, or null. */
+  noteOf(jobId: string, taskId: string): string | null {
+    return this.#notes.get(key(jobId, taskId)) ?? null;
+  }
+
   /** It no longer waits: it started, ended, or isn't ready any more. */
   clear(jobId: string, taskId: string) {
     this.#clear(jobId, taskId);
@@ -237,6 +251,8 @@ export class Work {
     for (const w of [...this.#waiting.values()])
       if (w.req.jobId === jobId) this.#clear(jobId, w.req.taskId);
     for (const [k, p] of this.#pausedForRoom) if (p.jobId === jobId) this.#pausedForRoom.delete(k);
+    for (const k of [...this.#notes.keys()])
+      if (k.startsWith(key(jobId, ""))) this.#notes.delete(k);
     this.wake();
   }
 

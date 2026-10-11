@@ -1,8 +1,11 @@
 import { choiceQuestion, type TaskKind } from "@oraknid/contracts";
 import {
+  accountWide,
   agentNeedsAnswer,
+  clockOf,
   commitJudgePrompt,
   correctivePrompt,
+  DEFAULT_LIMIT_MS,
   type Drift,
   type Ending,
   fence,
@@ -29,7 +32,7 @@ import { parseSsh } from "../servers/remote.ts";
 import { readSetting, StewardMemory, writeSetting } from "../settings.ts";
 import { leftOutSaid } from "../workspace/git.ts";
 import { askAgent, confirm, knowConventions } from "./confirm.ts";
-import { type AttemptCtx, type Turn, verdictFor } from "./facts.ts";
+import { type AttemptCtx, type Turn, unusableOfEnd, verdictFor } from "./facts.ts";
 import { ALLOW } from "./gate.ts";
 import type { AttemptOutcome } from "./types.ts";
 
@@ -696,16 +699,64 @@ async function unavailable(
   await x.handOff(false);
   await x.closeSession();
   const error = t.end?.error ?? null;
-  if (o.cause === "limit") {
-    // Its own words say until when: kept until then, never routed to before (ADR-052 §4).
-    if (usageLimitOf(error, x.d.now())?.until) markUnusable(x, error);
-    else markLimited(x);
-    throw new EndAttempt({ kind: "retry", reason: `${x.leg.legName} hit a usage limit` }, o);
-  }
+  if (o.cause === "limit")
+    // Its own words say until when: kept until then, never routed to before (ADR-052 §4); the
+    // model first, the Leg when the account is out (ADR-068 §1).
+    throw new EndAttempt(limitReached(x, error), o);
   throw new EndAttempt(
     markUnusable(x, error) ?? { kind: "retry", reason: `${x.leg.legName} is unavailable` },
     o,
   );
+}
+
+/**
+ * A usage limit, where its provider put it (ADR-068 §1): the model that hit
+ * it is limited until its reset (15 minutes when its words give none), and
+ * spaced from then on when it was refused for its pace (§4); the whole Leg
+ * only when its words say the account is out or its limits turned out to
+ * be the account's. The attempt's outcome, in words that say what goes on.
+ */
+export function limitReached(
+  x: Pick<AttemptCtx, "d" | "task" | "leg" | "event">,
+  error: string | null,
+): AttemptOutcome {
+  const { d, leg } = x;
+  const now = d.now();
+  const u = usageLimitOf(error, now);
+  const reason = u?.reason ?? (error?.replace(/\s+/g, " ").trim().slice(0, 200) || "rate limit");
+  const until = u?.until ?? now + DEFAULT_LIMIT_MS;
+  // The account's window already said it is used up (a quota report): the Leg's, as it said.
+  const l = d.registry.require(leg.legId);
+  if (l.health === "rate-limited" && l.limitedUntil && l.limitedUntil > now) {
+    markLimited(x);
+    x.event("task.leg-limited", { legId: leg.legId, until: l.limitedUntil, reason });
+    return {
+      kind: "retry",
+      reason: `${leg.legName} is out of quota until ${whenSaid(l.limitedUntil, now)} (${reason})`,
+    };
+  }
+  // Refused for going too fast, not for an account used up: spaced from now on.
+  if (!accountWide(error)) d.registry.slowDown(leg.legModelId);
+  const s = d.registry.limitHit(leg.legId, leg.legModelId, until, reason, error);
+  if (s.scope === "leg") {
+    markLimited(x);
+    x.event("task.leg-limited", { legId: leg.legId, until, reason, why: s.why });
+    return {
+      kind: "retry",
+      reason: `${leg.legName} is out of quota until ${whenSaid(until, now)} (${reason})`,
+    };
+  }
+  x.event("task.model-limited", {
+    legId: leg.legId,
+    legModelId: leg.legModelId,
+    model: leg.model,
+    until,
+    reason,
+  });
+  return {
+    kind: "retry",
+    reason: `${leg.legName}'s ${leg.model} is rate-limited until ${clockOf(until)}; another model takes the work, and the attempt doesn't count against the task`,
+  };
 }
 
 /** A usage limit on this Leg: another account of its provider isn't a fallback unless I allowed it (ADR-009). */
@@ -732,7 +783,10 @@ export function markUnusable(
 ): AttemptOutcome | null {
   const { d, leg } = x;
   const now = d.now();
-  const u = unusableOf(error, leg.model, now, atStart);
+  // An error with no words is its provider's, never lost as the task's (ADR-068 §5).
+  const u = atStart
+    ? unusableOf(error, leg.model, now, true)
+    : unusableOfEnd(error, leg.model, now);
   if (!u) return null;
   const what = `${leg.legName} · ${leg.model}`;
   if (u.kind === "deprecated") {
@@ -766,23 +820,7 @@ export function markUnusable(
       reason: `${what} refused a request this size${max ? ` (it takes at most ${max} tokens in one)` : ""}; a model with room takes it, and the attempt doesn't count against the task`,
     };
   }
-  if (u.kind === "limit") {
-    const until = u.until ?? now + 15 * 60_000;
-    const l = d.registry.require(leg.legId);
-    if (!l.limitedUntil || l.limitedUntil < until)
-      d.registry.setHealth(
-        leg.legId,
-        "rate-limited",
-        `Out of quota until ${new Date(until).toISOString()}: ${u.reason}`,
-        until,
-      );
-    markLimited(x);
-    x.event("task.leg-limited", { legId: leg.legId, until, reason: u.reason });
-    return {
-      kind: "retry",
-      reason: `${leg.legName} is out of quota until ${whenSaid(until, now)} (${u.reason})`,
-    };
-  }
+  if (u.kind === "limit") return limitReached(x, error);
   const infra = u.failure;
   const { until, inARow } = d.registry.providerFailed(leg.legId, leg.legModelId, infra);
   x.event("task.provider-failed", {

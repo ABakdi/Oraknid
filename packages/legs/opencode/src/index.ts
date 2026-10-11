@@ -5,3 +5,4 @@ export {
   readConfig,
 } from "./adapter.ts";
 export { type FakeMode, startFakeModel } from "./fake-model.ts";
+export { preferredOf } from "./preferred.ts";

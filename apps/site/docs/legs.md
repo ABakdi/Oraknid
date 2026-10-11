@@ -47,6 +47,14 @@ The Eye borrows a Leg for its reasoning. In **Settings → Eye & jobs** you can 
 
 **Light calls.** Short questions (naming a job, reading your message, a summary, the judges' first look) don't need an agent with its tools. When you have a model behind an API (Oraknid's own agent on Groq, OpenRouter or xAI, or a local model), The Eye asks it in one plain request, free and local models first, and uses an agent only when none can answer. **Settings → Eye & jobs → Light calls** chooses: a direct model when there is one (the default), always an agent session, or one model you pick. A job is named once when you make it, again only if you changed its goal before it started, and described once when it ends.
 
+## Limits where the provider puts them
+
+- **One model's limit isn't its agent's.** When a free model says "Rate limit exceeded", only that model waits for its reset; the agent's other models go on, and the next try uses another of them. The whole agent waits only when its words say the account is out ("Individual quota reached", "upgrade your subscription"), or when a second of its models hits a limit meanwhile. Oraknid remembers which kind of limits each agent has.
+- **The models you use go first.** Oraknid reads, without changing anything, which models you use with OpenCode (its config and its history) and Codex (its config), and ranks them first among that agent's models; the Legs page marks them "you use this one". Preview and experimental free models you don't use, which have tight limits, rank lower for long tasks.
+- **A short limit is a wait.** When nothing else can take a task and a limit resets within half an hour, the task says "Waiting for OpenCode · big-pickle until 07:32 (rate limit), or another model sooner" and goes on by itself; the job isn't blocked.
+- **Paced, not hammered.** A model that refused for going too fast is spaced from then on: Oraknid's own agent waits between its requests, and other agents run one session of it at a time.
+- **The provider's words are kept.** An error always says what the provider answered (its status and message), so a request too large is seen as too large, and sent to a model with room.
+
 ## Spending tokens wisely
 
 - **Too large is not out of quota.** When a provider refuses one request for its size (Groq's free tier answers "Request too large" past its tokens a minute), Oraknid remembers the model's largest request and sends bigger ones elsewhere. The Leg stays healthy and keeps the work that fits it.

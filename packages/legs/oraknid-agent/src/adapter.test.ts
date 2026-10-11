@@ -544,3 +544,63 @@ describe("a hosted API that needs its key to list models (xAI, Groq; 2026-10-10)
     expect(refused.detail).toMatch(/refused the API key/);
   });
 });
+
+describe("oraknid-agent: the provider's words are never lost (ADR-068 §5)", () => {
+  const groq413 =
+    '{"error":{"message":"Request too large for model `openai/gpt-oss-20b` in organization `org_1` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Requested 15210, please reduce your message size and try again.","type":"tokens","code":"rate_limit_exceeded"}}';
+
+  it("a 413 ends the turn with its status and body, so it reads as too large", async () => {
+    const server = await serve(() => ({ status: 413, body: groq413 }));
+    const s = await createOraknidAgentAdapter().start(startFor(server.baseUrl));
+    const end = (await readUntil(s, turnEnded, 10_000)).at(-1);
+    expect(end).toMatchObject({ type: "turn.ended", reason: "error" });
+    const error = (end as { error: string }).error;
+    expect(error).toMatch(/^The model server answered 413: /);
+    expect(error).toContain("Limit 8000, Requested 15210");
+    await s.kill();
+  });
+
+  it("an error with an empty body still says its status", async () => {
+    const server = await serve(() => ({ status: 500, body: "" }));
+    const s = await createOraknidAgentAdapter().start(startFor(server.baseUrl));
+    const end = (await readUntil(s, turnEnded, 10_000)).at(-1) as { reason: string; error: string };
+    expect(end.reason).toBe("error");
+    expect(end.error).toMatch(/500/);
+    expect(end.error.trim().length).toBeGreaterThan(10);
+    await s.kill();
+  });
+
+  it("a 429 keeps its words and is reported as the model's limit, not the account's", async () => {
+    const server = await serve(() => ({
+      status: 429,
+      headers: { "retry-after": "30" },
+      body: '{"error":{"message":"Rate limit reached for model `openai/gpt-oss-20b` on requests per minute (RPM): Limit 30"}}',
+    }));
+    const s = await createOraknidAgentAdapter().start(startFor(server.baseUrl));
+    const events = await readUntil(s, turnEnded, 10_000);
+    expect(events.find((e) => e.type === "rate_limit")).toMatchObject({
+      quota: { scope: "model", status: "rejected" },
+    });
+    const end = events.at(-1) as { reason: string; error: string };
+    expect(end.reason).toBe("rate-limited");
+    expect(end.error).toContain("requests per minute (RPM): Limit 30");
+    expect(end.error).toContain("retry after 30s");
+    await s.kill();
+  });
+
+  it("spaces its requests to a model refused for its pace (ADR-068 §4)", async () => {
+    const at: number[] = [];
+    const server = await serve((req) => {
+      at.push(Date.now());
+      return req.messages.at(-1)?.role === "tool"
+        ? { text: "done" }
+        : { toolCalls: [{ name: "bash", arguments: { command: "echo hi" } }] };
+    });
+    const s = await createOraknidAgentAdapter().start(startFor(server.baseUrl, { spacingMs: 400 }));
+    const end = (await readUntil(s, turnEnded, 10_000)).at(-1);
+    expect(end).toMatchObject({ reason: "completed", text: "done" });
+    expect(at).toHaveLength(2);
+    expect((at[1] ?? 0) - (at[0] ?? 0)).toBeGreaterThanOrEqual(380);
+    await s.kill();
+  });
+});

@@ -11,6 +11,7 @@ import {
   WebPlan,
 } from "@oraknid/contracts";
 import {
+  accountWide,
   graphProblems,
   maxRequestFrom,
   providerFailure,
@@ -1282,6 +1283,9 @@ Answer with "text": the rewritten text only.`;
           cooldown: this.o.registry.cooldownOf(leg.id, m.id),
           legKind: leg.kind,
           maxRequestTokens: this.o.registry.maxRequestOf(m.id),
+          // A model limited alone isn't asked; the ones I use go first (ADR-068).
+          limited: m.limit,
+          preferred: m.preferred,
         });
       }
     }
@@ -1430,11 +1434,13 @@ Answer with "text": the rewritten text only.`;
             : null;
         if (limit) {
           const until = limit.until ?? Date.now() + 15 * 60_000;
-          this.o.registry.setHealth(
+          // The model first; the Leg when the account is out (ADR-068 §1).
+          this.o.registry.limitHit(
             pick.candidate.legId,
-            "rate-limited",
-            `Out of quota until ${new Date(until).toISOString()}: ${limit.reason}`,
+            pick.candidate.legModelId,
             until,
+            limit.reason,
+            error instanceof Error ? error.message : limit.reason,
           );
           moved++;
           pick = choose();
@@ -1484,6 +1490,8 @@ Answer with "text": the rewritten text only.`;
           cooldown: this.o.registry.cooldownOf(leg.id, m.id),
           legKind: leg.kind,
           maxRequestTokens: this.o.registry.maxRequestOf(m.id),
+          limited: m.limit,
+          preferred: m.preferred,
           baseUrl,
         });
       }
@@ -1625,11 +1633,14 @@ Answer with "text": the rewritten text only.`;
             }
             const until =
               limit?.until ?? (ms !== null ? Date.now() + ms : Date.now() + 15 * 60_000);
-            this.o.registry.setHealth(
+            // The model first; the Leg when the account is out (ADR-068 §1). Spaced from now on.
+            if (!accountWide(error.message)) this.o.registry.slowDown(t.legModelId);
+            this.o.registry.limitHit(
               t.legId,
-              "rate-limited",
-              `Out of quota until ${new Date(until).toISOString()}: ${(limit?.reason ?? error.message).slice(0, 200)}`,
+              t.legModelId,
               until,
+              (limit?.reason ?? error.message).slice(0, 200),
+              error.message,
             );
             break;
           }
