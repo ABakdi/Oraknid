@@ -330,7 +330,8 @@ describe("agents that aren't available (ADR-052 §4)", () => {
               },
             ]
           : [{ write: DOC, content: "# Audio libraries\n" }, { say: "DONE" }],
-      { kind: "opencode", models: ["mimo-v2.5-free"] },
+      // The one I use, so it goes first although a "-free" model ranks lower otherwise (ADR-068 §2).
+      { kind: "opencode", models: ["mimo-v2.5-free"], preferred: async () => ["mimo-v2.5-free"] },
     );
     rig = await withFree(free, "mimo-v2.5-free");
     const { id } = await rig.repoJob("Pick the audio library");

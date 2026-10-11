@@ -176,6 +176,13 @@ export interface DaemonOptions {
   reviewPassCheckMs?: number;
   /** How long the drift judge may take (tests); 30 s otherwise (ADR-056). */
   driftJudgeMs?: number;
+  /** How often a task waiting out a short limit looks again (tests); a second otherwise (ADR-068 §3). */
+  routePollMs?: number;
+  /**
+   * The home folder whose tools' own config and history say which models I
+   * use (ADR-068 §2), read only; mine unless a test gives a stand-in.
+   */
+  ownerHome?: string;
   budgetIntervalMs?: number;
   emailDelayMs?: number;
   /** Leg adapters by kind (tests replace them). */
@@ -657,6 +664,7 @@ export async function startDaemon(options: DaemonOptions) {
         now,
         ...(options.stallCheckMs ? { stallCheckMs: options.stallCheckMs } : {}),
         ...(options.driftJudgeMs ? { driftJudgeMs: options.driftJudgeMs } : {}),
+        ...(options.routePollMs ? { routePollMs: options.routePollMs } : {}),
         reviews,
         ...(options.appWaitMs ? { appWaitMs: options.appWaitMs } : {}),
         visual,
@@ -1071,6 +1079,7 @@ export async function startDaemon(options: DaemonOptions) {
     legsDir: paths.legs,
     now,
     ...(options.healthIntervalMs ? { intervalMs: options.healthIntervalMs } : {}),
+    ...(options.ownerHome ? { ownerHome: options.ownerHome } : {}),
   });
   void models.start().catch((err) => console.error("local models failed to start", err));
   // A Leg's plan usage in view, read while someone looks (ADR-039).

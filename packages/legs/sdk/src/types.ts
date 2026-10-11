@@ -215,6 +215,12 @@ export interface SessionStart {
    * lower when the Leg's tokens are scarce. Unset: the adapter's own (0.8).
    */
   compactAt?: number;
+  /**
+   * The least time between two model requests, in ms, where the adapter
+   * makes the requests itself (ADR-068 §4): a model its provider refused
+   * for going too fast is spaced instead of hammered. Unset: no spacing.
+   */
+  spacingMs?: number;
 }
 
 /** A stdio MCP server a Leg starts: here always Oraknid's bridge. */
@@ -268,6 +274,13 @@ export interface LegAdapter {
    * tooling can't say; an adapter without it has no such reading.
    */
   planUsage?(leg: LegConfig, sandbox: SandboxPlan | null): Promise<PlanUsageReport | null>;
+  /**
+   * The models I use myself with the tool outside Oraknid, most used first
+   * (ADR-068 §2), read only from its own config and history under `home`
+   * (my home folder). Their ids as the Leg names them; empty when nothing
+   * says. An adapter whose tool keeps no such record has none.
+   */
+  preferredModels?(leg: LegConfig, home: string): Promise<string[]>;
 }
 
 export const emptyUsage = (estimated = false): UsageSnapshot => ({

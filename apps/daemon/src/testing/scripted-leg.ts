@@ -73,6 +73,8 @@ export function scriptedLeg(
     stopHook?: boolean;
     /** What its probe says it can do, where that differs from what it does (ADR-056 §2). */
     declares?: Partial<Capabilities>;
+    /** The models I use myself with its tool, read from a home folder (ADR-068 §2). */
+    preferred?: (home: string) => Promise<string[]>;
   } = {},
 ) {
   const log: TurnContext[] = [];
@@ -83,6 +85,12 @@ export function scriptedLeg(
   const sessionsPerLeg = new Map<string, number>();
   const adapter: LegAdapter = {
     kind: o.kind ?? "claude-code",
+    ...(o.preferred
+      ? {
+          preferredModels: async (_leg: unknown, home: string) =>
+            o.preferred ? o.preferred(home) : [],
+        }
+      : {}),
     async probe() {
       return {
         ok: true,

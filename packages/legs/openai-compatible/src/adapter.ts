@@ -190,7 +190,10 @@ export function createOpenAICompatibleAdapter(
               type: "turn.ended",
               reason: "error",
               text: answer,
-              error: (error as Error).message,
+              // Never an empty error (ADR-068 §5).
+              error:
+                (error instanceof Error ? error.message : String(error)).trim() ||
+                "The model server failed with no words for it.",
             });
           }
         } finally {
@@ -256,16 +259,22 @@ export function createOpenAICompatibleAdapter(
         });
         if (res.status === 429) {
           const retry = Number(res.headers.get("retry-after"));
-          throw new RateLimited({
-            window: "requests",
-            scope: "account",
-            status: "rejected",
-            utilization: 1,
-            resetsAt: Number.isFinite(retry) && retry > 0 ? Date.now() + retry * 1000 : null,
-          });
+          // The model's limit first, in the server's own words (ADR-068 §1, §5).
+          throw new RateLimited(
+            {
+              window: "requests",
+              scope: "model",
+              status: "rejected",
+              utilization: 1,
+              resetsAt: Number.isFinite(retry) && retry > 0 ? Date.now() + retry * 1000 : null,
+            },
+            await refusal(res),
+          );
         }
         if (!res.ok || !res.body)
-          throw new Error(`The model server answered ${res.status}: ${await res.text()}`);
+          throw new Error(
+            `The model server answered ${res.ok ? `${res.status} with no body` : await refusal(res)}`,
+          );
 
         let content = "";
         const calls = new Map<number, ToolCall>();
@@ -284,7 +293,18 @@ export function createOpenAICompatibleAdapter(
               };
             }[];
             usage?: { prompt_tokens?: number; completion_tokens?: number } | null;
+            error?: unknown;
           };
+          // An error sent inside the stream is the server's word, never dropped (ADR-068 §5).
+          if (chunk.error) {
+            const e = chunk.error as { message?: unknown };
+            throw new Error(
+              `The model server sent an error: ${typeof e === "object" && typeof e?.message === "string" ? e.message : JSON.stringify(chunk.error)}`.slice(
+                0,
+                1000,
+              ),
+            );
+          }
           if (chunk.usage) reported = chunk.usage;
           const delta = chunk.choices?.[0]?.delta;
           if (delta?.content) {
@@ -349,8 +369,11 @@ export function createOpenAICompatibleAdapter(
 }
 
 class RateLimited extends Error {
-  constructor(readonly quota: QuotaReport) {
-    super("The server is rate-limiting requests.");
+  constructor(
+    readonly quota: QuotaReport,
+    said = "",
+  ) {
+    super(`The server is rate-limiting requests${said ? `: ${said}` : "."}`);
   }
 }
 
@@ -389,7 +412,7 @@ async function refusal(res: Response): Promise<string> {
       said = text;
     }
   } catch {}
-  said = said.replace(/\s+/g, " ").slice(0, 200);
+  said = said.replace(/\s+/g, " ").slice(0, 600);
   const key =
     res.status === 401 ||
     res.status === 403 ||

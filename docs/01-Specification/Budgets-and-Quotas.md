@@ -122,7 +122,15 @@ and a job's quota share stops routing to a Leg past it.
 
 ## When everything runs out
 
-When no allowed Leg has quota, the job goes `blocked` with the earliest
+A limit limits the model that hit it, not its Leg, unless its words say
+the account is out or a second model of the Leg is limited meanwhile
+([[ADR-068-Limits-Where-The-Provider-Puts-Them]] §1). When nothing can
+take a task and the earliest reset is **within 30 minutes**, the task
+waits for it and goes on by itself, saying for what and until when
+("Waiting for OpenCode · big-pickle until 07:32 (rate limit), or another
+model sooner"); the job stays running (§3). Only a longer wait blocks it.
+
+When no allowed Leg has quota for longer, the job goes `blocked` with the earliest
 reset time. A timer resumes it at the reset, and I'm notified both
 times (the resume is `job.resumed`, 2026-10-07). An agent's own words count as its quota ("Individual quota reached …
 Resets in 51h49m11s", 2026-10-07): it is out until then and never

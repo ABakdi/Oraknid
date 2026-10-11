@@ -274,6 +274,25 @@ export function createOraknidAgentAdapter(deps: OraknidAgentDeps = {}): LegAdapt
       let history: ModelMessage[] = resumed?.history ?? [];
       const todos: Todo[] = resumed?.todos ?? [];
       let usage: UsageSnapshot = { ...emptyUsage(), contextWindow };
+      /** When the last model request went out: a paced model's next one waits (ADR-068 §4). */
+      let lastRequestAt = 0;
+      const spaced = async (signal: AbortSignal) => {
+        const gap = s.spacingMs ?? 0;
+        const wait = lastRequestAt + gap - Date.now();
+        if (gap > 0 && wait > 0)
+          await new Promise<void>((resolve) => {
+            const t = setTimeout(resolve, wait);
+            signal.addEventListener(
+              "abort",
+              () => {
+                clearTimeout(t);
+                resolve();
+              },
+              { once: true },
+            );
+          });
+        lastRequestAt = Date.now();
+      };
       let turn: AbortController | null = null;
       let interrupted = false;
       let killed = false;
@@ -429,6 +448,7 @@ export function createOraknidAgentAdapter(deps: OraknidAgentDeps = {}): LegAdapt
           abortSignal: signal,
           ...(s.effort ? { providerOptions: { oraknid: { reasoningEffort: s.effort } } } : {}),
           prepareStep: async ({ messages, steps: done, responseMessages }) => {
+            await spaced(signal);
             if (!contextWindow) return {};
             const u = done.at(-1)?.usage;
             const used =
@@ -526,18 +546,31 @@ export function createOraknidAgentAdapter(deps: OraknidAgentDeps = {}): LegAdapt
         if (failure) {
           if (APICallError.isInstance(failure) && failure.statusCode === 429) {
             const retry = Number(failure.responseHeaders?.["retry-after"]);
+            // The model's limit first; Oraknid learns when it is the account's (ADR-068 §1).
             const quota: QuotaReport = {
               window: "requests",
-              scope: "account",
+              scope: "model",
               status: "rejected",
               utilization: 1,
               resetsAt: Number.isFinite(retry) && retry > 0 ? Date.now() + retry * 1000 : null,
             };
             events.push({ type: "rate_limit", quota });
-            return { text, end: "rate-limited", error: "The server is rate-limiting requests." };
+            // Its own words kept: they say whether the account is out, and until when (ADR-068 §5).
+            return {
+              text,
+              end: "rate-limited",
+              error: `The server is rate-limiting requests: ${errorText(failure)}${Number.isFinite(retry) && retry > 0 ? ` (retry after ${retry}s)` : ""}`,
+            };
           }
           return { text, end: "error", error: errorText(failure) };
         }
+        // An answer the server ended on an error without saying one: said so, never an empty end.
+        if (lastFinish === "error")
+          return {
+            text,
+            end: "error",
+            error: `The model server ended its answer on an error and gave no words for it (after ${steps} model call${steps === 1 ? "" : "s"}).`,
+          };
         const response = await result.response;
         const done = base as { messages: ModelMessage[]; offset: number } | null;
         history = done
@@ -649,10 +682,44 @@ export function createOraknidAgentAdapter(deps: OraknidAgentDeps = {}): LegAdapt
   };
 }
 
-function errorText(error: unknown): string {
-  if (APICallError.isInstance(error))
-    return `The model server answered ${error.statusCode ?? "an error"}: ${clip(error.responseBody ?? error.message, 1000)}`;
-  return error instanceof Error ? error.message : String(error);
+/**
+ * A failure in the provider's own words, never empty (ADR-068 §5): its
+ * status and the start of its body for an HTTP answer, the error the SDK
+ * wrapped (a retry's last, a cause), an error object's message or its JSON.
+ */
+export function errorText(error: unknown, depth = 0): string {
+  if (APICallError.isInstance(error)) {
+    const body = (error.responseBody ?? "").trim();
+    const said = clip(body || error.message.trim(), 1000);
+    return `The model server answered ${error.statusCode ?? "an error"}: ${said || "with no body"}`;
+  }
+  if (error instanceof Error) {
+    const wrapped =
+      depth < 3
+        ? ((error as { lastError?: unknown }).lastError ?? (error as { cause?: unknown }).cause)
+        : undefined;
+    const inner = wrapped !== undefined && wrapped !== error ? errorText(wrapped, depth + 1) : "";
+    const own = error.message.trim();
+    if (own && inner && !own.includes(inner)) return `${own}: ${inner}`;
+    return own || inner || `${error.name || "Error"} with no message from the model server`;
+  }
+  if (typeof error === "string") return error.trim() || "an error with no message";
+  if (error && typeof error === "object") {
+    const o = error as { message?: unknown; error?: unknown };
+    const message =
+      typeof o.message === "string"
+        ? o.message
+        : o.error &&
+            typeof o.error === "object" &&
+            typeof (o.error as { message?: unknown }).message === "string"
+          ? (o.error as { message: string }).message
+          : "";
+    if (message.trim()) return clip(message.trim(), 1000);
+    try {
+      return clip(JSON.stringify(error), 1000);
+    } catch {}
+  }
+  return String(error ?? "") || "an error with no message from the model server";
 }
 
 const textOf = (content: unknown): string =>

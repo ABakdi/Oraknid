@@ -48161,6 +48161,35 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "limit": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "until": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "reason": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "until",
+                                    "reason"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "default": null
+                            },
+                            "preferred": {
+                              "type": "boolean",
+                              "default": false
                             }
                           },
                           "required": [
@@ -48713,6 +48742,35 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "limit": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "until": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "reason": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "until",
+                                  "reason"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "default": null
+                          },
+                          "preferred": {
+                            "type": "boolean",
+                            "default": false
                           }
                         },
                         "required": [
@@ -49578,6 +49636,35 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "limit": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "until": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "reason": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "until",
+                                  "reason"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "default": null
+                          },
+                          "preferred": {
+                            "type": "boolean",
+                            "default": false
                           }
                         },
                         "required": [
@@ -50129,6 +50216,35 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "limit": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "until": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "reason": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "until",
+                                  "reason"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "default": null
+                          },
+                          "preferred": {
+                            "type": "boolean",
+                            "default": false
                           }
                         },
                         "required": [

@@ -239,8 +239,12 @@ corrects.
 
 **Fallback.** When a Leg becomes rate-limited, fails or runs out of
 quota mid-task, The Eye writes a handoff to Silk and reassigns the task
-to the next-best Leg. When none is left, the job goes `blocked` until
-the earliest quota reset, and resumes on its own. An agent that can't
+to the next-best Leg; a limit on one model alone goes to another model of
+the same Leg first, the models I use with the tool before others
+([[ADR-068-Limits-Where-The-Provider-Puts-Them]]). When none is left, a
+reset within 30 minutes is waited for inside the task, the job still
+running; a later one blocks the job until the earliest reset, and it
+resumes on its own. An agent that can't
 work (out of quota until the reset its own words give, paused, failing
 to start, on a deprecated model) is never routed to (M15.1,
 [[Legs-and-Capability-Profiles]] → Unusable agents), and a blocked job

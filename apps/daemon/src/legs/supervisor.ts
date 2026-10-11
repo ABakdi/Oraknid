@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { LegKind } from "@oraknid/contracts";
+import { spacingOf } from "@oraknid/core";
 import type {
   LegAdapter,
   LegEvent,
@@ -143,6 +144,13 @@ export class LegSupervisor {
     return this.#held.get(legId) ?? 0;
   }
 
+  /** Sessions running now on one model of a Leg (ADR-068 §4: a paced model runs one at a time). */
+  busyModel(legId: string, model: string): number {
+    let n = 0;
+    for (const l of this.#live.values()) if (l.legId === legId && l.model === model) n++;
+    return n;
+  }
+
   /** Holds one of a Leg's slots for a task; the returned function gives it back, once. */
   hold(legId: string): () => void {
     this.#held.set(legId, this.busy(legId) + 1);
@@ -250,6 +258,7 @@ export class LegSupervisor {
       })
       .run();
 
+    const pace = registry.paceOf(model.id);
     let session: LegSession;
     try {
       session = await adapter.start({
@@ -278,6 +287,8 @@ export class LegSupervisor {
         ...(req.checks?.length ? { checks: req.checks } : {}),
         ...(req.compactAt ? { compactAt: req.compactAt } : {}),
         ...(req.tools ? { mcpServers: req.tools.servers } : {}),
+        // A model refused for its pace is spaced where the adapter makes its requests (ADR-068 §4).
+        ...(pace ? { spacingMs: spacingOf(pace) } : {}),
       });
     } catch (error) {
       // A start that failed leaves no session looking alive (Audit 1 → Q1-13).

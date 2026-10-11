@@ -248,7 +248,8 @@ describe("routing: proven before unproven (M13.22)", () => {
     const proven = free("big-pickle", {
       profile: effectiveProfile("opencode", "big-pickle", good),
     });
-    const fresh = free("jev-1.13-free");
+    // The same model fresh, so only what it got done differs (a preview "-free" one scores lower, ADR-068 §2).
+    const fresh = free("big-pickle");
     const before = route(research, [fresh], { moneyAllowed: false }).ranked[0]?.score ?? 0;
     const after = route(research, [proven], { moneyAllowed: false }).ranked[0];
     expect(after?.reasons).toContain("4 of 4 research tasks done");

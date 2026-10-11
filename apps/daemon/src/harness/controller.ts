@@ -383,12 +383,12 @@ export async function runController(
     onStop: (said) => checks.onStop(said),
   });
 
-  /** The attempt ends, recorded as counted (core's `countOf`): learned from when it says something of the model. */
-  const finish = (ending: Ending) => {
+  /** The attempt ends, recorded as counted (core's `countOf`), with its reason (`said`: never lost, ADR-068 §5). */
+  const finish = (ending: Ending, said: string | null = null) => {
     const c = countOf(ending);
     release();
     gate.withdrawAsked();
-    trail.append("Outcome", { kind: c.record, reason: st.escalations.at(-1) ?? null });
+    trail.append("Outcome", { kind: c.record, reason: st.escalations.at(-1) ?? said });
     trail.append("AttemptEnded", { reason: c.record });
     d.db
       .update(attempts)
@@ -514,7 +514,7 @@ export async function runController(
   } catch (error) {
     if (error instanceof EndAttempt) {
       if (!ENDS.includes(state)) move("Failed", error.ending.kind);
-      finish(error.ending);
+      finish(error.ending, "reason" in error.outcome ? error.outcome.reason : null);
       return error.outcome;
     }
     // Its Leg alone was stopped (paused, or its work here cancelled): the work so far is kept

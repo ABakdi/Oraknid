@@ -322,6 +322,21 @@ export function LegsPage({ focus }: { focus?: string } = {}) {
                         <TableRow key={m.id} className={m.hidden ? "opacity-50" : ""}>
                           <TableCell className="font-medium">
                             {m.displayName}
+                            {m.preferred ? (
+                              <Badge variant="secondary" className="ml-2 text-[10px]">
+                                {t("you use this one")}
+                              </Badge>
+                            ) : null}
+                            {m.limit ? (
+                              <div className="text-xs text-warning">
+                                {t("rate-limited until {time}", {
+                                  time: new Date(m.limit.until).toLocaleTimeString([], {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  }),
+                                })}
+                              </div>
+                            ) : null}
                             {m.effortLevels.length ? (
                               <div className="text-xs text-muted-foreground">
                                 {m.effortLevels.join(" · ")}

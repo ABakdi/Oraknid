@@ -48,7 +48,7 @@ export interface AttemptEventData {
     first: number;
   };
   /** What the agent said in a turn, condensed: once per turn, not every delta. */
-  AgentText: { text: string; reason: string };
+  AgentText: { text: string; reason: string; error?: string };
   ActionRequested: { id: string; tool: string; input: string };
   GateDecision: {
     actionId: string;

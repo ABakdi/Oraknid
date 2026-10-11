@@ -67,6 +67,10 @@ no row.
 | `eye.lightCalls` | How The Eye's light calls go: `auto` (a direct model when there is one), `agent`, or a direct model's id ([[ADR-066-Token-Economy]] §3). |
 | `eye.namingTried` | When the naming backfill last tried each job, by job id: not again within a week ([[ADR-066-Token-Economy]] §2). |
 | `models.maxRequest` | Each model's largest request in tokens, by Leg model id, as its provider said refusing a larger one ([[ADR-066-Token-Economy]] §1). |
+| `models.limited` | A usage limit on one model, by Leg model id: until when, the provider's words, since when; its Leg stays healthy ([[ADR-068-Limits-Where-The-Provider-Puts-Them]] §1). |
+| `legs.limitScope` | What each Leg's limits turned out to cover, by Leg id: `model` or `account` ([[ADR-068-Limits-Where-The-Provider-Puts-Them]] §1). |
+| `models.pace` | A model's learned requests a minute after rate limits, by Leg model id, kept a day ([[ADR-068-Limits-Where-The-Provider-Puts-Them]] §4). |
+| `legs.preferredModels` | The models I use myself with each Leg's tool, by Leg id, read from its own config and history ([[ADR-068-Limits-Where-The-Provider-Puts-Them]] §2). |
 | `project.steward.<projectId>` | What the repository steward decided for a project: include or exclude by folder, and the .gitignore lines it wrote ([[ADR-067-Self-Recovery]] §5). |
 | `job.attemptCap.<jobId>` | After a recovery, how many more attempts a task that used its own gets; cleared when I resume ([[ADR-067-Self-Recovery]] §3). |
 | `job.recoverNow.<jobId>` | A recovery I asked for in the conversation: my words and the block, read once as the job resumes ([[ADR-067-Self-Recovery]] §4). |

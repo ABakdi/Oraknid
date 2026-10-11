@@ -146,7 +146,8 @@ one stays for plain servers.
 | Resume | Native: `nativeSessionId()` is `oa-<uuid>`; the messages and todo list are kept in `<data>/legs/oraknid-agent-sessions/<id>.json` after each turn and read back on `resumeFrom`. |
 | Interrupt / kill | Abort the request and the command running; what the model said is kept, marked interrupted. |
 | Probe | Lists the models; tests tool calling: native calls, else a JSON grammar (`response_format: json_schema`, enforced by llama.cpp and Ollama, the answer turned back into a tool call by a fetch shim), else none (`toolCalls` on each model; the profile's `probed` keeps it to text work). Context from `/props` (llama.cpp), `/api/show` (Ollama) or LM Studio's `/api/v1/models`. |
-| Quota | A 429 is a `rate_limit` with `retry-after`. A 413 or a "too large" refusal ends the turn as an error that is the request's size, not a quota ([[ADR-066-Token-Economy]] §1): the model's largest request is remembered and the Leg stays healthy. |
+| Quota | A 429 is a `rate_limit` of the **model** (`scope: "model"`) with `retry-after`, and the turn's error keeps the server's words ([[ADR-068-Limits-Where-The-Provider-Puts-Them]] §1, §5). A 413 or a "too large" refusal ends the turn as an error that is the request's size, not a quota ([[ADR-066-Token-Economy]] §1): the model's largest request is remembered and the Leg stays healthy. Every error says the status and the start of the body, never empty. |
+| Pace | `SessionStart.spacingMs` (a model refused for its pace, [[ADR-068-Limits-Where-The-Provider-Puts-Them]] §4): each model request waits that long after the one before. |
 | Direct calls | Not the adapter's: The Eye's light calls go to the same address (`endpoints[].baseUrl`, else `baseUrl`) with the Leg's key as one plain `POST /chat/completions`, no tools, no session ([[ADR-066-Token-Economy]] §3, `eye/direct.ts`); `openai-compatible` Legs too. |
 
 ## OpenCode — Phase 2
@@ -159,7 +160,12 @@ API and SSE event stream ([[ADR-015-OpenCode-Adapter]]): `POST
 /api/session`, `POST …/prompt`, `POST …/interrupt`, `GET /api/event`,
 `POST …/permission/{id}/reply`. Turns end with
 `session.execution.*`; usage per step from `session.step.ended`; a rate
-limit is a `session.retry.scheduled` with `provider.rate-limit`. Each
+limit is a `session.retry.scheduled` with `provider.rate-limit`, reported
+as the model's (`scope: "model"`), its words kept as the turn's error
+even after Oraknid's interrupt ([[ADR-068-Limits-Where-The-Provider-Puts-Them]]).
+`preferredModels(leg, home)` reads, read only, my own OpenCode's config
+`model` and its database's assistant messages (`modelID`), most used
+first (Codex: its `config.toml`'s top-level `model`). Each
 Leg has its own `HOME`, `TMPDIR` and XDG dirs, project config is
 ignored, and every action is asked for. There's no subscription-window
 API. Its asks reach the policy by the names it knows (M13.22):

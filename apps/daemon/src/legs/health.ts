@@ -1,4 +1,5 @@
 import { rmSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import type { LegKind } from "@oraknid/contracts";
 import type { LegAdapter } from "@oraknid/leg-sdk";
@@ -14,6 +15,8 @@ export interface HealthOptions {
   intervalMs?: number;
   now?: () => number;
   fetch?: typeof fetch;
+  /** Whose tools' own config and history say which models I use (ADR-068 §2); my home by default. */
+  ownerHome?: string;
 }
 
 /** Checks every Leg once a minute (Legs spec → Health) and keeps models and VRAM current. */
@@ -38,9 +41,26 @@ export function startHealthChecks(o: HealthOptions) {
     if (!found.ok) return o.registry.setHealth(leg.id, "unavailable", found.detail);
     o.registry.syncModels(leg.id, found.models);
     if ("features" in found) o.registry.setFeatures(leg.id, found.features);
+    await readPreferred(leg);
     if (leg.kind === "openai-compatible") await readVram(leg);
     if (leg.limitedUntil && leg.limitedUntil > now()) return; // still waiting for the window to reset
     o.registry.setHealth(leg.id, "healthy", found.detail, null);
+  }
+
+  /**
+   * The models I use myself with the Leg's tool (ADR-068 §2), from its own
+   * config and history, read only; kept as they were when it can't say.
+   */
+  async function readPreferred(leg: LegRow) {
+    const adapter = o.adapters[leg.kind as LegKind];
+    if (!adapter?.preferredModels) return;
+    try {
+      const mine = await adapter.preferredModels(
+        o.registry.toConfig(leg),
+        o.ownerHome ?? homedir(),
+      );
+      o.registry.setPreferred(leg.id, mine);
+    } catch {}
   }
 
   /** Ollama reports what each loaded model holds in VRAM; other servers simply don't answer. */

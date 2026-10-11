@@ -225,6 +225,8 @@ describe("agents that get simple work done (M13.22)", () => {
     const free = scriptedLeg((t) => [{ fail: errors[t.model] ?? "Internal server error" }], {
       kind: "opencode",
       models: ["big-pickle", "jev-1.13-free", "mimo-v2.6-flash-free"],
+      // The two I use, so a "-free" one isn't ranked lower here (ADR-068 §2).
+      preferred: async () => ["big-pickle", "jev-1.13-free"],
     });
     const w = await world(free, {
       "big-pickle": 6,
@@ -276,7 +278,8 @@ describe("agents that get simple work done (M13.22)", () => {
               },
             ]
           : [{ write: DOC, content: "# Audio libraries\n" }, { say: "DONE" }],
-      { kind: "opencode", models: ["mimo-v2.5-free"] },
+      // The one I use, so it goes first although a "-free" model ranks lower otherwise (ADR-068 §2).
+      { kind: "opencode", models: ["mimo-v2.5-free"], preferred: async () => ["mimo-v2.5-free"] },
     );
     const w = await world(free, { "mimo-v2.5-free": 6 });
     expect(w.job.state, w.job.blockedReason ?? "").toBe("completed");

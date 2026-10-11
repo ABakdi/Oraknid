@@ -14,8 +14,13 @@ import {
   effectiveProfile,
   emptyStoredProfile,
   estimateUtilization,
+  type LimitScope,
+  limitScopeOf,
+  PACE_LIFE_MS,
+  type Pace,
   type ProviderFailure,
   restFor,
+  slowerPace,
 } from "@oraknid/core";
 import type {
   LegConfig,
@@ -66,6 +71,22 @@ const secretName = (legId: string) => `leg.${legId}`;
 export const MAX_REQUEST = "models.maxRequest";
 const MaxRequests = z.record(z.string(), z.number().int().positive());
 
+/** Usage limits on one model, by Leg model id (ADR-068 §1): until when, why, since when. */
+export const MODEL_LIMITS = "models.limited";
+const ModelLimits = z.record(
+  z.string(),
+  z.object({ until: z.number(), reason: z.string(), at: z.number() }),
+);
+/** What each Leg's limits turned out to cover, by Leg id (ADR-068 §1). */
+export const LIMIT_SCOPE = "legs.limitScope";
+const LimitScopes = z.record(z.string(), z.enum(["model", "account"]));
+/** Each model's learned pace, by Leg model id (ADR-068 §4). */
+export const PACES = "models.pace";
+const Paces = z.record(z.string(), z.object({ rpm: z.number().positive(), at: z.number() }));
+/** The models I use myself, by Leg id, as each Leg's tool says (ADR-068 §2). */
+export const PREFERRED = "legs.preferredModels";
+const Preferred = z.record(z.string(), z.array(z.string()));
+
 /** The pool of Legs (Legs-and-Capability-Profiles): config, models, health, quota and profiles. */
 export class LegRegistry {
   /** VRAM per loaded model, from the last health check (memory only). */
@@ -107,6 +128,101 @@ export class LegRegistry {
     writeSetting(this.db, MAX_REQUEST, MaxRequests, { ...all, [legModelId]: Math.round(tokens) });
     const row = this.model(legModelId);
     if (row) this.#event(row.legId, "leg.max-request", { legModelId, tokens, reason });
+  }
+
+  // ── Limits where the provider puts them (ADR-068) ──────────────────
+
+  /** The usage limit on this model alone right now, or null. */
+  limitOf(legModelId: string): { until: number; reason: string } | null {
+    const l = readSetting(this.db, MODEL_LIMITS, ModelLimits, {})[legModelId];
+    return l && l.until > this.now() ? { until: l.until, reason: l.reason } : null;
+  }
+
+  /** What a Leg's limits turned out to cover, when Oraknid learned it. */
+  limitScope(legId: string): LimitScope | null {
+    return readSetting(this.db, LIMIT_SCOPE, LimitScopes, {})[legId] ?? null;
+  }
+
+  #learnScope(legId: string, scope: LimitScope, why: string) {
+    const all = readSetting(this.db, LIMIT_SCOPE, LimitScopes, {});
+    if (all[legId] === scope) return;
+    writeSetting(this.db, LIMIT_SCOPE, LimitScopes, { ...all, [legId]: scope }, this.now());
+    this.#event(legId, "leg.limit-scope", { scope, why });
+  }
+
+  /**
+   * A usage limit hit by one of a Leg's models (ADR-068 §1): the model is
+   * limited until then, or the whole Leg when its words say the account is
+   * out, when its limits were account-wide before, or when another of its
+   * models is limited meanwhile. What it taught is remembered for the Leg.
+   */
+  limitHit(
+    legId: string,
+    legModelId: string,
+    until: number,
+    reason: string,
+    text: string | null = reason,
+  ): { scope: "model" | "leg"; why: string } {
+    const all = readSetting(this.db, MODEL_LIMITS, ModelLimits, {});
+    const at = this.now();
+    const ids = new Set(this.models(legId).map((m) => m.id));
+    const otherLimited = Object.entries(all).some(
+      ([id, l]) => id !== legModelId && ids.has(id) && l.until > at,
+    );
+    const s = limitScopeOf({ text, known: this.limitScope(legId), otherLimited });
+    if (s.learned) this.#learnScope(legId, s.learned, s.why);
+    // Expired limits go; this model's is kept until the later of the two.
+    const live = Object.fromEntries(Object.entries(all).filter(([, l]) => l.until > at));
+    const was = live[legModelId];
+    live[legModelId] = {
+      until: Math.max(until, was?.until ?? 0),
+      reason: reason.slice(0, 200),
+      at: was?.at ?? at,
+    };
+    writeSetting(this.db, MODEL_LIMITS, ModelLimits, live, at);
+    if (s.scope === "leg") {
+      const l = this.require(legId);
+      if (!l.limitedUntil || l.limitedUntil < until)
+        this.setHealth(
+          legId,
+          "rate-limited",
+          `Out of quota until ${new Date(until).toISOString()}: ${reason.slice(0, 200)}`,
+          until,
+        );
+    } else
+      this.#event(legId, "leg.model-limited", {
+        legModelId,
+        until,
+        reason: reason.slice(0, 200),
+      });
+    return { scope: s.scope, why: s.why };
+  }
+
+  /** A model's learned pace, while it lasts (ADR-068 §4). */
+  paceOf(legModelId: string): Pace | null {
+    const p = readSetting(this.db, PACES, Paces, {})[legModelId];
+    return p && this.now() - p.at < PACE_LIFE_MS ? p : null;
+  }
+
+  /** Refused for its pace once more: spaced slower from now on. */
+  slowDown(legModelId: string): Pace {
+    const all = readSetting(this.db, PACES, Paces, {});
+    const next = slowerPace(all[legModelId] ?? null, this.now());
+    writeSetting(this.db, PACES, Paces, { ...all, [legModelId]: next }, this.now());
+    return next;
+  }
+
+  /** The models I use myself with this Leg's tool (ADR-068 §2). */
+  preferredOf(legId: string): string[] {
+    return readSetting(this.db, PREFERRED, Preferred, {})[legId] ?? [];
+  }
+
+  setPreferred(legId: string, models: string[]) {
+    const all = readSetting(this.db, PREFERRED, Preferred, {});
+    const known = all[legId] ?? [];
+    if (known.length === models.length && known.every((m, i) => m === models[i])) return;
+    writeSetting(this.db, PREFERRED, Preferred, { ...all, [legId]: models }, this.now());
+    this.#event(legId, "leg.preferred-models", { models });
   }
 
   /** Kept from a probe, so a restart knows it before the next one. */
@@ -459,6 +575,16 @@ export class LegRegistry {
     this.#streak.delete(legId);
     this.#rest.delete(legModelId);
     this.#rest.delete(`leg:${legId}`);
+    // Another of its models limited while this one works: its limits are per model (ADR-068 §1).
+    if (this.limitScope(legId) === null && !this.limitOf(legModelId)) {
+      const limited = this.models(legId).find((m) => m.id !== legModelId && this.limitOf(m.id));
+      if (limited)
+        this.#learnScope(
+          legId,
+          "model",
+          `${limited.model} was limited while another of its models worked`,
+        );
+    }
   }
 
   /** The rest a model is in now, its Leg's or its own, whichever ends later. */
@@ -560,6 +686,16 @@ export class LegRegistry {
         until,
       );
     }
+    // A model's own limit (a free model's rate limit): that model, unless it turns out to be
+    // the account's (ADR-068 §1). The words, when the session ends, may say more.
+    if (q.status === "rejected" && q.scope === "model")
+      this.limitHit(
+        legId,
+        legModelId,
+        q.resetsAt ?? at + 15 * 60_000,
+        `Rate limit reached (${q.window})`,
+        null,
+      );
   }
 
   /**
@@ -663,6 +799,8 @@ export class LegRegistry {
   view(leg: LegRow): LegView {
     const kind = leg.kind as LegKind;
     const config = leg.config as Record<string, unknown>;
+    const preferred = this.preferredOf(leg.id);
+    const limits = readSetting(this.db, MODEL_LIMITS, ModelLimits, {});
     return {
       id: leg.id,
       name: leg.name,
@@ -685,6 +823,9 @@ export class LegRegistry {
         quota: m.quota as QuotaWindow[],
         profile: effectiveProfile(kind, m.model, this.storedProfile(m)),
         vramBytes: this.vram.get(`${leg.id}:${m.model}`) ?? null,
+        // ADR-068: a model's own limit, and whether I use it myself.
+        limit: liveLimit(limits[m.id], this.now()),
+        preferred: preferred.includes(m.model),
       })),
       setupHint:
         kind === "claude-code" && leg.health === "unavailable"
@@ -704,6 +845,14 @@ export class LegRegistry {
     });
     this.bus.publish({ type, topic: `leg:${legId}`, jobId: null, payload });
   }
+}
+
+/** A model's limit while it lasts, as views show it. */
+function liveLimit(
+  l: { until: number; reason: string } | undefined,
+  now: number,
+): { until: number; reason: string } | null {
+  return l && l.until > now ? { until: l.until, reason: l.reason } : null;
 }
 
 const LOCAL_URL = /\/\/(127\.0\.0\.1|localhost|\[::1\])[:/]/;

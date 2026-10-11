@@ -145,6 +145,10 @@ export const LegModelView = z.object({
   profile: EffectiveProfile,
   /** VRAM held right now, for local models a server reports (Ollama /api/ps). */
   vramBytes: z.number().int().nonnegative().nullable(),
+  /** A usage limit on this model alone, while it lasts (ADR-068 §1); its Leg's other models go on. */
+  limit: z.object({ until: Timestamp, reason: z.string() }).nullable().default(null),
+  /** I use this model myself with the tool, as its own history or config says (ADR-068 §2). */
+  preferred: z.boolean().default(false),
 });
 export type LegModelView = z.infer<typeof LegModelView>;
 

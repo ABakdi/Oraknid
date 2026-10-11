@@ -32,7 +32,14 @@ export function recordEvents(
     else if (e.type === "tool.result")
       ran(e.id, e.ok, createHash("sha256").update(e.output).digest("hex").slice(0, 12));
     else if (e.type === "turn.ended")
-      log.append("AgentText", { text: e.text.slice(-2000), reason: e.reason });
+      log.append("AgentText", {
+        text: e.text.slice(-2000),
+        reason: e.reason,
+        // The provider's own words when the turn ended on an error or a limit (ADR-068 §5).
+        ...(e.reason === "error" || e.reason === "rate-limited"
+          ? { error: e.error?.trim() ? e.error.slice(0, 2000) : "(its provider gave no words)" }
+          : {}),
+      });
   };
 }
 

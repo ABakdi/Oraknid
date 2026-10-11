@@ -21,6 +21,7 @@ import {
   type TurnEnd,
   type UsageSnapshot,
 } from "@oraknid/leg-sdk";
+import { preferredOf } from "./preferred.ts";
 
 // OpenCode v2 through a private `opencode serve --stdio` per session,
 // inside the sandbox, over its HTTP API and SSE events (ADR-015).
@@ -328,6 +329,11 @@ export function createOpenCodeAdapter(): LegAdapter {
   return {
     kind: "opencode",
 
+    /** The models I use with OpenCode myself, from its own config and history (ADR-068 §2). */
+    async preferredModels(_leg, home) {
+      return preferredOf(home);
+    },
+
     async probe(leg, plan): Promise<ProbeResult> {
       const cfg = readConfig(leg);
       const features = {
@@ -400,6 +406,8 @@ export function createOpenCodeAdapter(): LegAdapter {
       let usage: UsageSnapshot = { ...emptyUsage(), contextWindow: cfg.contextWindow };
       let turnText = "";
       let rateLimited = false;
+      /** What the provider said of its limit. */
+      let rateText: string | null = null;
       let ended = false;
       let killed = false;
       const toolNames = new Map<string, string>();
@@ -461,10 +469,12 @@ export function createOpenCodeAdapter(): LegAdapter {
           type: "turn.ended",
           reason: rateLimited ? "rate-limited" : reason,
           text: turnText,
-          error,
+          // The provider's own words for its limit, never lost to an interruption (ADR-068 §5).
+          error: rateLimited && rateText && (!error || reason === "interrupted") ? rateText : error,
         });
         turnText = "";
         rateLimited = false;
+        rateText = null;
       };
 
       const translate = (e: OcEvent) => {
@@ -539,11 +549,14 @@ export function createOpenCodeAdapter(): LegAdapter {
             if (err.type !== "provider.rate-limit" || rateLimited) return;
             // A usage limit: said once, and the turn ends instead of waiting out ten retries.
             rateLimited = true;
+            rateText = err.message ?? "Rate limit exceeded.";
+            // A free model's rate limit is the model's (ADR-068 §1): Oraknid learns whether it
+            // turns out to be the account's.
             events.push({
               type: "rate_limit",
               quota: {
                 window: "provider",
-                scope: "account",
+                scope: "model",
                 status: "rejected",
                 utilization: null,
                 resetsAt: typeof d.at === "number" ? d.at : null,
@@ -560,7 +573,10 @@ export function createOpenCodeAdapter(): LegAdapter {
             return;
           case "session.execution.failed": {
             const err = (d.error ?? {}) as { type?: string; message?: string };
-            if (err.type === "provider.rate-limit") rateLimited = true;
+            if (err.type === "provider.rate-limit") {
+              rateLimited = true;
+              rateText = err.message ?? rateText;
+            }
             endTurn("error", err.message ?? err.type ?? "OpenCode failed");
             return;
           }
