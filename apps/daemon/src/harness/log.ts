@@ -131,6 +131,18 @@ export interface AttemptEventData {
     detail: string;
   };
   HandoffWritten: { silkId: string; failed: string | null };
+  /**
+   * What a commit of the task's work left out and why (ADR-067 §5), what
+   * it did to the ignore file, and the commit judge's word when it was
+   * unusual. The files left out stay on disk.
+   */
+  CommitFiltered: {
+    repo: string | null;
+    left: number;
+    said: string;
+    ignore: string | null;
+    judged: string | null;
+  };
   AttemptEnded: { reason: string };
   /** The task settled, or its job ended: what the Gate remembered of it is forgotten. */
   Forgotten: { reason: string };

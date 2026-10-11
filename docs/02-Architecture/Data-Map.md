@@ -67,8 +67,13 @@ no row.
 | `eye.lightCalls` | How The Eye's light calls go: `auto` (a direct model when there is one), `agent`, or a direct model's id ([[ADR-066-Token-Economy]] §3). |
 | `eye.namingTried` | When the naming backfill last tried each job, by job id: not again within a week ([[ADR-066-Token-Economy]] §2). |
 | `models.maxRequest` | Each model's largest request in tokens, by Leg model id, as its provider said refusing a larger one ([[ADR-066-Token-Economy]] §1). |
+| `project.steward.<projectId>` | What the repository steward decided for a project: include or exclude by folder, and the .gitignore lines it wrote ([[ADR-067-Self-Recovery]] §5). |
+| `job.attemptCap.<jobId>` | After a recovery, how many more attempts a task that used its own gets; cleared when I resume ([[ADR-067-Self-Recovery]] §3). |
+| `job.recoverNow.<jobId>` | A recovery I asked for in the conversation: my words and the block, read once as the job resumes ([[ADR-067-Self-Recovery]] §4). |
+| `eye.recoverySeq.<jobId>` | The job's recoveries so far, each one's journal step its own ([[ADR-067-Self-Recovery]] §3). |
+| `workspace.hygiene` | Oraknid's care of a project's repository (untracking generated folders, clearing them before a merge); off only in tests ([[ADR-067-Self-Recovery]] §1). |
 | `eye.interviewRounds` | The rounds an interview may take (1–12, 3 unless set; [[Skills]] → The interview). |
-| `eye.checksTried.<task>`, `eye.mergeFailures.<task>` | That a task's checks were tried once before its first attempt ([[ADR-052-A-Harness-For-Any-Model]] §2); how many times a task verified alone failed to merge (three stop the job, [[ADR-056-The-Harness]] stage 1). |
+| `eye.checksTried.<task>`, `eye.mergeRedone.<task>` | That a task's checks were tried once before its first attempt ([[ADR-052-A-Harness-For-Any-Model]] §2); that a task of a project of several repos was redone once on top after a failed merge, the next failure going to the steward ([[ADR-067-Self-Recovery]] §7; `eye.mergeFailures` before it). |
 | `task.memory.<task>` | What a task's attempts learned that outlives one of them and a restart: untrusted, grants, what I refused, the stuck count, what it asked me; removed when the task settles ([[ADR-056-The-Harness]]). |
 | `leg.features.<leg>` | What a Leg's probe found it can do: resume, tools, usage reported or estimated, quota windows ([[ADR-056-The-Harness]] §2). |
 | `policy.global`, `policy.project.<project>` | Command rules, globally and per project ([[Security]]). |

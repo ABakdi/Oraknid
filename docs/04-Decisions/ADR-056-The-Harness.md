@@ -637,6 +637,19 @@ by the review's events or its time to pass by itself (`daemon.ts`). The
 controller didn't grow (its ceiling stays 625 lines); the ladder's change
 (ADR-064 §7) lives in `route.ts` and `ladder.ts`.
 
+### Recovery and the repository steward (2026-10-11, [[ADR-067-Self-Recovery]])
+A recovery is an attempt like any other: a task titled "Recover: …"
+(no planKey, never part of the plan) run through `runController`, so the
+Gate, routing (a hard debugging task, the second try a rung higher), the
+attempt log and the Done commit are the same. The job's program decides
+when one runs (`eye/recovery.ts`, `recover`; `program.ts`): before any
+block that isn't mine to decide, and at every failed merge, where the
+steward's session gets the merge begun and its conflicts in place, and
+Oraknid checks the result (finished, no marker, the checks of every
+merged task) before it keeps it. The Done commit itself takes only what
+belongs (`stageAll` with core's `planCommit`), and says what it left out
+in a `CommitFiltered` event. The controller didn't grow.
+
 ## Consequences
 - More files, each small, each with its own tests; the bugs of the last
   two days become cases in a table.

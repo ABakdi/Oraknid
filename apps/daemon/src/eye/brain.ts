@@ -100,6 +100,13 @@ export interface EyeBrain {
     stage: 1 | 2;
     prompt: string;
   }): Promise<DriftAnswer>;
+  /**
+   * The commit judge (ADR-067 §5), reasoning-blind: an unusual commit's
+   * new files by folder, include or exclude each. A light model first,
+   * the strongest allowed when it can't. Optional: without it the plan
+   * of what to leave out stands.
+   */
+  judgeCommit?(input: { jobId: string; cwd: string; prompt: string }): Promise<CommitVerdict>;
   /** A second look at a task with no verify command (research, plan): is it really done? */
   evaluate(input: {
     jobId: string;
@@ -273,6 +280,57 @@ export interface TriageInput {
 
 export class BrainFailed extends Error {}
 
+/**
+ * Why no model can think for The Eye, in plain words with what to do
+ * (ADR-067 §8): by Leg, never the list of every model routing left out
+ * ("Claude · opus: paused. Claude · sonnet: paused. …", fifteen of them,
+ * 2026-10-11).
+ */
+export function noThinkerSaid(excluded: { why: string }[]): string {
+  if (!excluded.length) return "there are no Legs. Add one on the Legs page.";
+  const byLeg = new Map<string, string[]>();
+  for (const e of excluded) {
+    const m = /^(.*?) · [^:]*: (.*)$/.exec(e.why);
+    const leg = m?.[1] ?? "A Leg";
+    byLeg.set(leg, [...(byLeg.get(leg) ?? []), m?.[2] ?? e.why]);
+  }
+  const paused: string[] = [];
+  const spent: string[] = [];
+  const resting: string[] = [];
+  const money: string[] = [];
+  const other: string[] = [];
+  for (const [leg, whys] of byLeg) {
+    if (whys.every((w) => /^paused/.test(w))) paused.push(leg);
+    else if (whys.some((w) => /window is used up|window is at \d+%|quota|rate-limited/.test(w)))
+      spent.push(leg);
+    else if (whys.some((w) => /^resting until/.test(w))) resting.push(leg);
+    else if (whys.every((w) => /costs money/.test(w))) money.push(leg);
+    else other.push(leg);
+  }
+  const list = (xs: string[]) =>
+    xs.length <= 2 ? xs.join(" and ") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
+  const facts = [
+    paused.length ? `${list(paused)} ${paused.length === 1 ? "is" : "are"} paused` : "",
+    spent.length ? `${list(spent)} ${spent.length === 1 ? "is" : "are"} out of quota` : "",
+    resting.length
+      ? `${list(resting)} ${resting.length === 1 ? "is" : "are"} resting after a provider failure`
+      : "",
+    money.length
+      ? `${list(money)} ${money.length === 1 ? "costs" : "cost"} money, which this work has no budget for`
+      : "",
+    other.length ? `${list(other)} can't take this kind of thinking` : "",
+  ].filter(Boolean);
+  const todo = paused.length
+    ? `Unpause ${list(paused)} on the Legs page, or add a model.`
+    : spent.length || resting.length
+      ? "It goes on when a limit resets; adding a model or another account starts it sooner."
+      : money.length
+        ? "Give the job a money budget, or add a model that doesn't cost money."
+        : "Add a model that can plan on the Legs page.";
+  const all = paused.length + spent.length + resting.length === byLeg.size;
+  return `${all ? "every agent that can think is paused or out of quota" : "no agent that can think is free"} (${facts.join("; ")}). ${todo}`;
+}
+
 export interface JobNameInput {
   jobId: string;
   cwd: string;
@@ -325,6 +383,15 @@ export const DriftAnswer = z.object({
   byProducts: z.array(z.string()).default([]),
 });
 export type DriftAnswer = z.infer<typeof DriftAnswer>;
+
+export const CommitVerdict = z.object({
+  folders: z.array(
+    z.object({ folder: z.string(), include: z.boolean(), reason: z.string().default("") }),
+  ),
+  /** .gitignore lines for what the project's tools make (a kind the conventions don't know). */
+  ignore: z.array(z.string()).default([]),
+});
+export type CommitVerdict = z.infer<typeof CommitVerdict>;
 
 export const Evaluation = z.object({
   accepted: z.boolean(),
@@ -501,6 +568,8 @@ const KIND_OF: Record<string, DecisionKind> = {
   "judge-strong": "judging",
   "drift-fast": "quick",
   "drift-strong": "judging",
+  "commit-fast": "quick",
+  "commit-strong": "judging",
   "pick-skill": "quick",
   helper: "quick",
   "server-state": "judging",
@@ -570,6 +639,7 @@ export const LIGHT_CALLS = new Set([
   "triage",
   "judge-fast",
   "drift-fast",
+  "commit-fast",
   "summarize",
   "job-summary",
   "polish-text",
@@ -837,6 +907,29 @@ Set "done" to true when nothing left blocks planning; list in "open" only what s
       true,
     );
     return r.value;
+  }
+
+  async judgeCommit(i: { jobId: string; cwd: string; prompt: string }): Promise<CommitVerdict> {
+    // Quiet, like the drift judge: Oraknid's own bookkeeping, not The Eye's thinking in the chat.
+    const ask = (stage: 1 | 2) =>
+      this.#run(
+        i.jobId,
+        i.cwd,
+        stage === 1 ? "low" : "high",
+        [stage === 1 ? "classify" : "review"],
+        CommitVerdict,
+        i.prompt,
+        stage === 1 ? "commit-fast" : "commit-strong",
+        () => [],
+        undefined,
+        true,
+      );
+    try {
+      return (await ask(1)).value;
+    } catch (error) {
+      if (error instanceof BrainStopped) throw error;
+      return (await ask(2)).value;
+    }
   }
 
   evaluate(i: {
@@ -1219,9 +1312,7 @@ Answer with "text": the rewritten text only.`;
         "No Leg reads images: no Leg model has the vision capability (a model's profile, on the Legs page).",
       );
     if (!best) {
-      throw new BrainFailed(
-        `No Leg can think for The Eye right now: ${r.excluded.map((e) => e.why).join(" ") || "there are no Legs."}`,
-      );
+      throw new BrainFailed(`No Leg can think for The Eye right now: ${noThinkerSaid(r.excluded)}`);
     }
     return best;
   }

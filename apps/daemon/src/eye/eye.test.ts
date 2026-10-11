@@ -2560,7 +2560,7 @@ describe("tasks side by side (ADR-016, M3.1–M3.2)", () => {
     expect(worktrees).not.toMatch(/-t-/);
   }, 40_000);
 
-  it("merges nothing when the checks fail once merged, and redoes the task on top", async () => {
+  it("merges nothing when the checks fail once merged; the steward fixes the merge and the checks decide (ADR-067 §7)", async () => {
     const plan: WebPlan = {
       ...SIDE,
       tasks: [
@@ -2575,18 +2575,21 @@ describe("tasks side by side (ADR-016, M3.1–M3.2)", () => {
       ],
     };
     let byeTurns = 0;
+    let steward = 0;
     const { api, id } = await eye(
       (t) => {
+        // The steward, on the merge left uncommitted: it adds what the two sides need together.
+        if (task(t).startsWith("Recover:")) {
+          steward++;
+          return [
+            { write: "bye.ok", content: "ok\n" },
+            { say: "bye.sh needs bye.ok beside hello.sh." },
+          ];
+        }
         if (task(t) !== "Write bye.sh") return good(t);
         byeTurns++;
-        return byeTurns === 1
-          ? // Slow, so hello.sh is merged first.
-            [{ run: "sleep 3" }, { write: "bye.sh", content: "echo bye\n" }, { say: "DONE" }]
-          : [
-              { write: "bye.sh", content: "echo bye\n" },
-              { write: "bye.ok", content: "ok\n" },
-              { say: "DONE" },
-            ];
+        // Slow, so hello.sh is merged first.
+        return [{ run: "sleep 3" }, { write: "bye.sh", content: "echo bye\n" }, { say: "DONE" }];
       },
       { plan, autonomy: "careful" },
     );
@@ -2596,11 +2599,11 @@ describe("tasks side by side (ADR-016, M3.1–M3.2)", () => {
     await api.inbox.answer({ id: (await openItem(api, "Approve the plan")).id, answer: "Approve" });
     const done = await until(api, id, ["completed", "blocked"], 30_000);
     expect(done.state, done.blockedReason ?? "").toBe("completed");
-    const issue = (await api.silk.list({ jobId: id })).find(
-      (e) => e.title === "Not merged: Write bye.sh",
-    );
-    expect(issue?.body).toContain("failed once merged");
-    expect(byeTurns).toBeGreaterThanOrEqual(2);
+    const recovered = (await api.silk.list({ jobId: id })).find((e) => e.title === "Recovered");
+    expect(recovered?.body).toContain("failed once merged");
+    // Not redone blindly: the task once, the steward once.
+    expect(byeTurns).toBe(1);
+    expect(steward).toBe(1);
   }, 60_000);
 });
 
@@ -2839,7 +2842,8 @@ describe("The Eye speaks up, and the job's folder stays the project's", () => {
     let said = await reports(api, id);
     while (said.length < 3 && Date.now() < end) said = await reports(api, id);
     expect(said.map((m) => m.text)).toEqual([
-      "Done: **Write hello.sh** — changed `hello.sh`; its checks pass (`sh hello.sh | grep -qx hi`).",
+      // The project had no .gitignore: Oraknid's first commit in it writes one (ADR-067 §6).
+      "Done: **Write hello.sh** — changed `.gitignore`, `hello.sh`; its checks pass (`sh hello.sh | grep -qx hi`).",
       "Done: **Test hello.sh** — changed `test.sh`; its checks pass (`sh test.sh`).",
       "The job is done: 2 tasks done: Write hello.sh; Test hello.sh.",
     ]);

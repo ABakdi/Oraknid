@@ -338,7 +338,10 @@ describe("a project of several repos (ADR-042)", () => {
     ]);
     // D1 in one repo: the stray file in web/ was put back, never committed, kept in the trash.
     expect(existsSync(join(root, "web", "stray.txt"))).toBe(false);
-    expect(out(join(folder, "web"), "show", "--name-only", "--format=", branch)).toBe("index.html");
+    // Its first commit there writes the repo's .gitignore, which it had none of (ADR-067 §6).
+    expect(out(join(folder, "web"), "show", "--name-only", "--format=", branch)).toBe(
+      ".gitignore\nindex.html",
+    );
     const trash = join(folder, ".oraknid", "trash");
     const trashed = readdirSync(trash, { recursive: true }).map(String);
     expect(trashed.some((p) => p.startsWith("web/") && p.endsWith("stray.txt"))).toBe(true);

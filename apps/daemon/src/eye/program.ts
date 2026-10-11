@@ -1,3 +1,4 @@
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   type Autonomy,
@@ -48,13 +49,17 @@ import { jobHasServers } from "../secrets/tool.ts";
 import { jobServers, serverDigest, serverPlanApproval } from "../servers/server-jobs.ts";
 import type { Servers } from "../servers/service.ts";
 import {
+  attemptCapKey,
   attemptsFromKey,
   followUpKey,
+  HYGIENE,
   JobServer,
   jobServerKey,
   MAX_TASKS_PER_JOB,
   projectPorts,
+  RecoverNow,
   readSetting,
+  recoverNowKey,
   writeSetting,
 } from "../settings.ts";
 import type { SilkStore } from "../silk/store.ts";
@@ -65,13 +70,18 @@ import {
   commitsAhead,
   createTaskWorktree,
   createWorktree,
+  discardGenerated,
   type Git,
   git,
+  gitRun,
+  type MergeFailure,
   mergeConflicts,
+  mergeFailureSaid,
   mergeTaskBranch,
   removeTaskWorktree,
   shadowRepo,
   undoMerge,
+  untrackGenerated,
   worktreeGit,
 } from "../workspace/git.ts";
 import type { GitHub } from "../workspace/github.ts";
@@ -103,6 +113,18 @@ import {
 import { ensureLinks } from "./links.ts";
 import { chooseJobNeeds, jobExtraSkills, jobHasUi, readNeeds } from "./needs.ts";
 import { dependentsOf } from "./questions.ts";
+import {
+  blockedAfterRecovery,
+  type Failure,
+  OwnerHolds,
+  ownersToDecide,
+  RECOVERY_TITLE,
+  RecoveryFailed,
+  type RecoveryResult,
+  recover,
+  WaitsForLegs,
+} from "./recovery.ts";
+import { addMessage } from "./talk.ts";
 import { forgetTaskMemory, withdrawTaskQuestions } from "./task-memory.ts";
 import { storeWeb, taskRows } from "./web-store.ts";
 
@@ -273,6 +295,15 @@ export function eyeProgram(d: EyeDeps): JobProgram {
 
     // Only one program runs a job: a task still marked running was cut short (pause, crash, stop).
     d.bus.atomically(() => {
+      // A recovery cut short is no task of the plan: it is set aside, and runs again if it must.
+      for (const t of taskRows(d.db, ctx.jobId).filter(
+        (x) => x.title.startsWith(RECOVERY_TITLE) && !["done", "skipped"].includes(x.state),
+      ))
+        d.db
+          .update(tasks)
+          .set({ state: "skipped", leaseUntil: null })
+          .where(eq(tasks.id, t.id))
+          .run();
       for (const t of taskRows(d.db, ctx.jobId).filter((x) =>
         ["assigned", "running", "verifying"].includes(x.state),
       )) {
@@ -316,163 +347,317 @@ export function eyeProgram(d: EyeDeps): JobProgram {
     if (skill?.interview)
       await interview(d, ctx, job0, skill.body, several ? project.workspacePath : ws.cwd);
 
-    if (ctx.state() === "draft" || ctx.state() === "interviewing") ctx.setState("planning");
+    // The repository's care (ADR-067 §1): generated folders it tracks are untracked on the job's
+    // branch, every time the job starts or resumes, before any task branches from it.
+    if (!ws.shadow) await keepClean(d, ctx.jobId, where.tree, "the job's branch");
 
-    // ── Plan The Web, once: through the planner, whatever else wrote to the job before (after the
-    // piano job, 2026-10-04, when tasks from a chat message stood in for a plan that never ran).
-    if (!taskRows(d.db, ctx.jobId).some((t) => t.planKey)) {
-      const plan = await ctx.step(
-        "plan",
-        { goal: job0.goal, skillVersion: job0.skillVersion },
-        () =>
-          d.brain.plan({
-            jobId: job0.id,
-            cwd: several ? project.workspacePath : ws.cwd,
-            goal: job0.goal,
-            skill: withJobSkills(
-              d,
-              job0.id,
-              skill ? skillExcerpt(skill.body, "plan phases tasks", 6000) : "",
-            ),
-            silk: silkText(d.silk, job0.id),
-            digest: layout,
-            verify: job0.verify,
-            // The evaluation steps the job's setting allows (ADR-064 §1).
-            evaluations: evaluationRules(jobEvaluations(d.db, job0.id)),
-          }),
-      );
-      await ctx.step("web:1", plan, async () => storeWeb(d, job0.id, plan));
-    }
-    // The repos the plan's tasks name are ready before work starts (ADR-042).
-    if (several) {
-      for (const t of taskRows(d.db, ctx.jobId).filter((x) => x.state !== "done"))
-        tree.prepare(t.scope);
-    }
-    if (ctx.state() === "planning") ctx.setState("running");
+    const work = async () => {
+      if (ctx.state() === "draft" || ctx.state() === "interviewing") ctx.setState("planning");
 
-    for (;;) {
-      // Asked every time, before any work: approved passes through, denied stops (never skipped on a resume).
-      await approvePlanIfCareful(d, ctx);
-      // Tasks side by side need a worktree each (a folder of worktrees across several repos).
-      await runTasks(d, ctx, where, !ws.shadow);
-      if (ctx.state() === "cancelled") return;
-
-      // ── Job-level verification (BR-1): only this completes a job.
-      const job = d.db.select().from(jobs).where(eq(jobs.id, ctx.jobId)).get() as typeof job0;
-      ctx.setState("verifying");
-      const round = job.verifyRound;
-      // Oraknid's own checks of the repo on GitHub (ADR-038) run after its end steps, below.
-      const own = job.verify.filter((v) => parseBuiltinCheck(v));
-      const checks = job.verify.filter((v) => !parseBuiltinCheck(v));
-      const results = await ctx.step(
-        `job-verify:${round}`,
-        { round, verify: job.verify },
-        async (signal) =>
-          checks.length
-            ? // A check on one of its servers runs there, over Oraknid's own connection (ADR-049).
-              (await verifierFor(d, job, where, signal).run(checks, { why: "job" })).results
-            : [],
-      );
-      const failed = results.find((r) => !r.ok);
-      if (!failed) {
-        // The repo's part is Oraknid's: merge and push as asked, then its GitHub checks (after the piano job).
-        const ending = await runEnding(
-          {
-            db: d.db,
-            bus: d.bus,
-            inbox: d.inbox,
-            now: d.now,
-            ...(d.github ? { github: d.github } : {}),
-            ...(d.projects ? { projects: d.projects } : {}),
-          },
-          ctx,
-          job,
+      // ── Plan The Web, once: through the planner, whatever else wrote to the job before (after the
+      // piano job, 2026-10-04, when tasks from a chat message stood in for a plan that never ran).
+      if (!taskRows(d.db, ctx.jobId).some((t) => t.planKey)) {
+        const plan = await ctx.step(
+          "plan",
+          { goal: job0.goal, skillVersion: job0.skillVersion },
+          () =>
+            d.brain.plan({
+              jobId: job0.id,
+              cwd: several ? project.workspacePath : ws.cwd,
+              goal: job0.goal,
+              skill: withJobSkills(
+                d,
+                job0.id,
+                skill ? skillExcerpt(skill.body, "plan phases tasks", 6000) : "",
+              ),
+              silk: silkText(d.silk, job0.id),
+              digest: layout,
+              verify: job0.verify,
+              // The evaluation steps the job's setting allows (ADR-064 §1).
+              evaluations: evaluationRules(jobEvaluations(d.db, job0.id)),
+            }),
         );
-        if (own.length)
-          await ctx.step(`job-verify-github:${round}`, { round, own }, async (signal) => {
-            const out: string[] = [];
-            // The project's own branch, never one a Leg made in the job's folder; each one run.
-            const verifier = verifierFor(d, job, where, signal);
-            for (const command of own) {
-              const r = (await verifier.run([command], { why: "job-github" })).results[0];
-              if (r && !r.ok) out.push(`\`${command}\`: ${r.output}`);
-            }
-            if (out.length) {
-              const e = readEnding(d.db, job.id);
-              const done = e.done ?? ending ?? { merged: null, pushed: [], problems: [] };
-              writeSetting(d.db, endingKey(job.id), JobEndingState, {
-                ...e,
-                done: { ...done, problems: [...done.problems, ...out] },
-              });
-            }
-            return out;
-          });
-        d.silk.add({
-          jobId: job.id,
-          kind: "progress",
-          title: "Job verified",
-          body: job.verify.length
-            ? `All job-level checks pass: ${job.verify.map((v) => `\`${v}\``).join(", ")}.`
-            : "Every task passed its own checks; the job has no job-level checks.",
-          authoredBy: "eye",
-        });
-        // Its servers' documents, from a new discovery and what it did (Servers → The state document);
-        // a server job's changes named in it (ADR-049).
-        const place = d.db.select().from(projects).where(eq(projects.id, job.projectId)).get();
-        for (const id of d.servers ? (place?.serverIds ?? []) : []) {
-          await ctx.step(`server:${id}:after`, null, async () => {
-            const finished = taskRows(d.db, job.id).filter((t) => t.state === "done");
-            const done = finished.map((t) => `- ${t.title}`).join("\n");
-            const changed = finished
-              .filter((t) => t.kind !== "research" && t.kind !== "plan")
-              .map(
-                (t) =>
-                  `${t.title}${t.verify.length ? ` (checked: ${t.verify.map((v) => `\`${v}\``).join(", ")})` : ""}`,
-              );
-            await d.servers
-              ?.discover(
-                id,
-                `The job "${job.title}" finished. Its goal: ${job.goal}\nIts tasks:\n${done}`,
-                {
-                  id: job.id,
-                  title: job.title,
-                  // A project's job names its changes only when it is the server's own (its tasks may be code).
-                  changes: place?.serverId === id ? changed : null,
-                },
-              )
-              .catch(() => null);
-            return null;
-          });
-        }
-        ctx.setState("completed");
-        return;
+        await ctx.step("web:1", plan, async () => storeWeb(d, job0.id, plan));
       }
-      // Failed: plan the fixes and go round again.
-      const done = taskRows(d.db, job.id)
-        .filter((t) => t.state === "done")
-        .map((t) => t.title);
-      const fix = await ctx.step(`replan:${round}`, { round }, () =>
-        d.brain.replan({
-          jobId: job.id,
-          cwd: ws.cwd,
-          goal: job.goal,
-          skill: skill ? skillExcerpt(skill.body, "fix verification", 3000) : "",
-          silk: silkText(d.silk, job.id),
-          digest: layout,
-          verify: job.verify,
-          failure: `\`${failed.command}\` (exit ${failed.exitCode}):\n${failed.output}`,
-          done,
-        }),
-      );
-      await ctx.step(`web:${round + 2}`, fix, async () => storeWeb(d, job.id, fix));
-      d.db
-        .update(jobs)
-        .set({ verifyRound: round + 1 })
-        .where(eq(jobs.id, job.id))
-        .run();
-      ctx.setState("running");
+      // The repos the plan's tasks name are ready before work starts (ADR-042).
+      if (several) {
+        for (const t of taskRows(d.db, ctx.jobId).filter((x) => x.state !== "done"))
+          tree.prepare(t.scope);
+      }
+      if (ctx.state() === "planning") ctx.setState("running");
+
+      for (;;) {
+        // Asked every time, before any work: approved passes through, denied stops (never skipped on a resume).
+        await approvePlanIfCareful(d, ctx);
+        // Tasks side by side need a worktree each (a folder of worktrees across several repos).
+        await runTasks(d, ctx, where, !ws.shadow);
+        if (ctx.state() === "cancelled") return;
+
+        // ── Job-level verification (BR-1): only this completes a job.
+        const job = d.db.select().from(jobs).where(eq(jobs.id, ctx.jobId)).get() as typeof job0;
+        ctx.setState("verifying");
+        const round = job.verifyRound;
+        // Oraknid's own checks of the repo on GitHub (ADR-038) run after its end steps, below.
+        const own = job.verify.filter((v) => parseBuiltinCheck(v));
+        const checks = job.verify.filter((v) => !parseBuiltinCheck(v));
+        const results = await ctx.step(
+          `job-verify:${round}`,
+          { round, verify: job.verify },
+          async (signal) =>
+            checks.length
+              ? // A check on one of its servers runs there, over Oraknid's own connection (ADR-049).
+                (await verifierFor(d, job, where, signal).run(checks, { why: "job" })).results
+              : [],
+        );
+        const failed = results.find((r) => !r.ok);
+        if (!failed) {
+          // The repo's part is Oraknid's: merge and push as asked, then its GitHub checks (after the piano job).
+          const ending = await runEnding(
+            {
+              db: d.db,
+              bus: d.bus,
+              inbox: d.inbox,
+              now: d.now,
+              ...(d.github ? { github: d.github } : {}),
+              ...(d.projects ? { projects: d.projects } : {}),
+            },
+            ctx,
+            job,
+          );
+          if (own.length)
+            await ctx.step(`job-verify-github:${round}`, { round, own }, async (signal) => {
+              const out: string[] = [];
+              // The project's own branch, never one a Leg made in the job's folder; each one run.
+              const verifier = verifierFor(d, job, where, signal);
+              for (const command of own) {
+                const r = (await verifier.run([command], { why: "job-github" })).results[0];
+                if (r && !r.ok) out.push(`\`${command}\`: ${r.output}`);
+              }
+              if (out.length) {
+                const e = readEnding(d.db, job.id);
+                const done = e.done ?? ending ?? { merged: null, pushed: [], problems: [] };
+                writeSetting(d.db, endingKey(job.id), JobEndingState, {
+                  ...e,
+                  done: { ...done, problems: [...done.problems, ...out] },
+                });
+              }
+              return out;
+            });
+          d.silk.add({
+            jobId: job.id,
+            kind: "progress",
+            title: "Job verified",
+            body: job.verify.length
+              ? `All job-level checks pass: ${job.verify.map((v) => `\`${v}\``).join(", ")}.`
+              : "Every task passed its own checks; the job has no job-level checks.",
+            authoredBy: "eye",
+          });
+          // Its servers' documents, from a new discovery and what it did (Servers → The state document);
+          // a server job's changes named in it (ADR-049).
+          const place = d.db.select().from(projects).where(eq(projects.id, job.projectId)).get();
+          for (const id of d.servers ? (place?.serverIds ?? []) : []) {
+            await ctx.step(`server:${id}:after`, null, async () => {
+              const finished = taskRows(d.db, job.id).filter((t) => t.state === "done");
+              const done = finished.map((t) => `- ${t.title}`).join("\n");
+              const changed = finished
+                .filter((t) => t.kind !== "research" && t.kind !== "plan")
+                .map(
+                  (t) =>
+                    `${t.title}${t.verify.length ? ` (checked: ${t.verify.map((v) => `\`${v}\``).join(", ")})` : ""}`,
+                );
+              await d.servers
+                ?.discover(
+                  id,
+                  `The job "${job.title}" finished. Its goal: ${job.goal}\nIts tasks:\n${done}`,
+                  {
+                    id: job.id,
+                    title: job.title,
+                    // A project's job names its changes only when it is the server's own (its tasks may be code).
+                    changes: place?.serverId === id ? changed : null,
+                  },
+                )
+                .catch(() => null);
+              return null;
+            });
+          }
+          ctx.setState("completed");
+          return;
+        }
+        // Failed: plan the fixes and go round again.
+        const done = taskRows(d.db, job.id)
+          .filter((t) => t.state === "done")
+          .map((t) => t.title);
+        const fix = await ctx.step(`replan:${round}`, { round }, () =>
+          d.brain.replan({
+            jobId: job.id,
+            cwd: ws.cwd,
+            goal: job.goal,
+            skill: skill ? skillExcerpt(skill.body, "fix verification", 3000) : "",
+            silk: silkText(d.silk, job.id),
+            digest: layout,
+            verify: job.verify,
+            failure: `\`${failed.command}\` (exit ${failed.exitCode}):\n${failed.output}`,
+            done,
+          }),
+        );
+        await ctx.step(`web:${round + 2}`, fix, async () => storeWeb(d, job.id, fix));
+        d.db
+          .update(jobs)
+          .set({ verifyRound: round + 1 })
+          .where(eq(jobs.id, job.id))
+          .run();
+        ctx.setState("running");
+      }
+    };
+
+    // A recovery I asked for in the conversation (ADR-067 §4) runs first, then the work goes on
+    // from where it stopped; and any failure that isn't mine to decide is recovered before the job
+    // blocks: the steps done replay, the one that failed runs again (ADR-067 §3).
+    const asked = readSetting(d.db, recoverNowKey(ctx.jobId), RecoverNow, null);
+    let pending: { failure: Failure; owner: string | null } | null = asked
+      ? {
+          failure: { step: "the work, which was blocked", error: asked.blocked || "blocked" },
+          owner: asked.owner,
+        }
+      : null;
+    if (asked) writeSetting(d.db, recoverNowKey(ctx.jobId), RecoverNow, null);
+    // What the recoveries found, each told to the next (ADR-067 §3).
+    const tried: string[] = [];
+    let forOwner: string | null = null;
+    for (;;) {
+      if (pending) {
+        const r = await recoverInJob(d, ctx, where, pending.failure, pending.owner, tried);
+        tried.push(...r.findings);
+        forOwner = r.forOwner ?? forOwner;
+        if (pending.owner) tellOwner(d, ctx.jobId, r);
+        pending = null;
+      }
+      try {
+        await work();
+        return;
+      } catch (error) {
+        if (ownersToDecide(error, ctx.signal)) throw error;
+        const failure: Failure = {
+          step: "the job's work",
+          error: error instanceof Error ? error.message : String(error),
+        };
+        if (tried.length >= 2)
+          throw new RecoveryFailed(
+            blockedAfterRecovery(failure, { ok: false, findings: tried, forOwner }),
+          );
+        pending = { failure, owner: null };
+        // A task that used its attempts gets two more after a recovery, not a whole new count.
+        if (/failed \d+ attempts/.test(failure.error)) {
+          writeSetting(d.db, attemptsFromKey(ctx.jobId), z.number(), d.now());
+          writeSetting(d.db, attemptCapKey(ctx.jobId), z.number().nullable(), 2);
+        }
+      }
     }
   };
+}
+
+/**
+ * Generated folders a repository tracks, untracked (ADR-067 §1): in each
+ * repo of the tree, a "chore: stop tracking generated files" commit,
+ * recorded in Silk; never a file of the work tree touched. Never stops
+ * the work: what fails is said and left.
+ */
+async function keepClean(d: EyeDeps, jobId: string, tree: WorkTree, where: string) {
+  if (!readSetting(d.db, HYGIENE, z.boolean(), true)) return;
+  const gits = tree.single
+    ? [tree.single]
+    : tree instanceof MultiTree
+      ? tree.all().map((x) => x.g)
+      : [];
+  for (const g of gits) {
+    try {
+      const done = await untrackGenerated(g);
+      if (!done) continue;
+      const list = done.folders.map((f) => `\`${f.folder}/\` (${f.files} files)`).join(", ");
+      d.silk.add({
+        jobId,
+        kind: "fact",
+        title: "Stopped tracking generated files",
+        body: `The repository tracked folders its tools make by themselves: ${list}. Oraknid untracked them on ${where} (commit ${done.commit.slice(0, 10)}, "chore: stop tracking generated files") and added them to .gitignore; the files stay on disk.`,
+        authoredBy: "eye",
+      });
+      d.bus.publish({
+        type: "job.untracked-generated",
+        topic: `job:${jobId}`,
+        jobId,
+        payload: { folders: done.folders, commit: done.commit, where },
+      });
+    } catch (error) {
+      d.bus.publish({
+        type: "job.untracked-generated",
+        topic: `job:${jobId}`,
+        jobId,
+        payload: { error: error instanceof Error ? error.message : String(error), where },
+      });
+    }
+  }
+}
+
+/** The facts and the attempt runner a recovery in the job's own tree gets (ADR-067 §3). */
+async function recoverInJob(
+  d: EyeDeps,
+  ctx: JobContext,
+  where: Where,
+  failure: Failure,
+  owner: string | null,
+  tried: string[],
+  /** What is done again after; none: the job's work, which goes on and is the check. */
+  retry: () => Promise<string | null> = async () => null,
+  tries = 1,
+  extra: { prepare?: () => Promise<void>; context?: () => string } = {},
+): Promise<RecoveryResult> {
+  const job = d.db
+    .select()
+    .from(jobs)
+    .where(eq(jobs.id, ctx.jobId))
+    .get() as typeof jobs.$inferSelect;
+  return recover(d, ctx, {
+    jobId: job.id,
+    cwd: where.cwd,
+    failure,
+    owner,
+    tried,
+    tries,
+    ...extra,
+    attempt: async (taskId) => {
+      const r = await runController(
+        controllerDeps(d),
+        attemptJobOf(d, job, where),
+        taskId,
+        where,
+        1,
+        ctx.signal,
+      );
+      // No Leg free for it: the recovery couldn't run, and says why.
+      return r.kind === "blocked" ? { kind: "retry", reason: r.reason } : r;
+    },
+    retry,
+  });
+}
+
+/** The recovery I asked for, told in the conversation: what it found and did (ADR-067 §4). */
+function tellOwner(d: EyeDeps, jobId: string, r: RecoveryResult) {
+  const found = r.findings.at(-1) ?? "nothing";
+  addMessage(
+    d,
+    jobId,
+    "eye",
+    r.ok
+      ? `I looked into what blocked the job: ${found}. The work goes on from where it stopped.`
+      : `I looked into what blocked the job, and couldn't fix it myself: ${found}. ${r.forOwner ? `${r.forOwner} ` : ""}The work tries again from where it stopped; if it stops again, the job says what's left.`,
+    {
+      intent: "report",
+      did: [r.ok ? "Recovered" : "Recovery didn't fix it"],
+      silkIds: [],
+      taskIds: [],
+      jobId: null,
+    },
+  );
 }
 
 /**
@@ -537,10 +722,12 @@ async function runTasks(d: EyeDeps, ctx: JobContext, where: Where, parallel = fa
         // Nothing else can go on: the job waits for me, saying for what (ADR-064 §1).
         if (reviews.length) throw new AwaitingOwner(reviews[0]?.reviewId as string, forMe.reason);
         const held = unfinished.filter((t) => t.ownerHeld).map((t) => t.title);
+        if (held.length)
+          throw new OwnerHolds(
+            `Waiting for tasks I took over: ${held.join(", ")}. Hand them back to continue.`,
+          );
         throw new Error(
-          held.length
-            ? `Waiting for tasks I took over: ${held.join(", ")}. Hand them back to continue.`
-            : `No task can start: ${unfinished.map((t) => `${t.title} (${t.state})`).join(", ")}.`,
+          `No task can start: ${unfinished.map((t) => `${t.title} (${t.state})`).join(", ")}.`,
         );
       }
       // My limit for one job, if I set one; otherwise only the machine's, the Legs' and mine for all.
@@ -678,8 +865,128 @@ function workOf(d: EyeDeps): Work {
   return w;
 }
 
-/** A task verified alone that can't be merged this many times stops the job (bug 2). */
-const MAX_MERGE_FAILURES = 3;
+/**
+ * A merge and its checks, tried: why not, in words, and what failed (a
+ * merge failure's kind, or "check" for its checks on the merged tree).
+ */
+interface Merged {
+  ok: boolean;
+  why: string;
+  kind: MergeFailure["kind"] | "check" | "";
+}
+
+/** Text files larger than this aren't read for conflict markers. */
+const MARKER_SCAN_BYTES = 1024 * 1024;
+
+/**
+ * The repository steward at a failed merge (ADR-067 §7): the conflict
+ * left in place for the agent (or the merge left uncommitted for a fix
+ * when its checks failed), both sides and the goals to read, and the
+ * result checked: finished, no conflict marker left, the task's checks
+ * passing on the merged tree; else taken back.
+ */
+function mergeSteward(
+  d: EyeDeps,
+  g: Git,
+  branch: string,
+  task: { title: string; instructions: string },
+) {
+  const run = (args: string[]) => {
+    try {
+      return git(g, args).trim();
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  };
+  const merging = () => {
+    try {
+      git(g, ["rev-parse", "-q", "--verify", "MERGE_HEAD"]);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const putBack = (before: string) => {
+    if (merging()) run(["merge", "--abort"]);
+    if (before) run(["reset", "-q", "--hard", before]);
+  };
+  const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}\n… (cut)` : s);
+  return {
+    /** A conflict, or checks failing once merged: the merge is begun, its conflicts left for the agent. */
+    async start(kind: Merged["kind"]) {
+      if (kind !== "conflict" && kind !== "check") return;
+      if (merging()) run(["merge", "--abort"]);
+      discardGenerated(g);
+      await gitRun(g, ["merge", "--no-ff", "--no-commit", branch]);
+    },
+    context(kind: Merged["kind"]): string {
+      const base = run(["merge-base", "HEAD", branch]);
+      const conflicted = merging() ? run(["diff", "--name-only", "--diff-filter=U"]) : "";
+      return [
+        `# The task being merged, as a JSON string\n${JSON.stringify(`${task.title}: ${task.instructions}`.slice(0, 1500))}`,
+        `# The job's side: work merged meanwhile\n${run(["log", "--oneline", "-15", `${base}..HEAD`]) || "(nothing)"}\n${cut(run(["diff", "--stat", base, "HEAD"]), 2000)}`,
+        `# The task's side (branch ${branch})\n${run(["log", "--oneline", "-15", `${base}..${branch}`]) || "(nothing)"}\n${cut(run(["diff", "--stat", base, branch]), 2000)}`,
+        merging()
+          ? kind === "conflict"
+            ? `# The merge is in progress in this folder, its conflicts left for you\nConflicted files:\n${conflicted || "(none left)"}\n\n${cut(run(["diff"]), 6000)}`
+            : "# The merge is in progress in this folder, uncommitted: it merged cleanly, but the task's checks failed on it. Fix what the two sides broke together."
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+    },
+    /**
+     * After the agent: null when the task's work is merged and verified;
+     * else why not, everything taken back to `before`.
+     */
+    async settle(
+      before: string,
+      kind: Merged["kind"],
+      mergeAgain: () => Promise<Merged>,
+      check: (signal: AbortSignal) => Promise<{ failures: { command: string }[] }>,
+    ): Promise<string | null> {
+      if (merging()) {
+        const left = run(["diff", "--name-only", "--diff-filter=U"]);
+        putBack(before);
+        return `the steward left the merge unfinished${left ? ` (still conflicted: ${left.split("\n").join(", ")})` : ""}`;
+      }
+      let merged = false;
+      try {
+        git(g, ["merge-base", "--is-ancestor", branch, "HEAD"]);
+        merged = true;
+      } catch {}
+      // Not merged by the steward: what blocked it was the folder; the merge is done again now.
+      if (!merged) {
+        const again = await mergeAgain();
+        return again.ok ? null : again.why;
+      }
+      const changed = before ? run(["diff", "--name-only", before, "HEAD"]).split("\n") : [];
+      const marked = changed.filter((f) => {
+        try {
+          const p = join(g.cwd, f);
+          if (statSync(p).size > MARKER_SCAN_BYTES) return false;
+          const text = readFileSync(p, "utf8");
+          return /^<{7}( |$)/m.test(text) && /^>{7}( |$)/m.test(text);
+        } catch {
+          return false;
+        }
+      });
+      if (marked.length) {
+        putBack(before);
+        return `conflict markers were left in ${marked.slice(0, 5).join(", ")}`;
+      }
+      const report = await check(AbortSignal.timeout(30 * 60_000));
+      const failed = report.failures[0];
+      if (failed) {
+        putBack(before);
+        return `\`${failed.command}\` failed on the steward's merge`;
+      }
+      void d;
+      void kind;
+      return null;
+    },
+  };
+}
 
 /**
  * The Verifier for checks outside an attempt (ADR-056 §4): a task's again
@@ -760,22 +1067,24 @@ async function mergeTask(
   own: { branch: string; tree: MultiTree | null },
   jobBranch: string,
   message: string,
-): Promise<{ ok: true; undo: () => void } | { ok: false; conflicts: string[] }> {
+  clean = true,
+): Promise<{ ok: true; undo: () => void } | ({ ok: false } & MergeFailure)> {
   if (!own.tree) {
     const g = where.tree.single as Git;
-    const m = await mergeTaskBranch(g, own.branch, message);
+    const m = await mergeTaskBranch(g, own.branch, message, where.trash, clean);
     return m.ok ? { ok: true, undo: () => undoMerge(g) } : m;
   }
   const jobTree = where.tree as MultiTree;
   const changed = own.tree
     .all()
     .filter((x) => commitsAhead(x.repoPath, jobBranch, own.branch).length > 0);
+  // Ignore files both sides added to are joined at the merge itself (ADR-067 §6).
   const conflicts = changed.flatMap((x) =>
-    mergeConflicts(x.repoPath, jobBranch, own.branch).map((f) =>
-      x.repo.folder ? `${x.repo.folder}/${f}` : f,
-    ),
+    mergeConflicts(x.repoPath, jobBranch, own.branch)
+      .filter((f) => f !== ".gitignore" && !f.endsWith("/.gitignore"))
+      .map((f) => (x.repo.folder ? `${x.repo.folder}/${f}` : f)),
   );
-  if (conflicts.length) return { ok: false, conflicts };
+  if (conflicts.length) return { ok: false, kind: "conflict", files: conflicts, git: "" };
   const merged: { g: Git; before: string }[] = [];
   const undo = () => {
     for (const m of merged.reverse()) git(m.g, ["reset", "-q", "--hard", m.before]);
@@ -783,13 +1092,10 @@ async function mergeTask(
   for (const x of changed) {
     const { g } = jobTree.open(x.repo.name);
     const before = git(g, ["rev-parse", "HEAD"]).trim();
-    const m = await mergeTaskBranch(g, own.branch, message);
+    const m = await mergeTaskBranch(g, own.branch, message, where.trash, clean);
     if (!m.ok) {
       undo();
-      return {
-        ok: false,
-        conflicts: m.conflicts.map((f) => (x.repo.folder ? `${x.repo.folder}/${f}` : f)),
-      };
+      return { ...m, files: m.files.map((f) => (x.repo.folder ? `${x.repo.folder}/${f}` : f)) };
     }
     merged.push({ g, before });
   }
@@ -836,7 +1142,9 @@ async function runTask(
         ),
       )
       .get()?.n ?? 0;
-  if (failures >= (d.maxAttempts ?? 8)) {
+  // After a recovery, a few more tries, not a whole new count (ADR-067 §3).
+  const cap = readSetting(d.db, attemptCapKey(job.id), z.number().nullable(), null);
+  if (failures >= (cap ?? d.maxAttempts ?? 8)) {
     throw new Error(`"${task.title}" failed ${failures} attempts. Look at it, then resume.`);
   }
   // An outcome recorded in the journal but not applied before a crash is replayed, not run again
@@ -855,77 +1163,7 @@ async function runTask(
       .get();
     if (recorded?.status === "done") attemptNo = task.attemptCount;
   }
-  const attemptJob: AttemptJob = {
-    id: job.id,
-    title: job.title,
-    goal: job.goal,
-    autonomy: job.autonomy as Autonomy,
-    allowedLegIds: job.allowedLegIds,
-    moneyAllowed: ((job.budget as { money?: { limit: number } }).money?.limit ?? 0) > 0,
-    waived: job.waived as GatedAction[],
-    unsandboxed: job.unsandboxed,
-    skillBody: d.skills.version(job.skillId, job.skillVersion)?.body ?? "",
-    // Every job may do GitHub work through Oraknid's own tool, judged by its project's link (ADR-038).
-    tools: [
-      ...(d.tools?.registry.hasBuiltIn("github") &&
-      !job.tools.includes("github") &&
-      // A server job's place is its server, with no repo to put on GitHub (ADR-049).
-      !d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.serverId
-        ? [...job.tools, "github"]
-        : job.tools),
-      // The local models' roles, for every agent once a model is here (ADR-054).
-      ...(d.tools?.registry.hasBuiltIn("local-models") && !job.tools.includes("local-models")
-        ? ["local-models"]
-        : []),
-      // The project's secrets written on its servers by Oraknid, for a deploy (ADR-059).
-      ...(d.tools?.registry.hasBuiltIn("env") &&
-      !job.tools.includes("env") &&
-      jobHasServers(d.db, job.id)
-        ? ["env"]
-        : []),
-    ],
-    serverIds:
-      d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.serverIds ?? [],
-    // Each server's role, production also when I marked the server itself (ADR-049).
-    serverRoles: Object.fromEntries(
-      jobServers(d, job.id).map((s) => [
-        s.id,
-        {
-          role:
-            d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.serverRoles[
-              s.id
-            ]?.role ?? "",
-          production: s.production,
-        },
-      ]),
-    ),
-    // The server whose own job this is (ADR-049).
-    serverJob:
-      d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.serverId ?? null,
-    // The server I chose or confirmed for this job's work on a server (ADR-042).
-    server: readSetting(d.db, jobServerKey(job.id), JobServer, { serverId: null, declined: [] })
-      .serverId,
-    localPorts: projectPorts(d.db, job.projectId),
-    ...(where.tree.several
-      ? {
-          layout: reposLayout(projectReposOf(d.db, job.projectId), where.projectPath),
-        }
-      : {}),
-    skillChecks: skillChecks(d.skills.version(job.skillId, job.skillVersion)?.body ?? ""),
-    // The skills I approved for this job (ADR-064 §6) first, then the project's others.
-    otherSkills: [
-      ...new Set([
-        ...readNeeds(d.db, job.id).skills,
-        ...(d.db.select().from(projects).where(eq(projects.id, job.projectId)).get()?.skillIds ??
-          []),
-      ]),
-    ]
-      .filter((id) => id !== job.skillId)
-      .map((id) => d.skills.latest(id))
-      .filter((x): x is NonNullable<typeof x> => !!x)
-      .map((x) => ({ name: x.name, body: x.body })),
-    inputs: renderInputs(job.inputs as JobInput[], where.projectPath),
-  };
+  const attemptJob = attemptJobOf(d, job, where);
   // Beside other tasks, it works in a worktree of its own, branched from the job branch (ADR-016);
   // in a project of several repos, a folder of its own with a worktree per repo it touches.
   let taskWhere = where;
@@ -952,26 +1190,7 @@ async function runTask(
     { taskId: task.id, attemptNo },
     async (signal) => {
       const result = await runController(
-        {
-          db: d.db,
-          bus: d.bus,
-          silk: d.silk,
-          inbox: d.inbox,
-          registry: d.registry,
-          supervisor: d.supervisor,
-          sandbox: d.sandbox,
-          legsDir: d.legsDir,
-          now: d.now,
-          brain: d.brain,
-          ...(d.tools ? { tools: d.tools } : {}),
-          ...(d.effects ? { effects: d.effects } : {}),
-          ...(d.machine ? { machine: d.machine } : {}),
-          ...(d.servers ? { servers: d.servers } : {}),
-          ...(d.github ? { github: d.github } : {}),
-          ...(d.stallCheckMs ? { stallCheckMs: d.stallCheckMs } : {}),
-          ...(d.driftJudgeMs ? { driftJudgeMs: d.driftJudgeMs } : {}),
-          ...(d.visual ? { visual: d.visual } : {}),
-        },
+        controllerDeps(d),
         attemptJob,
         task.id,
         taskWhere,
@@ -982,60 +1201,139 @@ async function runTask(
       if (result.kind === "blocked") {
         setTask(d, job.id, task.id, "ready", result.reason);
         d.db.update(jobs).set({ blockedUntil: result.until }).where(eq(jobs.id, job.id)).run();
-        throw new Error(result.reason);
+        // No Leg free to take it: it waits for one, never a recovery (ADR-067 §3).
+        throw new WaitsForLegs(result.reason);
       }
       return result;
     },
   );
-  // Merged into the job branch, one task at a time, and checked again there; a conflict or a
-  // failing check merges nothing and the task is redone on top of the newer work (ADR-016).
+  // Merged into the job branch, one task at a time, and checked again there (ADR-016); a merge
+  // or its checks failing goes to the repository steward (ADR-067 §7).
   if (own && outcome.kind === "done") {
     const mine = own;
-    const merged = await ctx.step(`task:${task.id}:merge:${attemptNo}`, { attemptNo }, (signal) =>
-      oneMergeAtATime(job.id, async () => {
-        const m = await mergeTask(where, mine, job.branch as string, `merge: ${task.title}`);
-        if (!m.ok)
-          return {
-            ok: false,
-            why: `it conflicted with work merged meanwhile (${m.conflicts.join(", ")})`,
-          };
-        // With the runners the task's own checks had: on the job's servers, Oraknid's own
-        // GitHub checks, the policy; stopped with the job (bug 2).
-        const report = await verifierFor(d, job, where, signal).run(task.verify, {
-          why: "merge",
-        });
-        const failed = report.failures[0];
-        if (failed) {
-          m.undo();
-          return { ok: false, why: `\`${failed.command}\` failed once merged with the other work` };
-        }
-        return { ok: true, why: "" };
-      }),
+    // The task's branch keeps no generated folder either (ADR-067 §1): both sides untracked them.
+    if (!mine.tree) await keepClean(d, job.id, taskWhere.tree, `the branch of “${task.title}”`);
+    const mergeOnce = async (signal: AbortSignal): Promise<Merged> => {
+      const m = await mergeTask(
+        where,
+        mine,
+        job.branch as string,
+        `merge: ${task.title}`,
+        readSetting(d.db, HYGIENE, z.boolean(), true),
+      );
+      if (!m.ok) return { ok: false, why: mergeFailureSaid(m), kind: m.kind };
+      // With the runners the task's own checks had: on the job's servers, Oraknid's own
+      // GitHub checks, the policy; stopped with the job (bug 2).
+      const report = await verifierFor(d, job, where, signal).run(task.verify, { why: "merge" });
+      const failed = report.failures[0];
+      if (failed) {
+        m.undo();
+        return {
+          ok: false,
+          why: `\`${failed.command}\` failed once merged with the other work`,
+          kind: "check",
+        };
+      }
+      return { ok: true, why: "", kind: "" };
+    };
+    let merged = await ctx.step(`task:${task.id}:merge:${attemptNo}`, { attemptNo }, (signal) =>
+      oneMergeAtATime(job.id, () => mergeOnce(signal)),
     );
-    if (own.tree) own.tree.remove();
-    else removeTaskWorktree(where.projectPath, own.path, own.branch);
-    d.db.update(tasks).set({ worktree: null }).where(eq(tasks.id, task.id)).run();
+    const removeOwn = () => {
+      if (mine.tree) mine.tree.remove();
+      else removeTaskWorktree(where.projectPath, mine.path, mine.branch);
+      d.db.update(tasks).set({ worktree: null }).where(eq(tasks.id, task.id)).run();
+    };
     if (!merged.ok) {
-      // Verified alone and never merged, again and again: not redone for ever (bug 2).
-      const key = `eye.mergeFailures.${task.id}`;
-      const times = readSetting(d.db, key, z.number(), 0) + 1;
-      writeSetting(d.db, key, z.number(), times);
-      if (times >= MAX_MERGE_FAILURES)
-        throw new Error(
-          `"${task.title}" passed its checks alone but couldn't be merged with the other work ${times} times: ${merged.why}. Look at it, then resume.`,
-        );
-      d.silk.add({
-        jobId: job.id,
+      // Every failed merge goes to the repository steward, never a blind retry (ADR-067 §7): an
+      // agent session in the job's tree, with git's words, both sides and the tasks' goals; a
+      // conflict is left in place for it to resolve. Only a merge whose checks pass is kept.
+      const failure: Failure = {
+        step: `merging “${task.title}” into the job's branch`,
+        error: merged.why,
         taskId: task.id,
-        kind: "issue",
-        title: `Not merged: ${task.title}`,
-        body: `Its work was verified alone, but ${merged.why}. It is redone on top of the newer work.`,
-        authoredBy: "eye",
-      });
-      setTask(d, job.id, task.id, "ready", `Redone on top of the newer work: ${merged.why}.`);
-      d.db.update(tasks).set({ settledAttempt: attemptNo }).where(eq(tasks.id, task.id)).run();
-      return;
+      };
+      const g = where.tree.single;
+      // Across several repos the steward can't hold one merge open in each: a content failure is
+      // redone once on top of the newer work, and a second goes to it (ADR-067 §7, limits).
+      const redoKey = `eye.mergeRedone.${task.id}`;
+      if (
+        !g &&
+        (merged.kind === "conflict" || merged.kind === "check") &&
+        !readSetting(d.db, redoKey, z.boolean(), false)
+      ) {
+        writeSetting(d.db, redoKey, z.boolean(), true);
+        removeOwn();
+        d.silk.add({
+          jobId: job.id,
+          taskId: task.id,
+          kind: "issue",
+          title: `Not merged: ${task.title}`,
+          body: `Its work was verified alone, but ${merged.why}. It is redone once on top of the newer work.`,
+          authoredBy: "eye",
+        });
+        setTask(d, job.id, task.id, "ready", `Redone on top of the newer work: ${merged.why}.`);
+        d.db.update(tasks).set({ settledAttempt: attemptNo }).where(eq(tasks.id, task.id)).run();
+        return;
+      }
+      const steward = g ? mergeSteward(d, g, mine.branch, task) : null;
+      let before = "";
+      // What failed last: the second try is set up for it (a conflict found once the folder was fixed).
+      let last = merged.kind;
+      const again = async () => {
+        const m = await mergeOnce(ctx.signal);
+        last = m.ok ? "" : m.kind;
+        return m;
+      };
+      // Only a verified result is kept: this task's checks and those of the work merged before it.
+      const checks = () => [
+        ...new Set([
+          ...task.verify,
+          ...taskRows(d.db, job.id)
+            .filter(
+              (t) => t.state === "done" && t.id !== task.id && !t.title.startsWith(RECOVERY_TITLE),
+            )
+            .flatMap((t) => t.verify),
+        ]),
+      ];
+      const r = await oneMergeAtATime(job.id, () =>
+        recoverInJob(
+          d,
+          ctx,
+          where,
+          failure,
+          null,
+          [],
+          async () => {
+            if (!g || !steward) {
+              const m = await again();
+              return m.ok ? null : m.why;
+            }
+            return steward.settle(before, last, again, (s) =>
+              verifierFor(d, job, where, s).run(checks(), { why: "merge" }),
+            );
+          },
+          2,
+          {
+            prepare: async () => {
+              if (!g || !steward) return;
+              before = git(g, ["rev-parse", "HEAD"]).trim();
+              await steward.start(last);
+            },
+            ...(steward ? { context: () => steward.context(last) } : {}),
+          },
+        ),
+      );
+      if (r.ok) merged = { ok: true, why: "", kind: "" };
+      else {
+        removeOwn();
+        // Redone on top of the newer work once the job goes on.
+        setTask(d, job.id, task.id, "ready", `Not merged: ${merged.why}.`);
+        d.db.update(tasks).set({ settledAttempt: attemptNo }).where(eq(tasks.id, task.id)).run();
+        throw new RecoveryFailed(blockedAfterRecovery(failure, r));
+      }
     }
+    removeOwn();
   }
 
   // Applied first, then marked settled: a crash in between applies it again, which changes nothing.
@@ -1051,6 +1349,90 @@ async function runTask(
     return "cancelled";
   }
   settle();
+}
+
+/** The job as an attempt sees it (ADR-056 §8): a task's, or a recovery's (ADR-067 §3). */
+function attemptJobOf(d: EyeDeps, job: typeof jobs.$inferSelect, where: Where): AttemptJob {
+  const project = d.db.select().from(projects).where(eq(projects.id, job.projectId)).get();
+  return {
+    id: job.id,
+    title: job.title,
+    goal: job.goal,
+    autonomy: job.autonomy as Autonomy,
+    allowedLegIds: job.allowedLegIds,
+    moneyAllowed: ((job.budget as { money?: { limit: number } }).money?.limit ?? 0) > 0,
+    waived: job.waived as GatedAction[],
+    unsandboxed: job.unsandboxed,
+    skillBody: d.skills.version(job.skillId, job.skillVersion)?.body ?? "",
+    // Every job may do GitHub work through Oraknid's own tool, judged by its project's link (ADR-038).
+    tools: [
+      ...(d.tools?.registry.hasBuiltIn("github") &&
+      !job.tools.includes("github") &&
+      // A server job's place is its server, with no repo to put on GitHub (ADR-049).
+      !project?.serverId
+        ? [...job.tools, "github"]
+        : job.tools),
+      // The local models' roles, for every agent once a model is here (ADR-054).
+      ...(d.tools?.registry.hasBuiltIn("local-models") && !job.tools.includes("local-models")
+        ? ["local-models"]
+        : []),
+      // The project's secrets written on its servers by Oraknid, for a deploy (ADR-059).
+      ...(d.tools?.registry.hasBuiltIn("env") &&
+      !job.tools.includes("env") &&
+      jobHasServers(d.db, job.id)
+        ? ["env"]
+        : []),
+    ],
+    serverIds: project?.serverIds ?? [],
+    // Each server's role, production also when I marked the server itself (ADR-049).
+    serverRoles: Object.fromEntries(
+      jobServers(d, job.id).map((s) => [
+        s.id,
+        { role: project?.serverRoles[s.id]?.role ?? "", production: s.production },
+      ]),
+    ),
+    // The server whose own job this is (ADR-049).
+    serverJob: project?.serverId ?? null,
+    // The server I chose or confirmed for this job's work on a server (ADR-042).
+    server: readSetting(d.db, jobServerKey(job.id), JobServer, { serverId: null, declined: [] })
+      .serverId,
+    localPorts: projectPorts(d.db, job.projectId),
+    ...(where.tree.several
+      ? { layout: reposLayout(projectReposOf(d.db, job.projectId), where.projectPath) }
+      : {}),
+    skillChecks: skillChecks(d.skills.version(job.skillId, job.skillVersion)?.body ?? ""),
+    // The skills I approved for this job (ADR-064 §6) first, then the project's others.
+    otherSkills: [...new Set([...readNeeds(d.db, job.id).skills, ...(project?.skillIds ?? [])])]
+      .filter((id) => id !== job.skillId)
+      .map((id) => d.skills.latest(id))
+      .filter((x): x is NonNullable<typeof x> => !!x)
+      .map((x) => ({ name: x.name, body: x.body })),
+    inputs: renderInputs(job.inputs as JobInput[], where.projectPath),
+  };
+}
+
+/** What an attempt works with, of The Eye's parts. */
+function controllerDeps(d: EyeDeps) {
+  return {
+    db: d.db,
+    bus: d.bus,
+    silk: d.silk,
+    inbox: d.inbox,
+    registry: d.registry,
+    supervisor: d.supervisor,
+    sandbox: d.sandbox,
+    legsDir: d.legsDir,
+    now: d.now,
+    brain: d.brain,
+    ...(d.tools ? { tools: d.tools } : {}),
+    ...(d.effects ? { effects: d.effects } : {}),
+    ...(d.machine ? { machine: d.machine } : {}),
+    ...(d.servers ? { servers: d.servers } : {}),
+    ...(d.github ? { github: d.github } : {}),
+    ...(d.stallCheckMs ? { stallCheckMs: d.stallCheckMs } : {}),
+    ...(d.driftJudgeMs ? { driftJudgeMs: d.driftJudgeMs } : {}),
+    ...(d.visual ? { visual: d.visual } : {}),
+  };
 }
 
 /** What runTask applies an outcome to. */

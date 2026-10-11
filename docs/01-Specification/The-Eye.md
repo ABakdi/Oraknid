@@ -355,6 +355,31 @@ that passes only thanks to files the agent made outside its task after
 the check failed, files the check names, fails (ADR-052 §2 → Not
 another way; the Verifier's rule, wired with the harness's stage 4).
 
+## Recovery and the repository steward (2026-10-11, [[ADR-067-Self-Recovery]])
+
+The Eye can't foresee every failure, so it doesn't stop at one it
+didn't foresee. Before a job blocks for anything that isn't mine to
+decide (an approval, a question, a denial, tasks I took over, my stop,
+no Leg free), it runs a **recovery**: a task "Recover: …" run like any
+attempt, in the job's own folder, on the strongest model allowed and
+through the Gate, given the exact failure (the step, the error as said,
+`git status`, the last commits, the last events of the work that
+failed), what earlier recoveries found, and my words when I asked.
+Its goal: make the work able to go on without losing any of it, fix the
+cause, check it. Then Oraknid does the failed step again: the merge and
+its checks, or the job's work, whose done steps replay. Two at most;
+then the job blocks with what failed, what was tried and the one thing
+I must do (the agent's "FOR THE OWNER" line).
+
+Git has its own steward, in three tiers: rules first (the conventions,
+no model); a light model for every commit the rules don't settle (an
+unknown kind of project, new folders or kinds of files, binaries, large
+or unusual commits), its decisions remembered per project; and an agent
+session for every failed merge, the conflict left in place for it,
+lockfiles regenerated rather than merged by hand, the result kept only
+when its checks and those of the work merged before pass. Code never
+gives up silently and never retries blindly.
+
 ## What the work needs (2026-10-09, [[ADR-064-Design-And-Approval-By-Experience]] §6)
 
 Before the interview, The Eye reads the goal and proposes what the job
@@ -408,6 +433,17 @@ me in a line:
 | Context | Records a fact or an architecture note in Silk. |
 | For later | Keeps it in Silk as a note for later, not acted on now. |
 | Stop / pause | Pauses the job at a safe point. |
+| "Fix it", "unblock", "continue", "resolve this" on a blocked job | Starts a recovery at once, no model needed to read it: the job resumes into it, with my words (2026-10-11, [[ADR-067-Self-Recovery]] §4). A job blocked for its Legs is resumed and waits for one. |
+
+**A reply keeps its word** (ADR-067 §4): it says "I'll …" or "Let me …"
+only when that work runs now (the job is running, or my message started
+something: a recovery, a resume, a follow-up job, the agents told).
+Otherwise it says what was done and what makes it run: "Added a task.
+The job is blocked (…), so nothing runs until it goes on: say “fix it”
+to start a recovery now, or resume it." When no model can think, it
+says so in plain words with what to do ("every agent that can think is
+paused or out of quota (Claude is paused). Unpause Claude on the Legs
+page, or add a model."), never the list of every model.
 | A question about the job | Answers from Silk and the job's state. |
 
 Asking for the work to be merged into the work branch or pushed to

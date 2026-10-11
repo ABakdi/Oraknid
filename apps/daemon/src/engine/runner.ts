@@ -3,7 +3,7 @@ import { isTerminalJob } from "@oraknid/core";
 import { z } from "zod";
 import type { EventBus } from "../events/bus.ts";
 import type { InboxStore } from "../inbox/store.ts";
-import { attemptsFromKey, writeSetting } from "../settings.ts";
+import { attemptCapKey, attemptsFromKey, writeSetting } from "../settings.ts";
 import {
   AwaitingOwner,
   DID_NOT_HAPPEN,
@@ -158,8 +158,15 @@ export class JobRunner {
     if (job.queuedAt) this.o.jobs.unqueue(jobId);
     // "Failed N attempts. Look at it, then resume": resuming gives its
     // tasks a fresh count; counting from the start blocked it again at once.
-    if (job.state === "blocked" && /failed \d+ attempts/.test(job.blockedReason ?? ""))
+    // So does any block after a recovery that couldn't fix it, whose words say what it found
+    // (ADR-067 §3); and the whole count a recovery had cut short comes back.
+    if (
+      job.state === "blocked" &&
+      /failed \d+ attempts|I tried to fix it/.test(job.blockedReason ?? "")
+    )
       writeSetting(this.o.jobs.db, attemptsFromKey(jobId), z.number(), Date.now());
+    if (job.state === "blocked")
+      writeSetting(this.o.jobs.db, attemptCapKey(jobId), z.number().nullable(), null);
     const to = (job.resumeState as JobState | null) ?? "running";
     this.o.jobs.transition(jobId, to, null);
     this.start(jobId);

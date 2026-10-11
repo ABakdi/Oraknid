@@ -1,3 +1,4 @@
+import { ALL_LOCKFILES } from "@oraknid/contracts";
 import { globToRegExp } from "../web.ts";
 
 // What each common ecosystem writes by itself (ADR-056 → Monitors suspect,
@@ -311,4 +312,218 @@ export function conventionsSaid(ecosystems: readonly string[]): string[] {
   return CONVENTIONS.filter((c) => ecosystems.includes(c.id)).map(
     (c) => `${c.name}: ${c.writes.join(", ")}`,
   );
+}
+
+// ── Generated files in a repository (ADR-067 §1, §2) ───────────────
+
+/**
+ * Folders no repository tracks on purpose: installed dependencies and
+ * caches. Found tracked in git, they are untracked, whatever the
+ * repository's ignore file says.
+ */
+export const NEVER_TRACKED: Readonly<Record<string, readonly string[]>> = {
+  js: [
+    "node_modules/",
+    ".pnpm-store/",
+    ".next/",
+    ".nuxt/",
+    ".svelte-kit/",
+    ".astro/",
+    ".angular/",
+    ".turbo/",
+    ".vite/",
+    ".parcel-cache/",
+    ".nyc_output/",
+    ".wrangler/",
+    ".vercel/",
+    ".netlify/",
+    ".expo/",
+    ".docusaurus/",
+  ],
+  python: [
+    "__pycache__/",
+    ".venv/",
+    "__pypackages__/",
+    ".tox/",
+    ".nox/",
+    ".pytest_cache/",
+    ".mypy_cache/",
+    ".ruff_cache/",
+    ".pytype/",
+    ".hypothesis/",
+  ],
+  gradle: [".gradle/", ".kotlin/"],
+  scala: [".bsp/", ".bloop/", ".metals/"],
+  ruby: [".bundle/"],
+  elixir: ["_build/", ".elixir_ls/"],
+  dart: [".dart_tool/"],
+  swift: [".build/", "DerivedData/"],
+  haskell: [".stack-work/", "dist-newstyle/"],
+  zig: ["zig-cache/", ".zig-cache/"],
+  terraform: [".terraform/"],
+  any: [".cache/"],
+};
+
+/**
+ * Build output: some repositories commit theirs on purpose (a GitHub
+ * Action's `dist/`), so a tracked one is untracked only in a repository
+ * that has no ignore file of its own, one whose first commit took
+ * everything. New build output is never committed.
+ */
+export const BUILD_OUTPUT: Readonly<Record<string, readonly string[]>> = {
+  js: [
+    "dist/",
+    "build/",
+    ".output/",
+    "storybook-static/",
+    "coverage/",
+    "playwright-report/",
+    "test-results/",
+  ],
+  python: ["dist/", "build/", ".eggs/", "htmlcov/"],
+  rust: ["target/"],
+  maven: ["target/"],
+  scala: ["target/"],
+  gradle: ["build/"],
+  dotnet: ["bin/", "obj/"],
+  dart: ["build/"],
+  zig: ["zig-out/"],
+};
+
+const NEVER = new Set(Object.values(NEVER_TRACKED).flat());
+
+/** The ecosystems of a repository's own files, read outside what it installed. */
+export function ownEcosystems(paths: readonly string[]): string[] {
+  return ecosystemsOf(
+    paths.filter((p) => p.split("/").length <= 3 && !p.split("/").some((s) => NEVER.has(`${s}/`))),
+  );
+}
+
+export interface TrackedGenerated {
+  /** The folder, relative to the repository (`node_modules`, `web/dist`). */
+  folder: string;
+  /** The ignore-file line that keeps it out (`node_modules/`). */
+  pattern: string;
+  /** How many tracked files are in it. */
+  files: number;
+}
+
+/**
+ * The generated folders a repository tracks (ADR-067 §1): installed
+ * dependencies and caches always, build output only when the repository
+ * has no ignore file of its own (`ignoreFile` false). `paths`: what
+ * `git ls-files` lists. Outermost folders only (`node_modules`, never
+ * `node_modules/x/dist`), in path order.
+ */
+export function trackedGenerated(
+  paths: readonly string[],
+  o: { ignoreFile: boolean },
+): TrackedGenerated[] {
+  const names = new Set<string>(["node_modules/"]);
+  for (const id of ownEcosystems(paths)) {
+    for (const n of NEVER_TRACKED[id] ?? []) names.add(n);
+    if (!o.ignoreFile) for (const n of BUILD_OUTPUT[id] ?? []) names.add(n);
+  }
+  const found = new Map<string, TrackedGenerated>();
+  for (const p of paths) {
+    const segs = p.split("/");
+    for (let i = 0; i < segs.length - 1; i++) {
+      const pattern = `${segs[i]}/`;
+      if (!names.has(pattern)) continue;
+      const folder = segs.slice(0, i + 1).join("/");
+      const f = found.get(folder) ?? { folder, pattern, files: 0 };
+      f.files++;
+      found.set(folder, f);
+      break;
+    }
+  }
+  return [...found.values()].sort((a, b) => a.folder.localeCompare(b.folder));
+}
+
+const LOCKFILE_NAMES = new Set(ALL_LOCKFILES);
+const isLockfile = (path: string) =>
+  LOCKFILE_NAMES.has(basename(path)) ||
+  /(^|\/)(npm-shrinkwrap\.json|go\.work\.sum|Package\.resolved|Podfile\.lock|pubspec\.lock|mix\.lock|pdm\.lock|deno\.lock|flake\.lock|\.terraform\.lock\.hcl|stack\.yaml\.lock)$/.test(
+    path,
+  );
+
+/**
+ * Whether a file is one the project's tools write again by themselves
+ * (ADR-067 §1): a change to it in Oraknid's own checkout is never work,
+ * and is never allowed to stop a merge.
+ */
+export function regenerated(path: string, ecosystems?: readonly string[]): boolean {
+  return byProductOf(path, ecosystems) !== null;
+}
+
+/**
+ * Whether a new file is generated and stays out of a commit (ADR-067 §5):
+ * what the conventions say a tool writes, except lockfiles, which a
+ * project commits. The ignore line that keeps it out comes with it.
+ */
+export function generatedForCommit(
+  path: string,
+  ecosystems?: readonly string[],
+): { pattern: string } | null {
+  if (isLockfile(path)) return null;
+  const hit = byProductOf(path, ecosystems);
+  // `next-env.d.ts` and the like are written once and kept by many projects: only folders and caches.
+  if (!hit) return null;
+  return { pattern: hit.pattern };
+}
+
+/**
+ * The ignore file for a repository that has none (ADR-067 §6): what the
+ * ecosystems it uses write by themselves (lockfiles kept), local secrets
+ * and the operating system's files.
+ */
+export function ignoreTemplate(ecosystems: readonly string[]): string {
+  const lines: string[] = [];
+  const add = (l: string) => {
+    if (!lines.includes(l)) lines.push(l);
+  };
+  for (const c of CONVENTIONS) {
+    if (!ecosystems.includes(c.id) || c.id === "any") continue;
+    for (const w of c.writes) if (!isLockfile(w)) add(w);
+  }
+  const any = CONVENTIONS.find((c) => c.id === "any");
+  return [
+    "# Written by Oraknid: what the project's tools make by themselves, never committed.",
+    ...lines,
+    "",
+    "# Local secrets",
+    ".env",
+    ".env.*",
+    "!.env.example",
+    "!.env.sample",
+    "!.env.template",
+    "*.pem",
+    "*.key",
+    "",
+    "# Editors and the operating system",
+    ...(any?.writes ?? []),
+    "",
+  ].join("\n");
+}
+
+/**
+ * The ignore lines a repository's existing file lacks for generated
+ * folders that are there (ADR-067 §6): `present` are the folders found in
+ * the work tree, `text` the ignore file. A line counts in any of its
+ * usual spellings (`node_modules`, `/node_modules/`, `**\/node_modules`).
+ */
+export function missingIgnoreLines(text: string, present: readonly string[]): string[] {
+  const have = new Set(
+    text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith("#"))
+      .map((l) =>
+        l
+          .replace(/^\*\*\//, "")
+          .replace(/^\//, "")
+          .replace(/\/$/, ""),
+      ),
+  );
+  return [...new Set(present)].filter((p) => !have.has(p.replace(/\/$/, ""))).map((p) => p);
 }

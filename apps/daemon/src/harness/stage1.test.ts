@@ -155,9 +155,11 @@ describe("a task merged beside others is checked again with its own runners (bug
     const { id } = await rig.repoJob("Two parts");
     const done = await rig.ended(id, 45_000);
     expect(done.state).toBe("blocked");
+    // Never redone blindly (ADR-067 §7): the steward looked twice, then the job says what and why.
     expect(done.blockedReason).toMatch(
-      /^"Draw the logo" passed its checks alone but couldn't be merged with the other work 3 times/,
+      /^Merging “Draw the logo” into the job's branch failed: `test -f logo\.svg .*` failed once merged with the other work\. I tried to fix it 2 times and couldn't/,
     );
+    expect(leg.log.filter((t) => taskOf(t) === "Draw the logo").length).toBe(1);
   }, 60_000);
 });
 

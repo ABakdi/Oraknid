@@ -174,8 +174,10 @@ describe("the TaskController: each transition a step in the log (ADR-056 §8)", 
       expect(TRANSITIONS[m.from as ControllerState], `${m.from} → ${m.to}`).toContain(m.to);
     expect(new Set(moves.map((m) => m.key)).size).toBe(moves.length);
     // The end comes after the last move: the outcome, then the attempt's end.
+    // (What the Done commit left out is said on the way, ADR-067 §5.)
     expect(
       logOf(rig, id)
+        .filter((e) => e.kind !== "CommitFiltered")
         .slice(-3)
         .map((e) => e.kind),
     ).toEqual(["Transition", "Outcome", "AttemptEnded"]);

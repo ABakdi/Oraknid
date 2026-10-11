@@ -5,6 +5,7 @@ export * from "./cloud.ts";
 export * from "./drift.ts";
 export * from "./evaluations.ts";
 export * from "./experience.ts";
+export * from "./harness/commit-plan.ts";
 export * from "./harness/conventions.ts";
 export * from "./harness/drift-judge.ts";
 export * from "./harness/escalation.ts";

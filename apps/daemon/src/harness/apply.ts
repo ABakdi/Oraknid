@@ -1,6 +1,7 @@
 import { choiceQuestion, type TaskKind } from "@oraknid/contracts";
 import {
   agentNeedsAnswer,
+  commitJudgePrompt,
   correctivePrompt,
   type Drift,
   type Ending,
@@ -25,6 +26,8 @@ import { BrainStopped } from "../eye/brain.ts";
 import { giveToLeg } from "../eye/leg-work.ts";
 import { dependentsOf, keepsGoingWrong, readKeepsGoingWrong } from "../eye/questions.ts";
 import { parseSsh } from "../servers/remote.ts";
+import { readSetting, StewardMemory, writeSetting } from "../settings.ts";
+import { leftOutSaid } from "../workspace/git.ts";
 import { askAgent, confirm, knowConventions } from "./confirm.ts";
 import { type AttemptCtx, type Turn, verdictFor } from "./facts.ts";
 import { ALLOW } from "./gate.ts";
@@ -553,8 +556,53 @@ async function done(x: AttemptCtx, o: Outcome): Promise<never> {
   await x.closeSession();
   const subject = `${task.title.charAt(0).toLowerCase()}${task.title.slice(1)}`;
   const kind = PREFIX[task.kind as TaskKind];
-  const made = await ws.tree.commit((repo, several) =>
-    several && repo ? `${kind}(${repo}): ${subject}` : `${kind}: ${subject}`,
+  // Only what belongs in the repository (ADR-067 §5): what stays out is recorded and said.
+  const kept: string[] = [];
+  const brain = d.brain;
+  const projectId = d.db
+    .select({ p: jobs.projectId })
+    .from(jobs)
+    .where(eq(jobs.id, job.id))
+    .get()?.p;
+  const memoryKey = `project.steward.${projectId ?? ""}`;
+  const made = await ws.tree.commit(
+    (repo, several) => (several && repo ? `${kind}(${repo}): ${subject}` : `${kind}: ${subject}`),
+    {
+      scope: task.scope,
+      // What the steward decided for this project before (ADR-067 §5): never asked twice.
+      memory: readSetting(d.db, memoryKey, StewardMemory, { folders: {}, ignore: [] }),
+      remember: (m) => writeSetting(d.db, memoryKey, StewardMemory, m),
+      ...(brain?.judgeCommit
+        ? {
+            judge: async (i) =>
+              (brain.judgeCommit as NonNullable<typeof brain.judgeCommit>)({
+                jobId: job.id,
+                cwd: ws.cwd,
+                prompt: commitJudgePrompt({
+                  task: `${task.title}: ${task.instructions}`,
+                  why: i.why,
+                  folders: i.folders,
+                  ignoreFile: i.ignoreFile,
+                }),
+              }),
+          }
+        : {}),
+      staged: (repo, r) => {
+        if (!r.left.length && !r.ignore && !r.judged) return;
+        const said = leftOutSaid(r.left);
+        x.trail.append("CommitFiltered", {
+          repo,
+          left: r.left.length,
+          said,
+          ignore: r.ignore,
+          judged: r.judged,
+        });
+        const where = repo && ws.tree.several ? ` in ${repo}` : "";
+        if (r.left.length) kept.push(`Left out of the commit${where} (still on disk): ${said}.`);
+        if (r.ignore) kept.push(`Oraknid ${r.ignore}${where}.`);
+        if (r.judged) kept.push(`An unusual commit${where}, judged: ${r.judged}.`);
+      },
+    },
   );
   const commit = made[0]?.sha ?? null;
   const said = ws.tree.several
@@ -569,7 +617,7 @@ async function done(x: AttemptCtx, o: Outcome): Promise<never> {
     taskId: task.id,
     kind: "progress",
     title: `Done: ${task.title}`,
-    body: `${task.verify.length ? `Verified by ${task.verify.map((v) => `\`${v}\``).join(", ")}` : "No verify command (a planning task)"} on ${leg.legName} · ${leg.model}${x.effort ? ` (${x.effort})` : ""}.${said}\n\n${(await ws.tree.diffStatSince(x.ckpt)).trim() || "No file changes."}`,
+    body: `${task.verify.length ? `Verified by ${task.verify.map((v) => `\`${v}\``).join(", ")}` : "No verify command (a planning task)"} on ${leg.legName} · ${leg.model}${x.effort ? ` (${x.effort})` : ""}.${said}${kept.length ? `\n\n${kept.join("\n")}` : ""}\n\n${(await ws.tree.diffStatSince(x.ckpt)).trim() || "No file changes."}`,
     authoredBy: "eye",
   });
   d.db.update(tasks).set({ escalation: 0 }).where(eq(tasks.id, task.id)).run();
