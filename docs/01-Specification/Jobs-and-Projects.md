@@ -348,17 +348,30 @@ need what it shows go on beside it.
   review of it for me (once per round, journaled): for a design review
   the design's folder (`design/` in the job's folder, made sure of); for
   an app review (or a checkpoint on a project that runs) the **running
-  app**: its dev command found from the plan's `run`, the project's
-  `dev` (or `start`, `serve`, `preview`) script with its package manager
-  (Vite and the like given `--port`; Next `-p`), a command in its README,
-  or a static server for an `index.html`; run in the job's sandbox (its
-  port reachable from this computer) on a free local port, waited for
-  until it answers, and stopped when the review is over (or Oraknid
-  stops). An app that doesn't start, or nothing saying how it runs: the
-  review shows the job's folder, and Silk says why.
+  app**, through a ladder of ways (2026-10-12,
+  [[ADR-069-A-Review-Is-Seen-To-Render-First]]): the plan's `run`, the
+  project's `dev` (or `start`, `serve`, `preview`) script with its
+  package manager, a command in its README, its `build` then the build's
+  output served, a static site; every command given the port (Vite and
+  the like `--port`, Next `-p`, the plan's `pnpm dev` too, through the
+  script it calls), the port the app announces used when it answers
+  there; run in the job's sandbox (its port reachable from this
+  computer) on a free local port, and stopped when the review is over (or
+  Oraknid stops). **Nothing is shown before Oraknid saw it render**: each
+  way that starts is loaded through the review's own frame at phone and
+  desktop size (headless Chromium, else a look over HTTP), and a blank
+  page, an error, raw source or a file listing is a failed way. When none
+  renders, a recovery agent in the job's tree tries (twice at most) and
+  says the command; then the review opens **on why**: no frame, "The app
+  didn't start: …", what was tried, and **Try again** (or "try again" in
+  the chat). Never a folder of source code. Silk says how it ended.
 - **The job waits on it**: while other tasks can go on, they do; when
   nothing else can, the job is `waiting`: "Waiting for your review of the
-  design — Open <the review's address>". The task shows the step's kind,
+  design — Open <the review's address>" (or "The app didn't start for
+  your review: <why> — Open <address> to try again"). An open review
+  that shows what can't render (an app's folder, from before ADR-069; an
+  app that stopped with Oraknid) is prepared again when Oraknid starts.
+  The task shows the step's kind,
   round, why and an **Open the review** button.
 - **My answer.** **Approve** ends the step: done, the tasks after it go
   on. **Send notes** ends the round: each "keep" note is kept in Silk as

@@ -1,5 +1,5 @@
-import { mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
+import { join, relative } from "node:path";
 import {
   DEFAULT_PROJECT_WORK,
   type EvaluationEdit,
@@ -17,6 +17,7 @@ import type { Db } from "../db/open.ts";
 import { jobs, taskEdges, tasks } from "../db/schema.ts";
 import type { JobContext } from "../engine/runner.ts";
 import type { EventBus } from "../events/bus.ts";
+import { AttemptLog } from "../harness/log.ts";
 import {
   inboxReviews,
   type ReviewNote,
@@ -27,10 +28,24 @@ import {
 import type { InboxStore } from "../inbox/store.ts";
 import { sandboxPlan } from "../legs/plan.ts";
 import type { LegRegistry } from "../legs/registry.ts";
+import { pagesIn } from "../reviews/screens.ts";
 import { projectPorts, readSetting, writeSetting } from "../settings.ts";
 import type { SilkStore } from "../silk/store.ts";
 import { BrainStopped, type EyeBrain } from "./brain.ts";
-import { detectRun, freePort, runningApp, startApp, stopApp } from "./run-app.ts";
+import type { Failure, RecoveryResult } from "./recovery.ts";
+import { httpRenderChecker, type RenderCheck, type RenderChecker } from "./render-check.ts";
+import {
+  bringUp,
+  freePort,
+  runningApp,
+  runWay,
+  serveStatic,
+  stopApp,
+  type Tried,
+  type Way,
+  waysToRun,
+  wayWords,
+} from "./run-app.ts";
 import { storeWeb, taskRows } from "./web-store.ts";
 
 // Evaluation steps at work (ADR-064 §1–§3, M16.2): an evaluation node of
@@ -54,7 +69,21 @@ export interface EvaluationDeps {
   reviews?: ReviewPort;
   /** How long an app may take to answer (tests make it short). */
   appWaitMs?: number;
+  /** Looks at what a review would show before it is shown (ADR-069 §4); the HTTP look without one. */
+  renderCheck?: RenderChecker;
 }
+
+/**
+ * A recovery agent for what a review can't show (ADR-069 §3, ADR-067's
+ * steward principle): the job's own recovery, given the failure, what to
+ * do again after (told the recovery task, to read its report), and what
+ * the agent must know.
+ */
+export type RecoverShown = (
+  failure: Failure,
+  retry: (recoveryTaskId: string) => Promise<string | null>,
+  context: string,
+) => Promise<RecoveryResult>;
 
 // ── Settings: the project's, and a job's own ─────────────────────────
 
@@ -77,6 +106,12 @@ export function jobEvaluations(db: Db, jobId: string): Evaluations {
 
 // ── An evaluation step's own state ────────────────────────────────────
 
+const WaySchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("command"), command: z.string(), from: z.string() }),
+  z.object({ kind: z.literal("build"), command: z.string(), from: z.string() }),
+  z.object({ kind: z.literal("static"), dir: z.string(), from: z.string() }),
+]);
+
 export const EvaluationState = z.object({
   kind: EvaluationKind,
   why: z.string(),
@@ -89,6 +124,23 @@ export const EvaluationState = z.object({
   openedAt: z.number().nullable().default(null),
   passAt: z.number().nullable().default(null),
   outcome: z.enum(["approved", "auto-passed", "skipped"]).nullable().default(null),
+  /**
+   * What the review shows (ADR-069): the app on its port, the design's
+   * folder, or nothing (it didn't start: the page says why). Null: opened
+   * before ADR-069, healed at the next look when it is an app's.
+   */
+  shows: z.enum(["app", "design", "nothing"]).nullable().default(null),
+  /** The way that runs the app, to run it again after a restart. */
+  way: WaySchema.nullable().default(null),
+  /** The devices Oraknid saw it render at. */
+  checked: z.array(z.string()).default([]),
+  /** Why it shows nothing, in plain words; and each way tried. */
+  problem: z.string().nullable().default(null),
+  tried: z.array(z.string()).default([]),
+  /** How many times this round was prepared again (Try again, a heal): each its own journal step. */
+  prepared: z.number().int().nonnegative().default(0),
+  /** Try again was asked (the page, the chat): prepared again at the next look. */
+  retry: z.boolean().default(false),
 });
 export type EvaluationState = z.infer<typeof EvaluationState>;
 
@@ -124,8 +176,10 @@ export function evaluationView(db: Db, taskId: string, state: string): TaskEvalu
 }
 
 const what = (kind: EvaluationKind) => EVALUATION_WORDS[kind].does;
-export const waitingWords = (kind: EvaluationKind, url: string | null) =>
-  `Waiting for your review of ${what(kind)}${url ? ` — Open ${url}` : ""}`;
+export const waitingWords = (kind: EvaluationKind, url: string | null, problem?: string | null) =>
+  problem
+    ? `${kind === "design" ? "The design couldn't be shown" : "The app didn't start"} for your review: ${problem}${url ? ` — Open ${url} to try again` : ""}`
+    : `Waiting for your review of ${what(kind)}${url ? ` — Open ${url}` : ""}`;
 
 /** The port the daemon gave, else the inbox's (one per daemon parts). */
 const fallback = new WeakMap<object, ReviewPort>();
@@ -181,6 +235,7 @@ export async function advanceEvaluation(
   job: JobRow,
   step: Row,
   cwd: string,
+  o: { recover?: RecoverShown } = {},
 ): Promise<Advance> {
   const port = reviewPortOf(d);
   let st =
@@ -190,7 +245,7 @@ export async function advanceEvaluation(
     const opened = await ctx.step(
       `evaluation:${step.id}:${round}:open`,
       { round },
-      async (signal) => openRound(d, job, step, st, cwd, port, signal),
+      async (signal) => openRound(d, job, step, st, cwd, port, signal, o.recover),
     );
     st = { ...st, ...opened };
     writeEvaluation(d.db, step.id, st);
@@ -198,21 +253,49 @@ export async function advanceEvaluation(
       type: "task.review-opened",
       topic: `job:${job.id}`,
       jobId: job.id,
-      payload: { taskId: step.id, kind: st.kind, round, reviewId: st.reviewId, url: st.url },
+      payload: {
+        taskId: step.id,
+        kind: st.kind,
+        round,
+        reviewId: st.reviewId,
+        url: st.url,
+        shows: st.shows,
+        checked: st.checked,
+        problem: st.problem,
+      },
     });
-  } else if (st.port && !runningApp(step.id)) {
-    // Oraknid restarted while the review was open: the app runs again on its port.
-    const run = detectRun(cwd, st.run);
-    if (run)
-      await startApp({
-        stepTaskId: step.id,
-        cwd,
-        run,
-        port: st.port,
-        plan: planFor(d, job),
-        waitMs: d.appWaitMs ?? 90_000,
-        signal: ctx.signal,
-      }).catch(() => null);
+  } else if (
+    !st.outcome &&
+    !port.outcome(st.reviewId) &&
+    (await needsPreparing(d, job, step, st, cwd, ctx.signal))
+  ) {
+    // Try again, or a review that shows what can't render (ADR-069 §5–6): prepared again, the same review.
+    const round = st.round;
+    const n = st.prepared + 1;
+    const again = await ctx.step(
+      `evaluation:${step.id}:${round}:prepare:${n}`,
+      { round, n },
+      async (signal) => openRound(d, job, step, st, cwd, port, signal, o.recover, true),
+    );
+    // Its time to pass by itself is the first opening's.
+    st = { ...st, ...again, openedAt: st.openedAt, passAt: st.passAt, prepared: n, retry: false };
+    writeEvaluation(d.db, step.id, st);
+    d.bus.publish({
+      type: "task.review-opened",
+      topic: `job:${job.id}`,
+      jobId: job.id,
+      payload: {
+        taskId: step.id,
+        kind: st.kind,
+        round,
+        reviewId: st.reviewId,
+        url: st.url,
+        shows: st.shows,
+        checked: st.checked,
+        problem: st.problem,
+        again: n,
+      },
+    });
   }
   const reviewId = st.reviewId as string;
   let outcome: ReviewOutcome | null = port.outcome(reviewId);
@@ -226,7 +309,7 @@ export async function advanceEvaluation(
       kind: "waiting",
       taskId: step.id,
       reviewId,
-      reason: waitingWords(st.kind, st.url),
+      reason: waitingWords(st.kind, st.url, st.shows === "nothing" ? st.problem : null),
       passAt: st.passAt,
     };
   const round = st.round;
@@ -291,7 +374,27 @@ const planFor = (d: EvaluationDeps, job: JobRow) => {
     : sandboxPlan(leg, d.sandbox, d.legsDir, projectPorts(d.db, job.projectId), job.id);
 };
 
-/** A round's review opened: the design's folder made sure of, or the app started on a free port. */
+type Opened = Pick<
+  EvaluationState,
+  | "reviewId"
+  | "url"
+  | "port"
+  | "openedAt"
+  | "passAt"
+  | "shows"
+  | "way"
+  | "checked"
+  | "problem"
+  | "tried"
+>;
+
+/**
+ * A round's review opened (ADR-069): what it shows prepared first and
+ * seen to render (`prepareShown`), then opened through the port: the app
+ * on its port, the design's folder, or, when nothing renders, the review
+ * on why, with Try again. Called again on the same review (`again`) for
+ * Try again and to heal a review that shows what can't render.
+ */
 async function openRound(
   d: EvaluationDeps,
   job: JobRow,
@@ -300,71 +403,369 @@ async function openRound(
   cwd: string,
   port: ReviewPort,
   signal: AbortSignal,
-): Promise<Pick<EvaluationState, "reviewId" | "url" | "port" | "openedAt" | "passAt">> {
-  const rows = taskRows(d.db, job.id);
-  let target: ReviewTarget;
-  let appPort: number | null = null;
-  let note = "";
-  const design = join(cwd, designFolder(rows, step));
-  if (st.kind === "design") {
-    mkdirSync(design, { recursive: true });
-    target = { kind: "folder", path: design };
-  } else {
-    const run = detectRun(cwd, st.run);
-    if (run) {
-      try {
-        const p = await freePort();
-        await startApp({
-          stepTaskId: step.id,
-          cwd,
-          run,
-          port: p,
-          plan: planFor(d, job),
-          waitMs: d.appWaitMs ?? 90_000,
-          signal,
-        });
-        appPort = p;
-        target = { kind: "port", port: p };
-      } catch (error) {
-        if (signal.aborted) throw error;
-        note = `The app didn't start (${run.from}: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}); the review shows the job's folder.`;
-        target = { kind: "folder", path: cwd };
-      }
-    } else {
-      note =
-        st.kind === "app"
-          ? "Nothing says how the app runs (no dev script, no README command): the review shows the job's folder."
-          : "";
-      target = { kind: "folder", path: cwd };
-    }
-  }
-  if (note)
-    d.silk.add({
-      jobId: job.id,
-      taskId: step.id,
-      kind: "issue",
-      title: `Review of ${what(st.kind)}: not running`,
-      body: note,
-      authoredBy: "eye",
-    });
+  recoverShown?: RecoverShown,
+  again = false,
+): Promise<Opened> {
+  if (again) stopApp(step.id);
+  const p = await prepareShown(d, job, step, st, cwd, port, signal, recoverShown);
+  const kind: "design" | "app" =
+    p.shows === "design"
+      ? "design"
+      : p.shows === "app"
+        ? "app"
+        : st.kind === "design"
+          ? "design"
+          : "app";
+  const lines = p.tried.map((t) => `- ${t}`).join("\n");
+  d.silk.add({
+    jobId: job.id,
+    taskId: step.id,
+    kind: p.shows === "nothing" ? "issue" : "progress",
+    title:
+      p.shows === "nothing"
+        ? `Review of ${what(st.kind)}: ${st.kind === "design" ? "the design couldn't be shown" : "the app didn't start"}`
+        : `Review of ${what(st.kind)}: ${p.checked.length ? `renders on ${p.checked.join(", ")}` : "ready"}`,
+    body:
+      p.shows === "nothing"
+        ? `${p.problem}\n\nOraknid tried:\n${lines || "- nothing: nothing says how it runs"}\n\nThe review says so, with Try again; nothing that can't render is shown.`
+        : `${p.shows === "app" ? `The app runs on port ${p.port}${p.way ? ` (${wayWords(p.way)})` : ""}` : "The design's folder"}; Oraknid loaded it itself before showing it${p.checked.length ? ` and saw it render on ${p.checked.join(", ")}` : ""}.${p.tried.length > 1 ? `\n\nTried on the way:\n${lines}` : ""}`,
+    authoredBy: "eye",
+  });
   const opened = await port.open({
     jobId: job.id,
     stepTaskId: step.id,
     projectId: job.projectId,
-    kind: target.kind === "port" ? "app" : "design",
-    target,
+    kind,
+    target: p.target,
     round: st.round,
     title: `${step.title}: ${st.why}`,
+    ...(p.shows === "nothing" ? { problem: { reason: p.problem ?? "", tried: p.tried } } : {}),
+    checked: p.checked,
   });
   const minutes = projectWork(d.db, job.projectId).autoPassMinutes;
   const at = d.now();
   return {
     reviewId: opened.reviewId,
     url: opened.url,
-    port: appPort,
+    port: p.port,
     openedAt: at,
     passAt: minutes ? at + Math.round(minutes * 60_000) : null,
+    shows: p.shows,
+    way: p.way,
+    checked: p.checked,
+    problem: p.problem,
+    tried: p.tried,
   };
+}
+
+interface Prepared {
+  target: ReviewTarget;
+  shows: "app" | "design" | "nothing";
+  port: number | null;
+  way: Way | null;
+  checked: string[];
+  problem: string | null;
+  tried: string[];
+}
+
+const brief = (s: string, n = 400) => {
+  const t = s.replace(/\s+/g, " ").trim();
+  return t.length > n ? `${t.slice(0, n - 1)}…` : t;
+};
+
+/** "RUN: <command>" in the recovery agent's report: the command it says starts the app. */
+export function agentRunCommand(report: string): string | null {
+  const m = /^\s*(?:[-*]\s*)?\**RUN\**:\s*`?([^`\n]+?)`?\s*$/im.exec(report);
+  return m?.[1]?.trim() || null;
+}
+
+/** What the recovery agent said, its latest words first. */
+const agentReport = (d: EvaluationDeps, taskId: string) =>
+  new AttemptLog(d.db)
+    .task(taskId, { kinds: ["AgentText"], limit: 6 })
+    .map((e) => e.data.text)
+    .reverse()
+    .join("\n");
+
+/**
+ * What a review will show, seen to render first (ADR-069 §1–§5). A
+ * design: its folder, each page loaded at the review's devices. An app
+ * (or a checkpoint): the ladder of ways to run it, each checked; then,
+ * when none renders, a recovery agent in the job's tree, twice at most,
+ * the ladder again after each with the command it says. A checkpoint with
+ * a design and no app that runs shows the design. Never a folder of source
+ * code: when nothing renders, nothing is shown, and why is said.
+ */
+async function prepareShown(
+  d: EvaluationDeps,
+  job: JobRow,
+  step: Row,
+  st: EvaluationState,
+  cwd: string,
+  port: ReviewPort,
+  signal: AbortSignal,
+  recoverShown?: RecoverShown,
+): Promise<Prepared> {
+  const rows = taskRows(d.db, job.id);
+  const designDir = join(cwd, designFolder(rows, step));
+  const checker = d.renderCheck ?? httpRenderChecker();
+  const tried: string[] = [];
+  const say = (t: Tried) => {
+    d.bus.publish({
+      type: "task.review-try",
+      topic: `job:${job.id}`,
+      jobId: job.id,
+      payload: { taskId: step.id, way: t.way, ok: t.ok, reason: t.reason?.slice(0, 1500) ?? null },
+    });
+  };
+
+  /** The design's pages, each loaded through the review's frame at the review's devices. */
+  const checkDesign = async (): Promise<RenderCheck> => {
+    const pages = existsSync(join(designDir, "index.html"))
+      ? ["/"]
+      : pagesIn(designDir)
+          .slice(0, 6)
+          .map((p) => `/${encodeURI(p)}`);
+    if (!pages.length)
+      return {
+        ok: false,
+        reason: `the design's folder (${relative(cwd, designDir) || "."}) has no page in it`,
+        devices: [],
+        how: "http",
+      };
+    let last: RenderCheck | null = null;
+    for (const entry of pages) {
+      last = await checkAt({ kind: "folder", path: designDir }, entry);
+      if (!last.ok) return { ...last, reason: `${entry}: ${last.reason}` };
+    }
+    return last as RenderCheck;
+  };
+  const checkAt = async (
+    target: Exclude<ReviewTarget, { kind: "none" }>,
+    entry = "/",
+  ): Promise<RenderCheck> => {
+    const kind = target.kind === "folder" ? "design" : "app";
+    let pv: { url: string; close: () => void } | null = null;
+    try {
+      pv = port.preview?.({ jobId: job.id, kind, target, entry }) ?? null;
+    } catch (error) {
+      // The review page wouldn't show it either (Oraknid's own port, a folder outside the project).
+      return { ok: false, reason: (error as Error).message, devices: [], how: "http" };
+    }
+    try {
+      if (pv) return await checker.check({ url: pv.url, signal });
+      if (target.kind === "port")
+        return await checker.check({ url: `http://127.0.0.1:${target.port}${entry}`, signal });
+      // No frame to load it through: the folder served as it is, for the look only.
+      const id = `check:${step.id}`;
+      const app = await serveStatic({ stepTaskId: id, root: target.path, port: await freePort() });
+      try {
+        return await checker.check({ url: `http://127.0.0.1:${app.port}${entry}`, signal });
+      } finally {
+        stopApp(id);
+      }
+    } finally {
+      pv?.close();
+    }
+  };
+
+  if (st.kind === "design") {
+    mkdirSync(designDir, { recursive: true });
+    let c = await checkDesign();
+    tried.push(
+      c.ok
+        ? `the design's folder: renders on ${c.devices.join(", ")}`
+        : `the design's folder: ${c.reason}`,
+    );
+    if (!c.ok && recoverShown) {
+      const rec = await recoverShown(
+        {
+          step: `showing the design for the review “${step.title}”`,
+          error: `The design doesn't render: ${c.reason}`,
+          taskId: null,
+        },
+        async () => {
+          c = await checkDesign();
+          tried.push(
+            c.ok
+              ? `after the recovery agent, the design renders on ${c.devices.join(", ")}`
+              : `after the recovery agent: ${c.reason}`,
+          );
+          return c.ok ? null : `the design still doesn't render: ${c.reason}`;
+        },
+        `# What Oraknid needs\nThe owner reviews the design in ${relative(cwd, designDir) || "the job's folder"}/ in a browser, page by page, at phone and desktop sizes. Make its pages render there as they are (static HTML, CSS and scripts the folder holds; no build step, nothing from the internet): fix what keeps them blank or broken. Don't redesign anything.`,
+      );
+      if (rec.ok && !c.ok) c = await checkDesign();
+    }
+    if (c.ok)
+      return {
+        target: { kind: "folder", path: designDir },
+        shows: "design",
+        port: null,
+        way: null,
+        checked: c.devices,
+        problem: null,
+        tried,
+      };
+    return {
+      target: { kind: "none" },
+      shows: "nothing",
+      port: null,
+      way: null,
+      checked: [],
+      problem: `The design couldn't be shown: ${c.reason}.`,
+      tried,
+    };
+  }
+
+  // The app (an app review, or a checkpoint): the ladder.
+  const plan = planFor(d, job);
+  const ladder = (agent?: string | null) =>
+    bringUp({
+      stepTaskId: step.id,
+      cwd,
+      plan,
+      waitMs: d.appWaitMs ?? 90_000,
+      signal,
+      ways: waysToRun(cwd, st.run, agent),
+      check: (p) => checkAt({ kind: "port", port: p }),
+      onTry: (t) => {
+        tried.push(t.ok ? `${t.way}: renders` : `${t.way}: ${t.reason}`);
+        say(t);
+      },
+    });
+  let up = await ladder();
+  const found = (r: Awaited<ReturnType<typeof ladder>>): Prepared | null =>
+    r.ok
+      ? {
+          target: { kind: "port", port: r.app.port },
+          shows: "app",
+          port: r.app.port,
+          way: r.way,
+          checked: r.check.devices,
+          problem: null,
+          tried,
+        }
+      : null;
+  const ready = found(up);
+  if (ready) return ready;
+  // A checkpoint whose app doesn't run, but with a design: the design is what there is to see.
+  if (st.kind === "checkpoint" && pagesIn(designDir).length) {
+    const c = await checkDesign();
+    if (c.ok)
+      return {
+        target: { kind: "folder", path: designDir },
+        shows: "design",
+        port: null,
+        way: null,
+        checked: c.devices,
+        problem: null,
+        tried: [...tried, `the design's folder: renders on ${c.devices.join(", ")}`],
+      };
+  }
+  const nothingRuns = !up.tried.length;
+  if (recoverShown && (st.kind === "app" || !nothingRuns)) {
+    let byAgent: Prepared | null = null;
+    const facts = tried.length
+      ? tried.map((t, i) => `${i + 1}. ${t}`).join("\n")
+      : "Nothing says how it runs: no command in the plan, no dev, start, serve or preview script, no README command, no index.html.";
+    await recoverShown(
+      {
+        step: `starting the app for the review “${step.title}”`,
+        error: `The app didn't start, or didn't render once started. Each way Oraknid tried:\n${facts}`,
+        taskId: null,
+      },
+      async (recoveryTaskId) => {
+        const said = agentRunCommand(agentReport(d, recoveryTaskId));
+        up = await ladder(said);
+        byAgent = found(up);
+        return byAgent
+          ? null
+          : `the app still didn't start: ${up.tried.map((t) => `${t.way}: ${brief(t.reason ?? "", 300)}`).join("; ") || "nothing says how it runs"}`;
+      },
+      `# What Oraknid needs\nThe owner reviews the running app in a browser, at phone and desktop sizes. Oraknid starts it with a command in the job's folder, giving it a free port in the PORT environment variable (and \`$PORT\` in the command is replaced by it), and loads http://127.0.0.1:<that port>/; the page must render (not blank, nothing thrown, no raw source files). Make the app start that way: fix its configuration, install what is missing, make it use the port it is given, add a dev script if it has none. Don't start a server and leave it running.\n\nEnd your answer with one line \`RUN: <command>\`: the command that starts the app on \`$PORT\` (for example \`RUN: pnpm dev --port $PORT --strictPort --host 127.0.0.1\`).`,
+    );
+    const got = byAgent as Prepared | null;
+    if (got) return got;
+    // A recovery replayed from the journal (a restart): the ladder once more, with what it said.
+    if (!up.ok) {
+      const again = found(await ladder());
+      if (again) return again;
+    }
+  }
+  const first = up.tried[0] ?? null;
+  return {
+    target: { kind: "none" },
+    shows: "nothing",
+    port: null,
+    way: null,
+    checked: [],
+    problem: first
+      ? `${brief(tried[0] ?? first.way, 500)}`
+      : "nothing says how it runs: no command in the plan, no dev or start script, no README command, no index.html",
+    tried,
+  };
+}
+
+/**
+ * Whether an open review must be prepared again (ADR-069 §5–6): Try was
+ * asked again; it shows an app's source folder (opened before ADR-069);
+ * or its app isn't running (Oraknid restarted) and won't run again the
+ * way it ran.
+ */
+async function needsPreparing(
+  d: EvaluationDeps,
+  job: JobRow,
+  step: Row,
+  st: EvaluationState,
+  cwd: string,
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (st.retry) return true;
+  if (st.shows === "nothing" || st.shows === "design") return false;
+  // Opened before ADR-069 on a folder for an app: a folder of source code, never shown.
+  if (st.shows === null && st.kind !== "design" && st.port === null) return true;
+  if (st.shows === null && st.kind === "design") return false;
+  if (!st.port || runningApp(step.id)) return false;
+  // Oraknid restarted while the review was open: the app runs again, the way it ran, on its port.
+  const way = st.way ?? waysToRun(cwd, st.run)[0] ?? null;
+  if (!way) return true;
+  try {
+    await runWay(
+      { stepTaskId: step.id, cwd, plan: planFor(d, job), waitMs: d.appWaitMs ?? 90_000, signal },
+      way,
+      st.port,
+      false,
+    );
+    return false;
+  } catch (error) {
+    if (signal.aborted) throw error;
+    return true;
+  }
+}
+
+/** Try again on a review (ADR-069 §5): its step prepares what it shows again at the next look. */
+export function askRetry(db: Db, stepTaskId: string): boolean {
+  const st = readEvaluation(db, stepTaskId);
+  if (!st?.reviewId || st.outcome) return false;
+  writeEvaluation(db, stepTaskId, { ...st, retry: true });
+  return true;
+}
+
+/**
+ * The open reviews of a job that must be prepared again now (ADR-069 §6):
+ * an app's shown as a folder (before ADR-069), Try again asked, or an
+ * app that isn't running (Oraknid restarted). Its waiting job is resumed.
+ */
+export function reviewsToHeal(db: Db, jobId: string): string[] {
+  return waitingReviews(db, jobId)
+    .filter(({ id, s }) => {
+      if (!s) return false;
+      if (s.retry) return true;
+      if (s.shows === null && s.kind !== "design" && s.port === null) return true;
+      return !!s.port && !runningApp(id);
+    })
+    .map((x) => x.id);
 }
 
 /** Tasks after a task, through the graph: what must never come before it. */

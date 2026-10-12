@@ -347,6 +347,14 @@ function Review({ review: r, reload }: { review: ReviewDetail; reload: () => voi
             <span>{t("Round {n}", { n: r.round })}</span>
             <span>·</span>
             <span className="truncate">{r.jobTitle}</span>
+            {r.checked.length && !r.problem ? (
+              <span
+                className="hidden shrink-0 text-emerald-700 sm:inline dark:text-emerald-400"
+                title={t("Oraknid loaded it itself and saw it render before showing it")}
+              >
+                · {t("checked: renders on {devices}", { devices: r.checked.join(", ") })}
+              </span>
+            ) : null}
             {r.state !== "open" ? (
               <Badge variant={r.state === "approved" ? "default" : "secondary"}>
                 {r.state === "approved"
@@ -425,38 +433,42 @@ function Review({ review: r, reload }: { review: ReviewDetail; reload: () => voi
       </div>
 
       <div className="flex min-h-0 flex-1">
-        <Stage device={device} fit={fit || phone}>
-          {!screensKnown ? (
-            <div className="p-4 text-sm text-muted-foreground">{t("Loading…")}</div>
-          ) : away ? (
-            awayPage.data ? (
+        {r.problem ? (
+          <NotShown review={r} open={open} />
+        ) : (
+          <Stage device={device} fit={fit || phone}>
+            {!screensKnown ? (
+              <div className="p-4 text-sm text-muted-foreground">{t("Loading…")}</div>
+            ) : away ? (
+              awayPage.data ? (
+                <iframe
+                  ref={frameRef}
+                  title={t("What is reviewed")}
+                  sandbox="allow-scripts"
+                  srcDoc={awayPage.data.html}
+                  className="size-full border-0 bg-white"
+                />
+              ) : awayPage.error ? (
+                <div className="p-4">
+                  <ErrorNote error={awayPage.error} />
+                </div>
+              ) : (
+                <div className="p-4 text-sm text-muted-foreground">{t("Loading…")}</div>
+              )
+            ) : (
               <iframe
                 ref={frameRef}
+                // A new round shows its work fresh.
+                key={`${r.round}:${reloads}`}
                 title={t("What is reviewed")}
-                sandbox="allow-scripts"
-                srcDoc={awayPage.data.html}
+                src={frameSrc ?? undefined}
+                // Its own origin; it may not move this page elsewhere.
+                sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads"
                 className="size-full border-0 bg-white"
               />
-            ) : awayPage.error ? (
-              <div className="p-4">
-                <ErrorNote error={awayPage.error} />
-              </div>
-            ) : (
-              <div className="p-4 text-sm text-muted-foreground">{t("Loading…")}</div>
-            )
-          ) : (
-            <iframe
-              ref={frameRef}
-              // A new round shows its work fresh.
-              key={`${r.round}:${reloads}`}
-              title={t("What is reviewed")}
-              src={frameSrc ?? undefined}
-              // Its own origin; it may not move this page elsewhere.
-              sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads"
-              className="size-full border-0 bg-white"
-            />
-          )}
-        </Stage>
+            )}
+          </Stage>
+        )}
         {phone ? null : (
           <aside
             aria-label={t("Notes")}
@@ -511,6 +523,63 @@ function Review({ review: r, reload }: { review: ReviewDetail; reload: () => voi
 }
 
 /** Narrow screens get the notes as a bottom sheet. */
+/**
+ * What is reviewed couldn't be shown (ADR-069 §5): never a blank frame or
+ * a folder of source code, but why, what Oraknid tried, and Try again.
+ */
+function NotShown({ review: r, open }: { review: ReviewDetail; open: boolean }) {
+  const [asked, setAsked] = useState(false);
+  const retrying = asked || !!r.problem?.retrying;
+  // A new answer from Oraknid (it tried again): the button comes back.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new reason or try is what resets it
+  useEffect(() => setAsked(false), [r.problem?.reason, r.problem?.tried.length]);
+  if (!r.problem) return null;
+  const again = async () => {
+    setAsked(true);
+    try {
+      await api.reviews.retry({ id: r.id });
+    } catch (e) {
+      setAsked(false);
+      toast.error(message(e));
+    }
+  };
+  return (
+    <div className="min-w-0 flex-1 overflow-auto p-4 sm:p-8">
+      <div
+        role="alert"
+        className="mx-auto max-w-2xl rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 sm:p-6"
+      >
+        <h2 className="text-base font-semibold">
+          {r.kind === "design" ? t("The design couldn't be shown") : t("The app didn't start")}
+        </h2>
+        <p className="mt-2 text-sm break-words whitespace-pre-wrap">{r.problem.reason}</p>
+        {r.problem.tried.length ? (
+          <>
+            <h3 className="mt-4 text-sm font-medium">{t("Oraknid tried")}</h3>
+            <ol className="mt-1 list-decimal space-y-1 pl-5 text-xs text-muted-foreground">
+              {r.problem.tried.map((x, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: the tries are a fixed list, in order
+                <li key={i} className="break-words whitespace-pre-wrap">
+                  {x}
+                </li>
+              ))}
+            </ol>
+          </>
+        ) : null}
+        <p className="mt-4 text-xs text-muted-foreground">
+          {t(
+            "Nothing that can't render is shown. Fix what's wrong (or let the job's agents), then try again; you can also say “try again” in the project's chat, or Approve without looking.",
+          )}
+        </p>
+        <Button className="mt-3" size="sm" disabled={!open || retrying} onClick={again}>
+          <RotateCw className={cn("size-4", retrying && "animate-spin")} />
+          {retrying ? t("Trying again…") : t("Try again")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function useNarrow() {
   const [narrow, setNarrow] = useState(() => window.innerWidth < 768);
   useEffect(() => {

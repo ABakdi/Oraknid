@@ -1018,6 +1018,13 @@ export const reviews = sqliteTable(
     frameKey: text("frame_key").notNull().unique(),
     /** The inbox item that tells me it waits; withdrawn when the round ends. */
     inboxItemId: text("inbox_item_id"),
+    /**
+     * The app didn't start (ADR-069 §5): why, in plain words, and every way
+     * tried; the page shows it with Try again instead of a frame.
+     */
+    problem: json<{ reason: string; tried: string[]; retrying: boolean }>("problem"),
+    /** The devices Oraknid saw it render at before showing it (ADR-069 §4). */
+    checked: json<string[]>("checked"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     endedAt: integer("ended_at"),

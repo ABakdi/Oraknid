@@ -63,6 +63,37 @@ merges on my answer), `eye/eye.test.ts` (a Leg paused under its task:
 the other Leg goes on from the handoff; with no other, it waits and goes
 on when resumed; the job's summary says it was merged).
 
+### M16.6 — From the Keys review: seen to render first ([[ADR-069-A-Review-Is-Seen-To-Render-First]])
+- [x] The port always given (the plan's command too, through the script it calls); the announced port read; the app's output always kept
+- [x] A ladder of ways to run (the plan's, the dev script, the README's, a build served, a static site), then a recovery agent, twice at most
+- [x] The render check through the review's own frame at phone and desktop (headless Chromium, else over HTTP) before a review is shown
+- [x] Never a folder of source code: a review that can't show says why, with Try again (the page, the chat); open reviews heal at start
+
+*Tested:* daemon `eye/review-shows.test.ts` (`withPort` for `pnpm dev`,
+`npm run dev`, `npx vite`, `next dev`, a fixed port, `cd web && pnpm dev`;
+announced ports; the ladder's order; `RUN:` read. End to end with the
+stand-in ReviewPort: a Vite-like app that reads only `--port`, started by
+the plan's `pnpm dev`, opens on the given port and renders on phone and
+desktop; one that ignores every flag opens on the port it announced; a
+failing dev server with a `build` is served from `dist/` (its script as
+JavaScript); every way failing, a scripted recovery agent adds a server
+and says `RUN: node ok.js`, the review opens on it; the agent failing
+twice: the review opens on why (the static site's `/src/main.tsx` seen
+as source), never a folder, the job waiting with the reason, two
+recoveries; fixed, Try again shows the app; a review left on a folder
+by v0.8.1 is prepared again when Oraknid starts. On the review page: the
+check loaded a preview frame `rv-<key>.localhost`, the review says
+`checked: phone, desktop`; nothing renders: no frame, `frame` refused,
+one inbox item "The app didn't start for your review", `reviews.retry`
+then the app with "The app is ready for your review". The render check
+over HTTP catches a blank body, raw TSX, raw source, a listing, a
+missing page; in real Chromium (skipped without it) a blank page, raw
+TSX, a page that throws and a listing, and passes a page and a script's
+app.) `eye/evaluations.test.ts` (as before, the HTTP look). Web
+`pages/review.test.tsx` (the top bar's "checked: renders on phone,
+desktop"; the panel with why, what was tried, no frame, Try again then
+"Trying again…", Approve still possible).
+
 ### M16.5 — Review surfaces, an adapter per kind of app ([[ADR-065-Pluggable-Review-Surfaces]]) · planned
 - [ ] The `ReviewSurface` interface and its registry; anchors (css, region, accessibility, time, text, request); today's notes migrated as css anchors
 - [ ] web-design and web-app moved behind it, unchanged in behaviour

@@ -23,7 +23,17 @@ import type { InboxStore } from "../inbox/store.ts";
 // Tests use `standInReviews`.
 
 /** Where the review looks: the design's folder, or the app running on a local port. */
-export type ReviewTarget = { kind: "folder"; path: string } | { kind: "port"; port: number };
+export type ReviewTarget =
+  | { kind: "folder"; path: string }
+  | { kind: "port"; port: number }
+  /** Nothing could be shown (ADR-069 §5): the request's `problem` says why. */
+  | { kind: "none" };
+
+/** Why nothing is shown (ADR-069 §5): in plain words, and each way tried. */
+export interface ReviewProblemText {
+  reason: string;
+  tried: string[];
+}
 
 export interface ReviewRequest {
   jobId: string;
@@ -36,6 +46,10 @@ export interface ReviewRequest {
   round: number;
   /** One line: what it is and why (the plan's). */
   title: string;
+  /** With a `none` target: why nothing is shown, and what was tried (ADR-069 §5). */
+  problem?: ReviewProblemText | null;
+  /** The devices Oraknid saw it render at before showing it (ADR-069 §4). */
+  checked?: string[];
 }
 
 /** One note of mine on a review (ADR-064 §2): keep, change, problem, or a general note. */
@@ -54,6 +68,17 @@ export interface ReviewPort {
   open(request: ReviewRequest): Promise<{ reviewId: string; url: string }>;
   outcome(reviewId: string): ReviewOutcome | null;
   waitForOutcome(reviewId: string, signal: AbortSignal): Promise<ReviewOutcome>;
+  /**
+   * Where the page would load a target, before any review shows it
+   * (ADR-069 §4): the render check loads this. Without it, the check
+   * loads the app's own port, or the folder served as it is.
+   */
+  preview?(r: {
+    jobId: string;
+    kind: "design" | "app";
+    target: Exclude<ReviewTarget, { kind: "none" }>;
+    entry?: string;
+  }): { url: string; close: () => void };
 }
 
 /** What makes the port: the daemon's parts it may use. */
@@ -115,7 +140,11 @@ function waitOn<T>(
 
 const APPROVE = "Approve";
 const targetText = (t: ReviewTarget) =>
-  t.kind === "port" ? `http://127.0.0.1:${t.port}/` : `file://${t.path}/index.html`;
+  t.kind === "port"
+    ? `http://127.0.0.1:${t.port}/`
+    : t.kind === "folder"
+      ? `file://${t.path}/index.html`
+      : "";
 
 /**
  * The review as a question in the inbox, until the review page is wired
@@ -144,7 +173,7 @@ export function inboxReviews(d: ReviewPortDeps): ReviewPort {
         taskId: r.stepTaskId,
         raisedBy: "eye",
         title: `Review ${what}${r.round > 1 ? ` (round ${r.round})` : ""}`,
-        detail: `${r.title}\n\nOpen it: ${url}\n\nApprove it, or answer with your notes, one per line; start a line with “keep:” for what to keep as it is, “change:” for a change, “problem:” for something wrong. Notes become work, then a new round.`,
+        detail: `${r.title}\n\n${r.problem ? `It couldn't be shown: ${r.problem.reason}${r.problem.tried.length ? `\nOraknid tried: ${r.problem.tried.join("; ")}` : ""}` : `Open it: ${url}`}\n\nApprove it, or answer with your notes, one per line; start a line with “keep:” for what to keep as it is, “change:” for a change, “problem:” for something wrong. Notes become work, then a new round.`,
         options: [APPROVE],
         defaultOption: null,
       });
@@ -208,6 +237,17 @@ export function standInReviews() {
     port,
     opened,
     approve: (reviewId: string) => say(reviewId, { kind: "approved" }),
+    /** Try again on the page (ADR-069 §5): `review.retry`, as the real one publishes it. */
+    retry: (reviewId: string) => {
+      const o = opened.find((x) => x.reviewId === reviewId);
+      bus?.publish({
+        type: "review.retry",
+        topic: o ? `job:${o.jobId}` : "overview",
+        jobId: o?.jobId ?? null,
+        payload: { reviewId, taskId: o?.stepTaskId ?? null, round: o?.round ?? 1 },
+        actor: "owner",
+      });
+    },
     sendNotes: (reviewId: string, notes: ReviewNote[]) => say(reviewId, { kind: "notes", notes }),
     /** The latest review opened for a step (or any), once it is. */
     latest: (stepTaskId?: string) =>

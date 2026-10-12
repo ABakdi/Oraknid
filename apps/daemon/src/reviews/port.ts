@@ -61,11 +61,26 @@ export function pageReviews(page: Reviews, d: ReviewPortDeps): ReviewPort {
         jobId: r.jobId,
         taskId: r.stepTaskId,
         kind: r.kind,
-        target: r.target.kind === "port" ? r.target.port : r.target.path,
+        ...(r.target.kind === "port"
+          ? { target: r.target.port }
+          : r.target.kind === "folder"
+            ? { target: r.target.path }
+            : {}),
+        problem:
+          r.target.kind === "none" ? (r.problem ?? { reason: "nothing to show", tried: [] }) : null,
+        ...(r.checked ? { checked: r.checked } : {}),
         title: r.title,
       });
       return { reviewId: idOf(opened.id, opened.round), url: opened.url };
     },
+    // The render check loads what the page will, through the same frame (ADR-069 §4).
+    preview: (r) =>
+      page.preview({
+        jobId: r.jobId,
+        kind: r.kind,
+        target: r.target.kind === "port" ? r.target.port : r.target.path,
+        ...(r.entry ? { entry: r.entry } : {}),
+      }),
     outcome,
     waitForOutcome: (portId, signal) =>
       new Promise<ReviewOutcome>((resolve, reject) => {

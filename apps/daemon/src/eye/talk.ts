@@ -109,9 +109,19 @@ export interface TalkDeps {
 
 /** What the conversation needs of reviews: the open ones, and a note added from the chat. */
 export interface ReviewNotesFromChat {
-  openIn(projectId: string): { id: string; title: string }[];
+  openIn(projectId: string): { id: string; title: string; problem?: { reason: string } | null }[];
   attachChatToReview(projectId: string, text: string): { reviewId: string; noteId: string } | null;
+  /** Try again (ADR-069 §5): the review's step prepares what it shows again. */
+  retry?(id: string): unknown;
 }
+
+/** "try again", "retry", "start it again": my words for Try again on a review that couldn't show. */
+export const TRY_AGAIN =
+  /^\s*(?:(?:please|ok|okay)[\s,]+)?(?:try(?: it| that)? again|retry|re-?try|(?:re)?start (?:it|the app) again|run (?:it|the app) again)\b[\s.!]*(?:please)?[\s.!]*$/i;
+
+/** Said when my "try again" went to the review that couldn't show. */
+export const TRYING_AGAIN =
+  "Trying again: Oraknid runs the app again, every way it knows, and checks it renders before the review shows it.";
 
 /** Said when my message went to the open review as a note. */
 export const ATTACHED_TO_REVIEW =
@@ -283,6 +293,22 @@ export async function talkInProject(
   const project = d.db.select().from(projects).where(eq(projects.id, projectId)).get();
   if (!project) throw new Error(`No project ${projectId}.`);
   const target = projectTarget(d.db, projectId);
+  // "try again" while a review couldn't show what it reviews (ADR-069 §5): its Try again.
+  if (target && d.reviews?.retry && !extras.answers && TRY_AGAIN.test(text)) {
+    const stuck = d.reviews.openIn(projectId).filter((r) => r.problem);
+    if (stuck.length) {
+      const id = add(d, target.id, "owner", text, null, extras);
+      for (const r of stuck) d.reviews.retry(r.id);
+      add(d, target.id, "eye", TRYING_AGAIN, {
+        intent: "context",
+        did: ["Tried the review again"],
+        silkIds: [],
+        taskIds: [],
+        jobId: target.id,
+      });
+      return { id, jobId: target.id };
+    }
+  }
   // Feedback while one review is open there (ADR-064 §3): a note on it, not new work.
   if (target && d.reviews && !extras.answers && readsAsFeedback(text)) {
     const attached = attachToReview(d, d.reviews, projectId, target.id, text, extras);

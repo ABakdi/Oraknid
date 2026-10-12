@@ -16,6 +16,18 @@ export type ReviewState = z.infer<typeof ReviewState>;
 export const ReviewNoteKind = z.enum(["keep", "change", "problem", "general"]);
 export type ReviewNoteKind = z.infer<typeof ReviewNoteKind>;
 
+/**
+ * The app didn't start (ADR-069 §5): why in plain words and each way
+ * Oraknid tried; the page shows it, with Try again, instead of a frame.
+ */
+export const ReviewProblem = z.object({
+  reason: z.string().max(4000),
+  tried: z.array(z.string().max(4000)).max(20),
+  /** Try again was asked: the ladder runs again. */
+  retrying: z.boolean(),
+});
+export type ReviewProblem = z.infer<typeof ReviewProblem>;
+
 /** The device a note was written on: a preset or my own size. */
 export const ReviewDevice = z.object({
   name: z.string().min(1).max(60),
@@ -103,6 +115,10 @@ export const ReviewView = z.object({
   frameUrl: z.string().nullable(),
   /** The current round's notes, not deleted. */
   noteCount: z.number().int().nonnegative(),
+  /** What is reviewed couldn't be shown (ADR-069 §5): why, and what was tried. */
+  problem: ReviewProblem.nullable(),
+  /** The devices Oraknid saw it render at before showing it (ADR-069 §4); empty when not checked. */
+  checked: z.array(z.string()),
   createdAt: Timestamp,
   updatedAt: Timestamp,
   endedAt: Timestamp.nullable(),
@@ -118,8 +134,12 @@ export const ReviewOpen = z.object({
   jobId: Id,
   taskId: Id.nullable().optional(),
   kind: ReviewKind,
-  /** A design's folder (absolute, or relative to the job's worktree) or the app's port or local URL. */
-  target: z.union([z.string().min(1).max(4096), z.number().int().min(1).max(65535)]),
+  /** A design's folder (absolute, or relative to the job's worktree) or the app's port or local URL; none with a problem. */
+  target: z.union([z.string().min(1).max(4096), z.number().int().min(1).max(65535)]).optional(),
+  /** Nothing could be shown (ADR-069 §5): the review opens on this, with Try again. */
+  problem: ReviewProblem.omit({ retrying: true }).nullable().optional(),
+  /** The devices it was seen to render at (ADR-069 §4). */
+  checked: z.array(z.string().max(40)).max(10).optional(),
   /** The page to open first; "/" by default. */
   entry: z.string().max(500).optional(),
   title: z.string().min(1).max(200).optional(),

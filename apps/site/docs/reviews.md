@@ -4,11 +4,21 @@ Tests passing is not the same as getting what you meant. For anything you will s
 
 ## When a review opens
 
+Before it shows you anything, Oraknid loads it itself, the way the review page will, on a phone-sized and a desktop-sized screen, and looks at whether it rendered: something drawn on the page, no error thrown, not raw source code or a list of files. A review never opens on a blank page.
+
+To run the app it tries, in order: the plan's command, the project's `dev` (or `start`) script, the command in its README, its `build` script with the built files served, and a plain `index.html`. Each command is given its port (a Vite or Next dev server gets `--port`, `pnpm dev` included), and if the app prints another address ("Local: http://localhost:5173/"), that one is used. When none of them renders, an agent looks at what went wrong in the job's folder (missing packages, its configuration, the port) and says how to start it, twice at most.
+
 When a design or the app is ready, Oraknid opens the **review page in a new tab**. If your browser blocks the tab (browsers do when nothing was clicked), you get a notification and a message with **Open**, the project's page shows **A design is ready for your review** with **Open** under its current work, and the [inbox](inbox.html) has an item with **Open the review**.
+
+## When the app didn't start
+
+If nothing renders, the review still opens, but on why instead of a page: **The app didn't start**, the reason in plain words, and **Oraknid tried** with each way it ran the app and what it said. The job waits on it, and you get one notification. Fix what's wrong (or let a task of the job do it), then press **Try again**, or write "try again" in the project's chat: Oraknid runs the whole list again and the review shows the app as soon as it renders. You can still **Approve** without looking, or write notes in words.
+
+A review left open when Oraknid stops is made ready again when it starts: its app is started again, and a review from an earlier version that showed the project's folder instead of the app is prepared again, with nothing for you to do.
 
 ## The review page
 
-The top bar names the project, what is reviewed and the round, with **Send notes (n)** and **Approve**. Under it:
+The top bar names the project, what is reviewed and the round, with **Send notes (n)** and **Approve**; **checked: renders on phone, desktop** says Oraknid saw it render before showing it. Under it:
 
 - **Device**: Phone 390×844, Tablet 820×1180, Laptop 1440×900, Desktop 1920×1080, each turned to landscape with the turn button, or a width and height of your own. The page is shown at that size, zoomed to fit (**Fit**, or **100%** to see it at its real size and scroll).
 - **Screen**: a design made of one page per device (say `phone-portrait.html`, `phone-landscape.html` and `desktop.html`) shows the page that fits the device you picked, each time you change it. **Screen** lists all its pages, so you can open any of them; your pick stays until you change the device, or pick **Match device**.

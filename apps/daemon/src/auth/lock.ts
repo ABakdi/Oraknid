@@ -399,6 +399,7 @@ export const HOME_ONLY = [
   "/reviews/notes/delete",
   "/reviews/sendNotes",
   "/reviews/approve",
+  "/reviews/retry",
   "/reviews/withdraw",
   "/reviews/frame",
 ];

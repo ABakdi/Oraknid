@@ -167,7 +167,8 @@ export async function recover(
     owner?: string | null;
     /** One attempt at the recovery task: Oraknid's own attempt runner. */
     attempt: (taskId: string) => Promise<AttemptOutcome>;
-    retry: () => Promise<string | null>;
+    /** Does again what failed (given the recovery task, whose report it may read); null: it works now. */
+    retry: (recoveryTaskId: string) => Promise<string | null>;
     tries?: number;
     /** What earlier recoveries of this job found: the next is told, to try another way. */
     tried?: string[];
@@ -253,7 +254,7 @@ export async function recover(
           : `the recovery agent didn't finish (${"reason" in outcome ? outcome.reason : outcome.kind})`;
       // Done or not, what failed is tried again: the agent may have fixed it and stumbled after.
       try {
-        again = await o.retry();
+        again = await o.retry(taskId);
       } catch (error) {
         if (ownersToDecide(error, ctx.signal)) throw error;
         again = error instanceof Error ? error.message : String(error);

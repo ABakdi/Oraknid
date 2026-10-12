@@ -355,3 +355,14 @@ the person the work is for, as part of the work.
   links from the design's top, and **has no script any more**: the
   review page chooses, and a script in it could only run once and, away
   from home, can't move its frame.
+
+## Note (2026-10-12): seen to render first
+The Keys job's final review opened on the job's folder of TSX (the plan's
+`pnpm dev` never got its port; Vite took 5173): a blank page. Since
+[[ADR-069-A-Review-Is-Seen-To-Render-First]] a review is shown only once
+Oraknid has loaded it through its own frame and seen it render at phone
+and desktop size; the app is run through a ladder of ways (the plan's
+command with the port, the dev script, a build served, a static site),
+then a recovery agent; when nothing renders, the review opens on why,
+with Try again. The "else the job's folder" above (Running a node,
+Limits) no longer holds: a folder is shown only for a design.

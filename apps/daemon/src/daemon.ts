@@ -49,12 +49,13 @@ import { type EyeBrain, PoolLegBrain } from "./eye/brain.ts";
 import { startBudgetWatch } from "./eye/budgets.ts";
 import { EyeDecisions } from "./eye/decisions.ts";
 import { answerMerge, asksAfterEnd } from "./eye/ending.ts";
-import { stopJobApps, waitingReviews } from "./eye/evaluations.ts";
+import { askRetry, reviewsToHeal, stopJobApps, waitingReviews } from "./eye/evaluations.ts";
 import { readExperience } from "./eye/experience.ts";
 import { pauseForRoom } from "./eye/leg-work.ts";
 import { serverAdded } from "./eye/links.ts";
 import { type NamingDeps, startJobNaming } from "./eye/naming.ts";
 import { eyeProgram } from "./eye/program.ts";
+import { browserRenderChecker, type RenderChecker } from "./eye/render-check.ts";
 import { startEyeReports } from "./eye/reports.ts";
 import { stopAllApps } from "./eye/run-app.ts";
 import { forgetGuidance, recordAnswer, resumeConversations } from "./eye/talk.ts";
@@ -174,6 +175,8 @@ export interface DaemonOptions {
   /** How long an app under review may take to answer, and how often reviews that pass by themselves are looked at (tests). */
   appWaitMs?: number;
   reviewPassCheckMs?: number;
+  /** Looks at what a review would show before it is shown (ADR-069 §4); headless Chromium otherwise. */
+  renderCheck?: RenderChecker;
   /** How long the drift judge may take (tests); 30 s otherwise (ADR-056). */
   driftJudgeMs?: number;
   /** How often a task waiting out a short limit looks again (tests); a second otherwise (ADR-068 §3). */
@@ -480,6 +483,17 @@ export async function startDaemon(options: DaemonOptions) {
       .resume(e.jobId)
       .catch((error) => console.error("resume after a review failed", error));
   });
+  // Try again on a review that couldn't show what it reviews (ADR-069 §5): its step prepares
+  // it again at the next look, and a job waiting on it goes on.
+  bus.subscribe((e) => {
+    if (e.type !== "review.retry" || !e.jobId) return;
+    const taskId = (e.payload as { taskId?: string | null } | null)?.taskId;
+    if (!taskId || !askRetry(db, taskId)) return;
+    if (jobsStore.get(e.jobId)?.state !== "waiting") return;
+    void runner
+      .resume(e.jobId)
+      .catch((error) => console.error("resume after try again failed", error));
+  });
   // My answer to "<Leg> would help here: unpause it?" (ADR-064 §7), and to "merge it?" (§8).
   bus.subscribe((e) => {
     if (e.type !== "inbox.answered" || !e.jobId) return;
@@ -667,6 +681,7 @@ export async function startDaemon(options: DaemonOptions) {
         ...(options.routePollMs ? { routePollMs: options.routePollMs } : {}),
         reviews,
         ...(options.appWaitMs ? { appWaitMs: options.appWaitMs } : {}),
+        renderCheck: options.renderCheck ?? browserRenderChecker(),
         visual,
       }),
   });
@@ -1297,6 +1312,12 @@ export async function startDaemon(options: DaemonOptions) {
   });
   // Recovery may have left jobs active: take the lock straight away if so.
   await inhibit.reconcile();
+  // Open reviews heal at start (ADR-069 §6), once the frame they are checked through answers:
+  // an app's review that shows a folder of source code, or whose app stopped with the last
+  // Oraknid, is prepared again, and its waiting job goes on.
+  for (const j of db.select().from(jobsTable).where(eq(jobsTable.state, "waiting")).all())
+    if (reviewsToHeal(db, j.id).length)
+      void runner.resume(j.id).catch((e) => console.error("healing a review failed", e));
   void health.checkAll().catch((err) => console.error("health check failed", err));
   resumeConversations({
     db,
