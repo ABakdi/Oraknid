@@ -124,6 +124,7 @@ import {
   recover,
   WaitsForLegs,
 } from "./recovery.ts";
+import type { RenderChecker } from "./render-check.ts";
 import { addMessage } from "./talk.ts";
 import { forgetTaskMemory, withdrawTaskQuestions } from "./task-memory.ts";
 import { storeWeb, taskRows } from "./web-store.ts";
@@ -165,6 +166,8 @@ export interface EyeDeps {
   reviews?: ReviewPort;
   /** How long an app under review may take to answer. */
   appWaitMs?: number;
+  /** Looks at what a review would show before it is shown (ADR-069 §4). */
+  renderCheck?: RenderChecker;
   /** The visual check's renderer and judge (ADR-064 §5); without them it is skipped. */
   visual?: VisualDeps;
 }
@@ -609,7 +612,7 @@ async function recoverInJob(
   owner: string | null,
   tried: string[],
   /** What is done again after; none: the job's work, which goes on and is the check. */
-  retry: () => Promise<string | null> = async () => null,
+  retry: (recoveryTaskId: string) => Promise<string | null> = async () => null,
   tries = 1,
   extra: { prepare?: () => Promise<void>; context?: () => string } = {},
 ): Promise<RecoveryResult> {
@@ -702,7 +705,11 @@ async function runTasks(d: EyeDeps, ctx: JobContext, where: Where, parallel = fa
       let settled = false;
       for (const t of startable.filter((x) => x.kind === "evaluation")) {
         if (run.failure || run.cancelled || ctx.signal.aborted) break;
-        const a = await advanceEvaluation(d, ctx, job, t, where.cwd);
+        const a = await advanceEvaluation(d, ctx, job, t, where.cwd, {
+          // What a review can't show gets a recovery agent in the job's tree, twice at most (ADR-069 §3).
+          recover: (failure, retry, context) =>
+            recoverInJob(d, ctx, where, failure, null, [], retry, 2, { context: () => context }),
+        });
         if (a.kind === "settled") settled = true;
         else reviews.push(a);
       }
@@ -833,6 +840,19 @@ function reviewWait(d: EyeDeps, reviews: Extract<Advance, { kind: "waiting" }>[]
   const passAt = Math.min(...reviews.map((r) => r.passAt ?? Number.POSITIVE_INFINITY));
   const waits: Promise<unknown>[] = reviews.map((r) =>
     port.waitForOutcome(r.reviewId, stop.signal).catch(() => {}),
+  );
+  // Try again on one of them (ADR-069 §5): look again, and prepare it again.
+  const steps = new Set(reviews.map((r) => r.taskId));
+  waits.push(
+    new Promise<void>((resolve) => {
+      const off = d.bus.subscribe((e) => {
+        if (e.type !== "review.retry") return;
+        if (!steps.has((e.payload as { taskId?: string } | null)?.taskId ?? "")) return;
+        off();
+        resolve();
+      });
+      stop.signal.addEventListener("abort", off, { once: true });
+    }),
   );
   if (Number.isFinite(passAt))
     waits.push(

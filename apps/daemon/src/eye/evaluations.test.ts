@@ -18,6 +18,7 @@ import { fakeJudge } from "../testing/judge.ts";
 import { type Action, scriptedLeg, type TurnContext } from "../testing/scripted-leg.ts";
 import type { EyeBrain, EyeTriage } from "./brain.ts";
 import { reviewEditOf } from "./evaluations.ts";
+import { httpRenderChecker } from "./render-check.ts";
 import { detectRun } from "./run-app.ts";
 
 // Evaluation steps at work (ADR-064 §1–§3, M16.2) and the Keys job's
@@ -146,6 +147,7 @@ async function world(o: {
     stallCheckMs: 100,
     reviews: reviews.port,
     appWaitMs: 20_000,
+    renderCheck: httpRenderChecker(),
     reviewPassCheckMs: 100,
   });
   const api = createORPCClient<RouterClient<Router>>(
@@ -347,7 +349,8 @@ describe("an app review runs the app (M16.2)", () => {
     });
     const review = await opened(reviews, 1);
     expect(review.kind).toBe("app");
-    if (review.target.kind !== "port") throw new Error("not on a port");
+    if (review.target.kind !== "port")
+      throw new Error(`not on a port: ${JSON.stringify(review.problem)}`);
     const port = review.target.port;
     expect(await (await fetch(`http://127.0.0.1:${port}/`)).text()).toBe("hello from the app");
     reviews.approve(review.reviewId);
@@ -371,9 +374,7 @@ describe("an app review runs the app (M16.2)", () => {
     expect(detectRun(dir)).toEqual({ command: "npm run serve", from: "README.md" });
     writeFileSync(join(dir, "package.json"), JSON.stringify({ scripts: { dev: "vite" } }));
     writeFileSync(join(dir, "pnpm-lock.yaml"), "");
-    expect(detectRun(dir)?.command).toBe(
-      "pnpm run dev -- --port $PORT --strictPort --host 127.0.0.1",
-    );
+    expect(detectRun(dir)?.command).toBe("pnpm run dev --port $PORT --strictPort --host 127.0.0.1");
   });
 });
 

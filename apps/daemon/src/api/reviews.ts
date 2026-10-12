@@ -106,6 +106,11 @@ export const reviewsRouter = {
         return { ok: true as const };
       }),
     ),
+  /** Try again (ADR-069 §5): the step runs the app again, the whole ladder (`review.retry`). */
+  retry: base
+    .input(ById)
+    .output(z.object({ ok: z.literal(true) }))
+    .handler(({ context: c, input }) => guard(() => c.reviews.retry(input.id))),
   withdraw: base
     .input(ById)
     .output(z.object({ ok: z.literal(true) }))
@@ -124,6 +129,8 @@ export const reviewsRouter = {
         const row = c.reviews.row(input.id);
         if (row.state === "withdrawn")
           throw new ReviewError("This review was withdrawn.", "CONFLICT");
+        if (row.problem)
+          throw new ReviewError(`Nothing to show: ${row.problem.reason}`, "CONFLICT");
         return framePage(c.reviews, row, input.path ?? row.entry);
       }),
     ),

@@ -29309,6 +29309,42 @@
                       }
                     ]
                   },
+                  "problem": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "reason": {
+                            "type": "string",
+                            "maxLength": 4000
+                          },
+                          "tried": {
+                            "type": "array",
+                            "maxItems": 20,
+                            "items": {
+                              "type": "string",
+                              "maxLength": 4000
+                            }
+                          }
+                        },
+                        "required": [
+                          "reason",
+                          "tried"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "checked": {
+                    "type": "array",
+                    "maxItems": 10,
+                    "items": {
+                      "type": "string",
+                      "maxLength": 40
+                    }
+                  },
                   "entry": {
                     "type": "string",
                     "maxLength": 500
@@ -29321,8 +29357,7 @@
                 },
                 "required": [
                   "jobId",
-                  "kind",
-                  "target"
+                  "kind"
                 ]
               }
             }
@@ -29464,6 +29499,44 @@
                       "type": "integer",
                       "minimum": 0,
                       "maximum": 9007199254740991
+                    },
+                    "problem": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "reason": {
+                              "type": "string",
+                              "maxLength": 4000
+                            },
+                            "tried": {
+                              "type": "array",
+                              "maxItems": 20,
+                              "items": {
+                                "type": "string",
+                                "maxLength": 4000
+                              }
+                            },
+                            "retrying": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "reason",
+                            "tried",
+                            "retrying"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "checked": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     },
                     "createdAt": {
                       "type": "integer",
@@ -29766,6 +29839,8 @@
                     "state",
                     "frameUrl",
                     "noteCount",
+                    "problem",
+                    "checked",
                     "createdAt",
                     "updatedAt",
                     "endedAt",
@@ -29972,6 +30047,44 @@
                         "minimum": 0,
                         "maximum": 9007199254740991
                       },
+                      "problem": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "reason": {
+                                "type": "string",
+                                "maxLength": 4000
+                              },
+                              "tried": {
+                                "type": "array",
+                                "maxItems": 20,
+                                "items": {
+                                  "type": "string",
+                                  "maxLength": 4000
+                                }
+                              },
+                              "retrying": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "reason",
+                              "tried",
+                              "retrying"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "checked": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
                       "createdAt": {
                         "type": "integer",
                         "minimum": 0,
@@ -30010,6 +30123,8 @@
                       "state",
                       "frameUrl",
                       "noteCount",
+                      "problem",
+                      "checked",
                       "createdAt",
                       "updatedAt",
                       "endedAt"
@@ -30992,6 +31107,50 @@
     "/reviews/approve": {
       "post": {
         "operationId": "reviews.approve",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reviews/retry": {
+      "post": {
+        "operationId": "reviews.retry",
         "requestBody": {
           "required": true,
           "content": {

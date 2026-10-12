@@ -51,6 +51,8 @@ const fresh = (notes: ReviewNote[] = []): ReviewDetail => ({
   state: "open",
   frameUrl: "http://rv-abc.localhost:7517/",
   noteCount: notes.length,
+  problem: null,
+  checked: [],
   createdAt: 1,
   updatedAt: 1,
   endedAt: null,
@@ -82,6 +84,7 @@ const keysScreens = (): ReviewScreens => ({
 });
 const sendNotes = vi.fn(async (_: unknown) => ({ round: 1, notes: 1 }));
 const approve = vi.fn(async (_: unknown) => ({ ok: true }));
+const retry = vi.fn(async (_: unknown) => ({ ok: true }));
 
 vi.mock("@/lib/api", () => ({
   api: {
@@ -97,6 +100,7 @@ vi.mock("@/lib/api", () => ({
       },
       sendNotes: (x: unknown) => sendNotes(x),
       approve: (x: unknown) => approve(x),
+      retry: (x: unknown) => retry(x),
     },
   },
   auth: { token: () => null },
@@ -415,5 +419,40 @@ describe("the review page", () => {
     draw();
     await screen.findByTitle("What is reviewed");
     expect(screen.queryByLabelText("Screen")).toBeNull();
+  });
+
+  it("says where Oraknid saw it render, in the top bar", async () => {
+    review = { ...fresh(), kind: "app", checked: ["phone", "desktop"] };
+    draw();
+    await screen.findByTitle("What is reviewed");
+    expect(screen.getByText(/checked: renders on phone, desktop/)).toBeTruthy();
+  });
+
+  it("an app that didn't start: why and what was tried, no frame, and Try again (ADR-069 §5)", async () => {
+    review = {
+      ...fresh(),
+      kind: "app",
+      target: "",
+      frameUrl: null,
+      problem: {
+        reason: "`pnpm dev` (the plan): it stopped before it answered: Cannot find module vite",
+        tried: ["`pnpm dev` (the plan): Cannot find module vite", "`npm run build`: failed"],
+        retrying: false,
+      },
+    };
+    draw();
+    await screen.findByText("The app didn't start");
+    expect(screen.queryByTitle("What is reviewed")).toBeNull();
+    expect(
+      screen.getByText(/it stopped before it answered: Cannot find module vite$/),
+    ).toBeTruthy();
+    expect(screen.getByText("`npm run build`: failed")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(retry).toHaveBeenCalledWith({ id: R }));
+    expect(await screen.findByRole("button", { name: "Trying again…" })).toBeTruthy();
+    // Approve stays: I can pass it without looking.
+    expect((screen.getByRole("button", { name: "Approve" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
   });
 });

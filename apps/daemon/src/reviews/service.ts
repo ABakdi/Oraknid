@@ -93,10 +93,22 @@ export class Reviews {
       if (task?.jobId !== job.id)
         throw new ReviewError(`No step ${taskId} in that job.`, "NOT_FOUND");
     }
-    const target =
-      input.kind === "design"
+    // Nothing could be shown (ADR-069 §5): the review opens on why, with Try again; no frame.
+    const problem = input.problem
+      ? {
+          reason: input.problem.reason.slice(0, 4000),
+          tried: input.problem.tried.slice(0, 20).map((t) => t.slice(0, 4000)),
+          retrying: false,
+        }
+      : null;
+    if (!problem && input.target === undefined)
+      throw new ReviewError("A review shows a design's folder or an app's port.");
+    const target = problem
+      ? ""
+      : input.kind === "design"
         ? this.#designFolder(job, String(input.target))
-        : String(this.#appPort(input.target));
+        : String(this.#appPort(input.target as string | number));
+    const checked = problem ? [] : (input.checked ?? []);
     const entry = normalEntry(input.entry);
     const title = input.title ?? (input.kind === "design" ? "The design" : "The app");
     const now = this.#now();
@@ -122,11 +134,24 @@ export class Reviews {
         // Asked again while it waits: the same review, pointed at what is current.
         id = previous.id;
         round = previous.round;
+        const was = previous.problem?.reason ?? null;
         this.d.db
           .update(reviews)
-          .set({ target, entry, title, kind: input.kind, updatedAt: now })
+          .set({ target, entry, title, kind: input.kind, problem, checked, updatedAt: now })
           .where(eq(reviews.id, id))
           .run();
+        // What it shows changed (it starts now, or it doesn't any more): the page and the inbox say so.
+        if (was !== (problem?.reason ?? null)) {
+          if (previous.inboxItemId) this.d.inbox.withdraw(previous.inboxItemId);
+          const itemId = this.#tell(job, taskId, input.kind, title, round, problem);
+          this.d.db.update(reviews).set({ inboxItemId: itemId }).where(eq(reviews.id, id)).run();
+        }
+        this.d.bus.publish({
+          type: "review.updated",
+          topic: `job:${job.id}`,
+          jobId: job.id,
+          payload: { reviewId: id, round, problem: problem?.reason ?? null, checked },
+        });
         return;
       }
       if (previous && previous.state === "notes-sent") {
@@ -141,6 +166,8 @@ export class Reviews {
             kind: input.kind,
             round,
             state: "open",
+            problem,
+            checked,
             updatedAt: now,
             endedAt: null,
           })
@@ -162,24 +189,15 @@ export class Reviews {
             entry,
             round,
             state: "open",
+            problem,
+            checked,
             frameKey: randomBytes(16).toString("hex"),
             createdAt: now,
             updatedAt: now,
           })
           .run();
       }
-      const itemId = this.d.inbox.open({
-        kind: "question",
-        jobId: job.id,
-        taskId,
-        raisedBy: "eye",
-        title:
-          (input.kind === "design"
-            ? "A design is ready for your review"
-            : "The app is ready for your review") + (round > 1 ? ` (round ${round})` : ""),
-        detail: `${title}: open it, point at what you'd keep, change or call a problem, on each device you care about; then **Approve** or **Send notes**.`,
-        options: [],
-      });
+      const itemId = this.#tell(job, taskId, input.kind, title, round, problem);
       this.d.db.update(reviews).set({ inboxItemId: itemId }).where(eq(reviews.id, id)).run();
       this.d.bus.publish({
         type: "review.opened",
@@ -198,6 +216,107 @@ export class Reviews {
     });
     // biome-ignore lint/style/noNonNullAssertion: set in the transaction above
     return { id: id!, url: reviewPath(id!), round: round! };
+  }
+
+  /** The inbox item that tells me a review waits: ready, or (ADR-069 §5) the app didn't start, once, in plain words. */
+  #tell(
+    job: typeof jobs.$inferSelect,
+    taskId: string | null,
+    kind: ReviewOpen["kind"],
+    title: string,
+    round: number,
+    problem: { reason: string; tried: string[] } | null,
+  ): string {
+    const r = round > 1 ? ` (round ${round})` : "";
+    return this.d.inbox.open({
+      kind: "question",
+      jobId: job.id,
+      taskId,
+      raisedBy: "eye",
+      title: problem
+        ? `${kind === "design" ? "The design couldn't be shown" : "The app didn't start"} for your review${r}`
+        : (kind === "design"
+            ? "A design is ready for your review"
+            : "The app is ready for your review") + r,
+      detail: problem
+        ? `${title}: ${problem.reason}${problem.tried.length ? `\n\nOraknid tried:\n${problem.tried.map((t) => `- ${t.slice(0, 600)}`).join("\n")}` : ""}\n\nOpen the review and press **Try again** once something changed, or say “try again” in the project's chat; you can still **Approve** it or send notes in words.`
+        : `${title}: open it, point at what you'd keep, change or call a problem, on each device you care about; then **Approve** or **Send notes**.`,
+      options: [],
+    });
+  }
+
+  /**
+   * Try again (ADR-069 §5–6): the step prepares what it shows again, the
+   * whole ladder; `review.retry` on the job's topic wakes the job.
+   */
+  retry(id: string): { ok: true } {
+    const row = this.#row(id);
+    if (row.state !== "open") throw new ReviewError("This review isn't open.", "CONFLICT");
+    this.d.bus.atomically(() => {
+      if (row.problem)
+        this.d.db
+          .update(reviews)
+          .set({ problem: { ...row.problem, retrying: true }, updatedAt: this.#now() })
+          .where(eq(reviews.id, id))
+          .run();
+      this.d.bus.publish({
+        type: "review.retry",
+        topic: `job:${row.jobId}`,
+        jobId: row.jobId,
+        payload: { reviewId: id, taskId: row.taskId, round: row.round },
+        actor: "owner",
+      });
+    });
+    return { ok: true };
+  }
+
+  /** What is being checked before it is shown (ADR-069 §4): frames of no review, by key. */
+  readonly #previews = new Map<string, ReviewRow>();
+
+  /**
+   * A frame for what a review would show, before it is opened (ADR-069
+   * §4): served by the same frame code as the review's, on a key of its
+   * own, so the render check loads exactly what the page will. `close`
+   * forgets it.
+   */
+  preview(input: {
+    jobId: string;
+    kind: ReviewOpen["kind"];
+    target: string | number;
+    entry?: string;
+  }): {
+    url: string;
+    close: () => void;
+  } {
+    const job = this.d.db.select().from(jobs).where(eq(jobs.id, input.jobId)).get();
+    if (!job) throw new ReviewError(`No job ${input.jobId}.`, "NOT_FOUND");
+    const target =
+      input.kind === "design"
+        ? this.#designFolder(job, String(input.target))
+        : String(this.#appPort(input.target));
+    const key = randomBytes(16).toString("hex");
+    const now = this.#now();
+    const row: ReviewRow = {
+      id: `preview-${key}`,
+      jobId: job.id,
+      taskId: null,
+      projectId: job.projectId,
+      kind: input.kind,
+      title: "preview",
+      target,
+      entry: normalEntry(input.entry),
+      round: 1,
+      state: "open",
+      frameKey: key,
+      inboxItemId: null,
+      problem: null,
+      checked: null,
+      createdAt: now,
+      updatedAt: now,
+      endedAt: null,
+    };
+    this.#previews.set(key, row);
+    return { url: this.frameUrl(row), close: () => this.#previews.delete(key) };
   }
 
   get(id: string, remote = false): ReviewDetail {
@@ -439,6 +558,8 @@ export class Reviews {
 
   /** The review whose frame origin has this key; a withdrawn one shows nothing. */
   byKey(key: string): ReviewRow | null {
+    const preview = this.#previews.get(key);
+    if (preview) return preview;
     const row = this.d.db.select().from(reviews).where(eq(reviews.frameKey, key)).get();
     return row && row.state !== "withdrawn" ? row : null;
   }
@@ -621,8 +742,10 @@ export class Reviews {
       round: r.round,
       state: r.state,
       // Away from home the frame can't load from this computer: it comes inlined (reviews.frame).
-      frameUrl: remote || r.state === "withdrawn" ? null : this.frameUrl(r),
+      frameUrl: remote || r.state === "withdrawn" || r.problem ? null : this.frameUrl(r),
       noteCount: counts.get(r.id) ?? 0,
+      problem: r.problem ?? null,
+      checked: r.checked ?? [],
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
       endedAt: r.endedAt,
