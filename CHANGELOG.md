@@ -3,6 +3,16 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.9.0 — 2026-10-12 (pre-release)
+
+A review is never shown before Oraknid has seen it render ([ADR-069](docs/04-Decisions/ADR-069-A-Review-Is-Seen-To-Render-First.md)): no more blank review pages.
+
+- **Oraknid checks a review renders before opening it:** it loads the design or the app itself at phone and desktop sizes and checks that something is drawn, nothing crashed, and it isn't raw source or a folder listing. The review's top bar says "checked: renders on phone, desktop".
+- **The app starts on the port Oraknid gives it:** port flags now reach `pnpm dev`, the plan's own commands and a direct dev server (Vite, Next, Astro, Nuxt, Angular, webpack); an app that picks its own port is found from what it prints.
+- **More ways to run, then an agent:** the plan's command, the dev script, the README's command, a build served by Oraknid, then a static page. When none works, an agent is given every try with its output, fixes what stops the app, and Oraknid tries again.
+- **Never a folder of source code:** when nothing renders, the review page says "The app didn't start", why and what was tried, with **Try again** (or "try again" in the chat). You get one notification, replaced when the app is ready.
+- **Reviews left blank heal by themselves:** after updating, an open review that fell back to a folder is prepared again.
+
 ## 0.8.1 — 2026-10-11 (pre-release)
 
 Limits where the provider puts them ([ADR-068](docs/04-Decisions/ADR-068-Limits-Where-The-Provider-Puts-Them.md)): an agent that works in your terminal works in Oraknid too.
