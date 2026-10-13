@@ -3,6 +3,13 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.9.1 — 2026-10-13 (pre-release)
+
+- **Fixed: a job blocked while its work was being verified couldn't be started again** ("A job cannot go from blocked to verifying"). A blocked job now resumes where it was; when it can't, it goes on running and says why. A failed start shows its real reason instead of "check Oraknid's log".
+- **The Eye thinks with the best free model instead of blocking:** when the agents rated for its hardest thinking are paused or out of quota, it uses the strongest one that is free, says so once in the conversation, and its plan or verdict is checked as usual. It blocks only when no agent at all can think, and then resumes by itself when one can.
+- **Models earn trust:** a model that finished at least 5 tasks of a kind, 80% of them done, is trusted one level higher for that kind; failures bring it back.
+- **The keychain and the phone link reconnect** after the desktop session restarts, and a failed notification is logged once per outage, not on every try.
+
 ## 0.9.0 — 2026-10-12 (pre-release)
 
 A review is never shown before Oraknid has seen it render ([ADR-069](docs/04-Decisions/ADR-069-A-Review-Is-Seen-To-Render-First.md)): no more blank review pages.
