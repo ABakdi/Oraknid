@@ -38,6 +38,11 @@ Settings → Notifications.
 | A job paused for quota resumed by itself at the reset (`job.resumed`, [[Budgets-and-Quotas]]) | ✓ | ✓ | — |
 | The computer can't be kept awake: taking the sleep lock failed (`sleep.problem`, once until it is held again, [[Durability]]) | ✓ | ✓ | — |
 
+A notification that can't go out (its channel's key unreadable while
+the keychain's D-Bus is down) is said once in Oraknid's log until one
+goes through again, which is said once too, never a line per event
+(2026-10-13).
+
 I can change every cell. **Quiet hours** hold everything except
 approvals for running jobs, security alerts and the computer in danger. Repeated events are grouped
 ("3 approvals waiting").

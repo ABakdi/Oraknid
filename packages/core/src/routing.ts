@@ -103,6 +103,8 @@ export interface Route {
   rung?: number;
   /** Why it scored that way, for the task's routing record. */
   reasons: string[];
+  /** Rated for easier work than this, it takes it because nothing rated for it is available. */
+  stretched?: boolean;
 }
 
 export interface RouteResult {
@@ -152,6 +154,36 @@ export function trust(
     score,
     reason: `${done} of ${tried} ${what} done${proven ? "" : " (still unproven)"}`,
     proven,
+  };
+}
+
+/** What a model must have done on a kind of task to be trusted one level harder at it. */
+export const EARNED = { attempts: 5, rate: 0.8 } as const;
+
+const LEVELS = ["low", "medium", "high"] as const;
+
+/**
+ * The hardest work routing trusts a model with for a kind of task (The-Eye
+ * → Routing, earned difficulty): its profile's `maxDifficulty`, one level
+ * higher once its own record on that kind shows it: at least
+ * `EARNED.attempts` tasks of the kind, `EARNED.rate` of them done. Failures
+ * bring the rate under it and the level back down; never more than one
+ * level, never past high, and never for a model that does text work only.
+ */
+export function earnedDifficulty(
+  profile: EffectiveProfile,
+  kind: TaskKind,
+): { level: Difficulty; reason: string | null } {
+  const base = profile.maxDifficulty;
+  const own = profile.observed[kind];
+  const textOnly = !profile.tools.edits && !profile.tools.shell;
+  if (base === "high" || textOnly || !own || own.attempts < EARNED.attempts)
+    return { level: base, reason: null };
+  if (own.successes / own.attempts < EARNED.rate) return { level: base, reason: null };
+  const level = LEVELS[RANK[base] + 1] as Difficulty;
+  return {
+    level,
+    reason: `${own.successes} of ${own.attempts} ${kind} tasks done: trusted with ${level} ones`,
   };
 }
 
@@ -231,9 +263,14 @@ export function route(task: RouteTask, candidates: RouteCandidate[], o: RouteOpt
     let score = 0;
 
     // Difficulty fit: too weak is out; far too strong is penalised (BR-21).
-    const gap = RANK[c.profile.maxDifficulty] - RANK[difficulty];
+    // Its level, raised by what it got done of this kind of task (earned difficulty), only to
+    // let it take harder work: a model never scores lower for what it earned.
+    const earned = earnedDifficulty(c.profile, task.kind);
+    const short = RANK[c.profile.maxDifficulty] < RANK[difficulty];
+    const level = short ? earned.level : c.profile.maxDifficulty;
+    const gap = RANK[level] - RANK[difficulty];
     if (gap < 0 && !task.pinnedModelId && !o.stretch) {
-      out(`made for ${c.profile.maxDifficulty} tasks; this one is ${difficulty}.`);
+      out(`made for ${level} tasks; this one is ${difficulty}.`);
       tooWeak++;
       continue;
     }
@@ -256,6 +293,7 @@ export function route(task: RouteTask, candidates: RouteCandidate[], o: RouteOpt
     reasons.push(
       gap === 0 ? "right size for the task" : gap > 0 ? "stronger than the task needs" : "pinned",
     );
+    if (short && earned.reason) reasons.push(earned.reason);
 
     // Scarce windows are kept for hard work.
     const tightest = Math.min(...c.windows.map((w) => 1 - (w.utilization ?? 0)), 1);
@@ -403,11 +441,17 @@ export function route(task: RouteTask, candidates: RouteCandidate[], o: RouteOpt
   // rather than the job blocking (seen live: free models only, and a plan to make).
   if (!ranked.length && tooWeak > 0 && !o.stretch) {
     const stretched = route(task, candidates, { ...o, stretch: true });
-    for (const r of stretched.ranked)
+    for (const r of stretched.ranked) {
+      r.stretched = true;
       r.reasons.unshift(
         `nothing rated for ${difficulty} tasks is available; the strongest that is takes it`,
       );
-    return { ranked: stretched.ranked, excluded };
+    }
+    // None could stretch either: why each was left out then, not "made for easier tasks".
+    return {
+      ranked: stretched.ranked,
+      excluded: stretched.ranked.length ? excluded : stretched.excluded,
+    };
   }
   return { ranked, excluded };
 }
@@ -448,7 +492,9 @@ export function workKindOf(t: { kind: string; scope?: string[] }, serverJob = fa
 export function rungOf(profile: EffectiveProfile, work: WorkKind, kind: TaskKind): number {
   const needs = NEEDS[work];
   const strength = needs.reduce((n, c) => n + (profile.strengths[c] ?? 0), 0) / needs.length;
-  return RANK[profile.maxDifficulty] * 10 + strength * 1.5 + trust(profile, kind).score;
+  return (
+    RANK[earnedDifficulty(profile, kind).level] * 10 + strength * 1.5 + trust(profile, kind).score
+  );
 }
 
 /** The capabilities a kind of work needs, for The Eye's own choice. */

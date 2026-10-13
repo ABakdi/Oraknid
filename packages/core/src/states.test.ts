@@ -1,6 +1,6 @@
 import { JobState, TaskState } from "@oraknid/contracts";
 import { describe, expect, it } from "vitest";
-import { assertJob, canJob, canTask, isTerminalJob } from "./states.ts";
+import { assertJob, canJob, canTask, isTerminalJob, resumeTarget } from "./states.ts";
 
 describe("job life cycle", () => {
   it("follows the Core-Entities diagram", () => {
@@ -58,5 +58,22 @@ describe("task life cycle", () => {
   it("returns a running task to ready after a crash or a reassignment", () => {
     expect(canTask("running", "ready")).toBe(true);
     expect(canTask("verifying", "ready")).toBe(true);
+  });
+});
+
+describe("resuming a parked job", () => {
+  it("returns to the state it was parked from, verifying included (2026-10-13)", () => {
+    expect(canJob("blocked", "verifying")).toBe(true);
+    for (const from of ["paused", "waiting", "blocked"] as const)
+      for (const s of ["interviewing", "planning", "running", "verifying"] as const)
+        expect(resumeTarget(from, s)).toEqual({ to: s, fellBack: null });
+    expect(resumeTarget("blocked", null)).toEqual({ to: "running", fellBack: null });
+  });
+
+  it("falls back to running, saying why, when the life cycle can't go there", () => {
+    const r = resumeTarget("blocked", "completed");
+    expect(r.to).toBe("running");
+    expect(r.fellBack).toMatch(/couldn't go back to completed from blocked/);
+    expect(resumeTarget("paused", "nonsense").to).toBe("running");
   });
 });

@@ -35,7 +35,7 @@ Each Leg lists its models. You can hide the ones you don't want used, and give e
 
 ## Which model gets a task
 
-The Eye gives each task the smallest model that will reliably do it, and the task's page says why. Models it knows (Claude's Opus, Sonnet and Haiku, Gemini, GPT) start from what they are known to do well. Free models (OpenCode's `-free` ones and `big-pickle`) and names it doesn't know start **unproven**: they get work when the known models' windows are kept for hard tasks, and earn their place by getting tasks done; a failure costs them quickly. You can vouch for one in its profile.
+The Eye gives each task the smallest model that will reliably do it, and the task's page says why. Models it knows (Claude's Opus, Sonnet and Haiku, Gemini, GPT) start from what they are known to do well. Free models (OpenCode's `-free` ones and `big-pickle`) and names it doesn't know start **unproven**: they get work when the known models' windows are kept for hard tasks, and earn their place by getting tasks done; a failure costs them quickly. A model that got most of a kind of task done (at least 5, and 80% of them) is trusted with harder tasks of that kind, one level up; failures take that back. You can vouch for one in its profile.
 
 ## When a provider fails
 

@@ -199,6 +199,17 @@ unproven model counts as proven; one failed and it falls further. Its
 words ("unproven: no task seen done yet", "4 of 4 research tasks done",
 "0 of 1 research tasks done (still unproven)").
 
+**Earned difficulty** (2026-10-13). A model's record also raises the
+hardest work routing trusts it with, kind by kind: with at least 5 tasks
+of a kind and 80% of them done, it is trusted one level above its
+`maxDifficulty` for that kind (`big-pickle`, 8 of 9 implement tasks done:
+`high` implement tasks). Failures that bring the rate under 80% take the
+level back down. One level at most, never past `high`, never for a model
+that does text work only, and only on the kind it proved itself at (8 of
+9 implement tasks say nothing of planning). The routing record says it
+("8 of 9 implement tasks done: trusted with high ones"); the ladder ranks
+by the earned level too.
+
 Seen 2026-10-04: OpenCode's fourteen free models had a default profile
 of 3 everywhere and no cost, and scored above Claude Sonnet on a Claude
 Max subscription whose week was at 67% ("right size for the task,

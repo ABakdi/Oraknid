@@ -102,6 +102,7 @@ stateDiagram-v2
     waiting --> running: answered
     running --> blocked: cannot continue (all Legs exhausted, unresolvable failure)
     blocked --> running: I unblock / quota resets
+    blocked --> verifying: resumed where it was blocked
     running --> verifying: all tasks done
     verifying --> running: verification failed → new tasks
     verifying --> completed
@@ -117,6 +118,13 @@ stateDiagram-v2
 
 `interviewing`, `planning`, `running` and `verifying` are **active**
 states. Any active job holds the sleep inhibitor (BR-11).
+
+**Resuming** a `paused`, `waiting` or `blocked` job takes it back to its
+`resumeState`, the active state it was parked from: any of the four
+(2026-10-13: a job blocked while verifying could not be started at all,
+"A job cannot go from blocked to verifying"). A `resumeState` the life
+cycle can't reach from where the job is (an older row) never fails the
+resume: the job goes to `running` and its state change says why.
 
 ## The Web and Task
 

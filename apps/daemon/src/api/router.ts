@@ -123,7 +123,7 @@ import {
   UpdatesView,
   UpdateTool,
 } from "@oraknid/contracts";
-import { scrubDeep, scrubSecrets } from "@oraknid/core";
+import { IllegalTransition, scrubDeep, scrubSecrets } from "@oraknid/core";
 import {
   type InhibitorState,
   type SandboxStatus,
@@ -392,7 +392,7 @@ const base = os.$context<ApiContext>().use(async ({ next }) => {
     }
     console.error("request failed", error);
     throw new ORPCError("INTERNAL_SERVER_ERROR", {
-      message: "Something went wrong inside Oraknid; the details are in its log (oraknid logs).",
+      message: failureSaid(error),
       data: { requestId },
     });
   }
@@ -827,11 +827,26 @@ async function guard<T>(fn: () => Promise<T> | T): Promise<T> {
             : "BAD_REQUEST";
       throw new ORPCError(code, { message: error.message });
     }
+    // A move the job's life cycle refuses: said as it is (Start on a blocked job, 2026-10-13).
+    if (error instanceof IllegalTransition)
+      throw new ORPCError("CONFLICT", { message: error.message });
     console.error("request failed", error);
-    throw new ORPCError("INTERNAL_SERVER_ERROR", {
-      message: "Something went wrong inside Oraknid; the details are in its log (oraknid logs).",
-    });
+    throw new ORPCError("INTERNAL_SERVER_ERROR", { message: failureSaid(error) });
   }
+}
+
+/**
+ * Anything unexpected, in a sentence for the UI (BR-17): what went wrong in
+ * its own words (its first line, secrets scrubbed, cut short), never just
+ * "look in the log"; the details, its stack too, stay in the log.
+ */
+export function failureSaid(error: unknown): string {
+  const raw = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  const line = scrubSecrets(raw.split("\n")[0]?.trim() ?? "").replace(/[.\s]+$/, "");
+  if (!line)
+    return "Something went wrong inside Oraknid; the details are in its log (oraknid logs).";
+  const said = line.length > 240 ? `${line.slice(0, 239)}…` : line;
+  return `Something went wrong inside Oraknid: ${said}. The details are in its log (oraknid logs).`;
 }
 
 /** Who asks for an update: the CLI and a device at home, or away from home with its rights (ADR-030). */
