@@ -359,6 +359,44 @@ describe("pause from parked states", () => {
     await e.runner.resume(id);
     await until(() => e.jobs.require(id).state === "completed");
   });
+
+  it("resumes a job blocked while verifying to verifying (the Keys job, 2026-10-13)", async () => {
+    const seen: string[] = [];
+    const e = engine(async (ctx) => {
+      seen.push(ctx.state());
+      if (ctx.state() === "verifying") ctx.setState("completed");
+    });
+    const id = seedJob(db, "verifying");
+    e.jobs.transition(id, "blocked", "No Leg can think for The Eye right now: …");
+    expect(e.jobs.require(id)).toMatchObject({ state: "blocked", resumeState: "verifying" });
+    await e.runner.resume(id);
+    await until(() => e.jobs.require(id).state === "completed");
+    expect(seen).toEqual(["verifying"]);
+  });
+
+  it("falls back to running, saying why, when it can't go back where it was", async () => {
+    const said: unknown[] = [];
+    const e = engine(async (ctx) => {
+      if (ctx.state() === "running") {
+        ctx.setState("verifying");
+        ctx.setState("completed");
+      }
+    });
+    e.bus.subscribe((ev) => {
+      if (ev.type === "job.state") said.push(ev.payload);
+    });
+    const id = seedJob(db, "running");
+    e.jobs.transition(id, "blocked", "stuck");
+    // A resume state the life cycle can't reach from blocked (an older row, or a bug).
+    db.update(jobsTable).set({ resumeState: "completed" }).where(eq(jobsTable.id, id)).run();
+    await e.runner.resume(id);
+    await until(() => e.jobs.require(id).state === "completed");
+    expect(said).toContainEqual({
+      from: "blocked",
+      to: "running",
+      reason: "It couldn't go back to completed from blocked, so it goes on from its plan.",
+    });
+  });
 });
 
 describe("recovery", () => {

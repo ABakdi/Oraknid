@@ -10,7 +10,8 @@ const JOB: Record<JobState, readonly JobState[]> = {
   running: ["paused", "waiting", "blocked", "verifying", "cancelled"],
   waiting: ["running", "interviewing", "planning", "verifying", "paused", "cancelled"],
   paused: ["running", "interviewing", "planning", "verifying", "cancelled"],
-  blocked: ["running", "interviewing", "planning", "paused", "cancelled"],
+  // A parked job resumes to the state it was parked from (its resumeState): any active state.
+  blocked: ["running", "interviewing", "planning", "verifying", "paused", "cancelled"],
   verifying: ["running", "completed", "paused", "waiting", "blocked", "cancelled"],
   completed: [],
   cancelled: [],
@@ -38,6 +39,25 @@ export class IllegalTransition extends Error {
     super(`A ${kind} cannot go from ${from} to ${to}.`);
     this.name = "IllegalTransition";
   }
+}
+
+/**
+ * Where a parked job goes when it resumes: the state it was parked from,
+ * when the life cycle allows it; else `running`, with why in plain words
+ * (a resume never fails on the table, 2026-10-13: a job blocked while
+ * verifying could not be started at all).
+ */
+export function resumeTarget(
+  from: JobState,
+  resumeState: string | null | undefined,
+): { to: JobState; fellBack: string | null } {
+  const wanted = resumeState ?? "running";
+  if (wanted in JOB && canJob(from, wanted as JobState))
+    return { to: wanted as JobState, fellBack: null };
+  return {
+    to: "running",
+    fellBack: `It couldn't go back to ${wanted} from ${from}, so it goes on from its plan.`,
+  };
 }
 
 export function assertJob(from: JobState, to: JobState) {

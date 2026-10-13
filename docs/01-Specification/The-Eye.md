@@ -37,6 +37,21 @@ profile. I can change it any time in Settings, or per job.
   check repaired, a review of a result) run on the strongest model it may
   use, a known family before an unproven one at the same level, never on
   a model resting after its provider failed.
+- **The Eye never blocks while a healthy model can think** (2026-10-13,
+  the Keys job: Claude paused, the others out of quota, and a proven free
+  model left unused). When no model rated for the call's difficulty is
+  free, the strongest healthy one thinks instead, one rated for easier
+  work, and it says so once in the job's conversation ("Thinking with
+  Opencode · big-pickle: the stronger agents are paused or out of
+  quota"). A plan or a verdict it makes passes the same checks as any:
+  The Web's rules, the job's checks, the review. Never a model that does
+  text work only: The Eye's sessions read the workspace. It blocks only
+  when no healthy model can think at all, saying by Leg why each is out
+  (paused, out of quota, resting, too small for the request), and that
+  block is a **wait**: with a time when a reset is known (a limit, a
+  rest, a window), and it goes on by itself as soon as a model can think
+  again (a Leg unpaused, a limit reset, a model's earned level rising),
+  checked every 30 seconds.
 - **Light calls go to a direct model** (2026-10-10,
   [[ADR-066-Token-Economy]] §3): naming a job, my message's triage while
   the job has a plan, the judges' first stage, summaries, fixing my
@@ -182,6 +197,7 @@ mechanical work.
 | Difficulty fit | The task's estimated difficulty (from planning: `low` · `medium` · `high`) vs the model's strength for that capability. A model far above what the task needs is penalised, not just one below it. |
 | Capability match | Task `requiredCapabilities` vs the profile's strengths. |
 | Past success | Trust: the model's prior (a known family, or an unproven free or unknown model) moved by its observed successes on this task kind ([[Legs-and-Capability-Profiles]] → Known and unproven models). |
+| Earned difficulty | A model's record raises the hardest work it is trusted with, per kind of task: at least 5 tasks of the kind and 80% of them done, and it is trusted one level higher for that kind (`medium` → `high`). Failures bring the rate under 80% and the level back down. Never more than one level, never past `high`, never for a model that does text work only (2026-10-13). |
 | Provider failures | A model resting after its provider failed is out; a Leg whose provider just failed gives way ([[Legs-and-Capability-Profiles]] → Provider failures). |
 | Remaining quota | For every window that applies (account-wide and per-model): share left, time to reset, and the expected cost of this task in that window (`quotaWeight` × estimated tokens). A scarce window is saved for tasks that need it: when it runs low, its model is reserved for `high` difficulty tasks. |
 | Context fit | The task's estimated context vs the Leg's window. |

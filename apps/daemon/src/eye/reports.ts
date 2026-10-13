@@ -57,6 +57,15 @@ function handle(d: ReportDeps, e: Event) {
   if (e.type === "task.state" && p.to === "skipped") return leftOut(d, jobId, p);
   if (e.type === "task.folder-restored") return folderRestored(d, jobId, p);
   if (e.type === "task.visual-check") return visualChecked(d, jobId, p);
+  // A model rated for easier work thinks for The Eye: said once, a line in the conversation.
+  if (e.type === "eye.stand-in" && typeof p.text === "string")
+    return void addMessage(d, jobId, "eye", p.text, {
+      intent: "report",
+      did: [],
+      silkIds: [],
+      taskIds: [],
+      jobId: null,
+    });
   if (e.type !== "job.state") return;
   if (p.to === "blocked") return blocked(d, jobId, String(p.reason ?? ""));
   if (p.to === "waiting") return waiting(d, jobId);
@@ -253,6 +262,9 @@ function needs(reason: string): string {
     return "Unpause the Leg on its card in Legs, then resume the job.";
   if (/quota|usage limit|out of quota/i.test(reason))
     return "It resumes on its own when the limit resets; adding another Leg or allowing fallback starts it sooner.";
+  // No model could think for The Eye: it waits for one and goes on by itself (ADR-067 §3).
+  if (/^No Leg can think for The Eye/.test(reason))
+    return "It goes on by itself as soon as an agent can think again (a Leg unpaused, a limit reset); you can also add a model.";
   if (/No Leg can take|no Legs/i.test(reason))
     return "Add or resume a Leg that can do it, then resume the job.";
   if (/took over/i.test(reason)) return "Mark the tasks you took over done, or hand them back.";

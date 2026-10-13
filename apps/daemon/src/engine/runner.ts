@@ -1,5 +1,5 @@
 import type { JobState } from "@oraknid/contracts";
-import { isTerminalJob } from "@oraknid/core";
+import { isTerminalJob, resumeTarget } from "@oraknid/core";
 import { z } from "zod";
 import type { EventBus } from "../events/bus.ts";
 import type { InboxStore } from "../inbox/store.ts";
@@ -167,8 +167,9 @@ export class JobRunner {
       writeSetting(this.o.jobs.db, attemptsFromKey(jobId), z.number(), Date.now());
     if (job.state === "blocked")
       writeSetting(this.o.jobs.db, attemptCapKey(jobId), z.number().nullable(), null);
-    const to = (job.resumeState as JobState | null) ?? "running";
-    this.o.jobs.transition(jobId, to, null);
+    // Back to the state it was parked from; one the life cycle can't reach runs on, said why.
+    const { to, fellBack } = resumeTarget(job.state as JobState, job.resumeState);
+    this.o.jobs.transition(jobId, to, fellBack);
     this.start(jobId);
   }
 

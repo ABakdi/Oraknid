@@ -12,6 +12,7 @@ import {
 } from "@oraknid/contracts";
 import {
   accountWide,
+  earnedDifficulty,
   graphProblems,
   maxRequestFrom,
   providerFailure,
@@ -194,6 +195,12 @@ export interface EyeBrain {
    * model. Optional: without it the button says no model can.
    */
   polishText?(input: { cwd: string; text: string; kind: string }): Promise<{ text: string }>;
+  /**
+   * Whether a healthy model can think for The Eye now, and when one may
+   * next (the earliest known reset), for a job blocked for no thinker to
+   * go on by itself (ADR-067 §3). Optional: without it such a job waits for me.
+   */
+  thinkerFree?(): { free: boolean; until: number | null };
   /** Several Silk entries in one shorter entry. */
   summarize(input: {
     jobId: string;
@@ -280,6 +287,24 @@ export interface TriageInput {
 }
 
 export class BrainFailed extends Error {}
+
+/**
+ * No healthy model can think for The Eye now (ADR-067 §3: a wait, not a
+ * failure): `until` is the earliest a limit or a rest it knows of ends,
+ * null when none is known (a Leg paused, none at all).
+ */
+export class NoThinker extends BrainFailed {
+  constructor(
+    message: string,
+    readonly until: number | null,
+  ) {
+    super(message);
+  }
+}
+
+/** Said once in the job's conversation when The Eye thinks with a model rated for easier work. */
+export const stretchSaid = (model: string) =>
+  `Thinking with ${model}: the stronger agents are paused or out of quota. Its plan or verdict is checked as usual.`;
 
 /**
  * Why no model can think for The Eye, in plain words with what to do
@@ -621,6 +646,8 @@ export interface PoolLegBrainOptions {
   moneyAllowed?: boolean;
   /** A job's calls shown as they think, and stopped or redone by me (M13.25). */
   thinking?: EyeThinking;
+  /** A line The Eye says in a job's conversation about its own thinking (a weaker model stands in). */
+  noted?: (jobId: string, text: string) => void;
   /**
    * How light calls go (ADR-066 §3, Settings → The Eye → Light calls):
    * "auto" (a direct model when there is one, else an agent session),
@@ -1252,18 +1279,9 @@ Answer with "text": the rewritten text only.`;
     return this.#ask(i.jobId, i.cwd, "low", ["summarize"], Summary, prompt, "summarize");
   }
 
-  /** Picks the Leg model: mine if I pinned one, else the best router choice for the call. */
-  #choose(
-    difficulty: Difficulty,
-    capabilities: Capability[],
-    pinned: string | null,
-    fallback = true,
-    strong = false,
-    requestTokens?: number,
-  ) {
+  /** Every Leg model The Eye could think with, as routing sees it. */
+  #candidates(sees: boolean): RouteCandidate[] {
     const candidates: RouteCandidate[] = [];
-    // A call that looks at images goes only to models that read them (ADR-064 §5).
-    const sees = capabilities.includes("vision");
     for (const leg of this.o.registry.all()) {
       const view = this.o.registry.view(leg);
       for (const m of view.models.filter(
@@ -1289,6 +1307,35 @@ Answer with "text": the rewritten text only.`;
         });
       }
     }
+    return candidates;
+  }
+
+  /**
+   * Whether a healthy model can think for The Eye now (any of them: one
+   * rated for easier work stands in), and else the earliest known time one
+   * may (ADR-067 §3).
+   */
+  thinkerFree(): { free: boolean; until: number | null } {
+    try {
+      this.#choose("high", ["planning"], this.o.pinnedModelId(), true, true);
+      return { free: true, until: null };
+    } catch (error) {
+      return { free: false, until: error instanceof NoThinker ? error.until : null };
+    }
+  }
+
+  /** Picks the Leg model: mine if I pinned one, else the best router choice for the call. */
+  #choose(
+    difficulty: Difficulty,
+    capabilities: Capability[],
+    pinned: string | null,
+    fallback = true,
+    strong = false,
+    requestTokens?: number,
+  ) {
+    // A call that looks at images goes only to models that read them (ADR-064 §5).
+    const sees = capabilities.includes("vision");
+    const candidates = this.#candidates(sees);
     const task = {
       kind: "plan" as const,
       difficulty,
@@ -1306,6 +1353,24 @@ Answer with "text": the rewritten text only.`;
       r = route(task, candidates, { moneyAllowed: this.o.moneyAllowed ?? false });
       chosen = false;
     }
+    // Nothing rated for this thinking is free: the strongest healthy model thinks instead, never
+    // the job blocking while one is there (2026-10-13). Not one that does text work only: The
+    // Eye's sessions read the workspace.
+    const textOnly = (x: Route) =>
+      !x.candidate.profile.tools.edits && !x.candidate.profile.tools.shell;
+    const blind = r.ranked.filter((x) => x.stretched && textOnly(x));
+    if (blind.length) {
+      r = {
+        ranked: r.ranked.filter((x) => !blind.includes(x)),
+        excluded: [
+          ...r.excluded,
+          ...blind.map((x) => ({
+            legModelId: x.candidate.legModelId,
+            why: `${x.candidate.legName} · ${x.candidate.model}: it does text work only.`,
+          })),
+        ],
+      };
+    }
     // The Eye's own thinking (plans, the interview, a message that decides the job's course) goes to
     // the strongest model it may use, not the cheapest that fits: an unproven free model never
     // plans while a known strong one is healthy (after the piano job, 2026-10-04).
@@ -1316,9 +1381,27 @@ Answer with "text": the rewritten text only.`;
         "No Leg reads images: no Leg model has the vision capability (a model's profile, on the Legs page).",
       );
     if (!best) {
-      throw new BrainFailed(`No Leg can think for The Eye right now: ${noThinkerSaid(r.excluded)}`);
+      throw new NoThinker(
+        `No Leg can think for The Eye right now: ${noThinkerSaid(r.excluded)}`,
+        nextFree(candidates, Date.now()),
+      );
     }
     return best;
+  }
+
+  /** The Leg model a job's Eye last said it stands in with, so it is said once. */
+  readonly #standIn = new Map<string, string>();
+
+  /** A model rated for easier work thinks for this job: said once in its conversation. */
+  #sayStandIn(jobId: string, pick: Route, quiet: boolean) {
+    if (!jobId || quiet) return;
+    if (!pick.stretched) {
+      this.#standIn.delete(jobId);
+      return;
+    }
+    if (this.#standIn.get(jobId) === pick.candidate.legModelId) return;
+    this.#standIn.set(jobId, pick.candidate.legModelId);
+    this.o.noted?.(jobId, stretchSaid(`${pick.candidate.legName} · ${pick.candidate.model}`));
   }
 
   async #ask<T>(
@@ -1401,6 +1484,7 @@ Answer with "text": the rewritten text only.`;
         requestTokens,
       );
     let pick = choose();
+    this.#sayStandIn(jobId, pick, quiet);
     const started = Date.now();
     const shown = !quiet && jobId ? this.o.thinking : undefined;
     // What I added while The Eye was thinking, for this call (M13.25).
@@ -1426,6 +1510,7 @@ Answer with "text": the rewritten text only.`;
           if (max) this.o.registry.setMaxRequest(pick.candidate.legModelId, max, big.reason);
           moved++;
           pick = choose();
+          this.#sayStandIn(jobId, pick, quiet);
           continue;
         }
         const limit =
@@ -1444,6 +1529,7 @@ Answer with "text": the rewritten text only.`;
           );
           moved++;
           pick = choose();
+          this.#sayStandIn(jobId, pick, quiet);
           continue;
         }
         if (!(error instanceof Rethink) || again >= 5) throw error;
@@ -1823,6 +1909,28 @@ const LIMIT_MS: Record<string, number> = {
 const RANK: Record<Difficulty, number> = { low: 0, medium: 1, high: 2 };
 
 /**
+ * The earliest time a model left out now may think again: a limit of its
+ * own, a rest after a provider failure, or a used-up window resetting.
+ * Null when none is known (only paused Legs, unhealthy ones, none at all).
+ */
+export function nextFree(candidates: RouteCandidate[], now: number): number | null {
+  const times: number[] = [];
+  for (const c of candidates) {
+    if (c.paused || (c.health !== "healthy" && c.health !== "degraded")) continue;
+    const ends = [
+      c.limited && c.limited.until > now ? c.limited.until : null,
+      c.cooldown && c.cooldown.until > now ? c.cooldown.until : null,
+      ...c.windows
+        .filter((w) => (w.utilization ?? 0) >= 1 && w.resetsAt && w.resetsAt > now)
+        .map((w) => w.resetsAt as number),
+    ].filter((t): t is number => t !== null);
+    // Free of all of them only once the last one ends.
+    if (ends.length) times.push(Math.max(...ends));
+  }
+  return times.length ? Math.min(...times) : null;
+}
+
+/**
  * The routes for The Eye's own thinking, strongest first: rated for the
  * hardest work, then strongest at what the call needs, then proven on real
  * tasks; the router's score (quota left, health) only breaks ties.
@@ -1844,7 +1952,8 @@ export function strongestFirst<T extends Route>(ranked: T[], capabilities: Capab
   const known = (r: T) => (r.candidate.profile.prior === "unproven" ? 0 : 1);
   return [...ranked].sort(
     (a, b) =>
-      RANK[b.candidate.profile.maxDifficulty] - RANK[a.candidate.profile.maxDifficulty] ||
+      RANK[earnedDifficulty(b.candidate.profile, "plan").level] -
+        RANK[earnedDifficulty(a.candidate.profile, "plan").level] ||
       known(b) - known(a) ||
       strength(b) - strength(a) ||
       proven(b) - proven(a) ||

@@ -6,9 +6,13 @@ export { bwrapArgs, createBwrapSandbox } from "./linux/bwrap.ts";
 export { createDesktopChannel } from "./linux/desktop.ts";
 export {
   createKeychainStore,
+  deadConnection,
   KEYCHAIN_SERVICE,
+  type KeychainClient,
+  KeychainLink,
   type KeychainStore,
   keychainService,
+  secretServiceClient,
 } from "./linux/keychain.ts";
 export { createLinuxMetrics } from "./linux/metrics.ts";
 export { readNvidia } from "./linux/nvidia.ts";

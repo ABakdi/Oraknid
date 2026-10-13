@@ -30,6 +30,8 @@ export function startNotificationRouter(o: {
   now?: () => Date;
   emailDelayMs?: number;
   flushMs?: number;
+  /** Where a failure to notify is said; the daemon's log by default. */
+  log?: (message: string, error?: unknown) => void;
 }) {
   const now = o.now ?? (() => new Date());
   const held: Pending[] = [];
@@ -385,19 +387,33 @@ export function startNotificationRouter(o: {
     }
   }
 
+  // A failure is logged once per outage (the keychain's D-Bus gone with the desktop session sent
+  // twenty identical lines in half an hour, 2026-10-12), and its end once.
+  let failing = false;
+  const log = o.log ?? console.error;
+  const sent = (p: Promise<void>, what: string) =>
+    p.then(
+      () => {
+        if (!failing) return;
+        failing = false;
+        log("notifications go through again");
+      },
+      (err) => {
+        if (failing) return;
+        failing = true;
+        log(`${what} failed (said once until one goes through)`, err);
+      },
+    );
+
   const off = o.bus.subscribe((e) => {
     const mapped = fromEvent(e);
-    if (mapped)
-      void deliver(mapped.p, mapped.itemId).catch((err) =>
-        console.error("notification failed", err),
-      );
+    if (mapped) void sent(deliver(mapped.p, mapped.itemId), "notification");
   });
 
   // What quiet hours held goes out when they end.
   const flush = setInterval(() => {
     if (held.length === 0 || inQuietHours(o.notifications.settings().quietHours, now())) return;
-    for (const p of held.splice(0))
-      void deliver(p, null).catch((err) => console.error("held notification failed", err));
+    for (const p of held.splice(0)) void sent(deliver(p, null), "held notification");
   }, o.flushMs ?? 60_000);
   flush.unref();
 

@@ -191,12 +191,22 @@ export class NestLink {
   async connect() {
     const c = this.#config();
     if (!c || this.#stopped) return;
-    const secret = await this.o.secrets.get(SECRET);
-    if (!secret) {
-      this.#error = "The daemon's Nest secret is missing from the secret store.";
+    let secret: string | undefined;
+    let keys: KeyPair;
+    try {
+      secret = await this.o.secrets.get(SECRET);
+      if (!secret) {
+        this.#error = "The daemon's Nest secret is missing from the secret store.";
+        return;
+      }
+      keys = await this.keys();
+    } catch (error) {
+      // The secret store didn't answer (its D-Bus gone with the desktop session, 2026-10-13):
+      // tried again with a growing pause, never an unhandled rejection.
+      this.#error = `The secret store didn't answer: ${error instanceof Error ? error.message : String(error)}`;
+      this.#again();
       return;
     }
-    const keys = await this.keys();
     const url = `${c.url.replace(/^http/, "ws")}/daemon?id=${encodeURIComponent(c.daemonId)}`;
     const ws = new WebSocket(url, { headers: { authorization: `Bearer ${secret}` } });
     this.#ws = ws;
@@ -259,11 +269,20 @@ export class NestLink {
       if (this.#connected) this.#publish("nest.disconnected", { url: c.url });
       this.#connected = false;
       if (this.#ws !== ws || this.#stopped) return;
-      // Back again with a growing pause, up to a minute.
-      const delay = Math.min(60_000, 1000 * 2 ** this.#retry++);
-      this.#timer = setTimeout(() => void this.connect(), delay);
-      this.#timer.unref();
+      this.#again();
     });
+  }
+
+  /** Back again with a growing pause, up to a minute; a failure is logged, never thrown. */
+  #again() {
+    if (this.#stopped) return;
+    clearTimeout(this.#timer);
+    const delay = Math.min(60_000, 1000 * 2 ** this.#retry++);
+    this.#timer = setTimeout(
+      () => void this.connect().catch((e) => console.error("nest link failed", e)),
+      delay,
+    );
+    this.#timer.unref();
   }
 
   #close() {

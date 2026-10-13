@@ -274,6 +274,93 @@ describe("The Eye's brain", () => {
     ]);
   });
 
+  it("thinks with the strongest healthy model when the stronger are paused, said once, and blocks only with none (2026-10-13)", async () => {
+    const seen: string[] = [];
+    const say = (t: { leg: string; model: string; message: string }): Action[] => {
+      seen.push(`${t.leg} · ${t.model}`);
+      return [{ say: answer([task("t1")]) }];
+    };
+    const claude = scriptedLeg(say);
+    const free = scriptedLeg(say);
+    const dir = mkdtempSync(join(tmpdir(), "oraknid-brain-"));
+    daemon = await startDaemon({
+      paths: resolvePaths({ ORAKNID_DATA_DIR: dir, ORAKNID_CONFIG_DIR: dir }),
+      port: 0,
+      dbFile: ":memory:",
+      os: fakeOs({ keychain: true }).os,
+      adapters: {
+        "claude-code": claude.adapter,
+        opencode: {
+          ...free.adapter,
+          kind: "opencode",
+          probe: async (...args: Parameters<typeof free.adapter.probe>) => ({
+            ...(await free.adapter.probe(...args)),
+            models: [
+              {
+                model: "big-pickle",
+                displayName: "Big Pickle",
+                effortLevels: [],
+                contextWindow: null,
+              },
+            ],
+          }),
+        },
+      },
+    });
+    const c = await daemon.registry.create({
+      kind: "claude-code",
+      name: "Claude",
+      config: { binary: "claude" },
+    });
+    const o = await daemon.registry.create({
+      kind: "opencode",
+      name: "Opencode",
+      config: {
+        binary: "opencode",
+        package: "@opencode/ai/providers/openai-compatible",
+        models: ["big-pickle"],
+      },
+    });
+    await daemon.health.checkAll();
+    // Claude paused: only a free model rated for medium work is healthy.
+    daemon.registry.update(c.id, { paused: true });
+    const noted: string[] = [];
+    const brain = new PoolLegBrain({
+      registry: daemon.registry,
+      supervisor: daemon.supervisor,
+      pinnedModelId: () => null,
+      pins: () => ({}),
+      noted: (_job, text) => noted.push(text),
+    });
+    const input = {
+      jobId: "01J9Z3K8W2Q4V6X8Y0A1B2C3D4",
+      cwd: dir,
+      goal: "a piano",
+      skill: "",
+      silk: "",
+      digest: "",
+      verify: [],
+    };
+    expect(brain.thinkerFree()).toEqual({ free: true, until: null });
+    await brain.plan(input);
+    await brain.plan(input);
+    expect(seen).toEqual(["Opencode · big-pickle", "Opencode · big-pickle"]);
+    expect(noted).toEqual([
+      "Thinking with Opencode · big-pickle: the stronger agents are paused or out of quota. Its plan or verdict is checked as usual.",
+    ]);
+    // None healthy at all: the plain block, and no time known to wait for.
+    daemon.registry.update(o.id, { paused: true });
+    await expect(brain.plan(input)).rejects.toThrow(
+      /^No Leg can think for The Eye right now: every agent that can think is paused or out of quota \(Claude and Opencode are paused\)/,
+    );
+    expect(brain.thinkerFree()).toEqual({ free: false, until: null });
+    // Claude back: it thinks again, and nothing more is said.
+    daemon.registry.update(c.id, { paused: false });
+    await brain.plan(input);
+    expect(seen.at(-1)).toBe("Claude · opus");
+    expect(noted).toHaveLength(1);
+  });
+
   it("judges on the strongest model too: a check repaired, a review (ADR-052 §5)", async () => {
     // One answer that reads as either: a repair, and a review.
     const both = `\`\`\`json\n${JSON.stringify({ broken: true, command: "test -f a", reason: "a quote", accepted: true, missing: [] })}\n\`\`\``;

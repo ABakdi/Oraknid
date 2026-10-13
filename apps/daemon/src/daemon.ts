@@ -59,6 +59,7 @@ import { browserRenderChecker, type RenderChecker } from "./eye/render-check.ts"
 import { startEyeReports } from "./eye/reports.ts";
 import { stopAllApps } from "./eye/run-app.ts";
 import { forgetGuidance, recordAnswer, resumeConversations } from "./eye/talk.ts";
+import { watchForThinker } from "./eye/thinker-wait.ts";
 import { EyeThinking } from "./eye/thinking.ts";
 import { forgetJob } from "./harness/gate.ts";
 import { answerLadder } from "./harness/ladder.ts";
@@ -471,6 +472,15 @@ export async function startDaemon(options: DaemonOptions) {
           payload: { call, model },
         }),
       thinking,
+      // A model rated for easier work thinks for The Eye: said once in the job's conversation.
+      noted: (jobId, text) =>
+        bus.publish({
+          type: "eye.stand-in",
+          topic: `job:${jobId}`,
+          jobId,
+          payload: { text },
+          actor: "eye",
+        }),
       lightCalls: () => readSetting(db, LIGHT_CALLS, z.string(), "auto"),
     });
   // Evaluation steps' reviews (ADR-064 §1): the review page (M16.1), unless a test gives its own.
@@ -1074,6 +1084,8 @@ export async function startDaemon(options: DaemonOptions) {
     }
   }, 30_000);
   blockedTimer.unref();
+  // A job blocked for no model to think waits for one, and goes on when one can (ADR-067 §3).
+  const stopThinkerWatch = watchForThinker({ db, bus, runner, brain, now });
 
   // Hand edits to the mirror are noticed within 30 s.
   const mirrorTimer = setInterval(() => {
@@ -1373,6 +1385,7 @@ export async function startDaemon(options: DaemonOptions) {
       clearInterval(mirrorTimer);
       clearInterval(unclaimed);
       clearInterval(blockedTimer);
+      stopThinkerWatch();
       clearInterval(reviewTimer);
       checkpoint.stop();
       updates.stop();

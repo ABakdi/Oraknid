@@ -21,6 +21,15 @@ sandbox limits damage, but it doesn't make that safe.
   read back, then removed; a count is logged, never a value), and one
   it could not list moves when it is next read. A copy of a data folder
   keeps its id, and so shares its entries.
+- The keychain is reached over the desktop session's D-Bus, which can
+  close under the daemon (the desktop session restarted, 2026-10-13). A
+  closed connection is dropped and made again on the next use, and the
+  call is made once more on the new one (never a delete, which may have
+  gone through). While D-Bus stays down, the next tries wait a growing
+  pause (1 s, doubling, up to a minute) and a call in between fails at
+  once, saying so, rather than waiting on a dead bus. A failure is never
+  an unhandled rejection: the Nest link tries again with its own growing
+  pause.
 - Referenced by name. Resolved only when a process starts, passed by
   environment to that process only, never logged. Log output is
   scrubbed of known secret values.

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { effectiveProfile, emptyStoredProfile, record } from "./profiles.ts";
-import { chooseEffort, type RouteCandidate, type RouteTask, route } from "./routing.ts";
+import {
+  chooseEffort,
+  earnedDifficulty,
+  type RouteCandidate,
+  type RouteTask,
+  route,
+} from "./routing.ts";
 
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 const claude = (model: string, over: Partial<RouteCandidate> = {}): RouteCandidate => ({
@@ -138,10 +144,16 @@ describe("routing: who is out, and why", () => {
       { moneyAllowed: false },
     );
     expect(r.ranked).toEqual([]);
+    // Too weak, it would have stretched: what stopped it then is said, its context too.
     expect(r.excluded.map((e) => e.why)).toEqual([
-      "Claude · haiku: made for low tasks; this one is high.",
+      "Claude · haiku: its context window (200000) is too small for this task.",
       "Claude · opus: its context window (200000) is too small for this task.",
     ]);
+    expect(
+      route(task({ difficulty: "high" }), [claude("haiku", { paused: true })], {
+        moneyAllowed: false,
+      }).excluded[0]?.why,
+    ).toBe("Claude · haiku: paused.");
   });
 
   it("lets the strongest available model try when none is rated for the task (seen live)", () => {
@@ -318,5 +330,79 @@ describe("routing: proven before unproven (M13.22)", () => {
     expect(two.ranked[1]?.reasons).toContain(
       "2 provider failures in a row on Opencode: another Leg first",
     );
+  });
+});
+
+describe("routing: earned difficulty", () => {
+  const pickle = (observed: Record<string, { attempts: number; successes: number }>) => {
+    let stored = emptyStoredProfile();
+    for (const [kind, o] of Object.entries(observed))
+      for (let i = 0; i < o.attempts; i++)
+        stored = record(stored, kind as RouteTask["kind"], {
+          success: i < o.successes,
+          tokens: 0,
+          ms: 0,
+          escalations: 0,
+        });
+    return effectiveProfile("opencode", "big-pickle", stored);
+  };
+  const free = (over: Partial<RouteCandidate> = {}): RouteCandidate => ({
+    ...local(),
+    legName: "Opencode",
+    model: "big-pickle",
+    legModelId: "m-pickle",
+    profile: pickle({}),
+    ...over,
+  });
+
+  it("trusts a free model one level higher on a kind it proved itself at", () => {
+    const p = pickle({ implement: { attempts: 9, successes: 8 } });
+    expect(p.maxDifficulty).toBe("medium");
+    const e = earnedDifficulty(p, "implement");
+    expect(e.level).toBe("high");
+    expect(e.reason).toBe("8 of 9 implement tasks done: trusted with high ones");
+    // Only on that kind: it has no record on plans.
+    expect(earnedDifficulty(p, "plan").level).toBe("medium");
+  });
+
+  it("needs enough attempts, and failures take it back down", () => {
+    expect(earnedDifficulty(pickle({ test: { attempts: 4, successes: 4 } }), "test").level).toBe(
+      "medium",
+    );
+    expect(earnedDifficulty(pickle({ test: { attempts: 5, successes: 4 } }), "test").level).toBe(
+      "high",
+    );
+    // Two more failed: 4 of 7, under the rate, back to its profile's level.
+    expect(earnedDifficulty(pickle({ test: { attempts: 7, successes: 4 } }), "test").level).toBe(
+      "medium",
+    );
+  });
+
+  it("never raises a model that does text work only", () => {
+    const p = pickle({ implement: { attempts: 9, successes: 9 } });
+    const text = { ...p, tools: { edits: false, shell: false, mcp: false, browse: false } };
+    expect(earnedDifficulty(text, "implement").level).toBe("medium");
+  });
+
+  it("routes a hard task of that kind to it without stretching", () => {
+    const c = free({ profile: pickle({ implement: { attempts: 9, successes: 8 } }) });
+    const r = route(task({ difficulty: "high" }), [c], { moneyAllowed: false });
+    expect(r.ranked[0]?.stretched).toBeUndefined();
+    expect(r.ranked[0]?.reasons).toContain("8 of 9 implement tasks done: trusted with high ones");
+  });
+
+  it("stretches to the strongest when nothing is rated for the task, marked so", () => {
+    const r = route(task({ difficulty: "high" }), [free()], { moneyAllowed: false });
+    expect(r.ranked[0]?.stretched).toBe(true);
+  });
+
+  it("says why nothing could stretch either, not that it is made for easier work", () => {
+    const r = route(
+      task({ difficulty: "high", requestTokens: 8000 }),
+      [free({ maxRequestTokens: 1000 })],
+      { moneyAllowed: false },
+    );
+    expect(r.ranked).toEqual([]);
+    expect(r.excluded[0]?.why).toMatch(/takes at most 1000 tokens/);
   });
 });
