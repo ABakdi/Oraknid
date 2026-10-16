@@ -3,6 +3,17 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.10.0 — 2026-10-16 (pre-release)
+
+A site is down only when it is down ([ADR-071](docs/04-Decisions/ADR-071-A-Site-Is-Down-Only-When-It-Is-Down.md)): no more floods of "Down" and "Up again" when this computer's connection to a server is losing requests.
+
+- **Fixed: hundreds of site notifications on a bad connection.** A check that gets no answer is tried again before it counts.
+- **Oraknid asks the server before saying a site is down:** the server loads the site itself. When it answers there, the site is "down from here only", not down.
+- **One notification per server, not per site:** "This computer is losing its connection to staging: 9 of its 18 sites didn't answer from here; from the server they answer." At most once a day, normal urgency, not emailed; its end is quiet. It can be turned off in Settings as "A server's sites don't answer from this computer".
+- **A site that keeps coming and going** is said down again only after 15 minutes down; "Up again" comes only after a "Down" you were told about.
+- **The Sites page shows why:** down, down from here only, or the server unreached.
+- Real outages (a domain gone from DNS, a server error, the server confirming no answer) are still said at once.
+
 ## 0.9.2 — 2026-10-16 (pre-release)
 
 Never hang on the desktop ([ADR-070](docs/04-Decisions/ADR-070-Never-Hang-On-The-Desktop.md)).
