@@ -25,7 +25,7 @@ import type { LegAdapter } from "@oraknid/leg-sdk";
 import { desktopWaiters } from "@oraknid/os";
 import { call, ORPCError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/node";
-import { eq } from "drizzle-orm";
+import { eq, isNotNull } from "drizzle-orm";
 import express from "express";
 import { z } from "zod";
 import { type ApiContext, router } from "./api/router.ts";
@@ -38,7 +38,12 @@ import { attachCloudRoutes, Downloads } from "./cloud/routes.ts";
 import { Cloud } from "./cloud/service.ts";
 import { STORAGE_TOOL, storageServer } from "./cloud/tool.ts";
 import { closeDatabase, openDatabase, startIdleCheckpoint } from "./db/open.ts";
-import { jobs as jobsTable, projects as projectsTable, tasks as tasksTable } from "./db/schema.ts";
+import {
+  jobs as jobsTable,
+  projects as projectsTable,
+  silkMirror as silkMirrorTable,
+  tasks as tasksTable,
+} from "./db/schema.ts";
 import { clipOversizedRows } from "./db/upkeep.ts";
 import { SideEffects } from "./engine/effects.ts";
 import { JobStore } from "./engine/jobs.ts";
@@ -1111,6 +1116,18 @@ export async function startDaemon(options: DaemonOptions) {
   // A job blocked for no model to think waits for one, and goes on when one can (ADR-067 §3).
   const stopThinkerWatch = watchForThinker({ db, bus, runner, brain, now });
 
+  // A question about edits that were Oraknid's own, asked before ADR-072, is taken back (§6).
+  for (const { id } of db
+    .selectDistinct({ id: silkMirrorTable.jobId })
+    .from(silkMirrorTable)
+    .where(isNotNull(silkMirrorTable.pendingItemId))
+    .all()) {
+    try {
+      silk.healMirror(id);
+    } catch (error) {
+      console.error("silk mirror heal failed", error);
+    }
+  }
   // Hand edits to the mirror are noticed within 30 s.
   const mirrorTimer = setInterval(() => {
     for (const { id } of db.select({ id: jobsTable.id }).from(jobsTable).all()) {

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { WebPlan } from "@oraknid/contracts";
@@ -309,6 +309,66 @@ describe("a real conflict goes to the steward, and the checks decide (ADR-067 §
       ),
     ).toBe(true);
   }, 150_000);
+});
+
+describe("a merge judged on the project, not on Oraknid's state (ADR-072)", () => {
+  it("untracks a committed Silk mirror, so a clean-tree gate passes and nothing is asked", async () => {
+    // As the job of 2026-10-16 left it: the mirror committed on the branch, and a check of a
+    // clean tree that Oraknid's own rewrites of the mirror made fail at every merge.
+    const workspace = mkdtempSync(join(tmpdir(), "oraknid-mirror-"));
+    sh(workspace, "init", "-q", "-b", "master");
+    sh(workspace, "config", "user.email", "me@example.com");
+    sh(workspace, "config", "user.name", "Me");
+    for (const [name, content] of Object.entries({
+      "package.json": "{}\n",
+      ".gitignore":
+        "# Added by Oraknid: made by the project's tools, never tracked\nnode_modules/\ndist/\n",
+      ".oraknid/silk/issues.md":
+        "# Issues\n\n## Uncertain after a restart: Routing\n<!-- silk:01J9Z3K8W2Q4V6X8Y0A1B2C3D4 by:eye -->\n\n## Uncertain after a restart\nThese actions started.\n",
+      ".oraknid/silk/progress.md": "# Progress\n\n",
+    })) {
+      mkdirSync(dirname(join(workspace, name)), { recursive: true });
+      writeFileSync(join(workspace, name), content);
+    }
+    sh(workspace, "add", "-A", "-f");
+    sh(workspace, "commit", "-qm", "feat: recover: The job's work");
+    const clean = 'test -z "$(git status --porcelain --untracked-files=no)"';
+    const leg = scriptedLeg((t) =>
+      taskOf(t) === "Build the parser"
+        ? [{ run: "sleep 1" }, { write: "parser.js", content: "x\n" }, { say: "DONE" }]
+        : [{ run: "sleep 1" }, { write: "logo.svg", content: "<svg/>\n" }, { say: "DONE" }],
+    );
+    const plan: WebPlan = {
+      summary: "Two parts, each leaving a clean tree.",
+      tasks: [
+        task("a", "Build the parser", [clean, "test -f parser.js"], ["parser.js"]),
+        task("b", "Draw the logo", [clean, "test -f logo.svg"], ["logo.svg"]),
+      ],
+      jobVerify: [],
+    };
+    rig = await harness({ legs: [{ kind: "claude-code", name: "Claude A", leg }], plan });
+    await rig.api.legs.update({ id: rig.legIds["Claude A"] as string, maxSessions: 2 });
+    const id = await startJob(rig, workspace, "Two parts");
+    const done = await rig.ended(id, 60_000);
+    expect(done.state, done.blockedReason ?? "").toBe("completed");
+    // No steward, no recovery: the merges' gate passed.
+    expect(leg.log.some((t) => taskOf(t).startsWith("Recover:"))).toBe(false);
+    const branch = await jobBranch(rig, id);
+    expect(sh(workspace, "log", "--format=%s", branch)).toContain(
+      "chore: stop tracking Oraknid's own files",
+    );
+    const files = sh(workspace, "ls-tree", "-r", "--name-only", branch).split("\n");
+    expect(files.some((f) => f.startsWith(".oraknid/"))).toBe(false);
+    expect(files).toEqual(expect.arrayContaining(["parser.js", "logo.svg"]));
+    expect(sh(workspace, "show", `${branch}:.gitignore`).split("\n")).toContain(".oraknid/");
+    // The mirror is still there for the Legs, written as Silk has it, and nothing was asked.
+    const job = await rig.api.jobs.get({ id });
+    const mirror = join(job.worktree ?? workspace, ".oraknid", "silk", "issues.md");
+    expect(readFileSync(mirror, "utf8")).toContain("# Issues");
+    expect(rig.d.silk.checkMirror(id)).toEqual([]);
+    const asked = await rig.api.inbox.list({ state: "open" });
+    expect(asked.filter((i) => i.title.startsWith("Import my edits"))).toEqual([]);
+  }, 90_000);
 });
 
 describe("what is mine to decide, and what is recovered (ADR-067 §3)", () => {

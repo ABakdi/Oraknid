@@ -255,12 +255,17 @@ const TITLES: Record<string, string> = {
 
 const marker = (e: SilkEntry) =>
   `<!-- silk:${e.id} by:${typeof e.authoredBy === "string" ? e.authoredBy : `leg:${e.authoredBy.legId}`} -->`;
+/** Where an entry's body ends (ADR-072 §4): headings in a body stay part of it. */
+const endMarker = (id: string) => `<!-- /silk:${id} -->`;
+/** A title is one line in the mirror. */
+const oneLine = (s: string) => s.replace(/\s*\n\s*/g, " ").trim();
 
 /** The mirror's files, path → content (Silk → Storage and mirror). */
 export function renderMirror(jobTitle: string, entries: SilkEntry[]): Record<string, string> {
   const live = current(entries);
   const files: Record<string, string> = {};
-  const entryBlock = (e: SilkEntry) => `## ${e.title}\n${marker(e)}\n\n${e.body.trim()}\n`;
+  const entryBlock = (e: SilkEntry) =>
+    `## ${oneLine(e.title)}\n${marker(e)}\n\n${e.body.trim()}\n${endMarker(e.id)}\n`;
 
   for (const [kind, file] of Object.entries(FILES) as [SilkKind, string][]) {
     const list = live.filter((e) => e.kind === kind).sort((a, b) => a.createdAt - b.createdAt);
@@ -297,10 +302,23 @@ export interface MirrorEdit {
   body: string;
 }
 
+/** An entry as Oraknid writes it: its heading, its marker, its body, its end marker (ADR-072 §4). */
+const BLOCK = /^## ([^\n]*)\n<!-- silk:(\w+)[^>\n]*-->\n([\s\S]*?)\n<!-- \/silk:\2 -->[ \t]*$/gm;
+const MARK = /<!-- silk:(\w+)[^>]*-->/;
+
+/** A section's title (its heading line) and body (the rest, its marker taken out). */
+function section(s: string): { title: string; body: string } {
+  const [titleLine = "", ...rest] = s.split("\n");
+  return { title: titleLine.trim(), body: rest.join("\n").replace(MARK, "").trim() };
+}
+
 /**
  * What I changed by hand in one mirror file: sections whose text differs
  * from the entry they carry the marker of, and new sections without one.
- * Removed sections are not deletions: Silk only grows.
+ * Removed sections are not deletions: Silk only grows. A section that
+ * says what an entry of Oraknid's says, current or superseded, is not an
+ * edit: an older mirror put back (a reset, a checkout) is no edit of
+ * mine (ADR-072 §3).
  */
 export function parseMirrorEdits(file: string, text: string, entries: SilkEntry[]): MirrorEdit[] {
   const kind = (Object.entries(FILES).find(([, f]) => f === file)?.[0] ??
@@ -308,25 +326,64 @@ export function parseMirrorEdits(file: string, text: string, entries: SilkEntry[
   if (!kind) return [];
   const byId = new Map(entries.map((e) => [e.id, e]));
   const edits: MirrorEdit[] = [];
-  for (const section of text.split(/^## /m).slice(1)) {
-    const [titleLine = "", ...rest] = section.split("\n");
-    const title = titleLine.trim();
-    const m = rest.join("\n").match(/<!-- silk:(\w+)[^>]*-->/);
-    const body = rest
-      .join("\n")
-      .replace(/<!-- silk:[^>]*-->/, "")
-      .trim();
-    if (!m) {
-      if (title || body) edits.push({ supersedes: null, kind, title: title || "Untitled", body });
-      continue;
-    }
-    const original = byId.get(m[1] as string);
-    if (!original) continue;
-    if (original.title !== title || original.body.trim() !== body) {
+  const compare = (original: SilkEntry, title: string, body: string) => {
+    if (oneLine(original.title) !== title || original.body.trim() !== body)
       edits.push({ supersedes: original.id, kind: original.kind as SilkKind, title, body });
+  };
+  // Whole entries first, between their two markers: a heading in a body stays in it.
+  const loose: string[] = [];
+  let at = 0;
+  for (const m of text.matchAll(BLOCK)) {
+    loose.push(text.slice(at, m.index));
+    at = m.index + m[0].length;
+    const original = byId.get(m[2] as string);
+    if (original) compare(original, (m[1] as string).trim(), (m[3] as string).trim());
+  }
+  loose.push(text.slice(at));
+  // The rest by headings: my new sections, and entries without an end marker (a mirror
+  // written before ADR-072, or one I took it out of).
+  for (const part of loose) {
+    const sections = part.split(/^## /m).slice(1);
+    for (let i = 0; i < sections.length; i++) {
+      let s = sections[i] as string;
+      const id = MARK.exec(s)?.[1];
+      if (!id) {
+        const { title, body } = section(s);
+        if (title || body) edits.push({ supersedes: null, kind, title: title || "Untitled", body });
+        continue;
+      }
+      const original = byId.get(id);
+      if (!original) continue;
+      // Before ADR-072 a body's own `## ` headings cut its entry in two: the pieces that
+      // make its body again are put back together.
+      const want = original.body.trim();
+      let acc = s;
+      let j = i + 1;
+      while (
+        section(acc).body !== want &&
+        j < sections.length &&
+        !MARK.test(sections[j] as string)
+      ) {
+        const next = `${acc}## ${sections[j]}`;
+        if (!want.startsWith(section(next).body)) break;
+        acc = next;
+        j++;
+      }
+      if (section(acc).body === want) {
+        s = acc;
+        i = j - 1;
+      }
+      const { title, body } = section(s);
+      compare(original, title, body);
     }
   }
-  return edits;
+  const oraknids = entries.filter((e) => e.authoredBy !== "owner");
+  return edits.filter(
+    (ed) =>
+      !oraknids.some(
+        (e) => e.kind === ed.kind && oneLine(e.title) === ed.title && e.body.trim() === ed.body,
+      ),
+  );
 }
 
 // ── Handoffs ────────────────────────────────────────────────────────

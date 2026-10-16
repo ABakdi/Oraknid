@@ -21,9 +21,11 @@ import {
   foldersOf,
   foldersOfPaths,
   ignoreTemplate,
+  isOraknidPath,
   type LeftOutFile,
   missingIgnoreLines,
   NEVER_TRACKED,
+  ORAKNID_DIR,
   ownEcosystems,
   planCommit,
   regenerated,
@@ -50,6 +52,15 @@ export interface Git {
 }
 
 const excluded = (g: Git) => (g.exclude ?? []).map((p) => `:(exclude)${p}`);
+
+/**
+ * The pathspec that keeps Oraknid's own folder out of a `git add`: none
+ * where the folder is ignored whole (`.oraknid/` in the project's
+ * .gitignore, ADR-072), since git refuses a pathspec naming an ignored
+ * folder; else an exclusion.
+ */
+const notOraknid = (g: Git) =>
+  ok(g, ["check-ignore", "-q", "--no-index", ".oraknid"]) ? [] : [":(exclude).oraknid"];
 
 /**
  * Settings no repo may change for Oraknid's own git calls (Audit 1 → S1-01):
@@ -174,19 +185,25 @@ export function detectBranches(path: string): { release: string; work: string } 
 }
 
 /**
- * Oraknid's folder stays out of my repo, except the Silk mirror, which I
- * may commit (Jobs-and-Projects → Projects).
+ * Oraknid's folder stays out of my repo, its Silk mirror too: Oraknid's
+ * state is never part of a project's history (ADR-072 §1,
+ * Jobs-and-Projects → Projects).
  */
 export function excludeOraknid(g: Git, gitDir: string) {
   const file = join(gitDir, "info", "exclude");
   mkdirSync(dirname(file), { recursive: true });
-  const text = existsSync(file) ? readFileSync(file, "utf8") : "";
+  let text = existsSync(file) ? readFileSync(file, "utf8") : "";
+  // Before ADR-072 the mirror was let in ("!/.oraknid/silk/"): that exception goes.
+  const before = text.split("\n");
+  const kept = before.filter((l) => l !== "!/.oraknid/silk/" && l !== "/.oraknid/silk/*.tmp");
+  if (kept.length !== before.length) {
+    text = kept.join("\n");
+    writeFileSync(file, text);
+  }
   // Installed dependencies and caches are never checkpointed or committed by Oraknid, even
   // before the project has a .gitignore (a scaffold's first `pnpm install`, 2026-10-08).
   const lines = [
     "/.oraknid/*",
-    "!/.oraknid/silk/",
-    "/.oraknid/silk/*.tmp",
     "node_modules/",
     ".pnpm-store/",
     "__pycache__/",
@@ -368,7 +385,7 @@ async function snapshotTree(g: Git, tmpDir: string): Promise<string> {
             "-A",
             "--",
             ".",
-            ":(exclude).oraknid",
+            ...notOraknid(g),
             ...excluded(g),
             ...skip.map((p) => `:(exclude)${p}`),
           ],
@@ -644,9 +661,11 @@ export function ensureIgnoreFile(g: Git, extra: string[] = []): string | null {
   const text = readFileSync(file, "utf8");
   const missing = missingIgnoreLines(text, present);
   if (!missing.length) return null;
+  // What Oraknid writes there keeps its own state out too (ADR-072 §1).
+  const own = missingIgnoreLines(text, [`${ORAKNID_DIR}/`]).filter((l) => !missing.includes(l));
   appendFileSync(
     file,
-    `${text.endsWith("\n") || !text ? "" : "\n"}# Added by Oraknid: made by the project's tools\n${missing.join("\n")}\n`,
+    `${text.endsWith("\n") || !text ? "" : "\n"}# Added by Oraknid: made by the project's tools\n${missing.join("\n")}\n${own.length ? `# Added by Oraknid: its own state, never tracked\n${own.join("\n")}\n` : ""}`,
   );
   return `added ${missing.map((m) => `\`${m}\``).join(", ")} to .gitignore`;
 }
@@ -672,6 +691,10 @@ const readdirSafe = (dir: string) => {
 export async function stageAll(g: Git, o: StageOptions = {}): Promise<StageResult> {
   const ignore = o.ignoreFile ? ensureIgnoreFile(g) : null;
   await gitAsync(g, ["add", "-A", "--", ".", ...excluded(g)]);
+  // Oraknid's own folder is never staged, even where a branch still tracks it (ADR-072 §1): its
+  // untracking is a commit of its own, at the job's start.
+  if (hasHead(g) && git(g, ["ls-files", "--", ORAKNID_DIR]).trim())
+    git(g, ["reset", "-q", "HEAD", "--", ORAKNID_DIR]);
   const status = git(g, ["diff", "--cached", "--name-status", "-z", "--no-renames"]).split("\0");
   const files: CommitCandidate[] = [];
   for (let i = 0; i + 1 < status.length; i += 2) {
@@ -809,7 +832,10 @@ export async function stageAll(g: Git, o: StageOptions = {}): Promise<StageResul
       await gitAsync(g, ["add", "--", ".gitignore"]);
     }
     // The rest stays out of later commits through the repository's own exclude file.
-    const rest = left.filter((l) => !l.ignore || !o.ignoreFile).map((l) => `/${l.path}`);
+    // (Oraknid's own folder is excluded there already, whole.)
+    const rest = left
+      .filter((l) => (!l.ignore || !o.ignoreFile) && l.why !== "oraknid")
+      .map((l) => `/${l.path}`);
     if (rest.length) {
       const file = join(gitDirOf(g), "info", "exclude");
       mkdirSync(dirname(file), { recursive: true });
@@ -871,6 +897,7 @@ export function leftOutSaid(left: LeftOutFile[], max = 8): string {
     artifact: "build artifacts or archives",
     secret: "secrets",
     judged: "judged not to belong",
+    oraknid: "Oraknid's own state",
   };
   return [...by.entries()]
     .map(([why, list]) => {
@@ -1370,6 +1397,56 @@ export async function untrackGenerated(
     folders: found.map((f) => ({ folder: f.folder, files: f.files })),
     commit: git(g, ["rev-parse", "HEAD"]).trim(),
   };
+}
+
+/**
+ * Oraknid's own folder, untracked on the branch checked out at `g` where
+ * a branch tracks it (ADR-072 §1): `git rm -r --cached` (every file stays
+ * on disk, Legs still read the mirror there), `.oraknid/` added to
+ * .gitignore and to the repository's exclude file, and one commit,
+ * "chore: stop tracking Oraknid's own files". Null when there was nothing
+ * to do.
+ */
+export async function untrackOraknid(g: Git): Promise<{ files: number; commit: string } | null> {
+  excludeOraknid(g, gitDirOf(g));
+  if (!hasHead(g)) return null;
+  const tracked = git(g, ["ls-files", "-z"])
+    .split("\0")
+    .filter((p) => p && isOraknidPath(p));
+  if (!tracked.length) return null;
+  const folders = [
+    ...new Set(
+      tracked.map((p) => {
+        const segs = p.split("/");
+        return segs.slice(0, segs.indexOf(ORAKNID_DIR) + 1).join("/");
+      }),
+    ),
+  ];
+  // Only these paths change in the index; what Oraknid wrote there stays on disk as it is.
+  await gitRunWithPaths(g, ["rm", "-r", "-q", "-f", "--cached", "--ignore-unmatch"], folders);
+  const file = join(g.cwd, ".gitignore");
+  const text = existsSync(file) ? readFileSync(file, "utf8") : "";
+  const missing = missingIgnoreLines(text, [`${ORAKNID_DIR}/`]);
+  if (missing.length)
+    writeFileSync(
+      file,
+      `${text}${text && !text.endsWith("\n") ? "\n" : ""}# Added by Oraknid: its own state (the Silk mirror, trash, worktrees), never tracked\n${missing.join("\n")}\n`,
+    );
+  git(g, ["add", "--", ".gitignore"]);
+  await gitAsync(
+    g,
+    [
+      "commit",
+      "-q",
+      "--no-verify",
+      "-m",
+      "chore: stop tracking Oraknid's own files",
+      "-m",
+      `Untracked (the files stay on disk): ${folders.map((f) => `${f}/`).join(", ")} (${tracked.length} files), Oraknid's own state, which is never part of the project's history.`,
+    ],
+    authorEnv(g),
+  );
+  return { files: tracked.length, commit: git(g, ["rev-parse", "HEAD"]).trim() };
 }
 
 /** Takes back the merge just made (its checks failed on the merged tree). */

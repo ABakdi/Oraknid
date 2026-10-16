@@ -82,6 +82,7 @@ import {
   shadowRepo,
   undoMerge,
   untrackGenerated,
+  untrackOraknid,
   worktreeGit,
 } from "../workspace/git.ts";
 import type { GitHub } from "../workspace/github.ts";
@@ -562,18 +563,46 @@ export function eyeProgram(d: EyeDeps): JobProgram {
 }
 
 /**
+ * A branch that tracks Oraknid's own folder stops (ADR-072 §1): one
+ * commit, "chore: stop tracking Oraknid's own files", the files left on
+ * disk, said in an event; the mirror then written again as Silk has it.
+ */
+async function stopTrackingOraknid(d: EyeDeps, jobId: string, g: Git, where: string) {
+  try {
+    const done = await untrackOraknid(g);
+    if (!done) return;
+    d.bus.publish({
+      type: "job.untracked-oraknid",
+      topic: `job:${jobId}`,
+      jobId,
+      payload: { files: done.files, commit: done.commit, where },
+    });
+    d.silk.refreshMirror(jobId);
+  } catch (error) {
+    d.bus.publish({
+      type: "job.untracked-oraknid",
+      topic: `job:${jobId}`,
+      jobId,
+      payload: { error: error instanceof Error ? error.message : String(error), where },
+    });
+  }
+}
+
+/**
  * Generated folders a repository tracks, untracked (ADR-067 §1): in each
  * repo of the tree, a "chore: stop tracking generated files" commit,
  * recorded in Silk; never a file of the work tree touched. Never stops
  * the work: what fails is said and left.
  */
 async function keepClean(d: EyeDeps, jobId: string, tree: WorkTree, where: string) {
-  if (!readSetting(d.db, HYGIENE, z.boolean(), true)) return;
   const gits = tree.single
     ? [tree.single]
     : tree instanceof MultiTree
       ? tree.all().map((x) => x.g)
       : [];
+  // Oraknid's own state first, whatever the hygiene setting: it is never the project's (ADR-072 §1).
+  for (const g of gits) await stopTrackingOraknid(d, jobId, g, where);
+  if (!readSetting(d.db, HYGIENE, z.boolean(), true)) return;
   for (const g of gits) {
     try {
       const done = await untrackGenerated(g);
@@ -911,7 +940,7 @@ function mergeSteward(
   d: EyeDeps,
   g: Git,
   branch: string,
-  task: { title: string; instructions: string },
+  task: { title: string; instructions: string; jobId: string },
 ) {
   const run = (args: string[]) => {
     try {
@@ -931,6 +960,8 @@ function mergeSteward(
   const putBack = (before: string) => {
     if (merging()) run(["merge", "--abort"]);
     if (before) run(["reset", "-q", "--hard", before]);
+    // What git put back is no edit of mine: the mirror is Silk's again, unasked (ADR-072 §3).
+    d.silk.refreshMirror(task.jobId);
   };
   const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}\n… (cut)` : s);
   return {
@@ -1243,6 +1274,8 @@ async function runTask(
         `merge: ${task.title}`,
         readSetting(d.db, HYGIENE, z.boolean(), true),
       );
+      // A merge, like a reset, writes no edit of mine to the mirror (ADR-072 §3).
+      d.silk.refreshMirror(job.id);
       if (!m.ok) return { ok: false, why: mergeFailureSaid(m), kind: m.kind };
       // With the runners the task's own checks had: on the job's servers, Oraknid's own
       // GitHub checks, the policy; stopped with the job (bug 2).
@@ -1250,6 +1283,7 @@ async function runTask(
       const failed = report.failures[0];
       if (failed) {
         m.undo();
+        d.silk.refreshMirror(job.id);
         return {
           ok: false,
           why: `\`${failed.command}\` failed once merged with the other work`,

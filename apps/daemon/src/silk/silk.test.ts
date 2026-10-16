@@ -13,9 +13,11 @@ import { join } from "node:path";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { RouterClient } from "@orpc/server";
+import { and, eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Router } from "../api/router.ts";
 import { type Daemon, startDaemon } from "../daemon.ts";
+import { silkMirror } from "../db/schema.ts";
 import { resolvePaths } from "../paths.ts";
 import { fakeOs } from "../testing/fake-os.ts";
 import { seedJob } from "../testing/fixtures.ts";
@@ -144,6 +146,159 @@ describe("Silk", () => {
     await api.inbox.answer({ id: question?.id as string, answer: DISCARD });
     expect(readFileSync(file, "utf8")).not.toContain("Scribble");
     expect((await api.silk.list({ jobId })).map((x) => x.title)).toEqual(["Flaky test"]);
+  });
+});
+
+/**
+ * The loop of 2026-10-16 (ADR-072): the mirror was committed on the job's
+ * branch, a merge whose checks failed was taken back with `git reset
+ * --hard`, git put the older mirror back, and its own entries were offered
+ * to me as my edits, seven times.
+ */
+describe("Oraknid's own state is not my edit (ADR-072)", () => {
+  const git = (cwd: string, ...a: string[]) => {
+    const r = spawnSync(
+      "git",
+      ["-c", "user.email=o@o", "-c", "user.name=o", "-c", "core.fsmonitor=false", ...a],
+      { cwd, encoding: "utf8" },
+    );
+    if (r.status !== 0) throw new Error(`git ${a.join(" ")}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  /** The mirror as the version before ADR-072 wrote it: no end markers. */
+  const asBefore = (mirror: string) => {
+    for (const f of ["issues.md", "progress.md", "facts.md"]) {
+      const p = join(mirror, f);
+      writeFileSync(p, readFileSync(p, "utf8").replace(/<!-- \/silk:\w+ -->\n/g, ""));
+    }
+  };
+  /** Entries like the job's: bodies that start with a heading of their own. */
+  const entriesOfTheJob = (d: Daemon, jobId: string) => {
+    const a = d.silk.add({
+      jobId,
+      kind: "issue",
+      title: "Uncertain after a restart: Construct the main application routing and viewports",
+      body: "## Uncertain after a restart\nThese actions started and their result was never seen: look whether they happened before doing them again.\n- Bash `pnpm build`",
+      authoredBy: "eye",
+    });
+    d.silk.add({
+      jobId,
+      kind: "progress",
+      title: "Routing",
+      body: "Started.",
+      authoredBy: "eye",
+    });
+    return a;
+  };
+  const openQuestions = async (api: Awaited<ReturnType<typeof start>>["api"]) =>
+    (await api.inbox.list({ state: "open" })).filter((i) => i.title.startsWith("Import my edits"));
+
+  it("asks nothing when git puts back a mirror Oraknid wrote, and writes Silk's again", async () => {
+    const { d, api, jobId, workspace, mirror } = await start();
+    git(workspace, "init", "-q", "-b", "main");
+    entriesOfTheJob(d, jobId);
+    // Committed, as the version before ADR-072 did ("feat: recover: The job's work").
+    git(workspace, "add", "-A", "-f", ".");
+    git(workspace, "commit", "-qm", "feat: recover: The job's work");
+    const before = git(workspace, "rev-parse", "HEAD");
+    // Silk moves on: the mirror is rewritten, the tree is "dirty" with Oraknid's own files.
+    const progress = d.silk.current(jobId).find((e) => e.title === "Routing");
+    d.silk.add({
+      jobId,
+      kind: "progress",
+      title: "Routing",
+      body: "Done.",
+      authoredBy: "eye",
+      supersedes: progress?.id ?? null,
+    });
+    d.silk.add({
+      jobId,
+      kind: "issue",
+      title: "Reconciled after a restart: Construct the main application routing and viewports",
+      body: "## Reconciled after a restart\nOraknid looked at what the last attempt left uncertain.\n- Bash `pnpm build`: it happened",
+      authoredBy: "eye",
+    });
+    // The steward's merge is taken back.
+    git(workspace, "reset", "-q", "--hard", before);
+    expect(readFileSync(join(mirror, "progress.md"), "utf8")).toContain("Started.");
+    expect(d.silk.checkMirror(jobId)).toEqual([]);
+    expect(await openQuestions(api)).toEqual([]);
+    // Written again as Silk has it.
+    expect(readFileSync(join(mirror, "progress.md"), "utf8")).toContain("Done.");
+    expect(readFileSync(join(mirror, "issues.md"), "utf8")).toContain("Reconciled after a restart");
+  });
+
+  it("asks nothing for a mirror written before ADR-072, its entries cut at their headings", async () => {
+    const { d, api, jobId, workspace, mirror } = await start();
+    git(workspace, "init", "-q", "-b", "main");
+    entriesOfTheJob(d, jobId);
+    asBefore(mirror);
+    git(workspace, "add", "-A", "-f", ".");
+    git(workspace, "commit", "-qm", "feat: recover: The job's work");
+    const before = git(workspace, "rev-parse", "HEAD");
+    d.silk.add({ jobId, kind: "fact", title: "Node 24", body: "Pinned.", authoredBy: "eye" });
+    // No version of the old one was remembered: a job from before the migration.
+    d.db.update(silkMirror).set({ written: [] }).run();
+    git(workspace, "reset", "-q", "--hard", before);
+    d.silk.refreshMirror(jobId);
+    expect(await openQuestions(api)).toEqual([]);
+    expect(readFileSync(join(mirror, "issues.md"), "utf8")).toContain("<!-- /silk:");
+    expect(readFileSync(join(mirror, "facts.md"), "utf8")).toContain("Node 24");
+  });
+
+  it("still asks about a real edit of mine, once, and never again once answered", async () => {
+    const { d, api, jobId, mirror } = await start();
+    entriesOfTheJob(d, jobId);
+    const file = join(mirror, "issues.md");
+    const mine = `${readFileSync(file, "utf8")}\n## Flaky login test\nRetries hide it.\n`;
+    writeFileSync(file, mine);
+    expect(d.silk.checkMirror(jobId)).toEqual(["issues.md"]);
+    expect(d.silk.checkMirror(jobId)).toEqual([]);
+    const [q] = await openQuestions(api);
+    expect(q?.detail).toContain("New: **Flaky login test**");
+    expect(q?.detail).not.toContain("Uncertain after a restart");
+    await api.inbox.answer({ id: q?.id as string, answer: DISCARD });
+    expect(readFileSync(file, "utf8")).not.toContain("Flaky login test");
+    // The same edits again (a reset put them back, a sync tool, an editor's undo): not asked again.
+    writeFileSync(file, mine);
+    expect(d.silk.checkMirror(jobId)).toEqual([]);
+    expect(await openQuestions(api)).toEqual([]);
+    expect(readFileSync(file, "utf8")).not.toContain("Flaky login test");
+    // Other edits are asked about.
+    writeFileSync(file, `${mine}\n## Another\nReal.\n`);
+    expect(d.silk.checkMirror(jobId)).toEqual(["issues.md"]);
+  });
+
+  it("takes back, on start, a question whose edits were all Oraknid's own", async () => {
+    const { d, api, jobId, mirror } = await start();
+    entriesOfTheJob(d, jobId);
+    asBefore(mirror);
+    // The question the version before ADR-072 asked about that file.
+    const itemId = d.inbox.open({
+      kind: "question",
+      jobId,
+      raisedBy: "eye",
+      title: "Import my edits to Silk (issues.md)?",
+      detail:
+        "- Changed: **Uncertain after a restart: Construct the main application routing and viewports**\n- New: **Uncertain after a restart**",
+      options: [IMPORT, DISCARD],
+      defaultOption: null,
+    });
+    d.db
+      .update(silkMirror)
+      .set({ pendingItemId: itemId, written: [] })
+      .where(and(eq(silkMirror.jobId, jobId), eq(silkMirror.file, "issues.md")))
+      .run();
+    expect(d.silk.healMirror(jobId)).toEqual(["issues.md"]);
+    expect(await openQuestions(api)).toEqual([]);
+    expect(d.inbox.get(itemId)?.state).toBe("withdrawn");
+    expect(readFileSync(join(mirror, "issues.md"), "utf8")).toContain("<!-- /silk:");
+    // A real edit's question stays.
+    const file = join(mirror, "issues.md");
+    writeFileSync(file, `${readFileSync(file, "utf8")}\n## Mine\nA real one.\n`);
+    expect(d.silk.checkMirror(jobId)).toEqual(["issues.md"]);
+    expect(d.silk.healMirror(jobId)).toEqual([]);
+    expect(await openQuestions(api)).toHaveLength(1);
   });
 });
 

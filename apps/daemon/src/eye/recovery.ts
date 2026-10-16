@@ -147,6 +147,7 @@ ${
 - Files the project's tools make (installed dependencies, build output, caches) aren't work: untrack them (\`git rm -r --cached <folder>\`, the files stay on disk), add them to .gitignore, or restore them (\`git checkout -- <path>\`).
 - A merge in progress (conflict markers in files): resolve each file so it does what both sides meant, never by dropping one side's work; remove every conflict marker and \`git add\` the file. A lockfile in conflict is never merged by hand: take either side, then let its package manager write it again (\`pnpm install --lockfile-only\`, \`npm install --package-lock-only\`, \`yarn install --mode update-lockfile\`, \`cargo generate-lockfile\`, \`uv lock\`, \`poetry lock --no-update\`, \`bundle lock\`, \`go mod tidy\`) and \`git add\` it. Oraknid commits the merge and runs the task's checks after you: only a merge whose checks pass is kept.
 - Don't switch branches, start or abort a merge, rebase, push or reset the branch: Oraknid does those.
+- \`.oraknid/\` is Oraknid's own state (its memory, mirrored in \`.oraknid/silk/\`, its trash, its worktrees), never part of the project: never stage, commit, edit or delete anything in it. A check of a clean tree (\`git status --porcelain\`) doesn't count it; it is ignored.
 - Say plainly what was wrong and what you changed. If you couldn't fix it, end with one line "FOR THE OWNER: " and the one thing the owner must decide or do.`;
 }
 

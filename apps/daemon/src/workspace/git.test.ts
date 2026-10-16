@@ -63,9 +63,10 @@ describe("worktrees", () => {
     expect(wt.branch).toBe("oraknid/add-login-b2c3d4");
     expect(existsSync(join(wt.path, "a.txt"))).toBe(true);
     expect(sh(r, "branch", "--list", "dev")).toContain("dev");
-    expect(readFileSync(join(r, ".git", "info", "exclude"), "utf8")).toContain(
-      "/.oraknid/*\n!/.oraknid/silk/",
-    );
+    const exclude = readFileSync(join(r, ".git", "info", "exclude"), "utf8");
+    // The Silk mirror too: Oraknid's state is never in the project's history (ADR-072 §1).
+    expect(exclude.split("\n")).toContain("/.oraknid/*");
+    expect(exclude).not.toContain("!/.oraknid/silk/");
     expect(sh(r, "status", "--porcelain")).toBe("");
   });
 

@@ -633,6 +633,15 @@ export const silkMirror = sqliteTable(
     hash: text("hash").notNull(),
     /** The open "import my edits?" question, if one was asked. */
     pendingItemId: text("pending_item_id"),
+    /**
+     * Every version of the file Oraknid wrote, newest last, the last 50
+     * (hashes): one put back by git is no edit of mine (ADR-072 §3).
+     */
+    written: json<string[]>("written").notNull().default([]),
+    /** The sets of edits I answered (hashes), the last 50: never asked again (ADR-072 §5). */
+    answered: json<string[]>("answered").notNull().default([]),
+    /** The set of edits the open question is about (a hash). */
+    pendingEdits: text("pending_edits"),
   },
   (t) => [primaryKey({ columns: [t.jobId, t.file] })],
 );
