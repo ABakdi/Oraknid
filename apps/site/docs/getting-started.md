@@ -35,6 +35,8 @@ Then it builds Oraknid in `~/.local/share/oraknid/app`, puts the `oraknid` comma
 | runit | a service folder running as you | `sudo sv down /var/service/oraknid` | `sudo rm /var/service/oraknid` |
 | anything else | an autostart entry for your desktop session | `oraknid stop` | `rm ~/.config/autostart/oraknid.desktop` |
 
+On a desktop whose systemd runs `graphical-session.target`, the systemd service starts with your desktop session, once its keychain is up; elsewhere it starts at boot. Oraknid never starts your keychain itself: right after a reboot, things that need a secret say "Waiting for the keychain to unlock" until you log in, and the web UI works meanwhile. If Oraknid ever stops answering pages for two minutes, it restarts itself.
+
 OpenRC and runit services are system services that drop to your user, so writing them asks for `sudo` once. At the end the script prints the exact commands for your system, the address to open, and a pairing code.
 
 Options go after `sh -s --`:

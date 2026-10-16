@@ -9,7 +9,7 @@ import { join } from "node:path";
 import nodemailer, { type SendMailOptions } from "nodemailer";
 import { describe, expect, it } from "vitest";
 import { createEmailChannel } from "./email.ts";
-import { createDesktopChannel } from "./linux/desktop.ts";
+import { createDesktopChannel, NotifyWaiters } from "./linux/desktop.ts";
 import { createWebPushChannel, generateVapidKeys, type PushSubscription } from "./web-push.ts";
 
 describe("desktop channel", () => {
@@ -65,6 +65,66 @@ describe("desktop channel", () => {
     });
     expect(r.delivered).toBe(0);
     expect(r.problems[0]).toMatch(/notify-send failed/);
+  });
+});
+
+describe("desktop notifications waiting for a click (ADR-070)", () => {
+  /** A notify-send that waits as for a click that never comes, and writes its pid. */
+  function waitingNotifySend() {
+    const dir = mkdtempSync(join(tmpdir(), "oraknid-notify-wait-"));
+    const script = join(dir, "notify-send");
+    writeFileSync(script, `#!/bin/sh\necho $$ >> ${join(dir, "pids")}\nexec sleep 1000\n`);
+    chmodSync(script, 0o755);
+    const pids = () =>
+      readFileSync(join(dir, "pids"), "utf8").trim().split("\n").map(Number).filter(Boolean);
+    return { script, pids };
+  }
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const settle = () => new Promise((r) => setTimeout(r, 400));
+  const n = (tag: string) => ({
+    title: "t",
+    body: "b",
+    url: "http://127.0.0.1:7417/inbox",
+    urgency: "normal" as const,
+    tag,
+  });
+
+  it("keeps a few at most: the oldest ends for a new one, and one of the same tag replaces", async () => {
+    const f = waitingNotifySend();
+    const waiters = new NotifyWaiters({ max: 2 });
+    const ch = createDesktopChannel({ notifySend: f.script, waiters });
+    for (const tag of ["a", "b", "c"]) expect((await ch.send(n(tag))).delivered).toBe(1);
+    await settle();
+    expect(waiters.count()).toBe(2);
+    const [a, b, c] = f.pids();
+    expect([a, b, c].map((p) => alive(p as number))).toEqual([false, true, true]);
+    // Same tag: the waiting one for "b" goes, the new one waits.
+    await ch.send(n("b"));
+    await settle();
+    const d = f.pids()[3] as number;
+    expect([b, c, d].map((p) => alive(p as number))).toEqual([false, true, true]);
+    expect(waiters.count()).toBe(2);
+    waiters.stopAll();
+    await settle();
+    expect(f.pids().some(alive)).toBe(false);
+    expect(waiters.count()).toBe(0);
+  });
+
+  it("waits for a while at most, then is ended and reaped", async () => {
+    const f = waitingNotifySend();
+    const waiters = new NotifyWaiters({ lifetimeMs: 500 });
+    await createDesktopChannel({ notifySend: f.script, waiters }).send(n("x"));
+    expect(waiters.count()).toBe(1);
+    await settle();
+    expect(waiters.count()).toBe(0);
+    expect(alive(f.pids()[0] as number)).toBe(false);
   });
 });
 

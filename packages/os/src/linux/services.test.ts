@@ -104,6 +104,8 @@ describe("OpenRC", () => {
     expect(r.stdout.trim().split("\n")).toEqual([
       "HOME=/home/me",
       "USER=me",
+      "UV_THREADPOOL_SIZE=16",
+      "ORAKNID_SUPERVISED=1",
       "PATH=/usr/local/bin:/usr/bin",
       "ORAKNID_DATA_DIR=/home/me/my data",
       command.execPath,

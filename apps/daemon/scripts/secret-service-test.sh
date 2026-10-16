@@ -15,6 +15,8 @@ env -i PATH="$PATH" HOME="$tmp/home" TMPDIR="${TMPDIR:-/tmp}" \
 	XDG_DATA_HOME="$tmp/data" XDG_RUNTIME_DIR="$tmp/run" XDG_CONFIG_HOME="$tmp/home/.config" \
 	ORAKNID_SECRET_SERVICE_TEST=1 \
 	dbus-run-session -- sh -c '
+		# First with no keyring running: Oraknid must not start one (ADR-070).
+		ORAKNID_SECRET_SERVICE_TEST=absent npx vitest run src/os/secrets.secret-service.test.ts
 		printf throwaway | gnome-keyring-daemon --unlock --components=secrets >/dev/null
 		exec npx vitest run src/os/secrets.secret-service.test.ts
 	'

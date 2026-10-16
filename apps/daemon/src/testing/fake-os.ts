@@ -15,6 +15,8 @@ export function fakeOs(
     memoryUsed?: () => number;
     /** One keychain for several daemons, as a desktop has (Audit 2, S2-23). */
     keychainServices?: Map<string, Map<string, string>>;
+    /** The keychain isn't there yet (the desktop not up, ADR-070): `setKeychain` brings it. */
+    keychainWaiting?: boolean;
   } = {},
 ) {
   // Entries by service, then by name, like the Secret Service's attributes.
@@ -34,7 +36,8 @@ export function fakeOs(
       return typeof v === "function" ? v.bind(m) : v;
     },
   });
-  const keychainUp = opts.keychain ?? false;
+  let keychainUp = opts.keychain ?? false;
+  const keychainWaiting = opts.keychainWaiting ?? false;
   const sent: { channel: string; n: Notification }[] = [];
 
   let state: InhibitorState = { held: false, mode: null, why: null, problem: null };
@@ -69,9 +72,17 @@ export function fakeOs(
     },
   });
 
-  const keychainStatus: SecretStoreStatus = keychainUp
-    ? { kind: "keychain", available: true, detail: "fake keychain" }
-    : { kind: "keychain", available: false, detail: "No keychain in tests." };
+  const keychainStatus = (): SecretStoreStatus & { waiting?: boolean } =>
+    keychainUp
+      ? { kind: "keychain", available: true, detail: "fake keychain" }
+      : keychainWaiting
+        ? {
+            kind: "keychain",
+            available: false,
+            detail: "Waiting for the keychain to unlock.",
+            waiting: true,
+          }
+        : { kind: "keychain", available: false, detail: "No keychain in tests." };
 
   const os: Partial<OsDeps> = {
     sandbox: {
@@ -126,8 +137,9 @@ export function fakeOs(
   function fakeKeychain(service: string): KeychainStore {
     return {
       service,
-      probe: async () => keychainStatus,
-      status: () => keychainStatus,
+      probe: async () => keychainStatus(),
+      status: () => keychainStatus(),
+      close() {},
       names: async () => [...entries(service).keys()],
       scoped(other) {
         inUse = other;
@@ -140,5 +152,8 @@ export function fakeOs(
       delete: async (k) => entries(service).delete(k),
     };
   }
-  return { os, inhibitor, sent, store, keychainServices: services };
+  const setKeychain = (up: boolean) => {
+    keychainUp = up;
+  };
+  return { os, inhibitor, sent, store, keychainServices: services, setKeychain };
 }

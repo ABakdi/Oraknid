@@ -8,7 +8,7 @@
     "oraknid": "./dist/cli.mjs"
   },
   "scripts": {
-    "dev": "tsx src/cli.ts run",
+    "dev": "tsx src/main.ts run",
     "build": "tsdown",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run --exclude '**/*.perf.test.ts'",
