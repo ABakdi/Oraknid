@@ -3,6 +3,14 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## 0.10.1 — 2026-10-16 (pre-release)
+
+Oraknid's state is not your edit ([ADR-072](docs/04-Decisions/ADR-072-Oraknids-State-Is-Not-My-Edit.md)).
+
+- **Fixed: "Import my edits to Silk?" asked again and again** about edits you never made. Oraknid's own folder (`.oraknid/`) was committed into the job's branch, so the tree was never clean, a merge's check failed, undoing the merge put old notes back, and Oraknid took them for your edits. Now `.oraknid/` is never committed: it is ignored, and a branch that tracks it stops tracking it (the files stay) when its job starts again.
+- **A note put back to a version Oraknid wrote is rewritten quietly**, and a question you answered is never asked again. Open questions about Oraknid's own notes are withdrawn when Oraknid starts.
+- **Silk entries containing headings are read back whole** instead of as two entries.
+
 ## 0.10.0 — 2026-10-16 (pre-release)
 
 A site is down only when it is down ([ADR-071](docs/04-Decisions/ADR-071-A-Site-Is-Down-Only-When-It-Is-Down.md)): no more floods of "Down" and "Up again" when this computer's connection to a server is losing requests.
