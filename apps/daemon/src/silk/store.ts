@@ -3,7 +3,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { dirname, join } from "node:path";
 import type { Actor, SilkByJob, SilkEntry, SilkKind } from "@oraknid/contracts";
 import { choiceQuestion } from "@oraknid/contracts";
-import { current, parseMirrorEdits, renderMirror } from "@oraknid/core";
+import { current, type MirrorEdit, parseMirrorEdits, renderMirror } from "@oraknid/core";
 import { and, asc, desc, eq, lt } from "drizzle-orm";
 import { cutShort, SILK_BODY_MAX } from "../db/caps.ts";
 import type { Db } from "../db/open.ts";
@@ -29,11 +29,27 @@ export const DISCARD = "Discard them";
 
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 
+/** How many versions written, and sets of edits answered, are remembered per file (ADR-072). */
+export const MIRROR_HISTORY = 50;
+
+/** `list` with `value` last (once), the last MIRROR_HISTORY kept. */
+const lastOf = (list: readonly string[], value: string) =>
+  [...list.filter((x) => x !== value), value].slice(-MIRROR_HISTORY);
+
+/** One set of edits, whatever their order: what an answer is remembered by (ADR-072 §5). */
+const editsHash = (edits: MirrorEdit[]) =>
+  hash(
+    JSON.stringify(
+      edits.map((e) => JSON.stringify([e.supersedes, e.kind, e.title, e.body])).sort(),
+    ),
+  );
+
 /**
  * Silk (docs/01-Specification/Silk.md): the database is the source of
  * truth; after every change the mirror under `.oraknid/silk/` is
  * rewritten, and my hand edits are offered for import, never applied
- * silently and never overwritten silently (ADR-007).
+ * silently and never overwritten silently (ADR-007). What Oraknid wrote
+ * itself, put back by git, is never offered as mine (ADR-072).
  */
 export class SilkStore {
   constructor(
@@ -166,7 +182,7 @@ export class SilkStore {
     const dir = this.mirrorDir(jobId);
     if (!dir || !existsSync(dirname(dirname(dir)))) return;
     if (linked(dir)) return;
-    if (opts.check ?? true) this.checkMirror(jobId);
+    if (opts.check ?? true) this.#check(jobId, false);
     const job = this.db.select({ title: jobs.title }).from(jobs).where(eq(jobs.id, jobId)).get();
     const files = renderMirror(job?.title ?? jobId, this.all(jobId));
     for (const [file, content] of Object.entries(files)) {
@@ -176,36 +192,107 @@ export class SilkStore {
       mkdirSync(dirname(path), { recursive: true });
       // A Leg can write here: a link it planted is never followed (Audit 1 → S1-06).
       if (linked(dirname(path)) || linked(path)) continue;
+      const h = hash(content);
       // Atomic: a crash never leaves half a file (ADR-007).
       writeFileSync(`${path}.tmp`, content);
       renameSync(`${path}.tmp`, path);
+      // Every version written is remembered: one git puts back is Oraknid's, not mine (ADR-072 §3).
+      const written = lastOf(known?.written ?? [], h);
       this.db
         .insert(silkMirror)
-        .values({ jobId, file, hash: hash(content) })
+        .values({ jobId, file, hash: h, written })
         .onConflictDoUpdate({
           target: [silkMirror.jobId, silkMirror.file],
-          set: { hash: hash(content) },
+          set: { hash: h, written },
         })
         .run();
     }
   }
 
-  /** Looks for hand edits; asks me once per edited file. Returns the files asked about. */
+  /**
+   * After a git operation Oraknid did in the job's folder (a reset, a
+   * merge, a checkout, untracking): what git put in the mirror is Oraknid's
+   * own, so the mirror is written again without asking (ADR-072 §3). An
+   * edit that is no version of Oraknid's and says what no entry of
+   * Oraknid's says can't have come from git (the mirror is out of git):
+   * it is still asked about, once.
+   */
+  refreshMirror(jobId: string) {
+    try {
+      this.writeMirror(jobId);
+    } catch (error) {
+      console.error("silk mirror refresh failed", error);
+    }
+  }
+
+  /** Looks for hand edits; asks me once per set of edits. Returns the files asked about. */
   checkMirror(jobId: string): string[] {
+    return this.#check(jobId, true);
+  }
+
+  /**
+   * Heals the mirror on start (ADR-072 §6): an open import question whose
+   * edits are all Oraknid's own, or that I answered already, is
+   * withdrawn and the file written again; one whose question is gone is
+   * let go.
+   */
+  healMirror(jobId: string): string[] {
+    const dir = this.mirrorDir(jobId);
+    const healed: string[] = [];
+    const rows = this.db.select().from(silkMirror).where(eq(silkMirror.jobId, jobId)).all();
+    for (const t of rows) {
+      if (!t.pendingItemId) continue;
+      const item = this.inbox.get(t.pendingItemId);
+      const path = dir ? join(dir, t.file) : null;
+      const text =
+        path && existsSync(path) && !linked(path) && !linked(dirname(path))
+          ? readFileSync(path, "utf8")
+          : null;
+      const edits = text === null ? [] : parseMirrorEdits(t.file, text, this.all(jobId));
+      const settled =
+        item?.state !== "open" ||
+        text === null ||
+        t.written.includes(hash(text)) ||
+        edits.length === 0 ||
+        t.answered.includes(editsHash(edits));
+      if (!settled) continue;
+      if (item?.state === "open") this.inbox.withdraw(item.id);
+      this.db
+        .update(silkMirror)
+        .set({ pendingItemId: null, pendingEdits: null, hash: "" })
+        .where(and(eq(silkMirror.jobId, jobId), eq(silkMirror.file, t.file)))
+        .run();
+      healed.push(t.file);
+    }
+    if (healed.length) this.writeMirror(jobId, { check: false });
+    return healed;
+  }
+
+  #check(jobId: string, write: boolean): string[] {
     const dir = this.mirrorDir(jobId);
     if (!dir) return [];
     const asked: string[] = [];
+    let settled = false;
     const tracked = this.db.select().from(silkMirror).where(eq(silkMirror.jobId, jobId)).all();
     for (const t of tracked) {
       if (t.pendingItemId) continue;
       const path = join(dir, t.file);
       if (!existsSync(path) || linked(dir) || linked(dirname(path)) || linked(path)) continue;
       const text = readFileSync(path, "utf8");
-      if (hash(text) === t.hash) continue;
+      const h = hash(text);
+      if (h === t.hash) continue;
+      // A version Oraknid wrote, put back (by git): no edit of mine, written again (ADR-072 §3).
+      if (t.written.includes(h)) {
+        settled = true;
+        continue;
+      }
       const edits = parseMirrorEdits(t.file, text, this.all(jobId));
-      if (edits.length === 0) {
-        // A change with nothing to import (e.g. a removed section): Silk only grows.
+      // Nothing to import (a removed section: Silk only grows; Oraknid's own entries), or edits
+      // I answered already (ADR-072 §5): written again, unasked.
+      const eh = editsHash(edits);
+      if (edits.length === 0 || t.answered.includes(eh)) {
         this.#setHash(jobId, t.file, "");
+        settled = true;
         continue;
       }
       const itemId = this.inbox.open({
@@ -236,11 +323,12 @@ export class SilkStore {
       });
       this.db
         .update(silkMirror)
-        .set({ pendingItemId: itemId })
+        .set({ pendingItemId: itemId, pendingEdits: eh })
         .where(and(eq(silkMirror.jobId, jobId), eq(silkMirror.file, t.file)))
         .run();
       asked.push(t.file);
     }
+    if (settled && write) this.writeMirror(jobId, { check: false });
     return asked;
   }
 
@@ -249,14 +337,18 @@ export class SilkStore {
     const t = this.db.select().from(silkMirror).where(eq(silkMirror.pendingItemId, itemId)).get();
     if (!t) return false;
     let imported = 0;
+    const dir = this.mirrorDir(t.jobId);
+    const text =
+      dir && existsSync(join(dir, t.file)) ? readFileSync(join(dir, t.file), "utf8") : "";
+    const edits = parseMirrorEdits(t.file, text, this.all(t.jobId));
+    // The same edits are never asked about again, whatever I answered (ADR-072 §5).
+    let answered = lastOf(t.answered, editsHash(edits));
+    if (t.pendingEdits) answered = lastOf(answered, t.pendingEdits);
     if (answer === IMPORT) {
-      const dir = this.mirrorDir(t.jobId);
-      const text =
-        dir && existsSync(join(dir, t.file)) ? readFileSync(join(dir, t.file), "utf8") : "";
       const taskId = t.file.startsWith("handoffs/")
         ? t.file.slice("handoffs/".length, -".md".length)
         : null;
-      for (const edit of parseMirrorEdits(t.file, text, this.all(t.jobId))) {
+      for (const edit of edits) {
         this.add({
           jobId: t.jobId,
           taskId: taskId === "job" ? null : taskId,
@@ -271,7 +363,7 @@ export class SilkStore {
     }
     this.db
       .update(silkMirror)
-      .set({ pendingItemId: null, hash: "" })
+      .set({ pendingItemId: null, pendingEdits: null, hash: "", answered })
       .where(and(eq(silkMirror.jobId, t.jobId), eq(silkMirror.file, t.file)))
       .run();
     // My answer settles this file: write Oraknid's version without asking again.

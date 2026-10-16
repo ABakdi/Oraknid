@@ -207,6 +207,105 @@ describe("mirror", () => {
     ]);
   });
 
+  it("reads back what it wrote, every kind and every file, headings in bodies included (ADR-072 §4)", () => {
+    // A small seeded generator: the same cases every run.
+    let seed = 72;
+    const rand = (k: number) => {
+      seed = (seed * 1103515245 + 12345) % 2 ** 31;
+      return seed % k;
+    };
+    const pieces = [
+      "## Uncertain after a restart",
+      "These actions started and their result was never seen.",
+      "- edit `src/app.ts`",
+      "# A top heading",
+      "### A small one",
+      "##not a heading",
+      "",
+      "```\n## inside a fence\n```",
+      "<!-- a comment -->",
+      "<!-- silk:01J9Z3K8W2Q4V6X8Y0A1B2CZZZ by:eye -->",
+      "## Fake\n<!-- silk:01J9Z3K8W2Q4V6X8Y0A1B2CYYY by:eye -->",
+      "trailing   ",
+      "Ünïcödé — and a long dash",
+    ];
+    const kinds = [
+      "decision",
+      "architecture",
+      "progress",
+      "issue",
+      "fact",
+      "interview-answer",
+      "later",
+      "handoff",
+    ] as const;
+    const authors = ["eye", "owner", { legId: "L1" }] as const;
+    for (let round = 0; round < 200; round++) {
+      const entries: SilkEntry[] = [];
+      for (let i = 0; i < 1 + rand(12); i++) {
+        const body = Array.from({ length: rand(6) }, () => pieces[rand(pieces.length)]).join("\n");
+        const live = current(entries);
+        const prev = live.length && rand(4) === 0 ? live[rand(live.length)] : undefined;
+        const kind = prev?.kind ?? (kinds[rand(kinds.length)] as SilkEntry["kind"]);
+        entries.push(
+          entry({
+            kind,
+            taskId: prev ? prev.taskId : kind === "handoff" ? `T${rand(3)}` : null,
+            title: `${["Use SQLite", "Uncertain after a restart: Build it", "## odd", "Title"][rand(4)]} ${round}.${i}`,
+            body,
+            authoredBy: authors[rand(3)] as SilkEntry["authoredBy"],
+            supersedes: prev?.id ?? null,
+          }),
+        );
+      }
+      const files = renderMirror("Round", entries);
+      for (const [file, text] of Object.entries(files))
+        expect(parseMirrorEdits(file, text, entries), `${file}, round ${round}`).toEqual([]);
+    }
+  });
+
+  it("puts back together an entry a mirror written before ADR-072 cut at a heading in its body", () => {
+    const e = entry({
+      kind: "issue",
+      title: "Uncertain after a restart: Construct the main routing",
+      body: "## Uncertain after a restart\nThese actions started and their result was never seen.\n- edit `src/app.ts`",
+    });
+    // As the mirror was written before: no end marker.
+    const old = `# Issues\n\n## ${e.title}\n<!-- silk:${e.id} by:eye -->\n\n${e.body}\n`;
+    expect(parseMirrorEdits("issues.md", old, [e])).toEqual([]);
+    // A section I added after it is still mine, and new.
+    expect(parseMirrorEdits("issues.md", `${old}\n## Mine\nA real one.\n`, [e])).toEqual([
+      { supersedes: null, kind: "issue", title: "Mine", body: "A real one." },
+    ]);
+  });
+
+  it("is no edit when a section says what an entry of Oraknid's says, current or superseded (ADR-072 §3)", () => {
+    const a = entry({ kind: "progress", title: "Step 1", body: "Started." });
+    const b = entry({ kind: "progress", title: "Step 1", body: "Done.", supersedes: a.id });
+    // An older mirror, put back by git: a's version.
+    const older = renderMirror("j", [a])["progress.md"] as string;
+    expect(parseMirrorEdits("progress.md", older, [a, b])).toEqual([]);
+    // A section changed back to what Oraknid wrote before: no edit either.
+    const changedBack = (renderMirror("j", [a, b])["progress.md"] as string).replace(
+      "Done.",
+      "Started.",
+    );
+    expect(parseMirrorEdits("progress.md", changedBack, [a, b])).toEqual([]);
+    // My own entries are not Oraknid's: going back to the version I superseded is an edit.
+    const mine = entry({ kind: "progress", title: "Mine", body: "v1", authoredBy: "owner" });
+    const mine2 = entry({
+      kind: "progress",
+      title: "Mine",
+      body: "v2",
+      authoredBy: "owner",
+      supersedes: mine.id,
+    });
+    const back = (renderMirror("j", [mine, mine2])["progress.md"] as string).replace("v2", "v1");
+    expect(parseMirrorEdits("progress.md", back, [mine, mine2])).toEqual([
+      { supersedes: mine2.id, kind: "progress", title: "Mine", body: "v1" },
+    ]);
+  });
+
   it("ignores files that are not Silk files", () => {
     expect(parseMirrorEdits("README.md", "## x\ny", [])).toEqual([]);
   });

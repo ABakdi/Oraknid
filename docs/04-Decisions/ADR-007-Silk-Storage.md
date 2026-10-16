@@ -16,6 +16,9 @@ offered for import as `owner` entries. They never overwrite silently.
 - Context packs come from indexed queries, not file parsing.
 - Legs can read Silk without a special tool.
 - I can commit the mirror if I want Silk in the repo history.
+  *Since 2026-10-16 ([[ADR-072-Oraknids-State-Is-Not-My-Edit]]): no
+  longer; the mirror is never in a project's history, since a committed
+  mirror made every reset look like my edits.*
 
 ## Why not database only
 Silk would be invisible outside the UI, and Legs would need a tool to

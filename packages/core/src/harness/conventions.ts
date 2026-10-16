@@ -503,6 +503,9 @@ export function ignoreTemplate(ecosystems: readonly string[]): string {
     "# Editors and the operating system",
     ...(any?.writes ?? []),
     "",
+    "# Oraknid's own state (its Silk mirror, trash and worktrees), never committed",
+    ".oraknid/",
+    "",
   ].join("\n");
 }
 

@@ -13,6 +13,31 @@ import {
 
 const file = (path: string, size = 100, tracked = false) => ({ path, size, tracked });
 
+describe("Oraknid's own state is never in a commit (ADR-072 §1)", () => {
+  it("leaves out .oraknid/, new or tracked, and keeps it out with an ignore line", () => {
+    const plan = planCommit(
+      [
+        file("src/main.ts"),
+        file(".oraknid/silk/issues.md", 100, true),
+        file(".oraknid/silk/handoffs/T1.md"),
+        file("web/.oraknid/visual/t/a.png"),
+        file("docs/not.oraknid.md"),
+      ],
+      { ecosystems: ["js", "any"] },
+    );
+    expect(plan.keep.sort()).toEqual(["docs/not.oraknid.md", "src/main.ts"]);
+    expect(plan.leave.map((l) => [l.path, l.why, l.ignore])).toEqual([
+      [".oraknid/silk/issues.md", "oraknid", ".oraknid/"],
+      [".oraknid/silk/handoffs/T1.md", "oraknid", ".oraknid/"],
+      ["web/.oraknid/visual/t/a.png", "oraknid", ".oraknid/"],
+    ]);
+  });
+
+  it("is in the ignore file Oraknid writes", () => {
+    expect(ignoreTemplate(["js", "any"]).split("\n")).toContain(".oraknid/");
+  });
+});
+
 describe("a commit takes only what belongs", () => {
   it("leaves out what a tool made, build artifacts, secrets and files too large", () => {
     const plan = planCommit(

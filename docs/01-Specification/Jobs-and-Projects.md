@@ -29,8 +29,9 @@ On creation Oraknid:
    checkpoints only, out of every Leg's reach, and my folder stays
    untouched ([[Sandboxing]]).
 3. Detects the release and work branches (BR-14).
-4. Adds `.oraknid/` to `.git/info/exclude`, except `.oraknid/silk/`,
-   which I may choose to commit.
+4. Adds `.oraknid/` to `.git/info/exclude`, the Silk mirror in it too:
+   Oraknid's state is never part of the project's history
+   ([[ADR-072-Oraknids-State-Is-Not-My-Edit]]).
 
 ### Making a project (2026-10-04, M13.19)
 

@@ -104,17 +104,34 @@ every change, a readable markdown mirror is written to
 ```
 
 Each entry is a `## Title` section followed by a marker
-`<!-- silk:<id> by:<author> -->`, so Oraknid can tell which entry a
-section is.
+`<!-- silk:<id> by:<author> -->`, its body, and an end marker
+`<!-- /silk:<id> -->`, so Oraknid can tell which entry a section is and
+where it ends: headings in a body stay part of it, and what Oraknid
+writes reads back as the same entries
+([[ADR-072-Oraknids-State-Is-Not-My-Edit]]).
 
-Legs can read the mirror like any file. I can read it, and I can
-commit it if I want it in the repo's history. If I edit the mirror by
-hand, Oraknid notices within 30 s and asks once, in the inbox, whether
-to import it. A changed section supersedes its entry, and a new section
-becomes a new entry, all marked `owner`. A removed section deletes
-nothing: Silk only grows. Until I answer, that file is not rewritten;
-if I discard, Oraknid's version is put back. The mirror never changes
-the database without my confirmation.
+Legs can read the mirror like any file, and I can read it. It is
+Oraknid's state, never part of the project's history: `.oraknid/` is
+excluded from git and in the .gitignore Oraknid writes, a commit never
+takes it, and a branch that tracked it (before 2026-10-16) stops in one
+commit, "chore: stop tracking Oraknid's own files", the files left on
+disk (ADR-072).
+
+If I edit the mirror by hand, Oraknid notices within 30 s and asks
+once, in the inbox, whether to import it. A changed section supersedes
+its entry, and a new section becomes a new entry, all marked `owner`. A
+removed section deletes nothing: Silk only grows. Until I answer, that
+file is not rewritten; if I discard, Oraknid's version is put back. The
+same set of edits is never asked about twice, whatever I answered. The
+mirror never changes the database without my confirmation.
+
+Not my edits, written over without asking: a version of the file
+Oraknid wrote (the last 50 are remembered), and sections that say what
+one of Oraknid's own entries says, current or superseded, as when git
+puts an older mirror back. After its own git operations in the job's
+folder (a merge, a merge taken back) Oraknid writes the mirror again.
+An open question about edits that were all Oraknid's own is withdrawn
+when the daemon starts.
 
 ## Editing
 
@@ -122,4 +139,4 @@ In the UI I can add, edit or supersede any entry. Editing writes a new
 entry of mine that supersedes the old one. My entries are marked
 `owner`, and only I can supersede them.
 
-Related: [[The-Eye]] · [[Budgets-and-Quotas]] · [[ADR-007-Silk-Storage]] · [[Business-Rules]]
+Related: [[The-Eye]] · [[Budgets-and-Quotas]] · [[ADR-007-Silk-Storage]] · [[ADR-072-Oraknids-State-Is-Not-My-Edit]] · [[Business-Rules]]

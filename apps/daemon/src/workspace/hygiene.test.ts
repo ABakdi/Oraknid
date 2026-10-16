@@ -15,6 +15,7 @@ import {
   type StewardMemory,
   stageAll,
   untrackGenerated,
+  untrackOraknid,
 } from "./git.ts";
 
 // A repository's care (ADR-067 §1, §2, §5, §6), from the Keys project of
@@ -161,6 +162,59 @@ describe("generated folders a repository tracks (ADR-067 §1)", () => {
   });
 });
 
+describe("Oraknid's own folder is never in a project's history (ADR-072 §1)", () => {
+  /** A job's branch as the version before ADR-072 left it: the Silk mirror committed. */
+  function tracksMirror(): string {
+    const r = keys();
+    // As the repository's exclude file was: Oraknid's folder out, except the mirror.
+    writeFileSync(join(r, ".git", "info", "exclude"), "# Oraknid\n/.oraknid/*\n!/.oraknid/silk/\n");
+    put(r, {
+      ".gitignore": "node_modules/\ndist/\n",
+      ".oraknid/silk/issues.md": "# Issues\n",
+      ".oraknid/silk/handoffs/T1.md": "# Handoff\n",
+      ".oraknid/trash/x/old.ts": "x\n",
+    });
+    sh(r, "rm", "-r", "-q", "--cached", "node_modules", "dist");
+    sh(r, "add", "-A");
+    sh(r, "commit", "-qm", "feat: recover: The job's work");
+    return r;
+  }
+
+  it("untracks it on the job's branch in one commit, keeps the files, and ignores it", async () => {
+    const r = tracksMirror();
+    expect(sh(r, "ls-files", ".oraknid")).toBe(
+      ".oraknid/silk/handoffs/T1.md\n.oraknid/silk/issues.md",
+    );
+    const done = await untrackOraknid(g(r));
+    expect(done?.files).toBe(2);
+    expect(sh(r, "log", "-1", "--format=%s")).toBe("chore: stop tracking Oraknid's own files");
+    expect(sh(r, "show", "--name-status", "--format=", "HEAD").split("\n").sort()).toEqual([
+      "D\t.oraknid/silk/handoffs/T1.md",
+      "D\t.oraknid/silk/issues.md",
+      "M\t.gitignore",
+    ]);
+    expect(sh(r, "ls-files", ".oraknid")).toBe("");
+    // Legs still read it on disk.
+    expect(readFileSync(join(r, ".oraknid/silk/issues.md"), "utf8")).toBe("# Issues\n");
+    expect(readFileSync(join(r, ".gitignore"), "utf8").split("\n")).toContain(".oraknid/");
+    const exclude = readFileSync(join(r, ".git", "info", "exclude"), "utf8");
+    expect(exclude).not.toContain("!/.oraknid/silk/");
+    // Oraknid rewriting its mirror leaves the tree clean: a check of a clean tree passes.
+    writeFileSync(join(r, ".oraknid/silk/issues.md"), "# Issues\n\n## New\nx\n");
+    expect(sh(r, "status", "--porcelain")).toBe("");
+    expect(await untrackOraknid(g(r))).toBeNull();
+  });
+
+  it("never stages it in a commit of a task's work, even where the branch still tracks it", async () => {
+    const r = tracksMirror();
+    writeFileSync(join(r, ".oraknid/silk/issues.md"), "# Issues\n\n## Rewritten\nby Oraknid\n");
+    put(r, { "src/parser.ts": "export {};\n" });
+    const result = await stageAll(g(r), { ignoreFile: true });
+    expect(result.staged).toBe(true);
+    expect(sh(r, "diff", "--cached", "--name-only")).toBe("src/parser.ts");
+  });
+});
+
 describe("a commit of a task's work takes only what belongs (ADR-067 §5, §6)", () => {
   it("leaves out dependencies, build output, secrets and a large binary, and writes a .gitignore", async () => {
     const r = mkdtempSync(join(tmpdir(), "oraknid-scaffold-"));
@@ -205,6 +259,8 @@ describe("a commit of a task's work takes only what belongs (ADR-067 §5, §6)",
     expect(text.startsWith("*.log\n")).toBe(true);
     // dist is tracked here, on purpose as far as Oraknid knows: never ignored.
     expect(text).not.toContain("dist/");
+    // What Oraknid writes there keeps its own folder out too (ADR-072 §1), once.
+    expect(text.split("\n").filter((l) => l === ".oraknid/")).toHaveLength(1);
   });
 
   it("asks the judge about an unusual commit and does what it says", async () => {

@@ -105,6 +105,11 @@ stops the work: a failure is an event, and the work goes on. Both sides
 of a merge untrack the same folders, so a task's branch made before the
 cleanup merges without a conflict.
 
+*Since 2026-10-16 ([[ADR-072-Oraknids-State-Is-Not-My-Edit]]): Oraknid's
+own `.oraknid/` folder is untracked at the same moments, first and
+whatever the hygiene setting, in a commit of its own ("chore: stop
+tracking Oraknid's own files"); a commit's plan never takes it.*
+
 ### 2. A merge says git's real reason, and generated files never stop it
 `mergeTaskBranch` reads what git said (`readMergeFailure`) and returns
 its kind with the files:

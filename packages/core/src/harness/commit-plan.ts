@@ -18,7 +18,13 @@ export interface CommitCandidate {
   tracked: boolean;
 }
 
-export type LeftOutWhy = "generated" | "too-large" | "artifact" | "secret" | "judged";
+export type LeftOutWhy = "generated" | "too-large" | "artifact" | "secret" | "judged" | "oraknid";
+
+/** Oraknid's own folder: its Silk mirror, trash, worktrees, screenshots (ADR-072 §1). */
+export const ORAKNID_DIR = ".oraknid";
+
+/** Whether a path is in Oraknid's own folder, never part of a project's history (ADR-072 §1). */
+export const isOraknidPath = (path: string) => /(^|\/)\.oraknid(\/|$)/.test(path);
 
 export interface LeftOutFile {
   path: string;
@@ -125,6 +131,17 @@ export function planCommit(
   const leave: LeftOutFile[] = [];
   let assets = 0;
   for (const f of files) {
+    // Oraknid's state, tracked or not, is never committed: a branch that tracks it stops (ADR-072 §1).
+    if (isOraknidPath(f.path)) {
+      leave.push({
+        path: f.path,
+        why: "oraknid",
+        detail:
+          "Oraknid's own state (its Silk mirror, trash, worktrees), never in the project's history",
+        ignore: `${ORAKNID_DIR}/`,
+      });
+      continue;
+    }
     if (f.tracked) {
       keep.push(f.path);
       continue;
