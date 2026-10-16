@@ -33,6 +33,11 @@ notification when one goes down and when it is back.
   `site.down` notification, once; the first check up after is
   `site.up`, with how long it was down. Checks run only while Oraknid
   runs, a few at a time, and stop for a site I turn off.
+  *Since 2026-10-16 ([[ADR-071-A-Site-Is-Down-Only-When-It-Is-Down]]):
+  a check with no answer is tried again before it counts, a site with a
+  server is asked of the server before it is said down, what only fails
+  from here is one `site.path` per server, and a site that flaps is held
+  before it is said again.*
 - **Where**: a **Sites** tab on the Servers page (every site: domain,
   server, up or down with a latency sparkline of the last day and its
   uptime over 24 hours and 7 days, the certificate's end, DNS); the
@@ -64,4 +69,4 @@ notification when one goes down and when it is back.
   reachable from here (or the reverse) reads so. Oraknid off, no checks.
 - A domain served by no proxy Oraknid reads is added by hand.
 
-Related: [[Servers]] · [[ADR-043-Server-Insight]] · [[Notifications]] · [[Web-UI]]
+Related: [[Servers]] · [[ADR-043-Server-Insight]] · [[ADR-071-A-Site-Is-Down-Only-When-It-Is-Down]] · [[Notifications]] · [[Web-UI]]

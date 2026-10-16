@@ -31,8 +31,9 @@ Settings → Notifications.
 | Security: the 5th wrong PIN on a device, a device unpaired by ten ([[ADR-029-App-Lock]]) | ✓ | ✓ | ✓ |
 | A backup failed, with its error in words ([[ADR-044-Backups]]) | ✓ | ✓ | ✓ |
 | A new version of Oraknid, once per release on my channel ([[ADR-048-Updates]]) | ✓ | ✓ | — |
-| A site down: two checks in a row from this computer failed, once (`site.down`, [[ADR-060-Sites-Domains-And-Uptime]]) | ✓ | ✓ | ✓ |
-| A site up again, with how long it was down (`site.up`) | ✓ | ✓ | — |
+| A site down: two checks in a row failed (each tried three times) and its server gets no answer either, or DNS doesn't know it, or a 5xx; once, critical (`site.down`, [[ADR-060-Sites-Domains-And-Uptime]], [[ADR-071-A-Site-Is-Down-Only-When-It-Is-Down]]) | ✓ | ✓ | ✓ |
+| A site up again, with how long it was down (`site.up`); only after a `site.down` | ✓ | ✓ | — |
+| A server's sites don't answer from this computer, but do from the server (or the server can't be reached either): one incident per server, at most once a day, normal urgency; its end is quiet (`site.path`, [[ADR-071-A-Site-Is-Down-Only-When-It-Is-Down]]) | ✓ | — | — |
 | The computer in danger (`machine.danger`): memory and swap, a full disk, the OOM killer, heat, a session running away; once per incident, with what Oraknid did ([[ADR-050-Parallel-By-Default]]) | ✓ | ✓ | — |
 | CI failed (`ci.failed`): a GitHub Actions run on a linked repo's release or work branch ended failing (failure, timed out, startup failure), with the failing job and step; once per run and attempt, looked for every 3 minutes ([[ADR-058-CI-In-Oraknid]]) | ✓ | ✓ | — |
 | A job paused for quota resumed by itself at the reset (`job.resumed`, [[Budgets-and-Quotas]]) | ✓ | ✓ | — |

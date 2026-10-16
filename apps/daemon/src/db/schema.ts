@@ -956,8 +956,19 @@ export const sites = sqliteTable("sites", {
   up: integer("up", { mode: "boolean" }),
   /** Failed checks in a row. */
   fails: integer("fails").notNull().default(0),
-  /** Down (notified) since; null when up. */
+  /** Down since (the first failed check of the run that made it down); null when up. */
   downSince: integer("down_since"),
+  /**
+   * Why it is down (ADR-071): `site` (it doesn't answer: DNS gone, a 5xx, or
+   * its server agrees; notified), `path` (only from this computer: its
+   * server says it answers) or `server` (its server can't be reached
+   * either, so Oraknid can't tell). Null when up.
+   */
+  downReason: text("down_reason").$type<"site" | "path" | "server">(),
+  /** The first failed check of the failures in a row; null when the last check was up. */
+  failingSince: integer("failing_since"),
+  /** When it last came back after a notified down (flap damping, ADR-071). */
+  backAt: integer("back_at"),
   /** What DNS said: A, AAAA, CNAME and whether it points at its server. */
   dns: json<{
     a: string[];

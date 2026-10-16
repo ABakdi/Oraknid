@@ -40,9 +40,37 @@ export function certWords(
 /** Up, down, or not checked: a word and a colour. */
 export function stateOf(s: SiteView): { text: string; tone: "ok" | "bad" | "warn" | "off" } {
   if (!s.checkEnabled) return { text: t("not checked"), tone: "off" };
+  // Down from here only, or its server out of reach too: not down (ADR-071).
+  if (s.downSince && s.downReason === "path")
+    return { text: t("down from here only"), tone: "warn" };
+  if (s.downSince && s.downReason === "server")
+    return { text: t("{server} unreached", { server: s.serverName ?? t("server") }), tone: "warn" };
   if (s.downSince) return { text: t("down"), tone: "bad" };
   if (s.up === null) return { text: t("not checked yet"), tone: "off" };
   return s.up ? { text: t("up"), tone: "ok" } : { text: t("failing"), tone: "warn" };
+}
+
+/** Servers whose sites fail from this computer only (ADR-071): one line each. */
+export function paths(
+  list: SiteView[],
+): { server: string; n: number; total: number; unreached: boolean }[] {
+  const by = new Map<string, { server: string; n: number; total: number; unreached: boolean }>();
+  for (const s of list) {
+    if (!s.serverId || !s.checkEnabled) continue;
+    const p = by.get(s.serverId) ?? {
+      server: s.serverName ?? t("a server"),
+      n: 0,
+      total: 0,
+      unreached: true,
+    };
+    p.total++;
+    if (s.downSince && (s.downReason === "path" || s.downReason === "server")) {
+      p.n++;
+      if (s.downReason === "path") p.unreached = false;
+    }
+    by.set(s.serverId, p);
+  }
+  return [...by.values()].filter((p) => p.n > 0);
 }
 
 const act = (p: Promise<unknown>, ok?: string) =>
@@ -135,9 +163,26 @@ export function SitesPanel() {
       {header}
       <p className="text-xs text-muted-foreground">
         {t(
-          "Checked from this computer every few minutes while Oraknid runs: down twice in a row is a notification, and so is back up. Certificates and DNS are read every 6 hours.",
+          "Checked from this computer every few minutes while Oraknid runs, each check tried again before it counts. Two failed checks in a row are asked of the site's server: down there too is a notification, and so is back up. Certificates and DNS are read every 6 hours.",
         )}
       </p>
+      {paths(list).map((p) => (
+        <p
+          key={p.server}
+          className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs"
+          data-path={p.server}
+        >
+          {p.unreached
+            ? t(
+                "This computer can't reach {server}: {n} of its {total} sites don't answer from here, and neither does SSH.",
+                { server: p.server, n: p.n, total: p.total },
+              )
+            : t(
+                "This computer is losing its connection to {server}: {n} of its {total} sites don't answer from here; from the server they answer.",
+                { server: p.server, n: p.n, total: p.total },
+              )}
+        </p>
+      ))}
       {list.length === 0 ? (
         <Empty title={t("No sites yet")}>
           {t(
@@ -212,7 +257,9 @@ function SiteRow({
         </a>
         <Badge variant={state.tone === "bad" ? "destructive" : "outline"}>{state.text}</Badge>
         {s.downSince ? (
-          <span className="text-xs text-destructive">
+          <span
+            className={cn("text-xs", state.tone === "bad" ? "text-destructive" : "text-warning")}
+          >
             {t("since {when}", { when: ago(s.downSince) })}
           </span>
         ) : null}

@@ -26,7 +26,7 @@ durable step engine runs on the same database ([[ADR-003-Job-Execution-Engine]])
 | `tools` | MCP servers for skills ([[ADR-021-Tools-Broker]]). |
 | `chats`, `chat_messages`, `helper_messages` | Chats and the helper ([[Chats-and-Helper]]). |
 | `servers`, `server_states`, `server_samples` | My servers (with my Production mark), their state documents (each with the job whose end wrote it), oraknid-monitor's readings ([[Servers]]). |
-| `sites`, `site_checks` | Sites across my servers: domain, where served, DNS and certificate last read, up or down; each uptime check, kept 7 days (migration 0041, [[ADR-060-Sites-Domains-And-Uptime]]). |
+| `sites`, `site_checks` | Sites across my servers: domain, where served, DNS and certificate last read, up or down; each uptime check, kept 7 days (migration 0041, [[ADR-060-Sites-Domains-And-Uptime]]); why a site is down, when its failures began and when it last came back (migration 0046, [[ADR-071-A-Site-Is-Down-Only-When-It-Is-Down]]). |
 | `mail_accounts`, `mail_folders`, `mail_messages`, `mail_drafts`, `mail_image_senders`, `mail_pop_uidls` | Mail ([[ADR-032-Email]]); an account's `auth` (password, Google or Microsoft) since migration 0042 ([[ADR-063-Mail-OAuth]]). |
 | `backup_plans`, `backup_runs`, `backup_keys` | Database backups: plans, each run, the age public keys (migration 0033, [[ADR-044-Backups]]). |
 | `cloud_providers` | My storage accounts in the pool (migration 0034, [[ADR-046-Cloud-Storage]]). |

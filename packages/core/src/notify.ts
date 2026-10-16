@@ -21,6 +21,7 @@ export const DEFAULT_ROUTES: Record<NotifyEvent, Route> = {
   "sleep.problem": { desktop: true, push: true, email: "never" },
   "site.down": { desktop: true, push: true, email: "now" },
   "site.up": { desktop: true, push: true, email: "never" },
+  "site.path": { desktop: true, push: false, email: "never" },
 };
 
 export const routeFor = (event: NotifyEvent, mine: Partial<Record<NotifyEvent, Route>>): Route =>

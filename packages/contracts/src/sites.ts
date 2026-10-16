@@ -55,8 +55,15 @@ export const SiteView = z.object({
   lastCheckAt: Timestamp.nullable(),
   /** The last check: up, down, or null before any. */
   up: z.boolean().nullable(),
-  /** Down twice in a row (notified) since; null when up. */
+  /** Down since (the first of the failed checks in a row that made it down); null when up. */
   downSince: Timestamp.nullable(),
+  /**
+   * Why it is down (ADR-071): `site` it doesn't answer (DNS gone, a 5xx, or
+   * its server agrees), said as `site.down`; `path` only from this computer
+   * (its server says it answers); `server` its server can't be reached
+   * from here either, so Oraknid can't tell. Null when up.
+   */
+  downReason: z.enum(["site", "path", "server"]).nullable().default(null),
   lastStatus: z.number().int().nullable(),
   lastLatencyMs: z.number().int().nullable(),
   lastError: z.string().nullable(),

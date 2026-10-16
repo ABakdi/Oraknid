@@ -16051,6 +16051,22 @@
                           }
                         ]
                       },
+                      "downReason": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "site",
+                              "path",
+                              "server"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "default": null
+                      },
                       "lastStatus": {
                         "anyOf": [
                           {
@@ -16533,6 +16549,22 @@
                         }
                       ]
                     },
+                    "downReason": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "site",
+                            "path",
+                            "server"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
                     "lastStatus": {
                       "anyOf": [
                         {
@@ -16951,6 +16983,22 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "downReason": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "site",
+                            "path",
+                            "server"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
                     },
                     "lastStatus": {
                       "anyOf": [
@@ -17398,6 +17446,22 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "downReason": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "site",
+                            "path",
+                            "server"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
                     },
                     "lastStatus": {
                       "anyOf": [
@@ -53930,7 +53994,8 @@
                           "job.resumed",
                           "sleep.problem",
                           "site.down",
-                          "site.up"
+                          "site.up",
+                          "site.path"
                         ],
                         "type": "string"
                       },
@@ -54038,7 +54103,8 @@
                         "job.resumed",
                         "sleep.problem",
                         "site.down",
-                        "site.up"
+                        "site.up",
+                        "site.path"
                       ],
                       "type": "string"
                     },
@@ -54205,7 +54271,8 @@
                           "job.resumed",
                           "sleep.problem",
                           "site.down",
-                          "site.up"
+                          "site.up",
+                          "site.path"
                         ],
                         "type": "string"
                       },
@@ -54441,7 +54508,8 @@
                           "job.resumed",
                           "sleep.problem",
                           "site.down",
-                          "site.up"
+                          "site.up",
+                          "site.path"
                         ],
                         "type": "string"
                       },

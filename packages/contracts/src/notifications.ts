@@ -37,10 +37,12 @@ export const NotifyEvent = z.enum([
   "job.resumed",
   /** Taking the sleep lock failed: the jobs go on, the machine may sleep (Durability). */
   "sleep.problem",
-  /** A site down twice in a row, once (ADR-060). */
+  /** A site down: two checks in a row failed and its server agrees, once (ADR-060, ADR-071). */
   "site.down",
   /** A site that was down answers again (ADR-060). */
   "site.up",
+  /** Sites of one server don't answer from this computer, but do from the server: once per incident (ADR-071). */
+  "site.path",
 ]);
 export type NotifyEvent = z.infer<typeof NotifyEvent>;
 

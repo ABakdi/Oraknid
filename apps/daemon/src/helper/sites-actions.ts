@@ -14,13 +14,17 @@ const pct = (x: number | null) => (x === null ? "no checks" : `${(x * 100).toFix
 export function siteLine(s: SiteView, now = Date.now()): string {
   const state = !s.checkEnabled
     ? "not checked"
-    : s.downSince
-      ? `DOWN since ${new Date(s.downSince).toISOString().slice(0, 16)}${s.lastError ? ` (${s.lastError})` : ""}`
-      : s.up === null
-        ? "not checked yet"
-        : s.up
-          ? `up${s.lastLatencyMs !== null ? `, ${s.lastLatencyMs} ms` : ""}`
-          : `failed its last check${s.lastError ? ` (${s.lastError})` : ""}`;
+    : s.downSince && s.downReason === "path"
+      ? `down from this computer only since ${new Date(s.downSince).toISOString().slice(0, 16)} (its server says it answers)`
+      : s.downSince && s.downReason === "server"
+        ? `no answer from this computer since ${new Date(s.downSince).toISOString().slice(0, 16)}, and its server can't be reached either`
+        : s.downSince
+          ? `DOWN since ${new Date(s.downSince).toISOString().slice(0, 16)}${s.lastError ? ` (${s.lastError})` : ""}`
+          : s.up === null
+            ? "not checked yet"
+            : s.up
+              ? `up${s.lastLatencyMs !== null ? `, ${s.lastLatencyMs} ms` : ""}`
+              : `failed its last check${s.lastError ? ` (${s.lastError})` : ""}`;
   const cert =
     s.cert.expiresAt === null
       ? s.cert.error
@@ -45,7 +49,7 @@ export const SITE_ACTIONS: Record<string, ActionDef> = {
     run: async (d) => {
       if (!d.sites) throw new Error("Sites aren't available here.");
       const list = d.sites.list();
-      const down = list.filter((s) => s.downSince).length;
+      const down = list.filter((s) => s.downSince && s.downReason === "site").length;
       return {
         result: `${list.length} site${list.length === 1 ? "" : "s"}${down ? `, ${down} down` : ""}.`,
         link: "/servers/sites",

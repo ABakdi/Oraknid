@@ -1,7 +1,7 @@
 import type { SiteView } from "@oraknid/contracts";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { certWords, SitesPanel, stateOf } from "./sites";
+import { certWords, paths, SitesPanel, stateOf } from "./sites";
 
 // The Sites tab (ADR-060): every domain, up or down, its certificate and DNS.
 
@@ -26,6 +26,7 @@ const site = (o: Partial<SiteView>): SiteView => ({
   lastCheckAt: now - 60_000,
   up: true,
   downSince: null,
+  downReason: null,
   lastStatus: 200,
   lastLatencyMs: 84,
   lastError: null,
@@ -56,6 +57,7 @@ const SITES = [
     host: "blog.example.com",
     up: false,
     downSince: now - 10 * 60_000,
+    downReason: "site",
     lastStatus: 502,
     lastError: "It answered 502.",
     dns: { a: ["198.51.100.1"], aaaa: [], cname: [], pointsHere: false, error: null },
@@ -135,5 +137,16 @@ describe("Sites (ADR-060)", () => {
     expect(stateOf(site({ downSince: now })).text).toBe("down");
     expect(stateOf(site({ up: false })).text).toBe("failing");
     expect(stateOf(site({ checkEnabled: false })).text).toBe("not checked");
+  });
+
+  it("down from here only is not down; one line per server says so (ADR-071)", () => {
+    const here = site({ up: false, downSince: now, downReason: "path" });
+    expect(stateOf(here)).toEqual({ text: "down from here only", tone: "warn" });
+    expect(stateOf(site({ up: false, downSince: now, downReason: "server" })).text).toBe(
+      "vps unreached",
+    );
+    expect(
+      paths([here, site({ id: "01J00000000000000000000003" }), site({ serverId: null })]),
+    ).toEqual([{ server: "vps", n: 1, total: 2, unreached: false }]);
   });
 });
