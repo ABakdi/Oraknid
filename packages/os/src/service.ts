@@ -17,6 +17,17 @@ export interface InstallStep {
   warning?: boolean;
 }
 
+/**
+ * What every service's environment carries (ADR-070): a thread pool of 16,
+ * so a few slow calls never take every file read and the web UI with them,
+ * and the word that a service manager restarts the daemon, so its own
+ * self-check may end a daemon that can no longer serve.
+ */
+export const SERVICE_ENV: Readonly<Record<string, string>> = {
+  UV_THREADPOOL_SIZE: "16",
+  ORAKNID_SUPERVISED: "1",
+};
+
 /** What the service runs: node, the CLI and "run", with the environment it needs. */
 export interface ServiceCommand {
   execPath: string;

@@ -1,7 +1,13 @@
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
-import type { InstallStep, ServiceCommand, ServiceManager, ServiceStatus } from "../service.ts";
+import {
+  type InstallStep,
+  SERVICE_ENV,
+  type ServiceCommand,
+  type ServiceManager,
+  type ServiceStatus,
+} from "../service.ts";
 import { defaultRun, type Run, rootPrefix, rootStepper, shQuote } from "./exec.ts";
 
 /**
@@ -9,7 +15,7 @@ import { defaultRun, type Run, rootPrefix, rootStepper, shQuote } from "./exec.t
  * to my user and all my groups, and runsv restarts it when it ends.
  */
 export function runitRun(command: ServiceCommand, user: { name: string; home: string }) {
-  const env = { HOME: user.home, USER: user.name, ...command.env };
+  const env = { HOME: user.home, USER: user.name, ...SERVICE_ENV, ...command.env };
   const exports = Object.entries(env)
     .map(([k, v]) => `export ${k}=${shQuote(v)}`)
     .join("\n");

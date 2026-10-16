@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,9 +13,38 @@ import { keychainId, Secrets } from "./secrets.ts";
  * which starts a private D-Bus session and a gnome-keyring in a temporary
  * home. Without that it is skipped.
  */
-const throwaway =
-  process.env.ORAKNID_SECRET_SERVICE_TEST === "1" &&
-  /\/oraknid-ss-[^/]+\/data$/.test(process.env.XDG_DATA_HOME ?? "");
+const inThrowaway = /\/oraknid-ss-[^/]+\/data$/.test(process.env.XDG_DATA_HOME ?? "");
+const throwaway = process.env.ORAKNID_SECRET_SERVICE_TEST === "1" && inThrowaway;
+/** The same session before its keyring is started (ADR-070). */
+const beforeKeyring = process.env.ORAKNID_SECRET_SERVICE_TEST === "absent" && inThrowaway;
+
+const owned = () =>
+  execFileSync(
+    "busctl",
+    [
+      "--user",
+      "call",
+      "org.freedesktop.DBus",
+      "/org/freedesktop/DBus",
+      "org.freedesktop.DBus",
+      "NameHasOwner",
+      "s",
+      "org.freedesktop.secrets",
+    ],
+    { encoding: "utf8" },
+  ).trim();
+
+describe.skipIf(!beforeKeyring)("before the session's keyring is up, on a real bus", () => {
+  it("never starts the Secret Service itself, and waits for it", async () => {
+    expect(owned()).toBe("b false");
+    const probe = await createKeychainStore().probe();
+    expect(probe).toMatchObject({ available: false, waiting: true });
+    expect(probe.detail).toMatch(/isn't running yet/);
+    // Asked, and still nobody owns the name: nothing was activated.
+    await new Promise((r) => setTimeout(r, 500));
+    expect(owned()).toBe("b false");
+  });
+});
 
 describe.skipIf(!throwaway)("keychain entries per data folder, on a real Secret Service", () => {
   it("keeps two data folders apart and moves the entries of before", async () => {

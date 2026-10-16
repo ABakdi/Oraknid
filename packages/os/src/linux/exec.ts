@@ -4,13 +4,15 @@ import type { InstallStep } from "../service.ts";
 export type Run = (
   cmd: string,
   args: string[],
+  /** A question to systemd or logind: never waited on long (ADR-070). */
+  o?: { timeoutMs?: number },
 ) => { status: number | null; stdout: string; stderr: string };
 
 /** Runs a command and waits; sudo asks for its password on the terminal itself. */
-export const defaultRun: Run = (cmd, args) => {
+export const defaultRun: Run = (cmd, args, o) => {
   const r = spawnSync(cmd, args, {
     encoding: "utf8",
-    timeout: 120_000,
+    timeout: o?.timeoutMs ?? 120_000,
     stdio: ["inherit", "pipe", "pipe"],
   });
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? r.error?.message ?? "" };

@@ -1,7 +1,13 @@
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
-import type { InstallStep, ServiceCommand, ServiceManager, ServiceStatus } from "../service.ts";
+import {
+  type InstallStep,
+  SERVICE_ENV,
+  type ServiceCommand,
+  type ServiceManager,
+  type ServiceStatus,
+} from "../service.ts";
 import { defaultRun, type Run, rootPrefix, rootStepper, shQuote } from "./exec.ts";
 
 /**
@@ -12,9 +18,12 @@ import { defaultRun, type Run, rootPrefix, rootStepper, shQuote } from "./exec.t
  * word is quoted, and the whole is quoted again for the assignment.
  */
 export function openrcScript(command: ServiceCommand, user: { name: string; home: string }) {
-  const env = Object.entries({ HOME: user.home, USER: user.name, ...command.env }).map(
-    ([k, v]) => `${k}=${v}`,
-  );
+  const env = Object.entries({
+    HOME: user.home,
+    USER: user.name,
+    ...SERVICE_ENV,
+    ...command.env,
+  }).map(([k, v]) => `${k}=${v}`);
   const args = [...env, command.execPath, ...command.args].map(shQuote).join(" ");
   return `#!/sbin/openrc-run
 # Written by oraknid install. Remove it with: oraknid uninstall

@@ -30,6 +30,17 @@ sandbox limits damage, but it doesn't make that safe.
   once, saying so, rather than waiting on a dead bus. A failure is never
   an unhandled rejection: the Nest link tries again with its own growing
   pause.
+- Oraknid never starts the keychain and never asks it to unlock
+  (2026-10-16, [[ADR-070-Never-Hang-On-The-Desktop]]): before a call it
+  asks the session bus whether `org.freedesktop.secrets` has an owner
+  and whether its default collection is locked, which starts nothing.
+  Not there yet, or locked: no call, and secrets say "Waiting for the
+  keychain to unlock" while the daemon asks again in the background
+  (2 s, doubling, up to 5 minutes). No session bus at all: the
+  encrypted file. Each call runs in a helper process, one at a time,
+  with a 5 s deadline; a helper that misses it is killed with its D-Bus
+  connection, and the call fails with "The desktop keychain didn't
+  answer", the pause above applying.
 - Referenced by name. Resolved only when a process starts, passed by
   environment to that process only, never logged. Log output is
   scrubbed of known secret values.

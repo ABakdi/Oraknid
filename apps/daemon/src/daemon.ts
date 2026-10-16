@@ -22,6 +22,7 @@ import { createOpenAICompatibleAdapter } from "@oraknid/leg-openai-compatible";
 import { createOpenCodeAdapter } from "@oraknid/leg-opencode";
 import { createOraknidAgentAdapter } from "@oraknid/leg-oraknid-agent";
 import type { LegAdapter } from "@oraknid/leg-sdk";
+import { desktopWaiters } from "@oraknid/os";
 import { call, ORPCError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/node";
 import { eq } from "drizzle-orm";
@@ -68,6 +69,7 @@ import { chromiumRenderer, type VisualDeps, visionJudge } from "./harness/visual
 import { Helper, type HelperWho } from "./helper/service.ts";
 import { isLocalRequest } from "./http/guard.ts";
 import { requestIds, tagConsoleWithRequestIds } from "./http/request-id.ts";
+import { serveWebUi } from "./http/web-ui.ts";
 import { InboxStore } from "./inbox/store.ts";
 import { startHealthChecks } from "./legs/health.ts";
 import { removeJobHomes } from "./legs/job-home.ts";
@@ -90,6 +92,7 @@ import { linuxOs, type OsDeps } from "./os/context.ts";
 import { countActiveJobs, createInhibitController } from "./os/inhibit-controller.ts";
 import { startMetricsLoop } from "./os/metrics-loop.ts";
 import { Secrets } from "./os/secrets.ts";
+import { pageProbe, poolProbe, startSelfCheck, supervised } from "./os/self-check.ts";
 import { DEFAULT_HOST, DEFAULT_PORT, isDefaultDataDir, type Paths } from "./paths.ts";
 import { diskSpace } from "./resources/disks.ts";
 import { startGuard } from "./resources/guard.ts";
@@ -194,6 +197,25 @@ export interface DaemonOptions {
   healthIntervalMs?: number;
   /** The web UI's built folder; null: none, as on a terminal-only install (tests; found otherwise). */
   webDir?: string | null;
+  /**
+   * A keychain not there yet is asked again in the background (ADR-070):
+   * the first pause (tests: shorter).
+   */
+  keychainRetryMs?: number;
+  /**
+   * The daemon's look at itself (ADR-070): on for the daemon `oraknid run`
+   * starts (writeRuntimeFile), off in tests unless given; `exit` replaces
+   * ending the process.
+   */
+  selfCheck?:
+    | false
+    | { everyMs?: number; timeoutMs?: number; giveUpMs?: number; exit?: (code: number) => void };
+  /**
+   * How long stopping may take once the jobs have reached their safe points
+   * (BR-7 gives those their own time): past it, the daemon is let go of
+   * whatever still waits (ADR-070). 10 s unless given.
+   */
+  stopDeadlineMs?: number;
   /** Updates (ADR-048): the app's folder, GitHub and how the update starts (tests). */
   updates?: Partial<
     Pick<
@@ -268,6 +290,8 @@ export async function startDaemon(options: DaemonOptions) {
   const secrets = new Secrets(paths.dataDir, os.keychain, {
     ownsLegacy: isDefaultDataDir(paths.dataDir),
     log: (m) => console.log(m),
+    // Not there yet (the desktop not up, or locked): asked again in the background (ADR-070).
+    waitForKeychain: { firstMs: options.keychainRetryMs ?? 2000 },
   });
   const bus = new EventBus(db, now);
   // Secrets never reach the event log (BR-13).
@@ -1280,11 +1304,9 @@ export async function startDaemon(options: DaemonOptions) {
     res.json({ ok: true, version: VERSION });
   });
 
-  // The web UI: static files, and the app for every other path.
+  // The web UI from memory (ADR-070), and the app for every other path.
   if (web) {
-    app.use(express.static(web, { index: false, maxAge: "1h" }));
-    // Relative to its folder: a path with a hidden folder in it (~/.local/…) is served all the same.
-    app.get(/^\/(?!api\/|live$).*/, (_req, res) => res.sendFile("index.html", { root: web }));
+    serveWebUi(app, web);
   } else {
     // Terminal only (ADR-055): a few lines saying so, which a browser shows as they are.
     app.get(/^\/(?!api\/|live$).*/, (req, res) => {
@@ -1371,12 +1393,32 @@ export async function startDaemon(options: DaemonOptions) {
   });
   os.serviceNotifier.ready();
   const stopWatchdog = os.serviceNotifier.startWatchdog();
+  // The daemon's look at itself (ADR-070): a file through the pool, and its own page.
+  const selfCheckOn =
+    options.selfCheck === undefined ? !!options.writeRuntimeFile : options.selfCheck !== false;
+  const aliveFile = join(paths.dataDir, ".alive");
+  if (selfCheckOn) writeFileSync(aliveFile, `${process.pid}\n`);
+  const sc = options.selfCheck || {};
+  const selfCheck = selfCheckOn
+    ? startSelfCheck({
+        probes: [poolProbe(aliveFile), pageProbe(() => url)],
+        ...(sc.everyMs ? { everyMs: sc.everyMs } : {}),
+        ...(sc.timeoutMs ? { timeoutMs: sc.timeoutMs } : {}),
+        ...(sc.giveUpMs ? { giveUpMs: sc.giveUpMs } : {}),
+        now,
+        log: (m) => console.error(m),
+        // Only where a service manager starts it again; else it keeps running and says so.
+        exit: sc.exit ?? (supervised() ? (code) => process.exit(code) : null),
+      })
+    : null;
 
   let closing: Promise<void> | undefined;
   const close = () => {
     closing ??= (async () => {
       os.serviceNotifier.stopping();
       stopWatchdog();
+      selfCheck?.stop();
+      secrets.stop();
       bus.publish({ type: "system.stopping", topic: "overview", jobId: null, payload: null });
       metricsLoop.stop();
       guard.stop();
@@ -1397,33 +1439,73 @@ export async function startDaemon(options: DaemonOptions) {
         runner.shutdown(),
         new Promise((resolve) => setTimeout(resolve, 140_000).unref()),
       ]);
-      notifyRouter.stop();
-      audit.stop();
-      stopAllApps();
-      backups.stop();
-      logins.stopAll();
-      chats.stopAll();
-      serverService.stop();
-      sites.stop();
-      backupPlans.stop();
-      cloud.stop();
-      await mail.stop();
-      nest.stop();
-      await supervisor.killAll();
-      // Every model's server stops with the daemon.
-      await models.stop();
-      await inhibit.stop();
-      await live.close();
-      await new Promise<void>((resolve) => {
-        server.close(() => resolve());
-        // Idle keep-alive connections would otherwise hold close() open.
-        server.closeAllConnections();
-      });
-      bus.close();
-      closeDatabase(db);
-      if (options.writeRuntimeFile) rmSync(paths.runtimeFile, { force: true });
+      // The rest has a deadline (ADR-070): a step stuck on the keychain or a full
+      // thread pool never holds the stop until the service manager kills it.
+      let step = "starting";
+      const rest = (async () => {
+        await stopRest((s) => {
+          step = s;
+        });
+      })();
+      const deadline = options.stopDeadlineMs ?? 10_000;
+      let timer: NodeJS.Timeout | undefined;
+      const late = await Promise.race([
+        rest.then(() => false),
+        new Promise<boolean>((resolve) => {
+          timer = setTimeout(() => resolve(true), deadline);
+        }),
+      ]);
+      clearTimeout(timer);
+      if (late) {
+        console.error(
+          `Stopping took over ${deadline / 1000} s (still waiting on: ${step}); letting go of it.`,
+        );
+        rest.catch(() => {});
+        if (options.writeRuntimeFile) rmSync(paths.runtimeFile, { force: true });
+      }
     })();
     return closing;
+  };
+
+  /** Everything stopped after the jobs, each step named so a stuck one is told. */
+  const stopRest = async (at: (step: string) => void) => {
+    at("notifications");
+    notifyRouter.stop();
+    // Its own notify-send processes, waiting for a click, end with it (ADR-070).
+    desktopWaiters.stopAll();
+    // The keychain's helper too: its D-Bus connection closes with it.
+    os.keychain.close();
+    audit.stop();
+    stopAllApps();
+    backups.stop();
+    logins.stopAll();
+    chats.stopAll();
+    serverService.stop();
+    sites.stop();
+    backupPlans.stop();
+    cloud.stop();
+    at("mail");
+    await mail.stop();
+    nest.stop();
+    at("the agents' processes");
+    await supervisor.killAll();
+    // Every model's server stops with the daemon.
+    at("the local models");
+    await models.stop();
+    at("the sleep inhibitor");
+    await inhibit.stop();
+    at("the live connections");
+    await live.close();
+    at("the web server");
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+      // Idle keep-alive connections would otherwise hold close() open.
+      server.closeAllConnections();
+    });
+    at("the database");
+    bus.close();
+    closeDatabase(db);
+    if (options.writeRuntimeFile) rmSync(paths.runtimeFile, { force: true });
   };
 
   return {

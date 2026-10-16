@@ -1,7 +1,8 @@
 import { defineConfig } from "tsdown";
 
 export default defineConfig({
-  entry: ["src/cli.ts"],
+  // The entry sizes the thread pool before the program loads (ADR-070); it is still dist/cli.mjs.
+  entry: { cli: "src/main.ts" },
   format: "esm",
   platform: "node",
   target: "node22",

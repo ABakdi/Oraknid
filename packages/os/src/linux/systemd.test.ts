@@ -19,6 +19,26 @@ describe("unit file", () => {
     expect(text).toContain('Environment="ORAKNID_DATA_DIR=/home/me/my data"');
     expect(text).toContain("WantedBy=default.target");
   });
+
+  it("carries the thread pool, the restart and a stop deadline (ADR-070)", () => {
+    const text = unitText({ execPath: "/usr/bin/node", args: ["cli.mjs", "run"], env: {} });
+    expect(text).toContain("Environment=UV_THREADPOOL_SIZE=16");
+    expect(text).toContain("Environment=ORAKNID_SUPERVISED=1");
+    expect(text).toContain("Restart=always");
+    expect(text).toMatch(/^TimeoutStopSec=\d+$/m);
+    expect(text).toContain("After=dbus.socket\n");
+  });
+
+  it("starts with the desktop session on a desktop, at the user manager's start without one", () => {
+    const command = { execPath: "/usr/bin/node", args: ["cli.mjs", "run"], env: {} };
+    const desktop = unitText(command, { desktop: true });
+    expect(desktop).toContain("After=dbus.socket graphical-session.target");
+    expect(desktop).toContain("WantedBy=graphical-session.target");
+    expect(desktop).not.toContain("default.target");
+    const headless = unitText(command, { desktop: false });
+    expect(headless).toContain("WantedBy=default.target");
+    expect(headless).not.toContain("graphical-session.target");
+  });
 });
 
 describe("service manager", () => {
@@ -30,6 +50,7 @@ describe("service manager", () => {
     const svc = createSystemdService({
       unitDir: dir,
       user: "me",
+      desktop: () => false,
       run: (cmd, args) => {
         calls.push([cmd, ...args].join(" "));
         if (cmd === "loginctl") return loginctl(args);
@@ -60,6 +81,49 @@ describe("service manager", () => {
       ok: true,
       detail: "done",
     });
+  });
+
+  it("an update that changes the unit moves its link and restarts it on the new settings", () => {
+    const dir = mkdtempSync(join(tmpdir(), "oraknid-unit-"));
+    const calls: string[] = [];
+    let desktop = false;
+    const svc = createSystemdService({
+      unitDir: dir,
+      user: "me",
+      desktop: () => desktop,
+      run: (cmd, args) => {
+        calls.push([cmd, ...args].join(" "));
+        const said = args.includes("is-enabled")
+          ? "enabled"
+          : args.includes("is-active")
+            ? "active"
+            : "yes";
+        return { status: 0, stdout: `${said}\n`, stderr: "" };
+      },
+    });
+    const command = { execPath: "/usr/bin/node", args: ["cli.mjs", "run"], env: {} };
+    // A unit from before ADR-070, as an existing install has it.
+    writeFileSync(
+      join(dir, "oraknid.service"),
+      "[Unit]\n[Service]\n[Install]\nWantedBy=default.target\n",
+    );
+    desktop = true;
+    svc.install(command);
+    expect(readFileSync(join(dir, "oraknid.service"), "utf8")).toContain(
+      "WantedBy=graphical-session.target",
+    );
+    expect(calls.slice(0, 3)).toEqual([
+      "systemctl --user daemon-reload",
+      "systemctl --user reenable oraknid.service",
+      "systemctl --user restart oraknid.service",
+    ]);
+    // The same again: nothing to move, nothing restarted twice.
+    calls.length = 0;
+    svc.install(command);
+    expect(calls[1]).toBe("systemctl --user enable --now oraknid.service");
+    expect(calls).not.toContain("systemctl --user restart oraknid.service");
+    expect(svc.status()).toMatchObject({ startsAtBoot: false, fix: null });
+    expect(svc.status().detail).toMatch(/starts with the desktop session/);
   });
 
   it("leaves linger alone when it is on already (it was asked again and refused, 2026-10-03)", () => {

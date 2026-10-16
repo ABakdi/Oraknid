@@ -11,7 +11,7 @@ Settings → Notifications.
 
 | Channel | How | Default |
 | :-- | :-- | :-- |
-| **Desktop** | Native Linux notification via the freedesktop notification service. Clicking it opens the item in the UI. | On |
+| **Desktop** | Native Linux notification via the freedesktop notification service. Clicking it opens the item in the UI. At most 4 wait for a click at once (a new one ends the oldest, one of the same tag ends the one it replaces), each for 10 minutes at most; the daemon ends its own when it stops ([[ADR-070-Never-Hang-On-The-Desktop]]). | On |
 | **Web push** | The UI is a PWA. Each paired device can subscribe; away from home, The Nest's loader holds the subscription and the daemon sends straight to the browser's push service. Subscriptions belong to a device and go with it; pushes go only to the browsers' push services ([[Audit-2]]). | On for devices that subscribed |
 | **Email** | SMTP. I enter the server and the address. The password goes to the keychain. | Off until configured |
 

@@ -3,6 +3,17 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
+## Unreleased
+
+Never hang on the desktop ([ADR-070](docs/04-Decisions/ADR-070-Never-Hang-On-The-Desktop.md)).
+
+- **Fixed: after a reboot the web UI loaded forever.** Oraknid started a keychain of its own before your desktop session did, locked, and its calls never returned and held every file read. Now Oraknid never starts the keychain or asks it to unlock: it waits for your login, says "Waiting for the keychain to unlock" meanwhile, and the page loads at once.
+- **Keychain calls can't hang:** each has 5 seconds, in a helper process of its own, and leaves no connection open.
+- **The web UI is served from memory**, and the daemon has more threads for its file reads.
+- **Desktop notifications waiting for a click are bounded:** 4 at most, 10 minutes each.
+- **Oraknid restarts itself** when it can't serve its own page for two minutes, and stopping takes 10 seconds at most once jobs are at a safe point.
+- **The service starts with your desktop session** when systemd runs one; updating rewrites the service and restarts it on the new settings.
+
 ## 0.9.1 — 2026-10-13 (pre-release)
 
 - **Fixed: a job blocked while its work was being verified couldn't be started again** ("A job cannot go from blocked to verifying"). A blocked job now resumes where it was; when it can't, it goes on running and says why. A failed start shows its real reason instead of "check Oraknid's log".

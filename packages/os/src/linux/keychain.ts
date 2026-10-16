@@ -1,5 +1,6 @@
-import { AsyncEntry, findCredentialsAsync } from "@napi-rs/keyring";
 import type { SecretStore, SecretStoreStatus } from "../secrets.ts";
+import { HelperClient, KeychainTimeout } from "./keychain-helper.ts";
+import { type Gate, type SecretServiceState, secretServiceGate } from "./secret-service-gate.ts";
 
 /** The service the entries of before were kept under, one for every data folder (Audit 2, S2-23). */
 export const KEYCHAIN_SERVICE = "oraknid";
@@ -11,13 +12,16 @@ export function keychainService(id: string): string {
 
 /** A keychain store over one service, which can name others of the same keychain. */
 export interface KeychainStore extends SecretStore {
-  probe(): Promise<SecretStoreStatus>;
+  /** `waiting`: not there yet, worth asking again later (ADR-070); else, none on this machine. */
+  probe(): Promise<SecretStoreStatus & { waiting?: boolean }>;
   /** The service its entries are kept under. */
   readonly service: string;
   /** The names of this service's entries (never their values). */
   names(): Promise<string[]>;
   /** The same keychain, another service: one data folder's entries (S2-23). */
   scoped(service: string): KeychainStore;
+  /** Ends the keychain's helper (the daemon stopping): its D-Bus connection closes. */
+  close(): void;
 }
 
 /** One connection to the keychain: what the store asks of it. */
@@ -27,33 +31,20 @@ export interface KeychainClient {
   delete(service: string, name: string): Promise<boolean>;
   /** The accounts (entry names) kept under a service. */
   find(service: string): Promise<string[]>;
+  /** Ends the connection: called when it is dropped, so none is left open (ADR-070). */
+  close?(): void;
 }
 
 /**
- * The Secret Service over D-Bus, through the native keyring. Pinned to
- * Secret Service: the library's default would silently fall back to the
- * kernel keyring, which forgets everything at reboot. The native side
- * opens its D-Bus connection for each call (seen on a private bus
- * restarted under a running process, 2026-10-13), so a client made again
- * is a connection made again.
+ * The Secret Service over D-Bus, through the native keyring, pinned to
+ * Secret Service (the library's default would silently fall back to the
+ * kernel keyring, which forgets everything at reboot). Its calls run in a
+ * helper process with a deadline, never on the daemon's thread pool
+ * (ADR-070): a call that waits on a locked or absent keychain is killed
+ * with its helper, and its D-Bus connection closes with it.
  */
 export function secretServiceClient(): KeychainClient {
-  const entry = (service: string, name: string) =>
-    new AsyncEntry(service, name, { linux: { store: "secret-service" } });
-  return {
-    async get(service, name) {
-      return (await entry(service, name).getPassword()) ?? undefined;
-    },
-    async set(service, name, value) {
-      await entry(service, name).setPassword(value);
-    },
-    delete(service, name) {
-      return entry(service, name).deleteCredential();
-    },
-    async find(service) {
-      return (await findCredentialsAsync(service)).map((c) => c.account);
-    },
-  };
+  return new HelperClient();
 }
 
 /**
@@ -63,10 +54,38 @@ export function secretServiceClient(): KeychainClient {
  */
 export function deadConnection(error: unknown): boolean {
   const m = error instanceof Error ? error.message : String(error);
-  return /D-?Bus error|Connection is closed|disconnected|Failed to read\/write data|No DBus session/i.test(
+  return /D-?Bus error|Connection is closed|disconnected|Failed to read\/write data|No DBus session|keychain helper stopped/i.test(
     m,
   );
 }
+
+/**
+ * No call was made: the Secret Service isn't up yet, or its collection is
+ * locked (ADR-070), or this machine has no desktop session at all (`headless`).
+ */
+export class KeychainWaiting extends Error {
+  constructor(
+    readonly state: SecretServiceState,
+    message: string,
+  ) {
+    super(message);
+    this.name = "KeychainWaiting";
+  }
+  get headless() {
+    return this.state === "no-bus";
+  }
+}
+
+const WAITING: Partial<Record<SecretServiceState, string>> = {
+  "no-bus": "This machine has no desktop session bus (headless), so no desktop keychain.",
+  absent:
+    "Waiting for the desktop keychain: the Secret Service isn't running yet (it starts with the desktop session).",
+  locked:
+    "Waiting for the keychain to unlock: the desktop keychain is locked (it unlocks when you log in to the desktop).",
+};
+
+/** How long what the bus said is trusted: an unlocked keychain longer than one not there yet. */
+const GATE_TTL_MS = { unlocked: 30_000, other: 2000 };
 
 /** The longest pause between two tries while the keychain's D-Bus is down. */
 const MAX_BACKOFF_MS = 60_000;
@@ -81,14 +100,55 @@ export class KeychainLink {
   #failures = 0;
   #downUntil = 0;
   #lastError = "";
+  readonly #gate: Gate;
+  #gated: { state: SecretServiceState; at: number } | null = null;
 
   constructor(
     private readonly connect: () => KeychainClient = secretServiceClient,
-    private readonly o: { now?: () => number; pauseMs?: number } = {},
-  ) {}
+    private readonly o: {
+      now?: () => number;
+      pauseMs?: number;
+      /**
+       * What the bus says before any call (ADR-070): asked of the session
+       * bus for the real keychain; a stand-in client is called as it is.
+       */
+      gate?: Gate;
+    } = {},
+  ) {
+    this.#gate =
+      o.gate ??
+      (connect === secretServiceClient ? secretServiceGate() : async () => "unknown" as const);
+  }
+
+  /**
+   * Whether a call may be made: never one that would start the Secret
+   * Service or prompt to unlock it. Throws KeychainWaiting otherwise.
+   */
+  async #passGate() {
+    const now = this.#now();
+    const g = this.#gated;
+    const fresh =
+      g && now - g.at < (g.state === "unlocked" ? GATE_TTL_MS.unlocked : GATE_TTL_MS.other);
+    const state = fresh ? g.state : await this.#gate();
+    if (!fresh) this.#gated = { state, at: now };
+    const waiting = WAITING[state];
+    if (waiting) throw new KeychainWaiting(state, waiting);
+  }
 
   #now() {
     return (this.o.now ?? Date.now)();
+  }
+
+  /** Drops the connection, closing it (ADR-070: none is left open). */
+  #drop() {
+    const c = this.#client;
+    this.#client = null;
+    c?.close?.();
+  }
+
+  /** Ends the connection in use; the next call makes a new one. */
+  close() {
+    this.#drop();
   }
 
   /** D-Bus failed and the pause before the next try isn't over: when it is, else null. */
@@ -104,8 +164,9 @@ export class KeychainLink {
   async run<T>(call: (c: KeychainClient) => Promise<T>, retry = true): Promise<T> {
     if (this.downUntil())
       throw new Error(
-        `The desktop keychain's D-Bus connection is down (${this.#lastError}); trying again shortly.`,
+        `The desktop keychain isn't answering (${this.#lastError}); trying again shortly.`,
       );
+    await this.#passGate();
     for (let attempt = 0; ; attempt++) {
       // A connection made for this call: its failing is D-Bus down, not one gone stale.
       const fresh = !this.#client;
@@ -116,16 +177,20 @@ export class KeychainLink {
         this.#downUntil = 0;
         return value;
       } catch (error) {
-        if (!deadConnection(error)) throw error;
-        this.#client = null;
+        // A keychain that didn't answer is down like a dead bus, but not asked again at once.
+        const timedOut = error instanceof KeychainTimeout;
+        if (!timedOut && !deadConnection(error)) throw error;
+        this.#drop();
+        // The bus is asked again before the next call.
+        this.#gated = null;
         this.#lastError = error instanceof Error ? error.message : String(error);
-        if (retry && attempt === 0) {
+        if (!timedOut && retry && attempt === 0) {
           // A moment for the bus to come back, then a new connection.
           await new Promise((r) => setTimeout(r, this.o.pauseMs ?? 250));
           continue;
         }
         // Calls failing side by side are one outage: the pause grows once for them.
-        if (fresh && !this.downUntil())
+        if ((fresh || timedOut) && !this.downUntil())
           this.#downUntil = this.#now() + Math.min(MAX_BACKOFF_MS, 1000 * 2 ** this.#failures++);
         throw error;
       }
@@ -159,11 +224,17 @@ export function createKeychainStore(
           detail: "Secrets are kept in the desktop keychain.",
         };
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         status = {
           kind: "keychain",
           available: false,
-          detail: `The desktop keychain (Secret Service) is not reachable: ${(error as Error).message}`,
+          detail:
+            error instanceof KeychainWaiting
+              ? message
+              : `The desktop keychain (Secret Service) is not reachable: ${message}`,
         };
+        // Headless: no keychain will come. Anything else may yet answer.
+        return { ...status, waiting: !(error instanceof KeychainWaiting && error.headless) };
       }
       return status;
     },
@@ -175,6 +246,9 @@ export function createKeychainStore(
     },
     scoped(other) {
       return createKeychainStore(other, link);
+    },
+    close() {
+      link.close();
     },
     get(name) {
       return link.run((c) => c.get(service, name));

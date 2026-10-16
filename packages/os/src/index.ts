@@ -3,7 +3,7 @@ export { createEncryptedFileStore } from "./encrypted-file.ts";
 export * from "./inhibitor.ts";
 export { autostartEntry, createAutostartService } from "./linux/autostart.ts";
 export { bwrapArgs, createBwrapSandbox } from "./linux/bwrap.ts";
-export { createDesktopChannel } from "./linux/desktop.ts";
+export { createDesktopChannel, desktopWaiters, NotifyWaiters } from "./linux/desktop.ts";
 export {
   createKeychainStore,
   deadConnection,
@@ -11,14 +11,29 @@ export {
   type KeychainClient,
   KeychainLink,
   type KeychainStore,
+  KeychainWaiting,
   keychainService,
   secretServiceClient,
 } from "./linux/keychain.ts";
+export {
+  HELPER_SOURCE,
+  HelperClient,
+  type HelperStats,
+  KEYCHAIN_TIMEOUT_MS,
+  KeychainTimeout,
+} from "./linux/keychain-helper.ts";
 export { createLinuxMetrics } from "./linux/metrics.ts";
 export { readNvidia } from "./linux/nvidia.ts";
 export { createOpenrcService, openrcScript } from "./linux/openrc.ts";
 export { ProcFs } from "./linux/procfs.ts";
 export { createRunitService, runitDirs, runitRun } from "./linux/runit.ts";
+export {
+  type Gate,
+  hasSessionBus,
+  SECRETS_NAME,
+  type SecretServiceState,
+  secretServiceGate,
+} from "./linux/secret-service-gate.ts";
 export {
   createServiceManager,
   type DetectedService,

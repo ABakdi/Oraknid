@@ -89,7 +89,7 @@ describe("the keychain over a D-Bus connection that closes", () => {
     expect(link.downUntil()).toBe(now + 1000);
     // Within the pause: no new connection tried, a plain error at once.
     const made = s.made.length;
-    await expect(store.get("k")).rejects.toThrow(/D-Bus connection is down/);
+    await expect(store.get("k")).rejects.toThrow(/isn.t answering/);
     expect(s.made).toHaveLength(made);
     now += 1001;
     await expect(store.get("k")).rejects.toThrow(/No DBus session/);

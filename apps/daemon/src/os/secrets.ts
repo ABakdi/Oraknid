@@ -35,6 +35,13 @@ export interface SecretsOptions {
   ownsLegacy?: boolean;
   /** Where to say how many entries moved (a count, never a value). */
   log?: (message: string) => void;
+  /**
+   * A keychain not there yet (the desktop not up, or locked; ADR-070) is
+   * asked again in the background, a growing pause between tries, until it
+   * answers or the encrypted file is opened instead. The daemon's; a CLI
+   * asks once.
+   */
+  waitForKeychain?: { firstMs?: number; maxMs?: number };
 }
 
 /**
@@ -61,24 +68,60 @@ export class Secrets {
     this.#file = join(dataDir, "secrets.json");
   }
 
+  #retry: NodeJS.Timeout | null = null;
+  #stopped = false;
+
   async init(): Promise<SecretStoreStatus> {
     const probe = await this.keychain.probe();
-    if (probe.available) {
-      const mine = this.keychain.scoped(keychainService(keychainId(this.#dataDir)));
-      this.#store = mine;
-      this.#status = probe;
-      if (this.options.ownsLegacy) {
-        this.#legacy = this.keychain;
-        await this.#migrate(mine);
-      }
-    } else {
+    if (probe.available) await this.#takeKeychain(probe);
+    else {
+      const wait = probe.waiting && this.options.waitForKeychain;
       this.#status = {
         kind: "none",
         available: false,
-        detail: `${probe.detail} Secrets fall back to an encrypted file, locked until the passphrase is entered.`,
+        detail: wait
+          ? `${probe.detail} Oraknid keeps asking in the background; until it answers, secrets can go to an encrypted file, locked until its passphrase is entered.`
+          : `${probe.detail} Secrets fall back to an encrypted file, locked until the passphrase is entered.`,
       };
+      if (wait) this.#askAgain(wait.firstMs ?? 2000);
     }
     return this.#status;
+  }
+
+  async #takeKeychain(probe: SecretStoreStatus) {
+    const mine = this.keychain.scoped(keychainService(keychainId(this.#dataDir)));
+    this.#store = mine;
+    this.#status = { kind: probe.kind, available: probe.available, detail: probe.detail };
+    if (this.options.ownsLegacy) {
+      this.#legacy = this.keychain;
+      await this.#migrate(mine);
+    }
+  }
+
+  /** The keychain asked again later, while nothing else holds the secrets. */
+  #askAgain(ms: number) {
+    if (this.#stopped || this.#store) return;
+    this.#retry = setTimeout(async () => {
+      this.#retry = null;
+      if (this.#stopped || this.#store) return;
+      const probe = await this.keychain.probe();
+      if (this.#stopped || this.#store) return;
+      if (probe.available) {
+        await this.#takeKeychain(probe);
+        this.options.log?.("Keychain: it answered; secrets are kept in the desktop keychain.");
+        return;
+      }
+      const max = this.options.waitForKeychain?.maxMs ?? 300_000;
+      if (probe.waiting) this.#askAgain(Math.min(max, ms * 2));
+    }, ms);
+    this.#retry.unref();
+  }
+
+  /** No more asking the keychain (the daemon stopping). */
+  stop() {
+    this.#stopped = true;
+    if (this.#retry) clearTimeout(this.#retry);
+    this.#retry = null;
   }
 
   /**
