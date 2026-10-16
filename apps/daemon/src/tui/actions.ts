@@ -743,11 +743,11 @@ export function makeActions(c: Ctx) {
       key: panelKey("sites"),
       title: "Sites",
       items: list.map((x) => ({
-        label: `${!x.checkEnabled ? ansi.dim("○") : x.downSince ? ansi.red("●") : x.up ? ansi.green("●") : ansi.yellow("●")} ${x.host}`,
+        label: `${!x.checkEnabled ? ansi.dim("○") : x.downSince && x.downReason === "site" ? ansi.red("●") : x.up ? ansi.green("●") : ansi.yellow("●")} ${x.host}`,
         detail: [
           x.serverName ? `on ${x.serverName}` : "added by hand",
           x.downSince
-            ? `down since ${ago(x.downSince, c.now())}`
+            ? `${x.downReason === "path" ? "down from here only" : x.downReason === "server" ? `${x.serverName ?? "its server"} unreached` : "down"} since ${ago(x.downSince, c.now())}`
             : x.lastLatencyMs !== null
               ? `${x.lastLatencyMs} ms`
               : "",

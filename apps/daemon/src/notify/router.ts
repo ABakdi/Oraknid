@@ -344,8 +344,14 @@ export function startNotificationRouter(o: {
       }
       case "site.down":
       case "site.up": {
-        // A site down twice in a row, then back (ADR-060): once each.
-        const s = payload as { id?: string; host?: string; error?: string; downForMs?: number };
+        // A site down (its server agrees, or it wasn't asked), then back (ADR-060, ADR-071): once each.
+        const s = payload as {
+          id?: string;
+          host?: string;
+          error?: string;
+          why?: string;
+          downForMs?: number;
+        };
         const down = e.type === "site.down";
         const mins = Math.max(1, Math.round((s.downForMs ?? 0) / 60_000));
         return {
@@ -355,11 +361,43 @@ export function startNotificationRouter(o: {
             n: {
               title: down ? `Down: ${s.host ?? "a site"}` : `Up again: ${s.host ?? "a site"}`,
               body: down
-                ? `${s.error ?? "No answer."} Two checks in a row from this computer failed.`
+                ? `${s.error ?? "No answer."} ${s.why ?? "Two checks in a row from this computer failed."}`
                 : `It answers again, after about ${mins} minute${mins === 1 ? "" : "s"} down.`,
               url: url("/servers/sites"),
               urgency: down ? "critical" : "normal",
               tag: `site-${s.id ?? ""}`,
+            },
+          },
+          itemId: null,
+        };
+      }
+      case "site.path": {
+        // One server's sites failing from this computer only: one incident (ADR-071). Its end is quiet.
+        const s = payload as {
+          serverId?: string;
+          server?: string;
+          cause?: "path" | "server";
+          failing?: number;
+          total?: number;
+        };
+        const name = s.server ?? "a server";
+        const total = s.total ?? s.failing ?? 0;
+        const of = `${s.failing ?? 0} of its ${total} site${total === 1 ? "" : "s"}`;
+        const server = s.cause === "server";
+        return {
+          p: {
+            event: "site.path",
+            jobId: null,
+            n: {
+              title: server
+                ? `Can't reach ${name} from this computer`
+                : `This computer is losing its connection to ${name}`,
+              body: server
+                ? `${of} didn't answer from here, and neither did ${name} over SSH: it may be down, or the way to it. They aren't counted as down.`
+                : `${of} didn't answer from here; from the server they answer. They aren't counted as down.`,
+              url: url("/servers/sites"),
+              urgency: "normal",
+              tag: `site-path-${s.serverId ?? ""}`,
             },
           },
           itemId: null,

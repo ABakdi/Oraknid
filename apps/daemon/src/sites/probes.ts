@@ -149,7 +149,7 @@ export function checkUrl(
     try {
       u = new URL(url);
     } catch {
-      return finish({ up: false, status: null, latencyMs: null, error: "Not an address." });
+      return finish({ up: false, status: null, latencyMs: null, error: NOT_AN_ADDRESS });
     }
     const lib = u.protocol === "https:" ? https : http;
     const req = lib.request(
@@ -184,6 +184,19 @@ export function checkUrl(
   });
 }
 
+/** DNS doesn't know the domain: an answer, not a lost packet. */
+export const NO_SUCH_DOMAIN = "No such domain: DNS doesn't know it.";
+const NOT_AN_ADDRESS = "Not an address.";
+
+/**
+ * A failed check that the path may explain (ADR-071): no answer at all,
+ * not a 5xx, not a domain DNS doesn't know. Tried again before it counts,
+ * and asked of its server before the site is said down.
+ */
+export function transient(c: Pick<SiteCheck, "up" | "status" | "error">): boolean {
+  return !c.up && c.status === null && c.error !== NO_SUCH_DOMAIN && c.error !== NOT_AN_ADDRESS;
+}
+
 /** A network error in words. */
 export function plainNet(e: Error): string {
   const code = (e as { code?: string }).code;
@@ -191,7 +204,7 @@ export function plainNet(e: Error): string {
     case "ECONNREFUSED":
       return "The connection was refused: nothing listens there.";
     case "ENOTFOUND":
-      return "No such domain: DNS doesn't know it.";
+      return NO_SUCH_DOMAIN;
     case "ECONNRESET":
       return "The connection was cut.";
     case "EHOSTUNREACH":

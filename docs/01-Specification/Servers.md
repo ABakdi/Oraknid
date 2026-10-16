@@ -228,10 +228,33 @@ each, from this computer: its DNS (A, AAAA, CNAME, and whether it points
 at its server), its certificate from a handshake (its end, red under two
 weeks, its issuer, and whether it is trusted and for this domain), read
 every 6 hours; and an uptime check, a GET every 5 minutes by default
-(1–60), up below 500, kept 7 days. Two failed checks in a row are the
-`site.down` notification, once; the first check up after is `site.up`.
-Removing a site its proxy serves hides it from Find sites. The helper
-(`sites`) and the terminal app (`/sites`) list them.
+(1–60), up below 500, kept 7 days. Removing a site its proxy serves
+hides it from Find sites. The helper (`sites`) and the terminal app
+(`/sites`) list them.
+
+**A site is down only when it is down** (2026-10-16,
+[[ADR-071-A-Site-Is-Down-Only-When-It-Is-Down]]). A check with no
+answer (a timeout, a connection refused or cut) is tried again after
+2 s and 5 s before it counts; a 5xx or a domain DNS doesn't know counts
+at once. Two failed checks in a row of a site with a server are asked
+of the server (over SSH, `curl` with the domain resolved to the server
+itself, read only):
+
+- it doesn't answer there either (or answers 5xx), or it has no server,
+  or DNS doesn't know it: **down**, the `site.down` notification, once,
+  critical; the first check up after is `site.up`;
+- it answers there: **down from here only**, no notification of its own;
+- the server can't be reached either: **<server> unreached**, no
+  notification of its own.
+
+The sites of one server down from here only (or unreached) are one
+`site.path` notification about the server, normal, desktop only, at
+most once a day per server: "This computer is losing its connection to
+staging: 9 of its 18 sites didn't answer from here; from the server
+they answer." Its end says nothing. A site back less than 30 minutes
+ago that fails again is said down only after failing for 15 minutes
+(3 checks or more). The Sites tab shows "down from here only" and
+"<server> unreached" in amber, with one line per server.
 
 ## The terminal
 

@@ -460,6 +460,7 @@ const EVENTS: [NotifyEvent, string][] = [
   ["sleep.problem", "The computer can't be kept awake"],
   ["site.down", "A site is down"],
   ["site.up", "A site is up again"],
+  ["site.path", "A server's sites don't answer from this computer"],
 ];
 const DEFAULTS: Record<NotifyEvent, Route> = {
   approval: { desktop: true, push: true, email: "after-15-min" },
@@ -480,6 +481,7 @@ const DEFAULTS: Record<NotifyEvent, Route> = {
   "sleep.problem": { desktop: true, push: true, email: "never" },
   "site.down": { desktop: true, push: true, email: "now" },
   "site.up": { desktop: true, push: true, email: "never" },
+  "site.path": { desktop: true, push: false, email: "never" },
 };
 
 function NotificationsCard() {
