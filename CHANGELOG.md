@@ -3,7 +3,7 @@
 Versions follow [semantic versioning](https://semver.org). Until 1.0,
 a minor version may change anything; each release says what to do.
 
-## Unreleased
+## 0.9.2 — 2026-10-16 (pre-release)
 
 Never hang on the desktop ([ADR-070](docs/04-Decisions/ADR-070-Never-Hang-On-The-Desktop.md)).
 
